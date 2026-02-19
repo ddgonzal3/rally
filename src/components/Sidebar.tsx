@@ -23,10 +23,16 @@ function StatusBadge({ status }: { status?: GitStatus }) {
 }
 
 export function Sidebar() {
-  const { workspaces, activeWorkspaceId, setActive, gitStatuses } =
+  const { workspaces, activeWorkspaceId, setActive, removeWorkspace, gitStatuses } =
     useWorkspaceStore();
   const [showAddModal, setShowAddModal] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+  const [hoveredId, setHoveredId] = useState<string | null>(null);
+
+  function handleDelete(e: React.MouseEvent, wsId: string) {
+    e.stopPropagation();
+    removeWorkspace(wsId);
+  }
 
   return (
     <>
@@ -36,20 +42,39 @@ export function Sidebar() {
         </div>
 
         <div style={styles.list}>
-          {workspaces.map((ws) => (
-            <button
-              key={ws.id}
-              onClick={() => setActive(ws.id)}
-              style={{
-                ...styles.item,
-                ...(ws.id === activeWorkspaceId ? styles.itemActive : {}),
-              }}
-            >
-              <div style={styles.itemName}>{ws.name}</div>
-              <div style={styles.itemBranch}>{ws.branch}</div>
-              <StatusBadge status={gitStatuses[ws.id]} />
-            </button>
-          ))}
+          {workspaces.map((ws) => {
+            const isActive = ws.id === activeWorkspaceId;
+            const isHovered = ws.id === hoveredId;
+            return (
+              <div
+                key={ws.id}
+                style={{
+                  ...styles.item,
+                  ...(isActive ? styles.itemActive : {}),
+                }}
+                onClick={() => setActive(ws.id)}
+                onMouseEnter={() => setHoveredId(ws.id)}
+                onMouseLeave={() => setHoveredId(null)}
+              >
+                <div style={styles.itemRow}>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={styles.itemName}>{ws.name}</div>
+                    <div style={styles.itemBranch}>{ws.branch}</div>
+                    <StatusBadge status={gitStatuses[ws.id]} />
+                  </div>
+                  {isHovered && (
+                    <button
+                      style={styles.deleteBtn}
+                      onClick={(e) => handleDelete(e, ws.id)}
+                      title="Remove workspace"
+                    >
+                      ×
+                    </button>
+                  )}
+                </div>
+              </div>
+            );
+          })}
         </div>
 
         <div style={styles.bottomBtns}>
@@ -83,15 +108,18 @@ const styles: Record<string, React.CSSProperties> = {
     paddingTop: 0,
   },
   header: {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
     padding: "12px 16px 8px",
     borderBottom: "1px solid #333",
   },
   title: {
     fontSize: 11,
-    fontWeight: 600,
+    fontWeight: 700,
     textTransform: "uppercase" as const,
     letterSpacing: "0.05em",
-    color: "#888",
+    color: "#999",
   },
   list: {
     flex: 1,
@@ -100,10 +128,8 @@ const styles: Record<string, React.CSSProperties> = {
   },
   item: {
     width: "100%",
-    display: "block",
     padding: "10px 16px",
     background: "none",
-    border: "none",
     borderLeft: "3px solid transparent",
     color: "#ccc",
     cursor: "pointer",
@@ -112,26 +138,43 @@ const styles: Record<string, React.CSSProperties> = {
   },
   itemActive: {
     background: "#2a2a2a",
-    borderLeftColor: "#7c6ef5",
+    borderLeftColor: "#bbb",
     color: "#fff",
   },
+  itemRow: {
+    display: "flex",
+    alignItems: "flex-start",
+    gap: 4,
+  },
   itemName: {
-    fontWeight: 500,
+    fontWeight: 600,
     marginBottom: 2,
   },
   itemBranch: {
     fontSize: 11,
     color: "#888",
     marginBottom: 4,
+    fontWeight: 500,
   },
   badge: {
     display: "inline-block",
     padding: "1px 6px",
     borderRadius: 3,
     fontSize: 10,
-    fontWeight: 500,
+    fontWeight: 600,
     color: "#ccc",
     background: "#333",
+  },
+  deleteBtn: {
+    background: "none",
+    border: "none",
+    color: "#666",
+    cursor: "pointer",
+    fontSize: 16,
+    lineHeight: 1,
+    padding: "2px 4px",
+    borderRadius: 3,
+    flexShrink: 0,
   },
   bottomBtns: {
     borderTop: "1px solid #333",
@@ -142,11 +185,11 @@ const styles: Record<string, React.CSSProperties> = {
     background: "none",
     border: "none",
     borderBottom: "1px solid #2a2a2a",
-    color: "#7c6ef5",
+    color: "#ccc",
     cursor: "pointer",
     fontSize: 13,
     textAlign: "left" as const,
-    fontWeight: 500,
+    fontWeight: 600,
   },
   settingsBtn: {
     width: "100%",
@@ -157,5 +200,6 @@ const styles: Record<string, React.CSSProperties> = {
     cursor: "pointer",
     fontSize: 12,
     textAlign: "left" as const,
+    fontWeight: 500,
   },
 };

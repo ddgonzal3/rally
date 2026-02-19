@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useCallback } from "react";
+import React, { useEffect, useRef } from "react";
 import { Terminal as XTerminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { WebLinksAddon } from "@xterm/addon-web-links";
@@ -7,15 +7,45 @@ import { api } from "../lib/tauri";
 import "@xterm/xterm/css/xterm.css";
 
 interface TerminalProps {
-  title: string;
   cwd: string;
   command?: string;
-  onClose?: () => void;
 }
 
 const encoder = new TextEncoder();
 
-export function Terminal({ title, cwd, command, onClose }: TerminalProps) {
+// Minimum acceptable terminal dimensions.
+// If FitAddon proposes anything smaller, we skip the resize entirely
+// to prevent xterm from entering a broken state.
+const MIN_COLS = 10;
+const MIN_ROWS = 4;
+
+/**
+ * Safe wrapper around FitAddon.fit().
+ * Uses proposeDimensions() to get the values, validates them,
+ * and only applies the resize if they're reasonable.
+ * This prevents xterm from ever resizing to 1-2 columns during
+ * transient layout states.
+ */
+function safeFit(term: XTerminal, fitAddon: FitAddon): boolean {
+  const dims = fitAddon.proposeDimensions();
+  if (!dims) return false;
+  // Guard against NaN/Infinity from incomplete layout measurements
+  if (!Number.isFinite(dims.cols) || !Number.isFinite(dims.rows)) return false;
+  const cols = Math.round(dims.cols);
+  const rows = Math.round(dims.rows);
+  if (cols < MIN_COLS || rows < MIN_ROWS) return false;
+  if (cols === term.cols && rows === term.rows) return false;
+
+  // Access xterm internals to clear renderer before resize (same as FitAddon.fit)
+  const core = (term as any)._core;
+  if (core?._renderService) {
+    core._renderService.clear();
+  }
+  term.resize(cols, rows);
+  return true;
+}
+
+export function Terminal({ cwd, command }: TerminalProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const termRef = useRef<XTerminal | null>(null);
   const ptyIdRef = useRef<string | null>(null);
@@ -27,11 +57,13 @@ export function Terminal({ title, cwd, command, onClose }: TerminalProps) {
     if (!containerRef.current) return;
 
     const term = new XTerminal({
+      cols: 80,
+      rows: 24,
       theme: {
         background: "#1a1a1a",
         foreground: "#e0e0e0",
-        cursor: "#7c6ef5",
-        selectionBackground: "#7c6ef544",
+        cursor: "#a0a0a0",
+        selectionBackground: "#44444488",
         black: "#1a1a1a",
         red: "#df7d7d",
         green: "#7ddf7d",
@@ -52,20 +84,26 @@ export function Terminal({ title, cwd, command, onClose }: TerminalProps) {
     term.loadAddon(new WebLinksAddon());
 
     term.open(containerRef.current);
-    fitAddon.fit();
 
     termRef.current = term;
     fitAddonRef.current = fitAddon;
 
-    // Spawn PTY and wire up I/O
-    (async () => {
+    let ptySpawned = false;
+    let rafId: number | null = null;
+
+    async function spawnPty() {
+      if (ptySpawned) return;
+      ptySpawned = true;
+
       try {
-        const cols = term.cols;
-        const rows = term.rows;
-        const ptyId = await api.spawnPty(cwd, command ?? null, cols, rows);
+        safeFit(term, fitAddon);
+        // Ensure at least 80x24 — protects against xterm auto-sizing to
+        // a tiny container during initial layout settling
+        const spawnCols = Math.max(term.cols, 80);
+        const spawnRows = Math.max(term.rows, 24);
+        const ptyId = await api.spawnPty(cwd, command ?? null, spawnCols, spawnRows);
         ptyIdRef.current = ptyId;
 
-        // Listen for PTY output
         unlistenOutputRef.current = await listen<{ data: number[] }>(
           `pty-output-${ptyId}`,
           (event) => {
@@ -73,7 +111,6 @@ export function Terminal({ title, cwd, command, onClose }: TerminalProps) {
           }
         );
 
-        // Listen for PTY exit
         unlistenExitRef.current = await listen<{ code: number | null }>(
           `pty-exit-${ptyId}`,
           (event) => {
@@ -84,7 +121,6 @@ export function Terminal({ title, cwd, command, onClose }: TerminalProps) {
           }
         );
 
-        // Forward keystrokes to PTY
         term.onData((data) => {
           if (ptyIdRef.current) {
             api.writePty(
@@ -94,50 +130,66 @@ export function Terminal({ title, cwd, command, onClose }: TerminalProps) {
           }
         });
 
-        // Forward resize to PTY
         term.onResize(({ cols, rows }) => {
-          if (ptyIdRef.current) {
+          if (ptyIdRef.current && cols >= MIN_COLS && rows >= MIN_ROWS) {
             api.resizePty(ptyIdRef.current, cols, rows);
           }
         });
+
+        // Sync dimensions after the async gap — a resize may have occurred
+        // during the await (before onResize was registered), leaving the
+        // PTY at stale dimensions.
+        if (safeFit(term, fitAddon)) {
+          // safeFit resized xterm, but onResize already forwarded it.
+          // No extra action needed.
+        } else {
+          // xterm may already be at a different size than what we spawned with.
+          const currentCols = term.cols;
+          const currentRows = term.rows;
+          if (
+            currentCols >= MIN_COLS &&
+            currentRows >= MIN_ROWS &&
+            (currentCols !== spawnCols || currentRows !== spawnRows)
+          ) {
+            api.resizePty(ptyId, currentCols, currentRows);
+          }
+        }
       } catch (e) {
         term.writeln(`\x1b[31mFailed to start terminal: ${e}\x1b[0m`);
       }
-    })();
+    }
 
-    // Handle container resize
+    const el = containerRef.current;
     const observer = new ResizeObserver(() => {
-      fitAddon.fit();
+      if (el.clientWidth < 100 || el.clientHeight < 50) return;
+
+      if (rafId !== null) cancelAnimationFrame(rafId);
+      rafId = requestAnimationFrame(() => {
+        rafId = null;
+        if (!ptySpawned) {
+          spawnPty();
+        } else {
+          safeFit(term, fitAddon);
+        }
+      });
     });
-    observer.observe(containerRef.current);
+    observer.observe(el);
 
     return () => {
+      if (rafId !== null) cancelAnimationFrame(rafId);
       observer.disconnect();
-      // Clean up PTY
       if (ptyIdRef.current) {
         api.killPty(ptyIdRef.current);
         ptyIdRef.current = null;
       }
-      // Unlisten events
       unlistenOutputRef.current?.();
       unlistenExitRef.current?.();
-      // Dispose terminal
       term.dispose();
     };
   }, [cwd, command]);
 
   return (
     <div style={styles.container}>
-      <div style={styles.header}>
-        <span style={styles.headerTitle}>{title}</span>
-        <div style={styles.headerActions}>
-          {onClose && (
-            <button style={styles.headerBtn} title="Close" onClick={onClose}>
-              x
-            </button>
-          )}
-        </div>
-      </div>
       <div ref={containerRef} style={styles.terminal} />
     </div>
   );
@@ -151,39 +203,11 @@ const styles: Record<string, React.CSSProperties> = {
     minWidth: 0,
     minHeight: 0,
     background: "#1a1a1a",
-    border: "1px solid #333",
-    borderRadius: 6,
     overflow: "hidden",
-  },
-  header: {
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "space-between",
-    padding: "4px 10px",
-    background: "#252525",
-    borderBottom: "1px solid #333",
-    minHeight: 28,
-  },
-  headerTitle: {
-    fontSize: 11,
-    fontWeight: 500,
-    color: "#999",
-  },
-  headerActions: {
-    display: "flex",
-    gap: 4,
-  },
-  headerBtn: {
-    background: "none",
-    border: "none",
-    color: "#666",
-    cursor: "pointer",
-    fontSize: 14,
-    padding: "0 4px",
-    lineHeight: 1,
   },
   terminal: {
     flex: 1,
     padding: 4,
+    overflow: "hidden",
   },
 };

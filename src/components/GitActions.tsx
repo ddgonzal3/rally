@@ -163,7 +163,7 @@ const styles: Record<string, React.CSSProperties> = {
   branch: {
     fontSize: 12,
     fontWeight: 600,
-    color: "#7c6ef5",
+    color: "#e0e0e0",
   },
   tag: {
     fontSize: 10,
@@ -190,7 +190,7 @@ const styles: Record<string, React.CSSProperties> = {
   },
   btnActive: {
     background: "#333",
-    color: "#7c6ef5",
+    color: "#fff",
   },
   btnIcon: {
     fontSize: 14,

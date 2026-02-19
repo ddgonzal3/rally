@@ -62,21 +62,18 @@ impl PtyManager {
             })
             .map_err(|e| format!("Failed to open PTY: {}", e))?;
 
+        let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/zsh".to_string());
+
         let mut cmd = if let Some(ref cmd_str) = command {
-            // Parse command string: first token is the program, rest are args
-            let parts: Vec<&str> = cmd_str.split_whitespace().collect();
-            if parts.is_empty() {
-                return Err("Empty command".to_string());
-            }
-            let mut builder = CommandBuilder::new(parts[0]);
-            for arg in &parts[1..] {
-                builder.arg(arg);
-            }
+            // Run commands through a login shell so PATH is fully loaded
+            let mut builder = CommandBuilder::new(&shell);
+            builder.arg("-l");
+            builder.arg("-c");
+            builder.arg(cmd_str);
             builder.cwd(&cwd);
             builder
         } else {
             // Default: spawn user's shell
-            let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/zsh".to_string());
             let mut builder = CommandBuilder::new(&shell);
             builder.arg("-l"); // login shell
             builder.cwd(&cwd);
@@ -87,8 +84,16 @@ impl PtyManager {
         for (key, value) in std::env::vars() {
             cmd.env(key, value);
         }
+        // Remove env vars that prevent Claude Code from launching inside Workbench PTYs
+        cmd.env_remove("CLAUDECODE");
+        cmd.env_remove("CLAUDE_CODE_ENTRYPOINT");
         // Set TERM for proper terminal behavior
         cmd.env("TERM", "xterm-256color");
+        // Identify as Workbench terminal — prevents Claude Code from inheriting
+        // the parent's TERM_PROGRAM (e.g. "vscode") and making wrong assumptions
+        // about terminal capabilities/dimensions
+        cmd.env("TERM_PROGRAM", "Workbench");
+        cmd.env_remove("TERM_PROGRAM_VERSION");
 
         let child = pair
             .slave

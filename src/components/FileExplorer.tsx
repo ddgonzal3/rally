@@ -79,7 +79,11 @@ function getFileIcon(name: string): string {
   return "📄";
 }
 
-export function FileExplorer() {
+interface FileExplorerProps {
+  onCollapse: () => void;
+}
+
+export function FileExplorer({ onCollapse }: FileExplorerProps) {
   const { activeWorkspaceId, workspaces } = useWorkspaceStore();
   const ws = workspaces.find((w) => w.id === activeWorkspaceId);
   const [rootEntries, setRootEntries] = useState<FileEntry[]>([]);
@@ -103,7 +107,25 @@ export function FileExplorer() {
     <div style={styles.container}>
       <div style={styles.header}>
         <span style={styles.headerTitle}>Files</span>
-        <span style={styles.headerPath}>{ws.name}</span>
+        <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+          <span style={styles.headerPath}>{ws.name}</span>
+          <button
+            onClick={onCollapse}
+            title="Hide file explorer"
+            style={{
+              background: "none",
+              border: "none",
+              color: "#666",
+              cursor: "pointer",
+              padding: 2,
+              display: "flex",
+              alignItems: "center",
+              fontSize: 12,
+            }}
+          >
+            ✕
+          </button>
+        </div>
       </div>
       <div style={styles.tree}>
         {rootEntries.map((entry) => (
@@ -118,12 +140,11 @@ const styles: Record<string, React.CSSProperties> = {
   container: {
     display: "flex",
     flexDirection: "column",
-    flex: 1,
-    minWidth: 0,
+    width: 220,
+    minWidth: 220,
     minHeight: 0,
-    background: "#1a1a1a",
-    border: "1px solid #333",
-    borderRadius: 6,
+    background: "#1e1e1e",
+    borderRight: "1px solid #333",
     overflow: "hidden",
   },
   header: {
