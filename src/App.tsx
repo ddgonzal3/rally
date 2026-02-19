@@ -6,13 +6,11 @@ import { GitActions } from "./components/GitActions";
 import { useWorkspaceStore } from "./stores/workspaceStore";
 
 export function App() {
-  const { loadWorkspaces, refreshAllGitStatuses, workspaces } =
+  const { loadWorkspaces, refreshAllGitStatuses } =
     useWorkspaceStore();
 
   useEffect(() => {
     loadWorkspaces().then(() => refreshAllGitStatuses());
-
-    // Poll git status every 10s
     const interval = setInterval(refreshAllGitStatuses, 10000);
     return () => clearInterval(interval);
   }, []);
@@ -29,7 +27,6 @@ export function App() {
 
   return (
     <div style={styles.app}>
-      {/* Invisible drag region that sits over the native titlebar area */}
       <div
         data-tauri-drag-region
         style={styles.titlebar}
@@ -58,22 +55,21 @@ const styles: Record<string, React.CSSProperties> = {
     background: "#1a1a1a",
   },
   titlebar: {
-    height: 52,
-    minHeight: 52,
+    height: 34,
+    minHeight: 34,
     display: "flex",
     alignItems: "center",
     justifyContent: "center",
-    // No background — transparent, blends with native titlebar
+    borderBottom: "1px solid #2a2a2a",
     userSelect: "none",
     position: "relative",
     zIndex: 100,
-    // Leave space for native traffic lights
     paddingLeft: 80,
   },
   titleText: {
     fontSize: 13,
     fontWeight: 500,
-    color: "#666",
+    color: "#555",
     letterSpacing: "0.01em",
     pointerEvents: "none" as const,
   },

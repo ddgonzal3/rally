@@ -7,9 +7,9 @@ export const api = {
   createWorkspace: (params: {
     name: string;
     path: string;
-    repo_url: string;
+    repoUrl: string;
     branch: string;
-    main_branch?: string;
+    mainBranch?: string;
   }) => invoke<Workspace>("create_workspace", params),
 
   removeWorkspace: (id: string) => invoke<void>("remove_workspace", { id }),

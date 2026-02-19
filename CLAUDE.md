@@ -9,11 +9,21 @@ Workbench is a **Tauri v2 macOS app** (Rust backend + React frontend) for orches
 ```bash
 ./scripts/check.sh         # Type-check TS + cargo check Rust (fast, no build)
 ./scripts/build.sh         # Full build → .app bundle
-./scripts/run.sh           # Build + launch the .app
+./scripts/run.sh           # Kill running app → build → relaunch
 ./scripts/build-release.sh # Build + .app + .dmg
 ```
 
 **Never run `cargo tauri build` without `--bundles app`** unless you want a DMG (slow, opens Finder windows).
+
+## IMPORTANT: After Making Changes
+
+**Always run `./scripts/run.sh` after any code change.** This kills the running app, rebuilds, and relaunches automatically. The user should never have to manually close and reopen the app — the script handles it.
+
+```bash
+./scripts/run.sh
+```
+
+This is the standard development loop: edit → run.sh → test in app → repeat.
 
 ## Architecture
 

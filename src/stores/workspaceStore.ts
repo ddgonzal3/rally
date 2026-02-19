@@ -16,9 +16,9 @@ interface WorkspaceState {
   addWorkspace: (params: {
     name: string;
     path: string;
-    repo_url: string;
+    repoUrl: string;
     branch: string;
-    main_branch?: string;
+    mainBranch?: string;
   }) => Promise<void>;
   removeWorkspace: (id: string) => Promise<void>;
   refreshGitStatus: (workspaceId: string) => Promise<void>;

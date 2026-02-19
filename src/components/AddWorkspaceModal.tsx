@@ -44,9 +44,9 @@ export function AddWorkspaceModal({ onClose }: AddWorkspaceModalProps) {
       await addWorkspace({
         name: name.trim(),
         path: path.trim(),
-        repo_url: repoUrl.trim(),
+        repoUrl: repoUrl.trim(),
         branch: branch.trim() || "main",
-        main_branch: mainBranch.trim() || "main",
+        mainBranch: mainBranch.trim() || "main",
       });
       onClose();
     } catch (e: any) {

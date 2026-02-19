@@ -31,6 +31,22 @@ const handleDrag = (e: React.MouseEvent) => {
 
 **Why:** Tauri v2 permissions system requires explicit grants. The attribute is necessary but not sufficient without the permission. The programmatic call is the reliable path.
 
+### Tauri v2 Converts Rust snake_case Params to camelCase on Frontend
+
+Rust command params like `repo_url` and `main_branch` become `repoUrl` and `mainBranch` in the frontend. If you send snake_case keys from JS, you get: `invalid args 'repoUrl' for command: missing required key repoUrl`.
+
+**DON'T:**
+```typescript
+invoke("create_workspace", { repo_url: "...", main_branch: "main" });
+```
+
+**DO:**
+```typescript
+invoke("create_workspace", { repoUrl: "...", mainBranch: "main" });
+```
+
+**Why:** Tauri v2's serde deserialization uses `#[serde(rename_all = "camelCase")]` by default for command arguments. Always use camelCase keys in frontend `invoke()` calls.
+
 ### Native Titlebar Overlay vs Custom Decorations
 
 Use `decorations: true` + `titleBarStyle: "Overlay"` + `hiddenTitle: true` for native macOS look (rounded corners, traffic lights, shadow). Don't use `decorations: false` — it gives you full control but loses all native window chrome.
