@@ -39,7 +39,7 @@ fn config_dir() -> PathBuf {
 
 fn dirs_next() -> Option<PathBuf> {
     let home = std::env::var("HOME").ok()?;
-    let dir = PathBuf::from(home).join(".claude-workbench");
+    let dir = PathBuf::from(home).join(".workbench");
     fs::create_dir_all(&dir).ok()?;
     Some(dir)
 }

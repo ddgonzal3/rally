@@ -1,5 +1,5 @@
 [package]
-name = "claude-workbench"
+name = "workbench"
 version = "0.1.0"
 edition = "2021"
 

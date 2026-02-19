@@ -1,7 +1,7 @@
 {
-  "productName": "Claude Workbench",
+  "productName": "Workbench",
   "version": "0.1.0",
-  "identifier": "com.claude-workbench.app",
+  "identifier": "com.workbench.app",
   "build": {
     "frontendDist": "../dist",
     "devUrl": "http://localhost:5173",
@@ -11,7 +11,7 @@
   "app": {
     "windows": [
       {
-        "title": "Claude Workbench",
+        "title": "Workbench",
         "width": 1400,
         "height": 900,
         "resizable": true,

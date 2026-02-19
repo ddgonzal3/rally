@@ -5,4 +5,4 @@ echo "Building frontend..."
 npm run build
 echo "Building Rust + bundling .app..."
 cargo tauri build --bundles app
-echo "Done: src-tauri/target/release/bundle/macos/Claude Workbench.app"
+echo "Done: src-tauri/target/release/bundle/macos/Workbench.app"

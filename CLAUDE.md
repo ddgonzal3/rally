@@ -1,8 +1,8 @@
-# CLAUDE.md — Claude Workbench
+# CLAUDE.md — Workbench
 
 ## What Is This?
 
-Claude Workbench is a **Tauri v2 macOS app** (Rust backend + React frontend) for orchestrating multiple Claude Code sessions, git workflows, and dev processes across repo workspaces.
+Workbench is a **Tauri v2 macOS app** (Rust backend + React frontend) for orchestrating multiple Claude Code sessions, git workflows, and dev processes across repo workspaces.
 
 ## Build Commands
 
@@ -43,7 +43,7 @@ Rust Backend (src-tauri/src/)
 
 **Git Operations**: All shell out to `git` and `gh` CLI via `std::process::Command`. No libgit2. This ensures identical behavior to manual terminal usage.
 
-**State**: Workspaces persist to `~/.claude-workbench/workspaces.json`. Pane state is in-memory only (Zustand). Git status polls every 10 seconds.
+**State**: Workspaces persist to `~/.workbench/workspaces.json`. Pane state is in-memory only (Zustand). Git status polls every 10 seconds.
 
 **Window**: Uses native macOS decorations (`titleBarStyle: "Overlay"`, `hiddenTitle: true`) with programmatic `startDragging()` for the drag region. This gives native traffic lights and rounded corners.
 

@@ -1,4 +1,4 @@
-# Claude Workbench
+# Workbench
 
 A macOS app for orchestrating Claude Code sessions, git workflows, and dev processes across multiple repo workspaces.
 
@@ -18,7 +18,7 @@ Power users solve this with shell aliases and muscle memory. Everyone else is lo
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│  Claude Workbench                                               │
+│  Workbench                                               │
 ├────────┬────────────────────────────────────────────────────────┤
 │        │  ┌─────────────────────┐  ┌─────────────────────────┐ │
 │  Side  │  │  Claude Code (PTY)  │  │  Claude Code (PTY)      │ │
@@ -200,7 +200,7 @@ Session {
 ## File Structure (Initial)
 
 ```
-claude-workbench/
+workbench/
 ├── src-tauri/
 │   ├── src/
 │   │   ├── main.rs              # Tauri entry point
@@ -238,7 +238,7 @@ claude-workbench/
 
 ## Open Questions
 
-1. **Name** — "Claude Workbench" is a working title. Open to suggestions.
+1. **Name** — "Workbench" is a working title. Open to suggestions.
 2. **Terminal emulation approach** — `portable-pty` from Rust, or spawn a node sidecar with `node-pty`? Rust-native is cleaner but `node-pty` is battle-tested with xterm.js.
 3. **Layout persistence** — save pane arrangements per workspace, or keep it simple with a fixed 2x2 grid?
 4. **Scope of git operations** — should the app handle merge conflicts inline, or just detect them and drop the user into a terminal?

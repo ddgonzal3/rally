@@ -35,7 +35,7 @@ export function App() {
         style={styles.titlebar}
         onMouseDown={handleDrag}
       >
-        <span style={styles.titleText}>Claude Workbench</span>
+        <span style={styles.titleText}>Workbench</span>
       </div>
       <div style={styles.body}>
         <Sidebar />

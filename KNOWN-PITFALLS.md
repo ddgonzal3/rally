@@ -1,4 +1,4 @@
-# Known Pitfalls — Claude Workbench
+# Known Pitfalls — Workbench
 
 This file is a living document of mistakes and corrections accumulated during development. Read this before starting work and add new entries when mistakes are discovered.
 

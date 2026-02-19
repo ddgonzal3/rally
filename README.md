@@ -1,4 +1,4 @@
-# Claude Workbench
+# Workbench
 
 A macOS app for orchestrating multiple Claude Code sessions, git workflows, and dev processes across repo workspaces.
 
@@ -68,7 +68,7 @@ All git operations shell out to `git` and `gh` CLI. No libgit2, no custom git im
 ## Project Structure
 
 ```
-claude-workbench/
+workbench/
 ├── scripts/                    # Build & run scripts
 │   ├── build.sh                # Build .app bundle
 │   ├── run.sh                  # Build + launch app
@@ -151,7 +151,7 @@ open src-tauri/target/release/bundle/macos/Claude\ Workbench.app
 
 ## Workspace Data
 
-Workspace configs persist at `~/.claude-workbench/workspaces.json`. Each workspace stores:
+Workspace configs persist at `~/.workbench/workspaces.json`. Each workspace stores:
 - Name, path, repo URL, branch, main branch
 - Process configs (auto-start commands)
 
