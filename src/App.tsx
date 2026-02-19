@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { Sidebar } from "./components/Sidebar";
 import { FileExplorer } from "./components/FileExplorer";
@@ -11,6 +11,8 @@ export function App() {
     useWorkspaceStore();
   const [panelCollapsed, setPanelCollapsed] = useState(false);
   const [fileExplorerCollapsed, setFileExplorerCollapsed] = useState(false);
+  const [fileExplorerWidth, setFileExplorerWidth] = useState(220);
+  const resizingRef = useRef(false);
 
   useEffect(() => {
     loadWorkspaces().then(() => refreshAllGitStatuses());
@@ -18,7 +20,46 @@ export function App() {
     return () => clearInterval(interval);
   }, []);
 
+  // Cmd+W closes the active tab instead of the window
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === "w") {
+        e.preventDefault();
+        const { activeWorkspaceId, closeActiveTab } = useWorkspaceStore.getState();
+        if (activeWorkspaceId) {
+          closeActiveTab(activeWorkspaceId);
+        }
+      }
+    };
+    document.addEventListener("keydown", handler);
+    return () => document.removeEventListener("keydown", handler);
+  }, []);
+
   const appWindow = getCurrentWindow();
+
+  const handleExplorerResize = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    resizingRef.current = true;
+    const startX = e.clientX;
+    const startWidth = fileExplorerWidth;
+
+    const onMouseMove = (ev: MouseEvent) => {
+      if (!resizingRef.current) return;
+      const newWidth = Math.max(140, Math.min(500, startWidth + (ev.clientX - startX)));
+      setFileExplorerWidth(newWidth);
+    };
+    const onMouseUp = () => {
+      resizingRef.current = false;
+      document.removeEventListener("mousemove", onMouseMove);
+      document.removeEventListener("mouseup", onMouseUp);
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+    };
+    document.addEventListener("mousemove", onMouseMove);
+    document.addEventListener("mouseup", onMouseUp);
+    document.body.style.cursor = "col-resize";
+    document.body.style.userSelect = "none";
+  }, [fileExplorerWidth]);
 
   const handleDrag = useCallback(
     (e: React.MouseEvent) => {
@@ -90,7 +131,15 @@ export function App() {
           <>
             <Sidebar />
             {!fileExplorerCollapsed && (
-              <FileExplorer onCollapse={() => setFileExplorerCollapsed(true)} />
+              <>
+                <FileExplorer width={fileExplorerWidth} onCollapse={() => setFileExplorerCollapsed(true)} />
+                <div
+                  onMouseDown={handleExplorerResize}
+                  style={styles.explorerResizeHandle}
+                  onMouseEnter={(e) => { (e.currentTarget as HTMLDivElement).style.background = "#555"; }}
+                  onMouseLeave={(e) => { if (!resizingRef.current) (e.currentTarget as HTMLDivElement).style.background = "#333"; }}
+                />
+              </>
             )}
           </>
         )}
@@ -171,6 +220,15 @@ const styles: Record<string, React.CSSProperties> = {
     flexDirection: "column",
     alignItems: "center",
     paddingTop: 8,
+  },
+  explorerResizeHandle: {
+    width: 4,
+    minWidth: 4,
+    cursor: "col-resize",
+    background: "#333",
+    transition: "background 0.15s",
+    flexShrink: 0,
+    zIndex: 10,
   },
   expandBtn: {
     background: "none",

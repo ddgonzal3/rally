@@ -32,6 +32,7 @@ fn main() {
             pty_manager::kill_pty,
             pty_manager::list_ptys,
             config_ops::read_file_content,
+            config_ops::read_file_base64,
             config_ops::write_file_content,
             config_ops::list_claude_configs,
             config_ops::list_skills,

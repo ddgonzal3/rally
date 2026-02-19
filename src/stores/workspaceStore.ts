@@ -12,6 +12,7 @@ import {
   createDefaultLayout,
   replaceNode,
   findParent,
+  findFirstGroupInSubtree,
 } from "../lib/types";
 import { api } from "../lib/tauri";
 
@@ -20,6 +21,8 @@ interface WorkspaceState {
   activeWorkspaceId: string | null;
   gitStatuses: Record<string, GitStatus>;
   layouts: Record<string, WorkspaceLayout>;
+  /** Tracks the last-focused group per workspace for Cmd+W etc. */
+  activeGroupIds: Record<string, string>;
   loading: boolean;
 
   // Workspace actions
@@ -77,6 +80,10 @@ interface WorkspaceState {
     paneId: string,
     updates: Partial<Pane>
   ) => void;
+  /** Close the active pane in the last-focused group */
+  closeActiveTab: (workspaceId: string) => void;
+  /** Open a file in an editor pane in the top area of the layout */
+  openFile: (workspaceId: string, filePath: string) => void;
   /** Move a pane from one group into a new split on a target group */
   dropPaneOnGroup: (
     workspaceId: string,
@@ -92,6 +99,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
   activeWorkspaceId: null,
   gitStatuses: {},
   layouts: {},
+  activeGroupIds: {},
   loading: false,
 
   // --- Workspace actions ---
@@ -304,6 +312,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     if (!group) return;
 
     set((s) => ({
+      activeGroupIds: { ...s.activeGroupIds, [workspaceId]: groupId },
       layouts: {
         ...s.layouts,
         [workspaceId]: {
@@ -327,6 +336,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     if (!group) return;
 
     set((s) => ({
+      activeGroupIds: { ...s.activeGroupIds, [workspaceId]: groupId },
       layouts: {
         ...s.layouts,
         [workspaceId]: {
@@ -375,6 +385,60 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
         },
       },
     }));
+  },
+
+  closeActiveTab: (workspaceId) => {
+    const layout = get().getOrCreateLayout(workspaceId);
+    const activeGroupId = get().activeGroupIds[workspaceId];
+
+    // Find the group to close the tab in
+    let groupId: string | undefined = activeGroupId;
+    if (!groupId || !layout.groups[groupId]) {
+      groupId = findFirstGroupInSubtree(layout.root) ?? undefined;
+    }
+    if (!groupId) return;
+
+    const group = layout.groups[groupId];
+    if (!group) return;
+
+    get().closePane(workspaceId, groupId, group.activePaneId);
+  },
+
+  openFile: (workspaceId, filePath) => {
+    const layout = get().getOrCreateLayout(workspaceId);
+
+    // Dedup: if an editor pane for this file already exists, focus it
+    for (const [gid, group] of Object.entries(layout.groups)) {
+      const existing = group.panes.find(
+        (p) => p.type === "editor" && p.filePath === filePath
+      );
+      if (existing) {
+        get().setActivePane(workspaceId, gid, existing.id);
+        return;
+      }
+    }
+
+    // Find target group in the "top" area of the layout
+    let targetGroupId: string | null = null;
+    const root = layout.root;
+    if (root.type === "split" && root.direction === "vertical") {
+      // Top subtree is children[0]
+      targetGroupId = findFirstGroupInSubtree(root.children[0]);
+    }
+    // Fallback: use the first group found anywhere
+    if (!targetGroupId) {
+      targetGroupId = findFirstGroupInSubtree(root);
+    }
+    if (!targetGroupId) return;
+
+    const fileName = filePath.split("/").pop() ?? filePath;
+    const pane: Pane = {
+      id: crypto.randomUUID(),
+      type: "editor",
+      title: fileName,
+      filePath,
+    };
+    get().addPaneToGroup(workspaceId, targetGroupId, pane);
   },
 
   dropPaneOnGroup: (workspaceId, sourceGroupId, sourcePaneId, targetGroupId, position) => {

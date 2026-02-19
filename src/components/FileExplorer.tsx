@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from "react";
 import { useWorkspaceStore } from "../stores/workspaceStore";
 import { invoke } from "@tauri-apps/api/core";
+import { ChevronIcon, FileIcon } from "./FileIcons";
 
 interface FileEntry {
   name: string;
@@ -19,44 +20,43 @@ function FileTreeNode({
   const [expanded, setExpanded] = useState(false);
   const [children, setChildren] = useState<FileEntry[]>(entry.children ?? []);
   const [loaded, setLoaded] = useState(false);
+  const { activeWorkspaceId, openFile } = useWorkspaceStore();
 
-  const toggle = useCallback(async () => {
-    if (!entry.is_dir) return;
-
-    if (!loaded) {
-      try {
-        const entries = await invoke<FileEntry[]>("list_directory", {
-          path: entry.path,
-        });
-        setChildren(entries);
-        setLoaded(true);
-      } catch (e) {
-        console.error("Failed to list directory:", e);
+  const handleClick = useCallback(async () => {
+    if (entry.is_dir) {
+      if (!loaded) {
+        try {
+          const entries = await invoke<FileEntry[]>("list_directory", {
+            path: entry.path,
+          });
+          setChildren(entries);
+          setLoaded(true);
+        } catch (e) {
+          console.error("Failed to list directory:", e);
+        }
       }
+      setExpanded(!expanded);
+    } else if (activeWorkspaceId) {
+      openFile(activeWorkspaceId, entry.path);
     }
-    setExpanded(!expanded);
-  }, [entry, loaded, expanded]);
-
-  const icon = entry.is_dir
-    ? expanded
-      ? "▾"
-      : "▸"
-    : " ";
-
-  const fileIcon = entry.is_dir ? "📁" : getFileIcon(entry.name);
+  }, [entry, loaded, expanded, activeWorkspaceId, openFile]);
 
   return (
     <div>
       <button
-        onClick={toggle}
+        onClick={handleClick}
         style={{
           ...styles.node,
-          paddingLeft: 12 + depth * 16,
-          cursor: entry.is_dir ? "pointer" : "default",
+          paddingLeft: 4 + depth * 16,
+          cursor: "pointer",
         }}
       >
-        <span style={styles.arrow}>{icon}</span>
-        <span style={styles.fileIcon}>{fileIcon}</span>
+        {entry.is_dir ? (
+          <ChevronIcon open={expanded} />
+        ) : (
+          <span style={styles.chevronSpacer} />
+        )}
+        <FileIcon name={entry.name} isDir={entry.is_dir} isOpen={expanded} />
         <span style={styles.fileName}>{entry.name}</span>
       </button>
       {expanded &&
@@ -67,23 +67,12 @@ function FileTreeNode({
   );
 }
 
-function getFileIcon(name: string): string {
-  if (name.endsWith(".ts") || name.endsWith(".tsx")) return "🟦";
-  if (name.endsWith(".js") || name.endsWith(".jsx")) return "🟨";
-  if (name.endsWith(".rs")) return "🦀";
-  if (name.endsWith(".json")) return "📋";
-  if (name.endsWith(".md")) return "📝";
-  if (name.endsWith(".css") || name.endsWith(".scss")) return "🎨";
-  if (name.endsWith(".html")) return "🌐";
-  if (name === ".gitignore") return "🚫";
-  return "📄";
-}
-
 interface FileExplorerProps {
+  width: number;
   onCollapse: () => void;
 }
 
-export function FileExplorer({ onCollapse }: FileExplorerProps) {
+export function FileExplorer({ width, onCollapse }: FileExplorerProps) {
   const { activeWorkspaceId, workspaces } = useWorkspaceStore();
   const ws = workspaces.find((w) => w.id === activeWorkspaceId);
   const [rootEntries, setRootEntries] = useState<FileEntry[]>([]);
@@ -104,7 +93,7 @@ export function FileExplorer({ onCollapse }: FileExplorerProps) {
   }
 
   return (
-    <div style={styles.container}>
+    <div style={{ ...styles.container, width, minWidth: width }}>
       <div style={styles.header}>
         <span style={styles.headerTitle}>Files</span>
         <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
@@ -140,11 +129,8 @@ const styles: Record<string, React.CSSProperties> = {
   container: {
     display: "flex",
     flexDirection: "column",
-    width: 220,
-    minWidth: 220,
     minHeight: 0,
     background: "#1e1e1e",
-    borderRight: "1px solid #333",
     overflow: "hidden",
   },
   header: {
@@ -173,9 +159,9 @@ const styles: Record<string, React.CSSProperties> = {
   node: {
     display: "flex",
     alignItems: "center",
-    gap: 4,
+    gap: 2,
     width: "100%",
-    padding: "3px 12px",
+    padding: "2px 8px",
     background: "none",
     border: "none",
     color: "#ccc",
@@ -183,20 +169,15 @@ const styles: Record<string, React.CSSProperties> = {
     textAlign: "left" as const,
     lineHeight: 1.4,
   },
-  arrow: {
-    width: 12,
-    fontSize: 10,
-    color: "#666",
-    flexShrink: 0,
-  },
-  fileIcon: {
-    fontSize: 12,
+  chevronSpacer: {
+    width: 16,
     flexShrink: 0,
   },
   fileName: {
     overflow: "hidden",
     textOverflow: "ellipsis",
     whiteSpace: "nowrap" as const,
+    marginLeft: 2,
   },
   empty: {
     padding: 20,

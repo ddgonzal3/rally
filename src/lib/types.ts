@@ -26,13 +26,14 @@ export interface GitStatus {
 
 // --- Pane & Layout Types ---
 
-export type PaneType = "claude" | "terminal" | "claude-launcher";
+export type PaneType = "claude" | "terminal" | "claude-launcher" | "editor";
 
 export interface Pane {
   id: string;
   type: PaneType;
   title: string;
   command?: string;
+  filePath?: string;
 }
 
 export type SplitDirection = "horizontal" | "vertical";
@@ -112,6 +113,15 @@ export function findParent(
   return (
     findParent(root.children[0], childId) ??
     findParent(root.children[1], childId)
+  );
+}
+
+/** Walk a subtree and return the first group ID found (depth-first, prefers first child). */
+export function findFirstGroupInSubtree(node: LayoutNode): string | null {
+  if (node.type === "group") return node.groupId;
+  return (
+    findFirstGroupInSubtree(node.children[0]) ??
+    findFirstGroupInSubtree(node.children[1])
   );
 }
 

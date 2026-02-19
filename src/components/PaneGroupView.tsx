@@ -1,6 +1,7 @@
 import React, { useCallback, useRef } from "react";
 import { Terminal } from "./Terminal";
 import { ClaudeLauncher } from "./ClaudeLauncher";
+import { EditorPane } from "./EditorPane";
 import { DropZoneTarget, type DropPosition } from "./DropZoneOverlay";
 import { useWorkspaceStore } from "../stores/workspaceStore";
 import { getDragState, startDrag, endDrag } from "../lib/dragContext";
@@ -16,6 +17,7 @@ interface PaneGroupViewProps {
 
 function paneLabel(pane: Pane): string {
   if (pane.type === "claude" || pane.type === "claude-launcher") return "claude";
+  if (pane.type === "editor") return pane.title;
   return "zsh";
 }
 
@@ -203,7 +205,9 @@ export function PaneGroupView({
                 visibility: isActive ? "visible" : "hidden",
               }}
             >
-              {pane.type === "claude-launcher" ? (
+              {pane.type === "editor" && pane.filePath ? (
+                <EditorPane filePath={pane.filePath} />
+              ) : pane.type === "claude-launcher" ? (
                 <ClaudeLauncher
                   workspacePath={workspacePath}
                   onLaunch={() => handleLaunchClaude(pane.id)}
