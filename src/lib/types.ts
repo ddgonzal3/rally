@@ -83,7 +83,6 @@ export interface ShipSession {
   ptyId: string;
   repoPath: string;
   phase: ShipDetailPhase;
-  outputBuffer: Uint8Array[];
   exited: boolean;
   exitCode: number | null;
   docked: boolean;
@@ -147,6 +146,9 @@ export interface PaneGroup {
   id: string;
   panes: Pane[];
   activePaneId: string;
+  /** MRU stack of pane IDs — most recent at end. Used to switch to the
+   *  previously active tab when closing. Optional for backwards compat. */
+  paneHistory?: string[];
 }
 
 export interface WorkspaceLayout {

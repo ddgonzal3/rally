@@ -238,8 +238,8 @@ function TextEditor({ filePath }: { filePath: string }) {
           scrollBeyondLastLine: false,
           padding: { top: 8 },
           renderLineHighlight: "line",
-          smoothScrolling: true,
-          cursorSmoothCaretAnimation: "on",
+          smoothScrolling: false,
+          cursorSmoothCaretAnimation: "off",
         }}
       />
     </div>

@@ -112,16 +112,18 @@ export function PaneGroupView({
   workspaceId,
   workspacePath,
 }: PaneGroupViewProps) {
-  const {
-    workspaces,
-    setActivePane,
-    closePane,
-    addPaneToGroup,
-    splitGroup,
-    transformPane,
-    dropPaneOnGroup,
-    dropFileOnGroup,
-  } = useWorkspaceStore();
+  // Use individual selectors — subscribing to the entire store with
+  // useWorkspaceStore() caused every pane group (and all terminals/editors
+  // inside) to re-render on ANY store change (git polls, ship output, etc.)
+  const workspaces = useWorkspaceStore((s) => s.workspaces);
+  const setActivePane = useWorkspaceStore((s) => s.setActivePane);
+  const closePane = useWorkspaceStore((s) => s.closePane);
+  const addPaneToGroup = useWorkspaceStore((s) => s.addPaneToGroup);
+  const splitGroup = useWorkspaceStore((s) => s.splitGroup);
+  const transformPane = useWorkspaceStore((s) => s.transformPane);
+  const dropPaneOnGroup = useWorkspaceStore((s) => s.dropPaneOnGroup);
+  const dropFileOnGroup = useWorkspaceStore((s) => s.dropFileOnGroup);
+  const reorderPanes = useWorkspaceStore((s) => s.reorderPanes);
 
   const ws = workspaces.find((w) => w.id === workspaceId);
   const paths = ws?.paths ?? [workspacePath];
@@ -183,24 +185,89 @@ export function PaneGroupView({
 
     const startX = e.clientX;
     const startY = e.clientY;
+    const tabsContainer = (e.currentTarget as HTMLElement).parentElement;
     dragStartRef.current = { x: startX, y: startY, paneId };
+    let reordering = false;
+    let dropGap = -1;
+
+    // Drop indicator line (VS Code style)
+    const indicator = document.createElement("div");
+    indicator.style.cssText =
+      "position:fixed;width:2px;background:#fff;border-radius:1px;pointer-events:none;z-index:100;display:none;will-change:left;";
 
     const onMouseMove = (ev: MouseEvent) => {
       ev.preventDefault();
       if (!dragStartRef.current) return;
-      const dx = ev.clientX - dragStartRef.current.x;
-      const dy = ev.clientY - dragStartRef.current.y;
-      if (Math.abs(dx) > DRAG_THRESHOLD || Math.abs(dy) > DRAG_THRESHOLD) {
-        // Exceeded threshold — start the drag
-        startDrag(group.id, dragStartRef.current.paneId, ev.clientX, ev.clientY);
-        dragStartRef.current = null;
-        document.removeEventListener("mousemove", onMouseMove);
-        document.removeEventListener("mouseup", onMouseUp);
+      const dx = ev.clientX - startX;
+      const dy = ev.clientY - startY;
+
+      if (!reordering && (Math.abs(dx) > DRAG_THRESHOLD || Math.abs(dy) > DRAG_THRESHOLD)) {
+        if (Math.abs(dy) > Math.abs(dx) * 1.5 || Math.abs(dy) > 30) {
+          startDrag(group.id, dragStartRef.current.paneId, ev.clientX, ev.clientY);
+          dragStartRef.current = null;
+          indicator.remove();
+          document.removeEventListener("mousemove", onMouseMove);
+          document.removeEventListener("mouseup", onMouseUp);
+          return;
+        }
+        reordering = true;
+        document.body.appendChild(indicator);
       }
+
+      if (!reordering || !tabsContainer) return;
+
+      const tabEls = Array.from(tabsContainer.children) as HTMLElement[];
+      if (tabEls.length === 0) return;
+      const cursorX = ev.clientX;
+
+      // Find the gap (between/before/after tabs) closest to cursor.
+      // Gap i = the left edge of tab[i], or the right edge of the last tab.
+      let bestGap = 0;
+      let bestDist = Infinity;
+
+      for (let i = 0; i <= tabEls.length; i++) {
+        const gapX = i < tabEls.length
+          ? tabEls[i].getBoundingClientRect().left
+          : tabEls[tabEls.length - 1].getBoundingClientRect().right;
+        const dist = Math.abs(cursorX - gapX);
+        if (dist < bestDist) {
+          bestDist = dist;
+          bestGap = i;
+        }
+      }
+
+      dropGap = bestGap;
+
+      // Position indicator at the gap
+      const gapX = dropGap < tabEls.length
+        ? tabEls[dropGap].getBoundingClientRect().left
+        : tabEls[tabEls.length - 1].getBoundingClientRect().right;
+      const barRect = tabsContainer.getBoundingClientRect();
+      indicator.style.display = "block";
+      indicator.style.left = `${gapX - 1}px`;
+      indicator.style.top = `${barRect.top + 4}px`;
+      indicator.style.height = `${barRect.height - 8}px`;
     };
 
     const onMouseUp = () => {
       dragStartRef.current = null;
+      indicator.remove();
+
+      if (reordering && dropGap >= 0) {
+        const fromIndex = group.panes.findIndex((p) => p.id === paneId);
+        if (fromIndex >= 0) {
+          // Convert gap position to array index:
+          // gap 0 = before tab[0], gap 1 = before tab[1], etc.
+          // Dropping at gap i when i <= fromIndex → toIndex = i
+          // Dropping at gap i when i > fromIndex → toIndex = i - 1
+          // (because removing the tab shifts everything after it left by 1)
+          const toIndex = dropGap > fromIndex ? dropGap - 1 : dropGap;
+          if (toIndex !== fromIndex) {
+            reorderPanes(workspaceId, group.id, fromIndex, toIndex);
+          }
+        }
+      }
+
       document.removeEventListener("mousemove", onMouseMove);
       document.removeEventListener("mouseup", onMouseUp);
     };
@@ -393,7 +460,7 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: 12,
     fontWeight: 500,
     color: "#777",
-    cursor: "grab",
+    cursor: "pointer",
     background: "#1a1a1a",
     border: "none",
     borderRight: "1px solid #151515",

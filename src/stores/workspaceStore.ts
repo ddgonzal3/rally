@@ -26,6 +26,14 @@ import {
 } from "../lib/types";
 import { api } from "../lib/tauri";
 
+/**
+ * Ship PTY output buffer — stored outside Zustand state to avoid O(n) array
+ * copies and React re-renders on every PTY output chunk. The store listener
+ * pushes raw bytes here; ShipTerminalView polls it directly.
+ */
+export const shipOutputBuffer: Uint8Array[] = [];
+
+
 interface WorkspaceState {
   workspaces: Workspace[];
   activeWorkspaceId: string | null;
@@ -92,6 +100,12 @@ interface WorkspaceState {
     paneId: string
   ) => void;
   closeGroup: (workspaceId: string, groupId: string) => void;
+  reorderPanes: (
+    workspaceId: string,
+    groupId: string,
+    fromIndex: number,
+    toIndex: number
+  ) => void;
   addPaneToGroup: (
     workspaceId: string,
     groupId: string,
@@ -564,12 +578,15 @@ export const useWorkspaceStore = create<WorkspaceState>()(
         24
       );
 
+      // Reset the module-level output buffer (outside Zustand to avoid
+      // O(n) array copies and React re-renders on every PTY chunk)
+      shipOutputBuffer.length = 0;
+
       set({
         shipSession: {
           ptyId,
           repoPath,
           phase: "detecting",
-          outputBuffer: [],
           exited: false,
           exitCode: null,
           docked: false,
@@ -594,20 +611,10 @@ export const useWorkspaceStore = create<WorkspaceState>()(
             });
           }
 
-          // Buffer raw bytes — no TextDecoder/TextEncoder round-trip.
-          // The round-trip corrupts multi-byte UTF-8 characters (box-drawing,
-          // bullets, spinners) that are split across 4096-byte PTY read
-          // boundaries, producing ? replacement characters in the display.
-          // Phase markers are stripped at display time instead.
-          set((s) => {
-            if (!s.shipSession || s.shipSession.ptyId !== ptyId) return s;
-            return {
-              shipSession: {
-                ...s.shipSession,
-                outputBuffer: [...s.shipSession.outputBuffer, chunk],
-              },
-            };
-          });
+          // Buffer raw bytes in the module-level array (not Zustand state).
+          // This avoids O(n) array copies and React re-renders on every chunk,
+          // which was causing lag across all terminals and editors.
+          shipOutputBuffer.push(chunk);
         }
       );
 
@@ -677,6 +684,7 @@ export const useWorkspaceStore = create<WorkspaceState>()(
     if (!session.exited) {
       api.killPty(session.ptyId).catch(() => {});
     }
+    shipOutputBuffer.length = 0;
     set({ shipSession: null });
   },
 
@@ -864,10 +872,23 @@ export const useWorkspaceStore = create<WorkspaceState>()(
 
     // Remove the pane from the group
     const newPanes = group.panes.filter((p) => p.id !== paneId);
-    const newActive =
-      group.activePaneId === paneId
-        ? newPanes[0].id
-        : group.activePaneId;
+    // Remove closed pane from MRU history
+    const newHistory = (group.paneHistory ?? []).filter((id) => id !== paneId);
+    const remainingIds = new Set(newPanes.map((p) => p.id));
+
+    let newActive = group.activePaneId;
+    if (group.activePaneId === paneId) {
+      // Walk MRU history backwards to find the most recent still-open pane
+      let found: string | null = null;
+      for (let i = newHistory.length - 1; i >= 0; i--) {
+        if (remainingIds.has(newHistory[i])) {
+          found = newHistory[i];
+          break;
+        }
+      }
+      newActive = found ?? newPanes[0].id;
+    }
+
     set((s) => ({
       layouts: {
         ...s.layouts,
@@ -875,7 +896,12 @@ export const useWorkspaceStore = create<WorkspaceState>()(
           ...layout,
           groups: {
             ...layout.groups,
-            [groupId]: { ...group, panes: newPanes, activePaneId: newActive },
+            [groupId]: {
+              ...group,
+              panes: newPanes,
+              activePaneId: newActive,
+              paneHistory: newHistory,
+            },
           },
         },
       },
@@ -912,10 +938,39 @@ export const useWorkspaceStore = create<WorkspaceState>()(
     }));
   },
 
+  reorderPanes: (workspaceId, groupId, fromIndex, toIndex) => {
+    const layout = get().getOrCreateLayout(workspaceId);
+    const group = layout.groups[groupId];
+    if (!group) return;
+    if (fromIndex === toIndex) return;
+    if (fromIndex < 0 || fromIndex >= group.panes.length) return;
+    if (toIndex < 0 || toIndex >= group.panes.length) return;
+
+    const newPanes = [...group.panes];
+    const [moved] = newPanes.splice(fromIndex, 1);
+    newPanes.splice(toIndex, 0, moved);
+
+    set((s) => ({
+      layouts: {
+        ...s.layouts,
+        [workspaceId]: {
+          ...layout,
+          groups: {
+            ...layout.groups,
+            [groupId]: { ...group, panes: newPanes },
+          },
+        },
+      },
+    }));
+  },
+
   addPaneToGroup: (workspaceId, groupId, pane) => {
     const layout = get().getOrCreateLayout(workspaceId);
     const group = layout.groups[groupId];
     if (!group) return;
+
+    // Push new pane onto MRU history
+    const history = [...(group.paneHistory ?? []), pane.id];
 
     set((s) => ({
       activeGroupIds: { ...s.activeGroupIds, [workspaceId]: groupId },
@@ -929,6 +984,7 @@ export const useWorkspaceStore = create<WorkspaceState>()(
               ...group,
               panes: [...group.panes, pane],
               activePaneId: pane.id,
+              paneHistory: history,
             },
           },
         },
@@ -941,6 +997,10 @@ export const useWorkspaceStore = create<WorkspaceState>()(
     const group = layout.groups[groupId];
     if (!group) return;
 
+    // Update MRU history: remove paneId if present, then push to end
+    const history = (group.paneHistory ?? []).filter((id) => id !== paneId);
+    history.push(paneId);
+
     set((s) => ({
       activeGroupIds: { ...s.activeGroupIds, [workspaceId]: groupId },
       layouts: {
@@ -949,7 +1009,7 @@ export const useWorkspaceStore = create<WorkspaceState>()(
           ...layout,
           groups: {
             ...layout.groups,
-            [groupId]: { ...group, activePaneId: paneId },
+            [groupId]: { ...group, activePaneId: paneId, paneHistory: history },
           },
         },
       },

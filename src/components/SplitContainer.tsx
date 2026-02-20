@@ -17,7 +17,7 @@ export function SplitContainer({
   workspaceId,
   workspacePath,
 }: SplitContainerProps) {
-  const { updateSplitRatio } = useWorkspaceStore();
+  const updateSplitRatio = useWorkspaceStore((s) => s.updateSplitRatio);
 
   if (node.type === "group") {
     const group = layout.groups[node.groupId];

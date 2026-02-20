@@ -3,8 +3,10 @@ import { SplitContainer } from "./SplitContainer";
 import { useWorkspaceStore } from "../stores/workspaceStore";
 
 export function PaneLayout() {
-  const { activeWorkspaceId, workspaces, getOrCreateLayout } =
-    useWorkspaceStore();
+  const activeWorkspaceId = useWorkspaceStore((s) => s.activeWorkspaceId);
+  const workspaces = useWorkspaceStore((s) => s.workspaces);
+  const layouts = useWorkspaceStore((s) => s.layouts);
+  const getOrCreateLayout = useWorkspaceStore((s) => s.getOrCreateLayout);
   const ws = workspaces.find((w) => w.id === activeWorkspaceId);
 
   if (!ws) {

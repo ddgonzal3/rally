@@ -2,7 +2,7 @@ import React, { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Terminal as XTerminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { invoke } from "@tauri-apps/api/core";
-import { useWorkspaceStore } from "../stores/workspaceStore";
+import { useWorkspaceStore, shipOutputBuffer } from "../stores/workspaceStore";
 import { api } from "../lib/tauri";
 import type { ShipDetailPhase, ShipSession } from "../lib/types";
 
@@ -403,11 +403,13 @@ function ShipTerminalView({
         clearInterval(poll);
         return;
       }
-      if (cur.outputBuffer.length > lastLen) {
-        for (let i = lastLen; i < cur.outputBuffer.length; i++) {
-          term.write(cur.outputBuffer[i]);
+      // Read from module-level buffer (not Zustand state) to avoid
+      // triggering React re-renders
+      if (shipOutputBuffer.length > lastLen) {
+        for (let i = lastLen; i < shipOutputBuffer.length; i++) {
+          term.write(shipOutputBuffer[i]);
         }
-        lastLen = cur.outputBuffer.length;
+        lastLen = shipOutputBuffer.length;
       }
       if (cur.exited && !exitWritten) {
         exitWritten = true;

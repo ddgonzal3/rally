@@ -4,7 +4,7 @@ import { FitAddon } from "@xterm/addon-fit";
 import { WebLinksAddon } from "@xterm/addon-web-links";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { api } from "../lib/tauri";
-import { useWorkspaceStore } from "../stores/workspaceStore";
+import { useWorkspaceStore, shipOutputBuffer } from "../stores/workspaceStore";
 import "@xterm/xterm/css/xterm.css";
 
 interface TerminalProps {
@@ -160,11 +160,10 @@ export function Terminal({ cwd, command, initialInput, ptyId: existingPtyId }: T
         // and avoid SIGWINCH col-change garble
         fitRowsOnly();
 
-        // Replay buffered output from ship session — all generated at
-        // LOCKED_COLS width, so it renders correctly
+        // Replay buffered output from ship session
         const session = useWorkspaceStore.getState().shipSession;
         if (session && session.ptyId === existingPtyId) {
-          for (const chunk of session.outputBuffer) {
+          for (const chunk of shipOutputBuffer) {
             term.write(chunk);
           }
         }
