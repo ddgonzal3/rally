@@ -470,6 +470,8 @@ export const useWorkspaceStore = create<WorkspaceState>()(
               [repoPath]: { phase: "awaiting_review", signal, pr_number: signal.pr_number },
             },
           }));
+          // Clear signal file so we don't re-toast on app restart
+          await api.clearShipSignal(repoPath).catch(() => {});
         }
       } catch {
         // Signal check failed — ignore silently

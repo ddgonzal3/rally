@@ -23,6 +23,8 @@ export function App() {
     return saved ? Number(saved) : 220;
   });
   const resizingRef = useRef(false);
+  const sidebarRef = useRef<HTMLDivElement>(null);
+  const explorerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     loadWorkspaces().then(() => {
@@ -106,14 +108,23 @@ export function App() {
     const startX = e.clientX;
     const startWidth = sidebarWidth;
     let finalWidth = startWidth;
+    let raf = 0;
 
     const onMouseMove = (ev: MouseEvent) => {
       if (!resizingRef.current) return;
       finalWidth = Math.max(120, Math.min(400, startWidth + (ev.clientX - startX)));
-      setSidebarWidth(finalWidth);
+      cancelAnimationFrame(raf);
+      raf = requestAnimationFrame(() => {
+        if (sidebarRef.current) {
+          sidebarRef.current.style.width = finalWidth + "px";
+          sidebarRef.current.style.minWidth = finalWidth + "px";
+        }
+      });
     };
     const onMouseUp = () => {
       resizingRef.current = false;
+      cancelAnimationFrame(raf);
+      setSidebarWidth(finalWidth);
       localStorage.setItem("rally:sidebarWidth", String(finalWidth));
       document.removeEventListener("mousemove", onMouseMove);
       document.removeEventListener("mouseup", onMouseUp);
@@ -132,14 +143,23 @@ export function App() {
     const startX = e.clientX;
     const startWidth = fileExplorerWidth;
     let finalWidth = startWidth;
+    let raf = 0;
 
     const onMouseMove = (ev: MouseEvent) => {
       if (!resizingRef.current) return;
       finalWidth = Math.max(140, Math.min(500, startWidth + (ev.clientX - startX)));
-      setFileExplorerWidth(finalWidth);
+      cancelAnimationFrame(raf);
+      raf = requestAnimationFrame(() => {
+        if (explorerRef.current) {
+          explorerRef.current.style.width = finalWidth + "px";
+          explorerRef.current.style.minWidth = finalWidth + "px";
+        }
+      });
     };
     const onMouseUp = () => {
       resizingRef.current = false;
+      cancelAnimationFrame(raf);
+      setFileExplorerWidth(finalWidth);
       localStorage.setItem("rally:fileExplorerWidth", String(finalWidth));
       document.removeEventListener("mousemove", onMouseMove);
       document.removeEventListener("mouseup", onMouseUp);
@@ -206,23 +226,23 @@ export function App() {
       <div style={styles.body}>
         {!panelCollapsed && (
           <>
-            <Sidebar width={sidebarWidth} />
+            <div ref={sidebarRef} style={{ width: sidebarWidth, minWidth: sidebarWidth, flexShrink: 0, overflow: "hidden" }}>
+              <Sidebar />
+            </div>
             <div
               onMouseDown={handleSidebarResize}
-              style={styles.sidebarResizeHandle}
-              onMouseEnter={(e) => { (e.currentTarget as HTMLDivElement).style.background = "#555"; }}
-              onMouseLeave={(e) => { if (!resizingRef.current) (e.currentTarget as HTMLDivElement).style.background = "#333"; }}
+              style={styles.resizeHandle}
             />
           </>
         )}
         {!fileExplorerCollapsed && (
           <>
-            <FileExplorer width={fileExplorerWidth} onCollapse={() => setFileExplorerCollapsed(true)} />
+            <div ref={explorerRef} style={{ width: fileExplorerWidth, minWidth: fileExplorerWidth, flexShrink: 0 }}>
+              <FileExplorer onCollapse={() => setFileExplorerCollapsed(true)} />
+            </div>
             <div
               onMouseDown={handleExplorerResize}
-              style={styles.explorerResizeHandle}
-              onMouseEnter={(e) => { (e.currentTarget as HTMLDivElement).style.background = "#555"; }}
-              onMouseLeave={(e) => { if (!resizingRef.current) (e.currentTarget as HTMLDivElement).style.background = "#333"; }}
+              style={styles.resizeHandle}
             />
           </>
         )}
@@ -295,22 +315,14 @@ const styles: Record<string, React.CSSProperties> = {
     flexDirection: "column",
     minWidth: 0,
   },
-  sidebarResizeHandle: {
-    width: 1,
-    minWidth: 1,
+  resizeHandle: {
+    width: 5,
+    minWidth: 5,
     cursor: "col-resize",
-    background: "#333",
-    transition: "background 0.15s",
+    background: "transparent",
     flexShrink: 0,
     zIndex: 10,
-  },
-  explorerResizeHandle: {
-    width: 1,
-    minWidth: 1,
-    cursor: "col-resize",
-    background: "#333",
-    transition: "background 0.15s",
-    flexShrink: 0,
-    zIndex: 10,
+    borderLeft: "1px solid #333",
+    boxSizing: "border-box" as const,
   },
 };

@@ -11,8 +11,16 @@ import type { GitStatus, PrStatus, ChangesSummary } from "../lib/types";
 
 const FILE_DRAG_THRESHOLD = 5;
 
+/** Module-level set of expanded folder paths — survives component unmount/remount */
+const expandedPaths = new Set<string>();
+
 /** Button that brightens on hover */
-function HoverButton({ children, onClick, title, baseStyle }: {
+function HoverButton({
+  children,
+  onClick,
+  title,
+  baseStyle,
+}: {
   children: React.ReactNode;
   onClick: (e: React.MouseEvent) => void;
   title?: string;
@@ -56,13 +64,22 @@ type ViewMode = "files" | "curated";
 // --- Shared tree node ---
 
 function relativePath(filePath: string, rootPath: string): string {
-  return filePath.startsWith(rootPath) ? filePath.slice(rootPath.length).replace(/^\//, "") : filePath;
+  return filePath.startsWith(rootPath)
+    ? filePath.slice(rootPath.length).replace(/^\//, "")
+    : filePath;
 }
 
 function fileContextMenu(filePath: string, rootPath: string) {
   return [
-    { label: "Copy Relative Path", action: () => navigator.clipboard.writeText(relativePath(filePath, rootPath)) },
-    { label: "Copy Full Path", action: () => navigator.clipboard.writeText(filePath) },
+    {
+      label: "Copy Relative Path",
+      action: () =>
+        navigator.clipboard.writeText(relativePath(filePath, rootPath)),
+    },
+    {
+      label: "Copy Full Path",
+      action: () => navigator.clipboard.writeText(filePath),
+    },
     "separator" as const,
     { label: "Reveal in Finder", action: () => api.revealInFinder(filePath) },
   ];
@@ -75,7 +92,10 @@ function fileContextMenu(filePath: string, rootPath: string) {
  * - Nested files (like "surfaces/libs/playground/CLAUDE.md") get grouped
  *   into virtual directory nodes with pre-set children.
  */
-function buildCuratedTree(entries: CuratedEntry[], rootPath: string): FileEntry[] {
+function buildCuratedTree(
+  entries: CuratedEntry[],
+  rootPath: string,
+): FileEntry[] {
   const topFiles: FileEntry[] = [];
   const topDirs: FileEntry[] = [];
   // Only "include" entries with nested paths get tree decomposition
@@ -113,18 +133,32 @@ function buildCuratedTree(entries: CuratedEntry[], rootPath: string): FileEntry[
     const dirPath = rootPath + "/" + dirName;
     if (topDirs.some((d) => d.path === dirPath)) continue;
 
-    const node = buildDirNode(dirName, dirPath, nested, rootPath + "/" + dirName);
+    const node = buildDirNode(
+      dirName,
+      dirPath,
+      nested,
+      rootPath + "/" + dirName,
+    );
     topDirs.push(node);
   }
 
   // Sort: dirs first, then alphabetical
-  topDirs.sort((a, b) => a.name.toLowerCase().localeCompare(b.name.toLowerCase()));
-  topFiles.sort((a, b) => a.name.toLowerCase().localeCompare(b.name.toLowerCase()));
+  topDirs.sort((a, b) =>
+    a.name.toLowerCase().localeCompare(b.name.toLowerCase()),
+  );
+  topFiles.sort((a, b) =>
+    a.name.toLowerCase().localeCompare(b.name.toLowerCase()),
+  );
   return [...topDirs, ...topFiles];
 }
 
 /** Recursively build a virtual directory node from nested curated entries. */
-function buildDirNode(name: string, dirPath: string, entries: CuratedEntry[], stripPrefix: string): FileEntry {
+function buildDirNode(
+  name: string,
+  dirPath: string,
+  entries: CuratedEntry[],
+  stripPrefix: string,
+): FileEntry {
   const childFiles: FileEntry[] = [];
   const childDirMap = new Map<string, CuratedEntry[]>();
 
@@ -133,7 +167,11 @@ function buildDirNode(name: string, dirPath: string, entries: CuratedEntry[], st
     const segments = rel.split("/");
 
     if (segments.length === 1) {
-      childFiles.push({ name: segments[0], path: entry.path, is_dir: entry.is_dir });
+      childFiles.push({
+        name: segments[0],
+        path: entry.path,
+        is_dir: entry.is_dir,
+      });
     } else {
       const nextDir = segments[0];
       if (!childDirMap.has(nextDir)) childDirMap.set(nextDir, []);
@@ -143,11 +181,22 @@ function buildDirNode(name: string, dirPath: string, entries: CuratedEntry[], st
 
   const childDirs: FileEntry[] = [];
   for (const [subName, subEntries] of childDirMap) {
-    childDirs.push(buildDirNode(subName, stripPrefix + "/" + subName, subEntries, stripPrefix + "/" + subName));
+    childDirs.push(
+      buildDirNode(
+        subName,
+        stripPrefix + "/" + subName,
+        subEntries,
+        stripPrefix + "/" + subName,
+      ),
+    );
   }
 
-  childDirs.sort((a, b) => a.name.toLowerCase().localeCompare(b.name.toLowerCase()));
-  childFiles.sort((a, b) => a.name.toLowerCase().localeCompare(b.name.toLowerCase()));
+  childDirs.sort((a, b) =>
+    a.name.toLowerCase().localeCompare(b.name.toLowerCase()),
+  );
+  childFiles.sort((a, b) =>
+    a.name.toLowerCase().localeCompare(b.name.toLowerCase()),
+  );
 
   return {
     name,
@@ -157,74 +206,124 @@ function buildDirNode(name: string, dirPath: string, entries: CuratedEntry[], st
   };
 }
 
-function FileTreeNode({ entry, depth, rootPath }: { entry: FileEntry; depth: number; rootPath: string }) {
-  const hasPresetChildren = Boolean(entry.children && entry.children.length > 0);
-  const [expanded, setExpanded] = useState(false);
+function FileTreeNode({
+  entry,
+  depth,
+  rootPath,
+}: {
+  entry: FileEntry;
+  depth: number;
+  rootPath: string;
+}) {
+  const hasPresetChildren = Boolean(
+    entry.children && entry.children.length > 0,
+  );
+  const [expanded, setExpanded] = useState(
+    () => entry.is_dir && expandedPaths.has(entry.path),
+  );
   const [children, setChildren] = useState<FileEntry[]>(entry.children ?? []);
   const [loaded, setLoaded] = useState(hasPresetChildren);
   const { activeWorkspaceId, openFile } = useWorkspaceStore();
+
+  // Auto-load children when remounting a previously-expanded folder
+  useEffect(() => {
+    if (expanded && !loaded && entry.is_dir) {
+      invoke<FileEntry[]>("list_directory", { path: entry.path })
+        .then((entries) => {
+          setChildren(entries);
+          setLoaded(true);
+        })
+        .catch((e) => console.error("Failed to load directory:", e));
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleClick = useCallback(async () => {
     if (entry.is_dir) {
       if (!loaded) {
         try {
-          const entries = await invoke<FileEntry[]>("list_directory", { path: entry.path });
+          const entries = await invoke<FileEntry[]>("list_directory", {
+            path: entry.path,
+          });
           setChildren(entries);
           setLoaded(true);
         } catch (e) {
           console.error("Failed to list directory:", e);
         }
       }
-      setExpanded(!expanded);
+      setExpanded((prev) => {
+        const next = !prev;
+        if (next) expandedPaths.add(entry.path);
+        else expandedPaths.delete(entry.path);
+        return next;
+      });
     } else if (activeWorkspaceId) {
       openFile(activeWorkspaceId, entry.path);
     }
-  }, [entry, loaded, expanded, activeWorkspaceId, openFile]);
+  }, [entry, loaded, activeWorkspaceId, openFile]);
 
-  const [hovered, setHovered] = useState(false);
   const dragStartRef = useRef<{ x: number; y: number } | null>(null);
 
-  const handleMouseDown = useCallback((e: React.MouseEvent) => {
-    if (entry.is_dir || e.button !== 0) return;
-    const startX = e.clientX;
-    const startY = e.clientY;
-    dragStartRef.current = { x: startX, y: startY };
+  const handleMouseDown = useCallback(
+    (e: React.MouseEvent) => {
+      if (entry.is_dir || e.button !== 0) return;
+      const startX = e.clientX;
+      const startY = e.clientY;
+      dragStartRef.current = { x: startX, y: startY };
 
-    const onMouseMove = (ev: MouseEvent) => {
-      if (!dragStartRef.current) return;
-      const dx = ev.clientX - dragStartRef.current.x;
-      const dy = ev.clientY - dragStartRef.current.y;
-      if (Math.abs(dx) > FILE_DRAG_THRESHOLD || Math.abs(dy) > FILE_DRAG_THRESHOLD) {
-        startFileDrag([entry.path], ev.clientX, ev.clientY);
+      const onMouseMove = (ev: MouseEvent) => {
+        if (!dragStartRef.current) return;
+        const dx = ev.clientX - dragStartRef.current.x;
+        const dy = ev.clientY - dragStartRef.current.y;
+        if (
+          Math.abs(dx) > FILE_DRAG_THRESHOLD ||
+          Math.abs(dy) > FILE_DRAG_THRESHOLD
+        ) {
+          startFileDrag([entry.path], ev.clientX, ev.clientY);
+          dragStartRef.current = null;
+          document.removeEventListener("mousemove", onMouseMove);
+          document.removeEventListener("mouseup", onMouseUp);
+        }
+      };
+      const onMouseUp = () => {
         dragStartRef.current = null;
         document.removeEventListener("mousemove", onMouseMove);
         document.removeEventListener("mouseup", onMouseUp);
-      }
-    };
-    const onMouseUp = () => {
-      dragStartRef.current = null;
-      document.removeEventListener("mousemove", onMouseMove);
-      document.removeEventListener("mouseup", onMouseUp);
-    };
-    document.addEventListener("mousemove", onMouseMove);
-    document.addEventListener("mouseup", onMouseUp);
-  }, [entry.is_dir, entry.path]);
+      };
+      document.addEventListener("mousemove", onMouseMove);
+      document.addEventListener("mouseup", onMouseUp);
+    },
+    [entry.is_dir, entry.path],
+  );
 
   return (
     <div>
       <button
+        className="file-node"
         onClick={handleClick}
         onMouseDown={handleMouseDown}
-        onContextMenu={(e) => { e.preventDefault(); showContextMenu(fileContextMenu(entry.path, rootPath)); }}
-        onMouseEnter={() => setHovered(true)}
-        onMouseLeave={() => setHovered(false)}
-        style={{ ...styles.node, paddingLeft: depth * 10, ...(hovered ? styles.nodeHover : {}) }}
+        onContextMenu={(e) => {
+          e.preventDefault();
+          showContextMenu(fileContextMenu(entry.path, rootPath));
+        }}
+        style={{ ...styles.node, paddingLeft: depth * 10 }}
       >
-        {entry.is_dir ? <ChevronIcon open={expanded} /> : <span style={styles.spacer} />}
+        {entry.is_dir ? (
+          <ChevronIcon open={expanded} />
+        ) : (
+          <span style={styles.spacer} />
+        )}
         <FileIcon name={entry.name} isDir={entry.is_dir} isOpen={expanded} />
         <span style={styles.name}>{entry.name}</span>
       </button>
-      {expanded && children.map((c) => <FileTreeNode key={c.path} entry={c} depth={depth + 1} rootPath={rootPath} />)}
+      {expanded &&
+        children.map((c) => (
+          <FileTreeNode
+            key={c.path}
+            entry={c}
+            depth={depth + 1}
+            rootPath={rootPath}
+          />
+        ))}
     </div>
   );
 }
@@ -233,63 +332,109 @@ function FileTreeNode({ entry, depth, rootPath }: { entry: FileEntry; depth: num
 
 function PrBadge({ pr }: { pr?: PrStatus | null }) {
   if (!pr || pr.state !== "OPEN") return null;
-  const detail = pr.is_draft ? "draft"
-    : pr.review_decision === "APPROVED" ? "approved"
-    : pr.mergeable === "CONFLICTING" ? "conflicts"
-    : pr.review_decision === "CHANGES_REQUESTED" ? "changes req"
-    : "open";
+  const detail = pr.is_draft
+    ? "draft"
+    : pr.review_decision === "APPROVED"
+      ? "approved"
+      : pr.mergeable === "CONFLICTING"
+        ? "conflicts"
+        : pr.review_decision === "CHANGES_REQUESTED"
+          ? "changes req"
+          : "open";
   let bg = "#3a3a2d";
-  if (pr.mergeable === "CONFLICTING" || pr.review_decision === "CHANGES_REQUESTED") bg = "#5a2d2d";
-  else if (pr.review_decision === "APPROVED" && pr.mergeable === "MERGEABLE") bg = "#2d5a2d";
-  return <span style={{ ...styles.prBadge, background: bg }}>PR #{pr.number} {detail}</span>;
+  if (
+    pr.mergeable === "CONFLICTING" ||
+    pr.review_decision === "CHANGES_REQUESTED"
+  )
+    bg = "#5a2d2d";
+  else if (pr.review_decision === "APPROVED" && pr.mergeable === "MERGEABLE")
+    bg = "#2d5a2d";
+  return (
+    <span style={{ ...styles.prBadge, background: bg }}>
+      PR #{pr.number} {detail}
+    </span>
+  );
 }
 
 // --- Icons ---
 
 /** Git branch icon with blue change count badge. Icon turns amber when sync needed. */
-function GitStatusIcon({ status, syncNeeded, isActive, onClick }: {
+function GitStatusIcon({
+  status,
+  syncNeeded,
+  onClick,
+}: {
   status?: GitStatus;
   syncNeeded?: boolean;
-  isActive?: boolean;
   onClick?: () => void;
 }) {
-  const changeCount = (status?.modified_files.length ?? 0) + (status?.untracked_files.length ?? 0);
+  const changeCount =
+    (status?.modified_files.length ?? 0) +
+    (status?.untracked_files.length ?? 0);
   const iconColor = syncNeeded ? "#e8b930" : "#b0b0b0";
 
   const [hovered, setHovered] = useState(false);
 
   return (
     <button
-      onClick={(e) => { e.stopPropagation(); if (onClick) onClick(); }}
+      onClick={(e) => {
+        e.stopPropagation();
+        if (onClick) onClick();
+      }}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
       className={syncNeeded ? "pulse-dot" : undefined}
-      title={syncNeeded ? "Sync needed — behind main" : changeCount > 0 ? `${changeCount} changes — view diff` : isActive ? "Active" : "Clean"}
+      title={
+        syncNeeded
+          ? "Sync needed — behind main"
+          : changeCount > 0
+            ? `${changeCount} changes — view diff`
+            : "Clean"
+      }
       style={{
-        display: "flex", alignItems: "center", justifyContent: "center",
-        background: "none", border: "none", padding: "4px 6px", cursor: "pointer", flexShrink: 0,
-        borderRadius: 4, opacity: hovered ? 1 : 0.7,
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        background: "none",
+        border: "none",
+        padding: "2px",
+        cursor: "pointer",
+        flexShrink: 0,
+        borderRadius: 4,
+        opacity: hovered ? 1 : 0.7,
         transition: "opacity 0.15s",
         position: "relative" as const,
+        willChange: "opacity",
       }}
     >
-      <svg width="20" height="20" viewBox="0 0 16 16" fill="none" style={{ flexShrink: 0 }}>
-        <circle cx="5" cy="4" r="1.5" stroke={iconColor} strokeWidth="1.4" />
-        <circle cx="5" cy="12" r="1.5" stroke={iconColor} strokeWidth="1.4" />
-        <circle cx="11" cy="7" r="1.5" stroke={iconColor} strokeWidth="1.4" />
-        <path d="M5 5.5V10.5" stroke={iconColor} strokeWidth="1.4" />
-        <path d="M5 5.5C5 5.5 5 7 7 7H9.5" stroke={iconColor} strokeWidth="1.4" strokeLinecap="round" />
+      <svg
+        width="18"
+        height="18"
+        viewBox="0 0 24 24"
+        fill={iconColor}
+        style={{ flexShrink: 0 }}
+      >
+        <path d="M21.007 8.222A3.738 3.738 0 0 0 15.045 5.2a3.737 3.737 0 0 0 1.156 6.583 2.988 2.988 0 0 1-2.668 1.67h-2.99a4.456 4.456 0 0 0-2.989 1.165V7.4a3.737 3.737 0 1 0-1.494 0v9.117a3.776 3.776 0 1 0 1.816.099 2.99 2.99 0 0 1 2.668-1.667h2.99a4.484 4.484 0 0 0 4.223-3.039 3.736 3.736 0 0 0 3.25-3.687zM4.565 3.738a2.242 2.242 0 1 1 4.484 0 2.242 2.242 0 0 1-4.484 0zm4.484 16.441a2.242 2.242 0 1 1-4.484 0 2.242 2.242 0 0 1 4.484 0zm8.221-9.715a2.242 2.242 0 1 1 0-4.485 2.242 2.242 0 0 1 0 4.485z" />
       </svg>
       {changeCount > 0 && (
-        <span style={{
-          position: "absolute" as const, bottom: 0, right: 0,
-          fontSize: 9, fontWeight: 700, lineHeight: "14px",
-          color: "#fff", background: "#3b82f6",
-          borderRadius: 7, padding: "0 4px",
-          minWidth: 14, height: 14,
-          textAlign: "center" as const,
-          boxSizing: "border-box" as const,
-        }}>
+        <span
+          style={{
+            position: "absolute" as const,
+            bottom: 0,
+            right: 0,
+            fontSize: 9,
+            fontWeight: 700,
+            lineHeight: "14px",
+            color: "#fff",
+            background: "#3b82f6",
+            borderRadius: 7,
+            padding: "0 4px",
+            minWidth: 14,
+            height: 14,
+            textAlign: "center" as const,
+            boxSizing: "border-box" as const,
+          }}
+        >
           {changeCount}
         </span>
       )}
@@ -300,28 +445,90 @@ function GitStatusIcon({ status, syncNeeded, isActive, onClick }: {
 function CuratedIcon({ active }: { active: boolean }) {
   const color = active ? "#ccc" : "#555";
   return (
-    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" style={{ flexShrink: 0 }}>
-      <rect x="2" y="2" width="5" height="5" rx="1" stroke={color} strokeWidth="1.2" fill={active ? color : "none"} fillOpacity={active ? 0.2 : 0} />
-      <rect x="9" y="2" width="5" height="5" rx="1" stroke={color} strokeWidth="1.2" fill={active ? color : "none"} fillOpacity={active ? 0.2 : 0} />
-      <rect x="2" y="9" width="5" height="5" rx="1" stroke={color} strokeWidth="1.2" fill={active ? color : "none"} fillOpacity={active ? 0.2 : 0} />
-      <rect x="9" y="9" width="5" height="5" rx="1" stroke={color} strokeWidth="1.2" fill={active ? color : "none"} fillOpacity={active ? 0.2 : 0} />
+    <svg
+      width="14"
+      height="14"
+      viewBox="0 0 16 16"
+      fill="none"
+      style={{ flexShrink: 0 }}
+    >
+      <rect
+        x="2"
+        y="2"
+        width="5"
+        height="5"
+        rx="1"
+        stroke={color}
+        strokeWidth="1.2"
+        fill={active ? color : "none"}
+        fillOpacity={active ? 0.2 : 0}
+      />
+      <rect
+        x="9"
+        y="2"
+        width="5"
+        height="5"
+        rx="1"
+        stroke={color}
+        strokeWidth="1.2"
+        fill={active ? color : "none"}
+        fillOpacity={active ? 0.2 : 0}
+      />
+      <rect
+        x="2"
+        y="9"
+        width="5"
+        height="5"
+        rx="1"
+        stroke={color}
+        strokeWidth="1.2"
+        fill={active ? color : "none"}
+        fillOpacity={active ? 0.2 : 0}
+      />
+      <rect
+        x="9"
+        y="9"
+        width="5"
+        height="5"
+        rx="1"
+        stroke={color}
+        strokeWidth="1.2"
+        fill={active ? color : "none"}
+        fillOpacity={active ? 0.2 : 0}
+      />
     </svg>
   );
 }
 
 // --- Root Section (unified — handles both views) ---
 
-function RootSection({ rootPath, isGitRepo, isActivePath, onGitClick }: { rootPath: string; isGitRepo: boolean; isActivePath: boolean; onGitClick?: () => void }) {
-  const [expanded, setExpanded] = useState(true);
+function RootSection({
+  rootPath,
+  isGitRepo,
+  onGitClick,
+}: {
+  rootPath: string;
+  isGitRepo: boolean;
+  onGitClick?: () => void;
+}) {
+  const [filesExpanded, setFilesExpanded] = useState(true);
+  const [commandsExpanded, setCommandsExpanded] = useState(true);
   const [fsEntries, setFsEntries] = useState<FileEntry[]>([]);
   const [fsLoaded, setFsLoaded] = useState(false);
   const [curatedEntries, setCuratedEntries] = useState<CuratedEntry[]>([]);
   const [curatedLoaded, setCuratedLoaded] = useState(false);
 
   const {
-    activeWorkspaceId, workspaces, removePathFromWorkspace, openFile, openDiff,
-    explorerViewModes, setExplorerViewMode,
-    gitStatuses, prStatuses, syncNeeded, setActivePathIndex,
+    activeWorkspaceId,
+    workspaces,
+    removePathFromWorkspace,
+    openFile,
+    openDiff,
+    explorerViewModes,
+    setExplorerViewMode,
+    gitStatuses,
+    prStatuses,
+    syncNeeded,
   } = useWorkspaceStore();
   const viewMode = explorerViewModes[rootPath] ?? "files";
   const setViewMode = (mode: ViewMode) => setExplorerViewMode(rootPath, mode);
@@ -333,22 +540,23 @@ function RootSection({ rootPath, isGitRepo, isActivePath, onGitClick }: { rootPa
   const prStatus = prStatuses[rootPath];
   const pathSyncNeeded = syncNeeded[rootPath];
 
-  function handleSelectRepo() {
-    if (!ws) return;
-    const idx = ws.paths.indexOf(rootPath);
-    if (idx >= 0) setActivePathIndex(ws.id, idx);
-  }
-
   useEffect(() => {
     invoke<FileEntry[]>("list_directory", { path: rootPath })
-      .then((r) => { setFsEntries(r); setFsLoaded(true); })
+      .then((r) => {
+        setFsEntries(r);
+        setFsLoaded(true);
+      })
       .catch((e) => console.error("Failed to load root:", e));
   }, [rootPath]);
 
   useEffect(() => {
     if (viewMode === "curated" && !curatedLoaded) {
-      api.listCuratedFiles(rootPath)
-        .then((r) => { setCuratedEntries(r); setCuratedLoaded(true); })
+      api
+        .listCuratedFiles(rootPath)
+        .then((r) => {
+          setCuratedEntries(r);
+          setCuratedLoaded(true);
+        })
         .catch((e) => console.error("Failed to load curated:", e));
     }
   }, [viewMode, rootPath, curatedLoaded]);
@@ -356,45 +564,60 @@ function RootSection({ rootPath, isGitRepo, isActivePath, onGitClick }: { rootPa
   function handleContextMenu(e: React.MouseEvent) {
     e.preventDefault();
     const actions: Parameters<typeof showContextMenu>[0] = [
-      { label: "Copy Path", action: () => navigator.clipboard.writeText(rootPath) },
+      {
+        label: "Copy Path",
+        action: () => navigator.clipboard.writeText(rootPath),
+      },
       "separator",
       { label: "Reveal in Finder", action: () => api.revealInFinder(rootPath) },
     ];
     if (canRemove) {
       actions.push("separator");
-      actions.push({ label: "Remove from Workspace", action: () => activeWorkspaceId && removePathFromWorkspace(activeWorkspaceId, rootPath) });
+      actions.push({
+        label: "Remove from Workspace",
+        action: () =>
+          activeWorkspaceId &&
+          removePathFromWorkspace(activeWorkspaceId, rootPath),
+      });
     }
     showContextMenu(actions);
   }
 
   const isCurated = viewMode === "curated";
-  const curatedTree = curatedLoaded ? buildCuratedTree(curatedEntries, rootPath) : [];
+  const curatedTree = curatedLoaded
+    ? buildCuratedTree(curatedEntries, rootPath)
+    : [];
 
   return (
     <div>
-      <div
-        style={{
-          ...styles.rootRow,
-          ...(isActivePath && isGitRepo ? styles.rootRowActive : {}),
-        }}
-        onContextMenu={handleContextMenu}
-        onClick={isGitRepo ? handleSelectRepo : undefined}
-      >
+      <div style={styles.rootRow} onContextMenu={handleContextMenu}>
         {isGitRepo ? (
           <GitStatusIcon
             status={gitStatus}
             syncNeeded={pathSyncNeeded}
-            isActive={isActivePath}
             onClick={onGitClick}
           />
         ) : (
-          <button onClick={(e) => { e.stopPropagation(); setExpanded(!expanded); }} style={styles.rootExpandBtn}>
-            <FileIcon name={folderName} isDir isOpen={expanded} />
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              setFilesExpanded(!filesExpanded);
+            }}
+            style={styles.rootExpandBtn}
+          >
+            <FileIcon name={folderName} isDir isOpen={filesExpanded} />
           </button>
         )}
         <div
-          style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 1, cursor: "pointer" }}
-          onClick={(e) => { e.stopPropagation(); setExpanded(!expanded); }}
+          style={{
+            flex: 1,
+            minWidth: 0,
+            display: "flex",
+            flexDirection: "column",
+            gap: 1,
+            cursor: "pointer",
+          }}
+          onClick={() => setFilesExpanded(!filesExpanded)}
         >
           <span style={styles.rootName}>{folderName}</span>
           {isGitRepo && (
@@ -410,7 +633,10 @@ function RootSection({ rootPath, isGitRepo, isActivePath, onGitClick }: { rootPa
           )}
         </div>
         <HoverButton
-          onClick={(e) => { e.stopPropagation(); setViewMode(isCurated ? "files" : "curated"); }}
+          onClick={(e) => {
+            e.stopPropagation();
+            setViewMode(isCurated ? "files" : "curated");
+          }}
           title={isCurated ? "Show all files" : "Show curated view"}
           baseStyle={styles.curatedBtn}
         >
@@ -418,24 +644,39 @@ function RootSection({ rootPath, isGitRepo, isActivePath, onGitClick }: { rootPa
         </HoverButton>
       </div>
 
-      {expanded && (
-        <>
-          {isCurated ? (
-            curatedLoaded && (
+      {filesExpanded &&
+        (isCurated
+          ? curatedLoaded && (
               <div>
                 {curatedTree.map((entry) => (
-                  <FileTreeNode key={entry.path} entry={entry} depth={1} rootPath={rootPath} />
+                  <FileTreeNode
+                    key={entry.path}
+                    entry={entry}
+                    depth={1}
+                    rootPath={rootPath}
+                  />
                 ))}
-                {curatedTree.length === 0 && <div style={styles.emptyMsg}>No curated files found</div>}
+                {curatedTree.length === 0 && (
+                  <div style={styles.emptyMsg}>No curated files found</div>
+                )}
               </div>
             )
-          ) : (
-            fsLoaded && fsEntries.map((e) => <FileTreeNode key={e.path} entry={e} depth={1} rootPath={rootPath} />)
-          )}
-          {activeWorkspaceId && (
-            <TaskPanel rootPath={rootPath} workspaceId={activeWorkspaceId} />
-          )}
-        </>
+          : fsLoaded &&
+            fsEntries.map((e) => (
+              <FileTreeNode
+                key={e.path}
+                entry={e}
+                depth={1}
+                rootPath={rootPath}
+              />
+            )))}
+      {activeWorkspaceId && (
+        <TaskPanel
+          rootPath={rootPath}
+          workspaceId={activeWorkspaceId}
+          expanded={commandsExpanded}
+          onToggle={() => setCommandsExpanded(!commandsExpanded)}
+        />
       )}
     </div>
   );
@@ -444,12 +685,27 @@ function RootSection({ rootPath, isGitRepo, isActivePath, onGitClick }: { rootPa
 // --- Changes Panel (replaces file tree when viewing git changes) ---
 
 const STATUS_COLORS: Record<string, string> = {
-  M: "#e8b930", A: "#4caf50", D: "#df7d7d", R: "#5ba0d0", "?": "#888",
+  M: "#e8b930",
+  A: "#4caf50",
+  D: "#df7d7d",
+  R: "#5ba0d0",
+  "?": "#888",
 };
 
-function ChangeFileItem({ path, status, isSelected, onClick, actionLabel, onAction }: {
-  path: string; status: string; isSelected: boolean;
-  onClick: () => void; actionLabel: string; onAction: () => void;
+function ChangeFileItem({
+  path,
+  status,
+  isSelected,
+  onClick,
+  actionLabel,
+  onAction,
+}: {
+  path: string;
+  status: string;
+  isSelected: boolean;
+  onClick: () => void;
+  actionLabel: string;
+  onAction: () => void;
 }) {
   const [hovered, setHovered] = useState(false);
   const fileName = path.split("/").pop() ?? path;
@@ -457,26 +713,46 @@ function ChangeFileItem({ path, status, isSelected, onClick, actionLabel, onActi
 
   return (
     <div
-      style={{ ...styles.changeItem, ...(isSelected ? styles.changeItemSelected : {}), ...(hovered && !isSelected ? styles.nodeHover : {}) }}
+      style={{
+        ...styles.changeItem,
+        ...(isSelected ? styles.changeItemSelected : {}),
+        ...(hovered && !isSelected ? styles.nodeHover : {}),
+      }}
       onClick={onClick}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
     >
-      <span style={{ ...styles.statusLetter, color: STATUS_COLORS[status] ?? "#888" }}>{status}</span>
+      <span
+        style={{
+          ...styles.statusLetter,
+          color: STATUS_COLORS[status] ?? "#888",
+        }}
+      >
+        {status}
+      </span>
       <span style={styles.changeFileName}>{fileName}</span>
       {dir && <span style={styles.changeFileDir}>{dir}</span>}
       {hovered && (
         <button
           style={styles.stageBtn}
-          onClick={(e) => { e.stopPropagation(); onAction(); }}
+          onClick={(e) => {
+            e.stopPropagation();
+            onAction();
+          }}
           title={actionLabel}
-        >{actionLabel === "Stage" ? "+" : "−"}</button>
+        >
+          {actionLabel === "Stage" ? "+" : "−"}
+        </button>
       )}
     </div>
   );
 }
 
-function ChangesPanel({ rootPath, onBack, onSelectFile }: {
+function ChangesPanel({
+  rootPath,
+  onBack,
+  onSelectFile,
+}: {
   rootPath: string;
   onBack: () => void;
   onSelectFile: (filePath: string, isUntracked: boolean) => void;
@@ -486,10 +762,16 @@ function ChangesPanel({ rootPath, onBack, onSelectFile }: {
   const folderName = rootPath.split("/").pop() ?? rootPath;
 
   const refresh = useCallback(async () => {
-    try { setChanges(await api.gitChanges(rootPath)); } catch (e) { console.error(e); }
+    try {
+      setChanges(await api.gitChanges(rootPath));
+    } catch (e) {
+      console.error(e);
+    }
   }, [rootPath]);
 
-  useEffect(() => { refresh(); }, [refresh]);
+  useEffect(() => {
+    refresh();
+  }, [refresh]);
 
   async function stageFile(filePath: string) {
     await api.gitStageFile(rootPath, filePath);
@@ -505,20 +787,36 @@ function ChangesPanel({ rootPath, onBack, onSelectFile }: {
     onSelectFile(path, isUntracked);
   }
 
-  const total = changes ? changes.staged.length + changes.unstaged.length + changes.untracked.length : 0;
+  const total = changes
+    ? changes.staged.length + changes.unstaged.length + changes.untracked.length
+    : 0;
 
   return (
     <>
       <div style={styles.header}>
-        <button onClick={onBack} title="Back to Projects" style={styles.headerBtn}>
+        <button
+          onClick={onBack}
+          title="Back to Projects"
+          style={styles.headerBtn}
+        >
           <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
-            <path d="M10 3L5 8L10 13" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+            <path
+              d="M10 3L5 8L10 13"
+              stroke="currentColor"
+              strokeWidth="1.5"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
           </svg>
         </button>
         <span style={styles.headerTitle}>{folderName}</span>
         <span style={styles.changeCount}>{total}</span>
         <span style={{ flex: 1 }} />
-        <button onClick={refresh} title="Refresh changes" style={styles.headerBtn}>
+        <button
+          onClick={refresh}
+          title="Refresh changes"
+          style={styles.headerBtn}
+        >
           <span style={{ fontSize: 13 }}>↻</span>
         </button>
       </div>
@@ -532,31 +830,64 @@ function ChangesPanel({ rootPath, onBack, onSelectFile }: {
           <>
             {changes.staged.length > 0 && (
               <>
-                <div style={styles.sectionHeader}>STAGED <span style={styles.sectionCount}>{changes.staged.length}</span></div>
+                <div style={styles.sectionHeader}>
+                  STAGED{" "}
+                  <span style={styles.sectionCount}>
+                    {changes.staged.length}
+                  </span>
+                </div>
                 {changes.staged.map((f) => (
-                  <ChangeFileItem key={`s-${f.path}`} path={f.path} status={f.status}
-                    isSelected={selectedFile === f.path} onClick={() => handleSelect(f.path, false)}
-                    actionLabel="Unstage" onAction={() => unstageFile(f.path)} />
+                  <ChangeFileItem
+                    key={`s-${f.path}`}
+                    path={f.path}
+                    status={f.status}
+                    isSelected={selectedFile === f.path}
+                    onClick={() => handleSelect(f.path, false)}
+                    actionLabel="Unstage"
+                    onAction={() => unstageFile(f.path)}
+                  />
                 ))}
               </>
             )}
             {changes.unstaged.length > 0 && (
               <>
-                <div style={styles.sectionHeader}>CHANGES <span style={styles.sectionCount}>{changes.unstaged.length}</span></div>
+                <div style={styles.sectionHeader}>
+                  CHANGES{" "}
+                  <span style={styles.sectionCount}>
+                    {changes.unstaged.length}
+                  </span>
+                </div>
                 {changes.unstaged.map((f) => (
-                  <ChangeFileItem key={`u-${f.path}`} path={f.path} status={f.status}
-                    isSelected={selectedFile === f.path} onClick={() => handleSelect(f.path, false)}
-                    actionLabel="Stage" onAction={() => stageFile(f.path)} />
+                  <ChangeFileItem
+                    key={`u-${f.path}`}
+                    path={f.path}
+                    status={f.status}
+                    isSelected={selectedFile === f.path}
+                    onClick={() => handleSelect(f.path, false)}
+                    actionLabel="Stage"
+                    onAction={() => stageFile(f.path)}
+                  />
                 ))}
               </>
             )}
             {changes.untracked.length > 0 && (
               <>
-                <div style={styles.sectionHeader}>UNTRACKED <span style={styles.sectionCount}>{changes.untracked.length}</span></div>
+                <div style={styles.sectionHeader}>
+                  UNTRACKED{" "}
+                  <span style={styles.sectionCount}>
+                    {changes.untracked.length}
+                  </span>
+                </div>
                 {changes.untracked.map((p) => (
-                  <ChangeFileItem key={`t-${p}`} path={p} status="?"
-                    isSelected={selectedFile === p} onClick={() => handleSelect(p, true)}
-                    actionLabel="Stage" onAction={() => stageFile(p)} />
+                  <ChangeFileItem
+                    key={`t-${p}`}
+                    path={p}
+                    status="?"
+                    isSelected={selectedFile === p}
+                    onClick={() => handleSelect(p, true)}
+                    actionLabel="Stage"
+                    onAction={() => stageFile(p)}
+                  />
                 ))}
               </>
             )}
@@ -570,12 +901,17 @@ function ChangesPanel({ rootPath, onBack, onSelectFile }: {
 // --- Main FileExplorer ---
 
 interface FileExplorerProps {
-  width: number;
   onCollapse: () => void;
 }
 
-export function FileExplorer({ width, onCollapse }: FileExplorerProps) {
-  const { activeWorkspaceId, workspaces, addPathToWorkspace, getActivePath, openDiff, setActivePathIndex } = useWorkspaceStore();
+export function FileExplorer({ onCollapse }: FileExplorerProps) {
+  const {
+    activeWorkspaceId,
+    workspaces,
+    addPathToWorkspace,
+    openDiff,
+    setActivePathIndex,
+  } = useWorkspaceStore();
   const ws = workspaces.find((w) => w.id === activeWorkspaceId);
   const [gitRoots, setGitRoots] = useState<Set<string>>(new Set());
   const [changesPath, setChangesPath] = useState<string | null>(null);
@@ -587,16 +923,27 @@ export function FileExplorer({ width, onCollapse }: FileExplorerProps) {
     const detected = new Set<string>();
     Promise.all(
       ws.paths.map(async (p) => {
-        try { await api.detectGitInfo(p); detected.add(p); } catch { /* not git */ }
-      })
+        try {
+          await api.detectGitInfo(p);
+          detected.add(p);
+        } catch {
+          /* not git */
+        }
+      }),
     ).then(() => setGitRoots(detected));
   }, [ws?.paths]);
 
   // Clear changes view when workspace changes
-  useEffect(() => { setChangesPath(null); }, [activeWorkspaceId]);
+  useEffect(() => {
+    setChangesPath(null);
+  }, [activeWorkspaceId]);
 
   if (!ws) {
-    return <div style={styles.container}><div style={styles.emptyMsg}>No workspace selected</div></div>;
+    return (
+      <div className="no-select" style={styles.container}>
+        <div style={styles.emptyMsg}>No workspace selected</div>
+      </div>
+    );
   }
 
   async function handleAddFolder() {
@@ -641,16 +988,20 @@ export function FileExplorer({ width, onCollapse }: FileExplorerProps) {
     openDiff(activeWorkspaceId, changesPath);
     // After opening, update it with the selected file
     setTimeout(() => {
-      const updatedLayout = useWorkspaceStore.getState().getOrCreateLayout(activeWorkspaceId);
+      const updatedLayout = useWorkspaceStore
+        .getState()
+        .getOrCreateLayout(activeWorkspaceId);
       for (const [gid, group] of Object.entries(updatedLayout.groups)) {
         const pane = group.panes.find((p) => p.type === "diff");
         if (pane) {
-          useWorkspaceStore.getState().transformPane(activeWorkspaceId, gid, pane.id, {
-            title: `Diff: ${filePath.split("/").pop() ?? filePath}`,
-            filePath,
-            cwd: changesPath,
-            command: isUntracked ? "untracked" : undefined,
-          });
+          useWorkspaceStore
+            .getState()
+            .transformPane(activeWorkspaceId, gid, pane.id, {
+              title: `Diff: ${filePath.split("/").pop() ?? filePath}`,
+              filePath,
+              cwd: changesPath,
+              command: isUntracked ? "untracked" : undefined,
+            });
           break;
         }
       }
@@ -658,7 +1009,7 @@ export function FileExplorer({ width, onCollapse }: FileExplorerProps) {
   }
 
   return (
-    <div style={{ ...styles.container, width, minWidth: width }}>
+    <div className="no-select" style={styles.container}>
       {changesPath ? (
         <ChangesPanel
           rootPath={changesPath}
@@ -670,34 +1021,28 @@ export function FileExplorer({ width, onCollapse }: FileExplorerProps) {
           onSelectFile={handleSelectFile}
         />
       ) : (
-        <>
-          <div style={styles.header}>
-            <button onClick={onCollapse} title="Hide file explorer" style={styles.headerBtn}>
-              <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
-                <path d="M10 3L5 8L10 13" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-              </svg>
-            </button>
-            <span style={styles.headerTitle}>Projects</span>
-            <span style={{ flex: 1 }} />
-            <button onClick={handleAddFolder} title="Add folder to workspace" style={styles.headerBtn}>
-              <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
-                <path d="M2 4.5C2 3.67 2.67 3 3.5 3H6.29a1 1 0 0 1 .7.29L8 4.5h4.5c.83 0 1.5.67 1.5 1.5v5.5c0 .83-.67 1.5-1.5 1.5h-9A1.5 1.5 0 0 1 2 11.5V4.5z" stroke="currentColor" strokeWidth="1.2" />
-                <path d="M8 7.5v3M6.5 9h3" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
-              </svg>
-            </button>
-          </div>
-          <div style={{ ...styles.tree, ...(suppressHover ? { pointerEvents: "none" as const } : {}) }}>
-            {ws.paths.map((p) => (
+        <div
+          style={{
+            ...styles.tree,
+            ...(suppressHover ? { pointerEvents: "none" as const } : {}),
+          }}
+        >
+          {ws.paths.map((p, index) => (
+            <div
+              key={p}
+              style={{ ...styles.card, marginTop: index === 0 ? 2 : 4 }}
+            >
               <RootSection
-                key={p}
                 rootPath={p}
                 isGitRepo={gitRoots.has(p)}
-                isActivePath={activeWorkspaceId ? getActivePath(activeWorkspaceId) === p : false}
                 onGitClick={() => handleGitIconClick(p)}
               />
-            ))}
-          </div>
-        </>
+            </div>
+          ))}
+          <button onClick={handleAddFolder} style={styles.addFolderBtn}>
+            + Add Folder
+          </button>
+        </div>
       )}
     </div>
   );
@@ -707,9 +1052,11 @@ const styles: Record<string, React.CSSProperties> = {
   container: {
     display: "flex",
     flexDirection: "column",
+    height: "100%",
     minHeight: 0,
-    background: "#1e1e1e",
+    background: "#1c1c1c",
     overflow: "hidden",
+    userSelect: "none",
   },
   header: {
     display: "flex",
@@ -740,7 +1087,28 @@ const styles: Record<string, React.CSSProperties> = {
   tree: {
     flex: 1,
     overflow: "auto",
-    padding: "2px 0",
+    padding: "0 5px 0 2px",
+    userSelect: "none",
+  },
+  card: {
+    background: "#1c1c1c",
+    borderRadius: 6,
+    margin: "2px -2px",
+    overflow: "hidden",
+    border: "1px solid #2a2a2a",
+    padding: 0,
+  },
+  addFolderBtn: {
+    display: "block",
+    width: "100%",
+    padding: "8px 0",
+    textAlign: "center" as const,
+    color: "#555",
+    fontSize: 11,
+    cursor: "pointer",
+    border: "none",
+    background: "none",
+    fontWeight: 600,
   },
   prBadge: {
     display: "inline-block",
@@ -759,11 +1127,6 @@ const styles: Record<string, React.CSSProperties> = {
     padding: "4px 4px",
     cursor: "pointer",
     minHeight: 32,
-    borderLeft: "2px solid transparent",
-  },
-  rootRowActive: {
-    background: "#2a2a2a",
-    borderLeftColor: "#5ba0d0",
   },
   rootExpandBtn: {
     display: "flex",
@@ -807,7 +1170,7 @@ const styles: Record<string, React.CSSProperties> = {
     background: "none",
     border: "none",
     cursor: "pointer",
-    padding: "2px 6px",
+    padding: "2px",
     flexShrink: 0,
     opacity: 0.8,
   },
@@ -837,7 +1200,7 @@ const styles: Record<string, React.CSSProperties> = {
     fontWeight: 600,
   },
   nodeHover: {
-    background: "#2a2d3a",
+    background: "#2d2d2d",
   },
   emptyMsg: {
     padding: "8px 16px",
@@ -879,7 +1242,7 @@ const styles: Record<string, React.CSSProperties> = {
     position: "relative" as const,
   },
   changeItemSelected: {
-    background: "#2a2d3a",
+    background: "#2d2d2d",
   },
   statusLetter: {
     fontWeight: 700,

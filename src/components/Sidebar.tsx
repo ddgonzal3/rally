@@ -4,21 +4,16 @@ import { AddWorkspaceModal } from "./AddWorkspaceModal";
 import { SettingsPanel } from "./SettingsPanel";
 import { api } from "../lib/tauri";
 import { showContextMenu } from "../lib/contextMenu";
-export function Sidebar({ width }: { width: number }) {
+export function Sidebar() {
   const { workspaces, activeWorkspaceId, setActive, removeWorkspace } =
     useWorkspaceStore();
   const [showAddModal, setShowAddModal] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [hoveredId, setHoveredId] = useState<string | null>(null);
 
-  function handleDelete(e: React.MouseEvent, wsId: string) {
-    e.stopPropagation();
-    removeWorkspace(wsId);
-  }
-
   return (
     <>
-      <div style={{ ...styles.sidebar, width, minWidth: width }}>
+      <div style={styles.sidebar}>
         <div style={styles.header}>
           <span style={styles.title}>Workspaces</span>
         </div>
@@ -34,31 +29,21 @@ export function Sidebar({ width }: { width: number }) {
                 style={{
                   ...styles.item,
                   ...(isActive ? styles.itemActive : {}),
+                  ...(!isActive && isHovered ? styles.itemHover : {}),
                 }}
                 onClick={() => setActive(ws.id)}
+                onMouseEnter={() => setHoveredId(ws.id)}
+                onMouseLeave={() => setHoveredId(null)}
                 onContextMenu={(e) => {
                   e.preventDefault();
                   showContextMenu([
                     { label: "Reveal in Finder", action: () => api.revealInFinder(ws.paths[0]) },
+                    "separator",
+                    { label: "Remove Workspace", action: () => removeWorkspace(ws.id) },
                   ]);
                 }}
-                onMouseEnter={() => setHoveredId(ws.id)}
-                onMouseLeave={() => setHoveredId(null)}
               >
-                <div style={styles.itemRow}>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={styles.itemName}>{ws.name}</div>
-                  </div>
-                  {isHovered && (
-                    <button
-                      style={styles.deleteBtn}
-                      onClick={(e) => handleDelete(e, ws.id)}
-                      title="Remove workspace"
-                    >
-                      ×
-                    </button>
-                  )}
-                </div>
+                <div style={styles.itemName}>{ws.name}</div>
               </div>
             );
           })}
@@ -90,6 +75,8 @@ const styles: Record<string, React.CSSProperties> = {
     display: "flex",
     flexDirection: "column",
     paddingTop: 0,
+    overflow: "hidden",
+    height: "100%",
   },
   header: {
     display: "flex",
@@ -114,7 +101,6 @@ const styles: Record<string, React.CSSProperties> = {
     width: "100%",
     padding: "10px 16px",
     background: "none",
-    borderLeft: "3px solid transparent",
     color: "#ccc",
     cursor: "pointer",
     textAlign: "left" as const,
@@ -122,27 +108,13 @@ const styles: Record<string, React.CSSProperties> = {
   },
   itemActive: {
     background: "#2a2a2a",
-    borderLeftColor: "#bbb",
     color: "#fff",
   },
-  itemRow: {
-    display: "flex",
-    alignItems: "center",
-    gap: 8,
+  itemHover: {
+    background: "#222",
   },
   itemName: {
     fontWeight: 600,
-  },
-  deleteBtn: {
-    background: "none",
-    border: "none",
-    color: "#666",
-    cursor: "pointer",
-    fontSize: 16,
-    lineHeight: 1,
-    padding: "2px 4px",
-    borderRadius: 3,
-    flexShrink: 0,
   },
   bottomBtns: {
     borderTop: "1px solid #333",

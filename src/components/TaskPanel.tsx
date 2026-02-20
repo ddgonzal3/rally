@@ -4,13 +4,16 @@ import { FitAddon } from "@xterm/addon-fit";
 import { useWorkspaceStore } from "../stores/workspaceStore";
 import { api } from "../lib/tauri";
 import type { TaskEntry, TaskRun } from "../lib/types";
+import { ChevronIcon } from "./FileIcons";
 
 interface TaskPanelProps {
   rootPath: string;
   workspaceId: string;
+  expanded: boolean;
+  onToggle: () => void;
 }
 
-export function TaskPanel({ rootPath, workspaceId }: TaskPanelProps) {
+export function TaskPanel({ rootPath, workspaceId, expanded, onToggle }: TaskPanelProps) {
   const [tasks, setTasks] = useState<TaskEntry[]>([]);
   const [viewingTask, setViewingTask] = useState<string | null>(null);
   const [popupPos, setPopupPos] = useState({ x: 0, y: 0 });
@@ -33,67 +36,74 @@ export function TaskPanel({ rootPath, workspaceId }: TaskPanelProps) {
     e.stopPropagation();
     if (!workspaceId) return;
     if (task.file_path) {
-      // Built-in commands have their file_path set by the backend (points to ~/.rally/commands/)
       openFile(workspaceId, task.file_path);
     } else {
-      // RALLY.json tasks have auto-generated .md files
       openFile(workspaceId, `${rootPath}/.claude/commands/_rally_${task.name}.md`);
     }
   }
 
   return (
     <>
-      <div style={styles.separator} />
-      {tasks.map((task) => {
-        const key = `${rootPath}:${task.name}`;
-        const run = taskRuns[key];
-        const isRunning = run?.status === "running";
-        const status = run?.status ?? null;
+      <button onClick={onToggle} style={styles.sectionToggle}>
+        <ChevronIcon open={expanded} />
+        <span>Commands</span>
+      </button>
+      {expanded && (
+        <>
+          {tasks.map((task) => {
+            const key = `${rootPath}:${task.name}`;
+            const run = taskRuns[key];
+            const isRunning = run?.status === "running";
+            const status = run?.status ?? null;
 
-        return (
-          <div
-            key={task.name}
-            style={styles.row}
-            onClick={(e) => handleRowClick(e, key)}
-          >
-            <span
-              style={{ ...styles.label, cursor: "pointer" }}
-              onClick={(e) => handleLabelClick(e, task)}
-              title={task.file_path ?? task.command}
-            >
-              {task.label}
-            </span>
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                if (task.builtin && task.command.startsWith("claude:")) {
-                  const slashCommand = task.command.replace("claude:", "");
-                  if (slashCommand === "/ship") {
-                    startShipSession(rootPath);
-                  } else {
-                    openClaudeCommand(workspaceId, rootPath, slashCommand, task.label);
-                  }
-                } else if (isRunning) {
-                  stopTask(rootPath, task.name);
-                } else {
-                  runTask(rootPath, task.name, task.command, task.cwd);
-                }
-              }}
-              style={styles.actionBtn}
-            >
-              {status === "running" ? (
-                <StopIcon />
-              ) : status === "success" ? (
-                <SuccessIcon />
-              ) : status === "error" ? (
-                <ErrorIcon />
-              ) : (
-                <PlayIcon />
-              )}
-            </button>
-          </div>
-        );
-      })}
+            return (
+              <div
+                key={task.name}
+                className="file-node"
+                style={styles.row}
+                onClick={(e) => handleRowClick(e, key)}
+              >
+                <CommandIcon />
+                <span
+                  style={{ ...styles.label, cursor: "pointer" }}
+                  onClick={(e) => handleLabelClick(e, task)}
+                  title={task.file_path ?? task.command}
+                >
+                  {task.label}
+                </span>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    if (task.builtin && task.command.startsWith("claude:")) {
+                      const slashCommand = task.command.replace("claude:", "");
+                      if (slashCommand === "/ship") {
+                        startShipSession(rootPath);
+                      } else {
+                        openClaudeCommand(workspaceId, rootPath, slashCommand, task.label);
+                      }
+                    } else if (isRunning) {
+                      stopTask(rootPath, task.name);
+                    } else {
+                      runTask(rootPath, task.name, task.command, task.cwd);
+                    }
+                  }}
+                  style={styles.actionBtn}
+                >
+                  {status === "running" ? (
+                    <StopIcon />
+                  ) : status === "success" ? (
+                    <SuccessIcon />
+                  ) : status === "error" ? (
+                    <ErrorIcon />
+                  ) : (
+                    <PlayIcon />
+                  )}
+                </button>
+              </div>
+            );
+          })}
+        </>
+      )}
 
       {viewingTask && taskRuns[viewingTask] && (
         <FloatingTerminal
@@ -109,6 +119,15 @@ export function TaskPanel({ rootPath, workspaceId }: TaskPanelProps) {
 }
 
 // --- Icons ---
+
+function CommandIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" style={{ flexShrink: 0, opacity: 0.7 }}>
+      <path d="M4 4l3 3-3 3" stroke="#8a8a6a" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M9 11h4" stroke="#8a8a6a" strokeWidth="1.3" strokeLinecap="round" />
+    </svg>
+  );
+}
 
 function PlayIcon() {
   return (
@@ -310,16 +329,26 @@ function FloatingTerminal({
 }
 
 const styles: Record<string, React.CSSProperties> = {
-  separator: {
-    height: 1,
-    background: "#333",
-    margin: "4px 0 2px",
+  sectionToggle: {
+    display: "flex",
+    alignItems: "center",
+    width: "100%",
+    gap: 2,
+    padding: "6px 4px 2px",
+    background: "none",
+    border: "none",
+    margin: 0,
+    cursor: "pointer",
+    color: "#666",
+    fontSize: 11,
+    fontWeight: 600,
+    letterSpacing: "0.03em",
   },
   row: {
     display: "flex",
     alignItems: "center",
-    gap: 6,
-    padding: "3px 8px",
+    gap: 4,
+    padding: "3px 8px 3px 12px",
     cursor: "default",
     fontSize: 12,
   },
