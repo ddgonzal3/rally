@@ -314,13 +314,15 @@ pub fn list_curated_files(root_path: String) -> Result<Vec<CuratedEntry>, String
         if let Ok(content) = fs::read_to_string(&play_json) {
             if let Ok(config) = serde_json::from_str::<PlayConfig>(&content) {
                 for inc in &config.include {
-                    let resolved = root.join(inc);
+                    // Strip trailing slashes before joining to avoid Path preserving them
+                    let inc_clean = inc.trim_end_matches('/');
+                    let resolved = root.join(inc_clean);
                     if resolved.exists() {
                         let resolved_str = resolved.to_string_lossy().to_string();
                         if entries.iter().any(|e| e.path == resolved_str) {
                             continue;
                         }
-                        let name = inc.trim_end_matches('/').to_string();
+                        let name = inc_clean.to_string();
                         entries.push(CuratedEntry {
                             name,
                             path: resolved_str,
