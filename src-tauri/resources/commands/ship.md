@@ -1,4 +1,4 @@
-<!-- playbench-ship-v2 -->
+<!-- rally-ship-v2 -->
 # Ship: Commit, Push, PR, Review, Merge
 
 You are automating the full ship lifecycle for the current branch. Follow each step exactly. Run the shell scripts verbatim — do NOT improvise git commands outside these scripts.
@@ -74,7 +74,7 @@ If `MERGEABLE=CONFLICTING`:
 
 ## Step 6: Review
 
-Read `~/.playbench/commands/review-pr.md` and follow its full review process for the current branch. This is the same process used by the standalone `/review-pr` command.
+Read `~/.rally/commands/review-pr.md` and follow its full review process for the current branch. This is the same process used by the standalone `/review-pr` command.
 
 **Important differences from standalone review-pr:**
 - After the review fixes are applied and staged, **commit and push them** (review-pr alone only stages):
@@ -97,7 +97,7 @@ Based on the review:
 ```bash
 REPO_PATH=$(git rev-parse --show-toplevel)
 SANITIZED=$(echo "$REPO_PATH" | sed 's|^/||; s|/|--|g')
-SIGNAL_DIR="$HOME/.playbench/ship-signals"
+SIGNAL_DIR="$HOME/.rally/ship-signals"
 mkdir -p "$SIGNAL_DIR"
 ```
 
@@ -131,7 +131,7 @@ Print a summary of what was done:
 - Commits made
 - PR created/updated
 - Review findings fixed
-- "Signal written — Playbench will merge and sync automatically."
+- "Signal written — Rally will merge and sync automatically."
 
 ### If `manual_review`:
 Print the review report with flagged items. Stay available for the user to discuss and iterate. When the user is satisfied, update the signal file verdict to `auto_merge` and push any final changes.

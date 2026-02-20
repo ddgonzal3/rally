@@ -5,9 +5,9 @@ use std::path::PathBuf;
 
 use crate::git_ops;
 
-const SHIP_COMMAND_VERSION: &str = "<!-- playbench-ship-v2 -->";
+const SHIP_COMMAND_VERSION: &str = "<!-- rally-ship-v2 -->";
 const SHIP_COMMAND_CONTENT: &str = include_str!("../resources/commands/ship.md");
-const REVIEW_COMMAND_VERSION: &str = "<!-- playbench-review-pr-v1 -->";
+const REVIEW_COMMAND_VERSION: &str = "<!-- rally-review-pr-v1 -->";
 const REVIEW_COMMAND_CONTENT: &str = include_str!("../resources/commands/review-pr.md");
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -33,7 +33,7 @@ pub struct ShipSignal {
 
 fn signals_dir() -> PathBuf {
     let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
-    PathBuf::from(home).join(".playbench").join("ship-signals")
+    PathBuf::from(home).join(".rally").join("ship-signals")
 }
 
 fn sanitize_repo_path(repo_path: &str) -> String {
@@ -85,16 +85,16 @@ fn symlink_command(target_path: &PathBuf, link_path: &PathBuf) -> Result<(), Str
     Ok(())
 }
 
-/// Path to app's own commands directory: ~/.playbench/commands/
-pub fn playbench_commands_dir() -> Result<PathBuf, String> {
+/// Path to app's own commands directory: ~/.rally/commands/
+pub fn rally_commands_dir() -> Result<PathBuf, String> {
     let home = std::env::var("HOME").map_err(|_| "HOME not set".to_string())?;
-    let dir = PathBuf::from(home).join(".playbench").join("commands");
+    let dir = PathBuf::from(home).join(".rally").join("commands");
     fs::create_dir_all(&dir).map_err(|e| format!("Failed to create commands dir: {}", e))?;
     Ok(dir)
 }
 
 /// Ensure default commands (ship.md, review-pr.md) are installed.
-/// - Actual files live in ~/.playbench/commands/ (app's domain)
+/// - Actual files live in ~/.rally/commands/ (app's domain)
 /// - Symlinks in ~/.claude/commands/ point to them (so Claude Code finds them)
 pub fn ensure_default_commands() -> Result<(), String> {
     // Ensure signals directory exists
@@ -103,12 +103,12 @@ pub fn ensure_default_commands() -> Result<(), String> {
 
     let home = std::env::var("HOME").map_err(|_| "HOME not set".to_string())?;
 
-    // Write actual files to ~/.playbench/commands/
-    let app_dir = playbench_commands_dir()?;
+    // Write actual files to ~/.rally/commands/
+    let app_dir = rally_commands_dir()?;
     install_command(&app_dir, "ship.md", SHIP_COMMAND_VERSION, SHIP_COMMAND_CONTENT)?;
     install_command(&app_dir, "review-pr.md", REVIEW_COMMAND_VERSION, REVIEW_COMMAND_CONTENT)?;
 
-    // Symlink from ~/.claude/commands/ → ~/.playbench/commands/
+    // Symlink from ~/.claude/commands/ → ~/.rally/commands/
     let claude_dir = PathBuf::from(&home).join(".claude").join("commands");
     fs::create_dir_all(&claude_dir)
         .map_err(|e| format!("Failed to create ~/.claude/commands: {}", e))?;

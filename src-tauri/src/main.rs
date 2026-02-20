@@ -2,10 +2,10 @@
 
 use std::sync::{Arc, Mutex};
 
-use playbench::commands;
-use playbench::config_ops;
-use playbench::pty_manager::{self, PtyManager};
-use playbench::ship_ops;
+use rally::commands;
+use rally::config_ops;
+use rally::pty_manager::{self, PtyManager};
+use rally::ship_ops;
 use tauri::Manager;
 
 fn main() {

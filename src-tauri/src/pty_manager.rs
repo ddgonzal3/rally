@@ -88,15 +88,15 @@ impl PtyManager {
                 }
             }
         }
-        // Remove env vars that prevent Claude Code from launching inside Playbench PTYs
+        // Remove env vars that prevent Claude Code from launching inside Rally PTYs
         cmd.env_remove("CLAUDECODE");
         cmd.env_remove("CLAUDE_CODE_ENTRYPOINT");
         // Set TERM for proper terminal behavior
         cmd.env("TERM", "xterm-256color");
-        // Identify as Playbench terminal — prevents Claude Code from inheriting
+        // Identify as Rally terminal — prevents Claude Code from inheriting
         // the parent's TERM_PROGRAM (e.g. "vscode") and making wrong assumptions
         // about terminal capabilities/dimensions
-        cmd.env("TERM_PROGRAM", "Playbench");
+        cmd.env("TERM_PROGRAM", "Rally");
         cmd.env_remove("TERM_PROGRAM_VERSION");
 
         let child = pair

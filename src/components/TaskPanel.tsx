@@ -33,11 +33,11 @@ export function TaskPanel({ rootPath, workspaceId }: TaskPanelProps) {
     e.stopPropagation();
     if (!workspaceId) return;
     if (task.file_path) {
-      // Built-in commands have their file_path set by the backend (points to ~/.playbench/commands/)
+      // Built-in commands have their file_path set by the backend (points to ~/.rally/commands/)
       openFile(workspaceId, task.file_path);
     } else {
-      // PLAY.json tasks have auto-generated .md files
-      openFile(workspaceId, `${rootPath}/.claude/commands/_play_${task.name}.md`);
+      // RALLY.json tasks have auto-generated .md files
+      openFile(workspaceId, `${rootPath}/.claude/commands/_rally_${task.name}.md`);
     }
   }
 

@@ -1,7 +1,7 @@
 {
-  "productName": "Playbench",
+  "productName": "Rally",
   "version": "0.1.0",
-  "identifier": "com.playbench.app",
+  "identifier": "com.rally.app",
   "build": {
     "frontendDist": "../dist",
     "devUrl": "http://localhost:5173",
@@ -11,7 +11,7 @@
   "app": {
     "windows": [
       {
-        "title": "Playbench",
+        "title": "Rally",
         "width": 1400,
         "height": 900,
         "resizable": true,

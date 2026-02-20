@@ -1,8 +1,8 @@
-# CLAUDE.md — Playbench
+# CLAUDE.md — Rally
 
 ## What Is This?
 
-Playbench is a **Tauri v2 macOS app** (Rust backend + React frontend) for orchestrating multiple Claude Code sessions, git workflows, and dev processes across repo workspaces.
+Rally is a **Tauri v2 macOS app** (Rust backend + React frontend) for orchestrating multiple Claude Code sessions, git workflows, and dev processes across repo workspaces.
 
 ## Build Commands
 
@@ -53,7 +53,7 @@ Rust Backend (src-tauri/src/)
 
 **Git Operations**: All shell out to `git` and `gh` CLI via `std::process::Command`. No libgit2. This ensures identical behavior to manual terminal usage.
 
-**State**: Workspaces persist to `~/.playbench/workspaces.json`. Pane state is in-memory only (Zustand). Git status polls every 10 seconds.
+**State**: Workspaces persist to `~/.rally/workspaces.json`. Pane state is in-memory only (Zustand). Git status polls every 10 seconds.
 
 **Window**: Uses native macOS decorations (`titleBarStyle: "Overlay"`, `hiddenTitle: true`) with programmatic `startDragging()` for the drag region. This gives native traffic lights and rounded corners.
 
@@ -83,7 +83,7 @@ Rust Backend (src-tauri/src/)
 | `src/components/Sidebar.tsx` | Workspace list + status badges + Add/Settings buttons |
 | `src/components/GitActions.tsx` | Git operation buttons with result display |
 | `src/components/FileExplorer.tsx` | Lazy-loading directory tree |
-| `src/components/TaskPanel.tsx` | PLAY.json tasks + built-in commands (Ship, Review PR) |
+| `src/components/TaskPanel.tsx` | RALLY.json tasks + built-in commands (Ship, Review PR) |
 | `src/components/AddWorkspaceModal.tsx` | New workspace form with folder picker + git auto-detect |
 | `src/components/SettingsPanel.tsx` | Monaco editor for CLAUDE.md/skills files |
 | `src/stores/workspaceStore.ts` | Zustand store: workspaces, git statuses, panes, all actions |
@@ -108,18 +108,18 @@ PTY events use the pattern `pty-{eventtype}-{ptyid}`. To add a new event:
 
 ## Built-in Commands (Ship, Review PR)
 
-Playbench ships with built-in Claude commands (`/ship`, `/review-pr`) that appear in every workspace's task panel alongside PLAY.json tasks.
+Rally ships with built-in Claude commands (`/ship`, `/review-pr`) that appear in every workspace's task panel alongside RALLY.json tasks.
 
 ### File Layout
 
 ```
-~/.playbench/commands/           ← Actual files (app's domain, written on startup)
+~/.rally/commands/               ← Actual files (app's domain, written on startup)
   ship.md                          Embedded in binary via include_str!()
   review-pr.md                     Version markers control update logic
 
 ~/.claude/commands/              ← Symlinks (so Claude Code finds them as slash commands)
-  ship.md → ~/.playbench/commands/ship.md
-  review-pr.md → ~/.playbench/commands/review-pr.md
+  ship.md → ~/.rally/commands/ship.md
+  review-pr.md → ~/.rally/commands/review-pr.md
 
 src-tauri/resources/commands/    ← Source .md files (compiled into binary)
   ship.md
@@ -129,8 +129,8 @@ src-tauri/resources/commands/    ← Source .md files (compiled into binary)
 ### Key Design Decisions
 
 - **Symlinks, not copies**: The app never writes real files into `~/.claude/`. If the user has their own `ship.md` (a real file, not a symlink), the app leaves it alone.
-- **Version markers**: Each .md starts with `<!-- playbench-ship-v1 -->`. The app only overwrites if the version is older.
-- **`builtins` (opt-in)**: Built-ins only appear if explicitly listed in PLAY.json: `{ "builtins": ["ship", "review-pr"] }`. No PLAY.json or no `builtins` field = no built-in commands shown.
+- **Version markers**: Each .md starts with `<!-- rally-ship-v1 -->`. The app only overwrites if the version is older.
+- **`builtins` (opt-in)**: Built-ins only appear if explicitly listed in RALLY.json: `{ "builtins": ["ship", "review-pr"] }`. No RALLY.json or no `builtins` field = no built-in commands shown.
 - **No focus steal**: Clicking a built-in command opens a Claude pane but does not switch focus away from the current pane.
 
 ### Ship Signal Protocol
@@ -138,7 +138,7 @@ src-tauri/resources/commands/    ← Source .md files (compiled into binary)
 The `/ship` command (commit → push → PR → review → merge) communicates with the app via signal files:
 
 ```
-~/.playbench/ship-signals/<sanitized-repo-path>.json
+~/.rally/ship-signals/<sanitized-repo-path>.json
 ```
 
 | Verdict | App Behavior |
@@ -158,7 +158,7 @@ The `/ship` command (commit → push → PR → review → merge) communicates w
 | File | Role |
 |------|------|
 | `src-tauri/src/ship_ops.rs` | Signal file ops, command install + symlinks, post-merge sync |
-| `src-tauri/src/commands.rs` | `list_tasks()` merges PLAY.json tasks + built-in commands |
+| `src-tauri/src/commands.rs` | `list_tasks()` merges RALLY.json tasks + built-in commands |
 | `src/components/TaskPanel.tsx` | Renders task list, routes built-in clicks to Claude panes |
 | `src/stores/workspaceStore.ts` | `pollShipSignals()`, `handleAutoMerge()`, `openClaudeCommand()` |
 

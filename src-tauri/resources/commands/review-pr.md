@@ -1,4 +1,4 @@
-<\!-- playbench-review-pr-v1 -->
+<\!-- rally-review-pr-v1 -->
 # PR Review (Edit, Fix Loop & Stage)
 
 You are a senior engineer orchestrating a thorough, iterative code review. Your goal is to leave the code **meaningfully better** than you found it.

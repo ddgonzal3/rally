@@ -1,5 +1,5 @@
 {
-  "name": "playbench",
+  "name": "rally",
   "version": "1.0.0",
   "description": "",
   "type": "module",
@@ -8,7 +8,7 @@
     "build": "tsc && vite build",
     "tauri": "cargo tauri",
     "app": "tsc && vite build && cargo tauri build --bundles app",
-    "app:run": "tsc && vite build && cargo tauri build --bundles app && open src-tauri/target/release/bundle/macos/Playbench.app",
+    "app:run": "tsc && vite build && cargo tauri build --bundles app && open src-tauri/target/release/bundle/macos/Rally.app",
     "app:dmg": "tsc && vite build && cargo tauri build --bundles app,dmg"
   },
   "devDependencies": {

@@ -165,7 +165,7 @@ export function App() {
             </svg>
           </button>
         </div>
-        <span style={styles.titleText}>Playbench</span>
+        <span style={styles.titleText}>Rally</span>
       </div>
       <div style={styles.body}>
         {!panelCollapsed && <Sidebar />}

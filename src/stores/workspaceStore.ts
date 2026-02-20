@@ -1007,7 +1007,7 @@ export const useWorkspaceStore = create<WorkspaceState>()(
   },
     }),
     {
-      name: "playbench-state",
+      name: "rally-state",
       partialize: (state) => ({
         activeWorkspaceId: state.activeWorkspaceId,
         activePathIndex: state.activePathIndex,

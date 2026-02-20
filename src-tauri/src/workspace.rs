@@ -71,7 +71,7 @@ fn config_dir() -> PathBuf {
 
 fn dirs_next() -> Option<PathBuf> {
     let home = std::env::var("HOME").ok()?;
-    let dir = PathBuf::from(home).join(".playbench");
+    let dir = PathBuf::from(home).join(".rally");
     fs::create_dir_all(&dir).ok()?;
     Some(dir)
 }
