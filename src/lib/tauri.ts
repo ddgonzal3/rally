@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import type { Workspace, GitStatus, PushResult, PrStatus, ChangesSummary, TaskEntry } from "./types";
+import type { Workspace, GitStatus, PushResult, PrStatus, ChangesSummary, TaskEntry, ShipSignal } from "./types";
 
 export const api = {
   listWorkspaces: () => invoke<Workspace[]>("list_workspaces"),
@@ -70,6 +70,16 @@ export const api = {
 
   readFileContent: (path: string) =>
     invoke<string>("read_file_content", { path }),
+
+  // Ship operations
+  checkShipSignal: (repoPath: string) =>
+    invoke<ShipSignal | null>("check_ship_signal", { repoPath }),
+
+  clearShipSignal: (repoPath: string) =>
+    invoke<void>("clear_ship_signal", { repoPath }),
+
+  postMergeSync: (cwd: string, mainBranch: string, mergedBranch: string) =>
+    invoke<string>("post_merge_sync", { cwd, mainBranch, mergedBranch }),
 
   // PTY operations
   spawnPty: (cwd: string, command: string | null, cols: number, rows: number, exitOnComplete?: boolean) =>

@@ -3,6 +3,9 @@ import { useDragState, getDragState } from "../lib/dragContext";
 
 export type DropPosition = "top" | "bottom" | "left" | "right" | "center";
 
+/** Custom event dispatched by App.tsx when Finder drops files on the window. */
+export const FILE_DROP_COMMIT_EVENT = "file-drop-commit";
+
 /** Determine which zone the mouse is in based on relative position within the element */
 function getDropPosition(
   rect: DOMRect,
@@ -45,16 +48,18 @@ export function DropZoneTarget({
   groupId,
   paneCount,
   onDrop,
+  onFileDrop,
 }: {
   groupId: string;
   /** Number of panes in THIS group — needed to allow same-group splits when ≥2 */
   paneCount: number;
   onDrop: (position: DropPosition) => void;
+  onFileDrop?: (position: DropPosition, filePaths: string[]) => void;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const drag = useDragState();
 
-  const isSameGroup = drag.groupId === groupId;
+  const isSameGroup = drag.type === "pane" && drag.groupId === groupId;
   // Same-group drop only makes sense when the group has 2+ panes
   // (splitting the only pane out would leave an empty group)
   const allowSameGroup = isSameGroup && paneCount >= 2;
@@ -63,55 +68,72 @@ export function DropZoneTarget({
   let visible = false;
   let hovered: DropPosition | null = null;
 
-  if (drag.isDragging && (!isSameGroup || allowSameGroup)) {
-    const el = containerRef.current;
-    if (el) {
-      const rect = el.getBoundingClientRect();
-      const { mouseX: mx, mouseY: my } = drag;
-      if (
-        rect.width > 0 &&
-        rect.height > 0 &&
-        mx >= rect.left &&
-        mx <= rect.right &&
-        my >= rect.top &&
-        my <= rect.bottom
-      ) {
-        const pos = getDropPosition(rect, mx, my);
-        // "center" on same group is a no-op (tab is already here)
-        if (isSameGroup && pos === "center") {
-          // keep visible=false, no overlay
-        } else {
-          visible = true;
-          hovered = pos;
+  if (drag.isDragging) {
+    const isFileDrag = drag.type === "file";
+    const showForPaneDrag = drag.type === "pane" && (!isSameGroup || allowSameGroup);
+
+    if (isFileDrag || showForPaneDrag) {
+      const el = containerRef.current;
+      if (el) {
+        const rect = el.getBoundingClientRect();
+        const { mouseX: mx, mouseY: my } = drag;
+        if (
+          rect.width > 0 &&
+          rect.height > 0 &&
+          mx >= rect.left &&
+          mx <= rect.right &&
+          my >= rect.top &&
+          my <= rect.bottom
+        ) {
+          const pos = getDropPosition(rect, mx, my);
+          // "center" on same group is a no-op (tab is already here)
+          if (isSameGroup && pos === "center") {
+            // keep visible=false, no overlay
+          } else {
+            visible = true;
+            hovered = pos;
+          }
         }
       }
     }
   }
 
-  // Mouse-up handler for detecting drops — reads drag state imperatively
+  // Drop handler — shared by mouseup (pane/file-explorer drags) and
+  // file-drop-commit (Finder drags)
   useEffect(() => {
-    const handleMouseUp = () => {
+    const handleDrop = () => {
       const d = getDragState();
       const el = containerRef.current;
       if (!d.isDragging || !el) return;
 
-      const sameGroup = d.groupId === groupId;
-      if (sameGroup && paneCount < 2) return;
-
       const rect = el.getBoundingClientRect();
       if (
-        d.mouseX >= rect.left &&
-        d.mouseX <= rect.right &&
-        d.mouseY >= rect.top &&
-        d.mouseY <= rect.bottom
-      ) {
-        const pos = getDropPosition(rect, d.mouseX, d.mouseY);
-        if (pos && !(sameGroup && pos === "center")) onDrop(pos);
+        d.mouseX < rect.left ||
+        d.mouseX > rect.right ||
+        d.mouseY < rect.top ||
+        d.mouseY > rect.bottom
+      ) return;
+
+      const pos = getDropPosition(rect, d.mouseX, d.mouseY);
+      if (!pos) return;
+
+      if (d.type === "file" && d.filePaths.length > 0) {
+        onFileDrop?.(pos, d.filePaths);
+      } else if (d.type === "pane") {
+        const sameGroup = d.groupId === groupId;
+        if (sameGroup && paneCount < 2) return;
+        if (sameGroup && pos === "center") return;
+        onDrop(pos);
       }
     };
-    document.addEventListener("mouseup", handleMouseUp);
-    return () => document.removeEventListener("mouseup", handleMouseUp);
-  }, [groupId, paneCount, onDrop]);
+
+    document.addEventListener("mouseup", handleDrop);
+    document.addEventListener(FILE_DROP_COMMIT_EVENT, handleDrop);
+    return () => {
+      document.removeEventListener("mouseup", handleDrop);
+      document.removeEventListener(FILE_DROP_COMMIT_EVENT, handleDrop);
+    };
+  }, [groupId, paneCount, onDrop, onFileDrop]);
 
   return (
     <div ref={containerRef} style={styles.hitTarget}>

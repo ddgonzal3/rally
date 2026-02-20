@@ -1,6 +1,10 @@
 /**
- * Mouse-event-based drag system for tab dragging between groups.
+ * Mouse-event-based drag system for tab and file dragging between groups.
  * Avoids the HTML5 Drag & Drop API which is unreliable in Tauri/WKWebView.
+ *
+ * Supports two drag types:
+ *   "pane" — dragging a tab between pane groups
+ *   "file" — dragging a file from the explorer or Finder into a pane group
  *
  * Uses useSyncExternalStore for proper React 18/19 integration —
  * components call useDragState() to reactively read drag state.
@@ -8,18 +12,24 @@
 
 import { useSyncExternalStore } from "react";
 
+export type DragType = "pane" | "file";
+
 export interface DragState {
   isDragging: boolean;
+  type: DragType;
   groupId: string | null;
   paneId: string | null;
+  filePaths: string[];
   mouseX: number;
   mouseY: number;
 }
 
 const IDLE_STATE: DragState = {
   isDragging: false,
+  type: "pane",
   groupId: null,
   paneId: null,
+  filePaths: [],
   mouseX: 0,
   mouseY: 0,
 };
@@ -52,8 +62,9 @@ export function getDragState(): Readonly<DragState> {
   return state;
 }
 
+/** Start dragging a pane tab (internal mouse-based drag). */
 export function startDrag(groupId: string, paneId: string, x: number, y: number) {
-  state = { isDragging: true, groupId, paneId, mouseX: x, mouseY: y };
+  state = { isDragging: true, type: "pane", groupId, paneId, filePaths: [], mouseX: x, mouseY: y };
 
   const onMouseMove = (e: MouseEvent) => {
     state = { ...state, mouseX: e.clientX, mouseY: e.clientY };
@@ -78,6 +89,52 @@ export function startDrag(groupId: string, paneId: string, x: number, y: number)
   document.addEventListener("mouseup", onMouseUp);
   document.body.style.cursor = "grabbing";
   document.body.style.userSelect = "none";
+  notify();
+}
+
+/** Start dragging file(s) from the file explorer (mouse-based). */
+export function startFileDrag(filePaths: string[], x: number, y: number) {
+  state = { isDragging: true, type: "file", groupId: null, paneId: null, filePaths, mouseX: x, mouseY: y };
+
+  const onMouseMove = (e: MouseEvent) => {
+    state = { ...state, mouseX: e.clientX, mouseY: e.clientY };
+    notify();
+  };
+
+  const onMouseUp = () => {
+    document.removeEventListener("mousemove", onMouseMove);
+    document.removeEventListener("mouseup", onMouseUp);
+    document.body.style.cursor = "";
+    document.body.style.userSelect = "";
+    // Notify with isDragging still true so drop targets can act
+    notify();
+    // Then end the drag
+    setTimeout(() => {
+      state = IDLE_STATE;
+      notify();
+    }, 0);
+  };
+
+  document.addEventListener("mousemove", onMouseMove);
+  document.addEventListener("mouseup", onMouseUp);
+  document.body.style.cursor = "grabbing";
+  document.body.style.userSelect = "none";
+  notify();
+}
+
+/**
+ * Start tracking an external file drag (Finder → window).
+ * No mouse listeners — Tauri's onDragDropEvent manages position updates.
+ */
+export function startExternalFileDrag(filePaths: string[], x: number, y: number) {
+  state = { isDragging: true, type: "file", groupId: null, paneId: null, filePaths, mouseX: x, mouseY: y };
+  notify();
+}
+
+/** Update drag position (for Tauri's 'over' events during external file drag). */
+export function updateDragPosition(x: number, y: number) {
+  if (!state.isDragging) return;
+  state = { ...state, mouseX: x, mouseY: y };
   notify();
 }
 

@@ -6,7 +6,8 @@ import { api } from "../lib/tauri";
 import { showContextMenu } from "../lib/contextMenu";
 import type { GitStatus } from "../lib/types";
 
-/** Aggregate dot: worst status across all paths in a workspace */
+/** Aggregate dot: worst status across all paths in a workspace.
+ *  Split dot when both changes AND sync needed. */
 function WorkspaceDot({ paths, gitStatuses, syncNeeded }: {
   paths: string[];
   gitStatuses: Record<string, GitStatus>;
@@ -17,6 +18,19 @@ function WorkspaceDot({ paths, gitStatuses, syncNeeded }: {
   const anyLoaded = paths.some((p) => gitStatuses[p]);
 
   if (!anyLoaded) return <span style={{ ...styles.dot, background: "#555" }} />;
+
+  // Split dot: both changes AND sync needed
+  if (anySyncNeeded && anyTrackedChanges) {
+    return (
+      <span
+        style={{
+          ...styles.dot,
+          background: "linear-gradient(90deg, #e8b930 50%, #888 50%)",
+        }}
+        className="pulse-dot"
+      />
+    );
+  }
 
   let color: string;
   let pulse = false;
@@ -116,7 +130,7 @@ const styles: Record<string, React.CSSProperties> = {
   sidebar: {
     width: 220,
     minWidth: 220,
-    background: "#252525",
+    background: "#1a1a1a",
     borderRight: "1px solid #333",
     display: "flex",
     flexDirection: "column",

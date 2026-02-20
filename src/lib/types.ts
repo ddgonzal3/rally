@@ -51,6 +51,35 @@ export interface ChangesSummary {
   untracked: string[];
 }
 
+// --- Ship Signal Types ---
+
+export interface ShipSignalFlaggedItem {
+  file: string;
+  line: number;
+  severity: string;
+  description: string;
+}
+
+export interface ShipSignal {
+  version: number;
+  timestamp: string;
+  repo_path: string;
+  branch: string;
+  verdict: "auto_merge" | "manual_review";
+  pr_number: number;
+  pr_url: string;
+  summary: string;
+  flagged_items: ShipSignalFlaggedItem[];
+}
+
+export type ShipPhase = "idle" | "shipping" | "awaiting_review" | "merging" | "syncing";
+
+export interface ShipStatus {
+  phase: ShipPhase;
+  signal?: ShipSignal;
+  pr_number?: number;
+}
+
 // --- Task Runner Types ---
 
 export interface TaskEntry {
@@ -58,6 +87,8 @@ export interface TaskEntry {
   command: string;
   label: string;
   cwd?: string;
+  builtin?: boolean;
+  file_path?: string;
 }
 
 export interface TaskRun {
@@ -79,6 +110,7 @@ export interface Pane {
   command?: string;
   filePath?: string;
   cwd?: string;
+  initialInput?: string;
 }
 
 export type SplitDirection = "horizontal" | "vertical";

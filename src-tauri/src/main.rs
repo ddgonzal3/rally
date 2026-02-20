@@ -5,6 +5,7 @@ use std::sync::{Arc, Mutex};
 use playbench::commands;
 use playbench::config_ops;
 use playbench::pty_manager::{self, PtyManager};
+use playbench::ship_ops;
 use tauri::Manager;
 
 fn main() {
@@ -49,8 +50,16 @@ fn main() {
             config_ops::write_file_content,
             config_ops::list_claude_configs,
             config_ops::list_skills,
+            ship_ops::check_ship_signal,
+            ship_ops::clear_ship_signal,
+            ship_ops::post_merge_sync,
         ])
         .setup(|app| {
+            // Install default commands (ship.md, review-pr.md) globally
+            if let Err(e) = ship_ops::ensure_default_commands() {
+                eprintln!("Warning: failed to install default commands: {}", e);
+            }
+
             let win = app.get_webview_window("main").unwrap();
             // Position window on the largest monitor's left half
             if let Ok(monitors) = win.available_monitors() {

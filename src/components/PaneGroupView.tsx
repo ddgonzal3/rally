@@ -17,9 +17,16 @@ interface PaneGroupViewProps {
 }
 
 function paneLabel(pane: Pane): string {
-  if (pane.type === "claude" || pane.type === "claude-launcher") return "claude";
+  if (pane.type === "claude" || pane.type === "claude-launcher") return pane.title || "claude";
   if (pane.type === "editor" || pane.type === "diff") return pane.title;
   return "zsh";
+}
+
+function paneTooltip(pane: Pane): string {
+  if (pane.type === "editor" && pane.filePath) return pane.filePath;
+  if (pane.type === "diff" && pane.cwd) return pane.filePath ? `${pane.cwd}/${pane.filePath}` : pane.cwd;
+  if (pane.cwd) return pane.cwd;
+  return pane.title;
 }
 
 // --- Path Picker Popover ---
@@ -113,6 +120,7 @@ export function PaneGroupView({
     splitGroup,
     transformPane,
     dropPaneOnGroup,
+    dropFileOnGroup,
   } = useWorkspaceStore();
 
   const ws = workspaces.find((w) => w.id === workspaceId);
@@ -211,6 +219,14 @@ export function PaneGroupView({
     [workspaceId, group.id, dropPaneOnGroup]
   );
 
+  const handleFileDrop = useCallback(
+    (position: DropPosition, filePaths: string[]) => {
+      dropFileOnGroup(workspaceId, group.id, filePaths, position);
+      endDrag();
+    },
+    [workspaceId, group.id, dropFileOnGroup]
+  );
+
   return (
     <div style={styles.container}>
       {/* Tab bar */}
@@ -227,6 +243,7 @@ export function PaneGroupView({
                   ...(isActive ? styles.tabActive : {}),
                 }}
                 onClick={() => setActivePane(workspaceId, group.id, pane.id)}
+                title={paneTooltip(pane)}
               >
                 <span style={styles.tabLabel}>{paneLabel(pane)}</span>
                 <span
@@ -332,14 +349,14 @@ export function PaneGroupView({
                   onLaunch={() => handleLaunchClaude(pane.id)}
                 />
               ) : (
-                <Terminal cwd={paneCwd} command={pane.command} />
+                <Terminal cwd={paneCwd} command={pane.command} initialInput={pane.initialInput} />
               )}
             </div>
           );
         })}
 
         {/* Drop zone target — always mounted for hit testing */}
-        <DropZoneTarget groupId={group.id} paneCount={group.panes.length} onDrop={handleDrop} />
+        <DropZoneTarget groupId={group.id} paneCount={group.panes.length} onDrop={handleDrop} onFileDrop={handleFileDrop} />
       </div>
     </div>
   );
@@ -357,9 +374,9 @@ const styles: Record<string, React.CSSProperties> = {
   tabBar: {
     display: "flex",
     alignItems: "stretch",
-    background: "#252525",
-    minHeight: 26,
-    maxHeight: 26,
+    background: "#1a1a1a",
+    minHeight: 32,
+    maxHeight: 32,
     overflow: "hidden",
     flexShrink: 0,
   },
@@ -373,13 +390,13 @@ const styles: Record<string, React.CSSProperties> = {
     alignItems: "center",
     gap: 6,
     padding: "0 12px",
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: 500,
     color: "#777",
     cursor: "grab",
-    background: "#252525",
+    background: "#1a1a1a",
     border: "none",
-    borderRight: "1px solid #1a1a1a",
+    borderRight: "1px solid #151515",
     whiteSpace: "nowrap" as const,
     userSelect: "none" as const,
     minWidth: 0,
@@ -387,7 +404,7 @@ const styles: Record<string, React.CSSProperties> = {
   },
   tabActive: {
     color: "#ddd",
-    background: "#1a1a1a",
+    background: "#1e1e1e",
   },
   tabLabel: {
     overflow: "hidden",

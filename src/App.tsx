@@ -5,9 +5,11 @@ import { FileExplorer } from "./components/FileExplorer";
 import { PaneLayout } from "./components/PaneLayout";
 import { GitActions } from "./components/GitActions";
 import { useWorkspaceStore } from "./stores/workspaceStore";
+import { startExternalFileDrag, updateDragPosition, endDrag } from "./lib/dragContext";
+import { FILE_DROP_COMMIT_EVENT } from "./components/DropZoneOverlay";
 
 export function App() {
-  const { loadWorkspaces, refreshAllGitStatuses, refreshAllPrStatuses } =
+  const { loadWorkspaces, refreshAllGitStatuses, refreshAllPrStatuses, pollShipSignals } =
     useWorkspaceStore();
   const [panelCollapsed, setPanelCollapsed] = useState(false);
   const [fileExplorerCollapsed, setFileExplorerCollapsed] = useState(false);
@@ -21,9 +23,55 @@ export function App() {
     });
     const gitInterval = setInterval(refreshAllGitStatuses, 10000);
     const prInterval = setInterval(refreshAllPrStatuses, 20000);
+    const shipInterval = setInterval(pollShipSignals, 5000);
     return () => {
       clearInterval(gitInterval);
       clearInterval(prInterval);
+      clearInterval(shipInterval);
+    };
+  }, []);
+
+  // Finder drag-and-drop: bridge Tauri file drop events into the drag context
+  // so each PaneGroup's DropZoneTarget shows the same overlay as tab drags.
+  useEffect(() => {
+    const appWin = getCurrentWindow();
+    let cancelled = false;
+    let unlisten: (() => void) | null = null;
+    const dpr = window.devicePixelRatio || 1;
+
+    appWin.onDragDropEvent((event) => {
+      if (cancelled) return;
+      const { activeWorkspaceId } = useWorkspaceStore.getState();
+      if (!activeWorkspaceId) return;
+
+      const { type } = event.payload;
+      if (type === "enter") {
+        // Tauri gives PhysicalPosition — convert to CSS pixels for getBoundingClientRect
+        const x = event.payload.position.x / dpr;
+        const y = event.payload.position.y / dpr;
+        startExternalFileDrag(event.payload.paths, x, y);
+      } else if (type === "over") {
+        const x = event.payload.position.x / dpr;
+        const y = event.payload.position.y / dpr;
+        updateDragPosition(x, y);
+      } else if (type === "drop") {
+        const x = event.payload.position.x / dpr;
+        const y = event.payload.position.y / dpr;
+        updateDragPosition(x, y);
+        // Dispatch custom event so DropZoneTargets can commit the file drop
+        document.dispatchEvent(new Event(FILE_DROP_COMMIT_EVENT));
+        setTimeout(() => endDrag(), 0);
+      } else if (type === "leave") {
+        endDrag();
+      }
+    }).then((fn) => {
+      if (cancelled) fn();
+      else unlisten = fn;
+    });
+
+    return () => {
+      cancelled = true;
+      unlisten?.();
     };
   }, []);
 

@@ -68,6 +68,7 @@ Rust Backend (src-tauri/src/)
 | `src-tauri/src/git_ops.rs` | `git_cmd()` helper + status/sync/rebase/commit/push/PR |
 | `src-tauri/src/commands.rs` | Tauri command handlers for workspace CRUD + file listing + git info detection |
 | `src-tauri/src/config_ops.rs` | Read/write CLAUDE.md files, list configs + skills |
+| `src-tauri/src/ship_ops.rs` | Ship signal protocol, built-in command install + symlinks, post-merge sync |
 | `src-tauri/src/workspace.rs` | Workspace/ProcessConfig/GitStatus structs + JSON persistence |
 | `src-tauri/tauri.conf.json` | Window config, bundle targets, plugin permissions |
 | `src-tauri/capabilities/default.json` | Tauri v2 permission grants |
@@ -82,6 +83,7 @@ Rust Backend (src-tauri/src/)
 | `src/components/Sidebar.tsx` | Workspace list + status badges + Add/Settings buttons |
 | `src/components/GitActions.tsx` | Git operation buttons with result display |
 | `src/components/FileExplorer.tsx` | Lazy-loading directory tree |
+| `src/components/TaskPanel.tsx` | PLAY.json tasks + built-in commands (Ship, Review PR) |
 | `src/components/AddWorkspaceModal.tsx` | New workspace form with folder picker + git auto-detect |
 | `src/components/SettingsPanel.tsx` | Monaco editor for CLAUDE.md/skills files |
 | `src/stores/workspaceStore.ts` | Zustand store: workspaces, git statuses, panes, all actions |
@@ -103,6 +105,62 @@ PTY events use the pattern `pty-{eventtype}-{ptyid}`. To add a new event:
 1. Define payload struct in `pty_manager.rs` with `#[derive(Serialize, Clone)]`
 2. Emit from the reader thread via `app_handle.emit(&format!("pty-eventtype-{}", id), payload)`
 3. Listen in `Terminal.tsx` via `listen<PayloadType>("pty-eventtype-" + ptyId, callback)`
+
+## Built-in Commands (Ship, Review PR)
+
+Playbench ships with built-in Claude commands (`/ship`, `/review-pr`) that appear in every workspace's task panel alongside PLAY.json tasks.
+
+### File Layout
+
+```
+~/.playbench/commands/           ← Actual files (app's domain, written on startup)
+  ship.md                          Embedded in binary via include_str!()
+  review-pr.md                     Version markers control update logic
+
+~/.claude/commands/              ← Symlinks (so Claude Code finds them as slash commands)
+  ship.md → ~/.playbench/commands/ship.md
+  review-pr.md → ~/.playbench/commands/review-pr.md
+
+src-tauri/resources/commands/    ← Source .md files (compiled into binary)
+  ship.md
+  review-pr.md
+```
+
+### Key Design Decisions
+
+- **Symlinks, not copies**: The app never writes real files into `~/.claude/`. If the user has their own `ship.md` (a real file, not a symlink), the app leaves it alone.
+- **Version markers**: Each .md starts with `<!-- playbench-ship-v1 -->`. The app only overwrites if the version is older.
+- **`builtins` (opt-in)**: Built-ins only appear if explicitly listed in PLAY.json: `{ "builtins": ["ship", "review-pr"] }`. No PLAY.json or no `builtins` field = no built-in commands shown.
+- **No focus steal**: Clicking a built-in command opens a Claude pane but does not switch focus away from the current pane.
+
+### Ship Signal Protocol
+
+The `/ship` command (commit → push → PR → review → merge) communicates with the app via signal files:
+
+```
+~/.playbench/ship-signals/<sanitized-repo-path>.json
+```
+
+| Verdict | App Behavior |
+|---------|-------------|
+| `auto_merge` | Merges PR → syncs shipping branch to main → marks related repos as needing sync → deletes signal |
+| `manual_review` | Shows amber "Review Needed" badge in GitActions bar — no auto-open, no focus steal |
+
+### Adding New Built-in Commands
+
+1. Create the `.md` file in `src-tauri/resources/commands/`
+2. Add `include_str!()` + version constant in `ship_ops.rs`
+3. Add to `install_command()` and `symlink_command()` calls in `ensure_default_commands()`
+4. Add entry in `builtin_commands()` in `commands.rs`
+
+### Related Files
+
+| File | Role |
+|------|------|
+| `src-tauri/src/ship_ops.rs` | Signal file ops, command install + symlinks, post-merge sync |
+| `src-tauri/src/commands.rs` | `list_tasks()` merges PLAY.json tasks + built-in commands |
+| `src/components/TaskPanel.tsx` | Renders task list, routes built-in clicks to Claude panes |
+| `src/stores/workspaceStore.ts` | `pollShipSignals()`, `handleAutoMerge()`, `openClaudeCommand()` |
 
 ## Known Constraints
 

@@ -12,6 +12,7 @@ import type {
   SplitDirection,
   PaneGroup,
   TaskRun,
+  ShipStatus,
 } from "../lib/types";
 import {
   createDefaultLayout,
@@ -39,6 +40,8 @@ interface WorkspaceState {
   explorerViewModes: Record<string, "files" | "curated">;
   /** Active task runs keyed by "rootPath:taskName" */
   taskRuns: Record<string, TaskRun>;
+  /** Ship status keyed by repo path */
+  shipStatuses: Record<string, ShipStatus>;
   loading: boolean;
 
   // Workspace actions
@@ -112,6 +115,13 @@ interface WorkspaceState {
   openDiff: (workspaceId: string, rootPath: string) => void;
   setExplorerViewMode: (rootPath: string, mode: "files" | "curated") => void;
 
+  // Ship actions
+  pollShipSignals: () => Promise<void>;
+  handleAutoMerge: (repoPath: string) => Promise<void>;
+
+  /** Open a Claude pane that auto-sends a slash command. Does NOT steal focus. */
+  openClaudeCommand: (workspaceId: string, cwd: string, slashCommand: string, title: string) => void;
+
   // Task runner actions
   runTask: (rootPath: string, taskName: string, command: string, cwd?: string) => Promise<void>;
   stopTask: (rootPath: string, taskName: string) => Promise<void>;
@@ -123,6 +133,14 @@ interface WorkspaceState {
     sourceGroupId: string,
     sourcePaneId: string,
     targetGroupId: string,
+    position: "top" | "bottom" | "left" | "right" | "center"
+  ) => void;
+
+  /** Drop file(s) onto a pane group — center adds tab(s), edge creates a split */
+  dropFileOnGroup: (
+    workspaceId: string,
+    targetGroupId: string,
+    filePaths: string[],
     position: "top" | "bottom" | "left" | "right" | "center"
   ) => void;
 }
@@ -160,6 +178,7 @@ export const useWorkspaceStore = create<WorkspaceState>()(
   activeGroupIds: {},
   explorerViewModes: {},
   taskRuns: {},
+  shipStatuses: {},
   loading: false,
 
   // --- Workspace actions ---
@@ -327,6 +346,169 @@ export const useWorkspaceStore = create<WorkspaceState>()(
   setExplorerViewMode: (rootPath, mode) => {
     set((s) => ({
       explorerViewModes: { ...s.explorerViewModes, [rootPath]: mode },
+    }));
+  },
+
+  // --- Ship actions ---
+
+  pollShipSignals: async () => {
+    const workspaces = get().workspaces;
+    const allPaths = new Set<string>();
+    for (const ws of workspaces) {
+      for (const p of ws.paths) allPaths.add(p);
+    }
+
+    for (const repoPath of allPaths) {
+      const currentStatus = get().shipStatuses[repoPath];
+      // Skip paths already in merging/syncing phase (app is handling them)
+      if (currentStatus?.phase === "merging" || currentStatus?.phase === "syncing") continue;
+
+      try {
+        const signal = await api.checkShipSignal(repoPath);
+        if (!signal) {
+          // No signal — if we were tracking this path, clear it
+          if (currentStatus && currentStatus.phase !== "idle") {
+            set((s) => ({
+              shipStatuses: { ...s.shipStatuses, [repoPath]: { phase: "idle" } },
+            }));
+          }
+          continue;
+        }
+
+        if (signal.verdict === "auto_merge") {
+          // Trigger auto-merge flow
+          set((s) => ({
+            shipStatuses: {
+              ...s.shipStatuses,
+              [repoPath]: { phase: "merging", signal, pr_number: signal.pr_number },
+            },
+          }));
+          // Don't await — let it run async
+          get().handleAutoMerge(repoPath);
+        } else if (signal.verdict === "manual_review") {
+          set((s) => ({
+            shipStatuses: {
+              ...s.shipStatuses,
+              [repoPath]: { phase: "awaiting_review", signal, pr_number: signal.pr_number },
+            },
+          }));
+        }
+      } catch {
+        // Signal check failed — ignore silently
+      }
+    }
+  },
+
+  handleAutoMerge: async (repoPath) => {
+    const signal = get().shipStatuses[repoPath]?.signal;
+    if (!signal) return;
+
+    const ws = get().workspaces.find((w) => w.paths.includes(repoPath));
+    const mainBranch = ws?.main_branch ?? "main";
+
+    try {
+      // Phase: merging
+      set((s) => ({
+        shipStatuses: {
+          ...s.shipStatuses,
+          [repoPath]: { phase: "merging", signal, pr_number: signal.pr_number },
+        },
+      }));
+
+      // Merge the PR
+      await api.gitMergePr(repoPath, "squash");
+
+      // Phase: syncing
+      set((s) => ({
+        shipStatuses: {
+          ...s.shipStatuses,
+          [repoPath]: { phase: "syncing", signal, pr_number: signal.pr_number },
+        },
+      }));
+
+      // Auto-sync the shipping branch back to main
+      await api.postMergeSync(repoPath, mainBranch, signal.branch);
+
+      // Mark related repos as needing sync
+      if (ws) {
+        const relatedPaths = get().workspaces
+          .filter((w) => w.repo_url === ws.repo_url)
+          .flatMap((w) => w.paths)
+          .filter((p) => p !== repoPath);
+
+        if (relatedPaths.length > 0) {
+          set((s) => {
+            const newSyncNeeded = { ...s.syncNeeded };
+            for (const p of relatedPaths) newSyncNeeded[p] = true;
+            return { syncNeeded: newSyncNeeded };
+          });
+        }
+      }
+
+      // Clear signal file
+      await api.clearShipSignal(repoPath);
+
+      // Refresh git status
+      await get().refreshGitStatusForPath(repoPath, mainBranch);
+      await get().refreshPrStatusForPath(repoPath);
+
+      // Done
+      set((s) => ({
+        shipStatuses: { ...s.shipStatuses, [repoPath]: { phase: "idle" } },
+      }));
+    } catch (e) {
+      console.error(`Auto-merge failed for ${repoPath}:`, e);
+      // Revert to showing signal so user can see what happened
+      set((s) => ({
+        shipStatuses: {
+          ...s.shipStatuses,
+          [repoPath]: { phase: "awaiting_review", signal, pr_number: signal.pr_number },
+        },
+      }));
+    }
+  },
+
+  openClaudeCommand: (workspaceId, cwd, slashCommand, title) => {
+    const layout = get().getOrCreateLayout(workspaceId);
+
+    // Find a group in the bottom area of the layout to add the pane
+    let targetGroupId: string | null = null;
+    const root = layout.root;
+    if (root.type === "split" && root.direction === "vertical") {
+      targetGroupId = findFirstGroupInSubtree(root.children[1]);
+    }
+    if (!targetGroupId) {
+      targetGroupId = findFirstGroupInSubtree(root);
+    }
+    if (!targetGroupId) return;
+
+    const pane: Pane = {
+      id: crypto.randomUUID(),
+      type: "claude",
+      title,
+      command: "claude --dangerously-skip-permissions",
+      cwd,
+      initialInput: slashCommand,
+    };
+
+    // Add pane to group but do NOT set it as active (no focus steal)
+    const group = layout.groups[targetGroupId];
+    if (!group) return;
+    set((s) => ({
+      layouts: {
+        ...s.layouts,
+        [workspaceId]: {
+          ...layout,
+          groups: {
+            ...layout.groups,
+            [targetGroupId]: {
+              ...group,
+              panes: [...group.panes, pane],
+              // Keep existing activePaneId — don't switch focus
+            },
+          },
+        },
+      },
     }));
   },
 
@@ -620,29 +802,28 @@ export const useWorkspaceStore = create<WorkspaceState>()(
   openFile: (workspaceId, filePath) => {
     const layout = get().getOrCreateLayout(workspaceId);
 
-    // Dedup: if an editor pane for this file already exists, focus it
-    for (const [gid, group] of Object.entries(layout.groups)) {
-      const existing = group.panes.find(
-        (p) => p.type === "editor" && p.filePath === filePath
-      );
-      if (existing) {
-        get().setActivePane(workspaceId, gid, existing.id);
-        return;
-      }
-    }
-
     // Find target group in the "top" area of the layout
     let targetGroupId: string | null = null;
     const root = layout.root;
     if (root.type === "split" && root.direction === "vertical") {
-      // Top subtree is children[0]
       targetGroupId = findFirstGroupInSubtree(root.children[0]);
     }
-    // Fallback: use the first group found anywhere
     if (!targetGroupId) {
       targetGroupId = findFirstGroupInSubtree(root);
     }
     if (!targetGroupId) return;
+
+    // Dedup only within the target group — if already open there, just focus it
+    const targetGroup = layout.groups[targetGroupId];
+    if (targetGroup) {
+      const existing = targetGroup.panes.find(
+        (p) => p.type === "editor" && p.filePath === filePath
+      );
+      if (existing) {
+        get().setActivePane(workspaceId, targetGroupId, existing.id);
+        return;
+      }
+    }
 
     const fileName = filePath.split("/").pop() ?? filePath;
     const pane: Pane = {
@@ -767,6 +948,60 @@ export const useWorkspaceStore = create<WorkspaceState>()(
       layouts: {
         ...s.layouts,
         [workspaceId]: { root: newRoot, groups: newGroups },
+      },
+    }));
+  },
+
+  dropFileOnGroup: (workspaceId, targetGroupId, filePaths, position) => {
+    if (filePaths.length === 0) return;
+
+    const makePanes = (): Pane[] =>
+      filePaths.map((fp) => ({
+        id: crypto.randomUUID(),
+        type: "editor" as const,
+        title: fp.split("/").pop() ?? fp,
+        filePath: fp,
+      }));
+
+    if (position === "center") {
+      // Add files as tabs in the target group
+      for (const pane of makePanes()) {
+        get().addPaneToGroup(workspaceId, targetGroupId, pane);
+      }
+      return;
+    }
+
+    // Edge drop: create a new group with the file panes, split the target
+    const panes = makePanes();
+    const newGroup: PaneGroup = {
+      id: crypto.randomUUID(),
+      panes,
+      activePaneId: panes[0].id,
+    };
+
+    const layout = get().getOrCreateLayout(workspaceId);
+    const direction: "horizontal" | "vertical" =
+      position === "left" || position === "right" ? "horizontal" : "vertical";
+    const newFirst = position === "top" || position === "left";
+
+    const splitNode: LayoutNode = {
+      type: "split",
+      id: crypto.randomUUID(),
+      direction,
+      children: newFirst
+        ? [{ type: "group", groupId: newGroup.id }, { type: "group", groupId: targetGroupId }]
+        : [{ type: "group", groupId: targetGroupId }, { type: "group", groupId: newGroup.id }],
+      ratio: 0.5,
+    };
+    const newRoot = replaceNode(layout.root, targetGroupId, splitNode);
+
+    set((s) => ({
+      layouts: {
+        ...s.layouts,
+        [workspaceId]: {
+          root: newRoot,
+          groups: { ...layout.groups, [newGroup.id]: newGroup },
+        },
       },
     }));
   },

@@ -27,16 +27,17 @@ pub fn list_directory(path: String) -> Result<Vec<FileEntry>, String> {
         .filter_map(|entry| {
             let entry = entry.ok()?;
             let name = entry.file_name().to_string_lossy().to_string();
+            let is_dir = entry.file_type().map(|ft| ft.is_dir()).unwrap_or(false);
 
             // Skip hidden/large dirs
-            if entry.file_type().ok()?.is_dir() && HIDDEN_DIRS.contains(&name.as_str()) {
+            if is_dir && HIDDEN_DIRS.contains(&name.as_str()) {
                 return None;
             }
 
             Some(FileEntry {
                 name,
                 path: entry.path().to_string_lossy().to_string(),
-                is_dir: entry.file_type().ok()?.is_dir(),
+                is_dir,
             })
         })
         .collect();
@@ -252,6 +253,12 @@ struct PlayConfig {
     include: Vec<String>,
     #[serde(default)]
     tasks: std::collections::HashMap<String, TaskDef>,
+    /// Opt-in list of built-in commands to show (e.g. ["ship", "review-pr"]).
+    /// If absent, no built-ins are shown.
+    builtins: Option<Vec<String>>,
+    /// Set to true to hide .claude directory from curated view.
+    #[serde(default, rename = "hideClaude")]
+    hide_claude: bool,
 }
 
 #[tauri::command]
@@ -259,7 +266,32 @@ pub fn list_curated_files(root_path: String) -> Result<Vec<CuratedEntry>, String
     let root = Path::new(&root_path);
     let mut entries = Vec::new();
 
-    // Config files: CLAUDE.md, README variants, PLAY.json
+    // Check PLAY.json for hideClaude option
+    let hide_claude = {
+        let play_json = root.join("PLAY.json");
+        if play_json.exists() {
+            fs::read_to_string(&play_json)
+                .ok()
+                .and_then(|c| serde_json::from_str::<PlayConfig>(&c).ok())
+                .map(|c| c.hide_claude)
+                .unwrap_or(false)
+        } else {
+            false
+        }
+    };
+
+    // .claude directory — shown as a collapsible folder (unless hidden via PLAY.json)
+    let claude_dir = root.join(".claude");
+    if !hide_claude && claude_dir.is_dir() {
+        entries.push(CuratedEntry {
+            name: ".claude".to_string(),
+            path: claude_dir.to_string_lossy().to_string(),
+            is_dir: true,
+            category: "config".to_string(),
+        });
+    }
+
+    // Config files: CLAUDE.md, README variants
     for name in &["CLAUDE.md", "README.md", "README", "README.txt"] {
         let p = root.join(name);
         if p.exists() {
@@ -269,42 +301,6 @@ pub fn list_curated_files(root_path: String) -> Result<Vec<CuratedEntry>, String
                 is_dir: false,
                 category: "config".to_string(),
             });
-        }
-    }
-
-    // Skills: .claude/skills/*.md
-    let skills_dir = root.join(".claude").join("skills");
-    if skills_dir.is_dir() {
-        if let Ok(dir) = fs::read_dir(&skills_dir) {
-            for entry in dir.flatten() {
-                let p = entry.path();
-                if p.extension().map(|e| e == "md").unwrap_or(false) {
-                    entries.push(CuratedEntry {
-                        name: p.file_name().unwrap_or_default().to_string_lossy().to_string(),
-                        path: p.to_string_lossy().to_string(),
-                        is_dir: false,
-                        category: "skill".to_string(),
-                    });
-                }
-            }
-        }
-    }
-
-    // Commands: .claude/commands/*.md
-    let commands_dir = root.join(".claude").join("commands");
-    if commands_dir.is_dir() {
-        if let Ok(dir) = fs::read_dir(&commands_dir) {
-            for entry in dir.flatten() {
-                let p = entry.path();
-                if p.extension().map(|e| e == "md").unwrap_or(false) {
-                    entries.push(CuratedEntry {
-                        name: p.file_name().unwrap_or_default().to_string_lossy().to_string(),
-                        path: p.to_string_lossy().to_string(),
-                        is_dir: false,
-                        category: "command".to_string(),
-                    });
-                }
-            }
         }
     }
 
@@ -353,29 +349,74 @@ pub struct TaskEntry {
     pub command: String,
     pub label: String,
     pub cwd: Option<String>,
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub builtin: bool,
+    /// Path to the command's .md file (for viewing in the editor)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub file_path: Option<String>,
+}
+
+/// Built-in commands that ship with the app.
+fn builtin_commands() -> Vec<TaskEntry> {
+    // Resolve the app's commands directory
+    let cmd_dir = crate::ship_ops::playbench_commands_dir()
+        .unwrap_or_else(|_| std::path::PathBuf::from("."));
+
+    vec![
+        TaskEntry {
+            name: "ship".to_string(),
+            label: "Ship".to_string(),
+            command: "claude:/ship".to_string(),
+            cwd: None,
+            builtin: true,
+            file_path: Some(cmd_dir.join("ship.md").to_string_lossy().to_string()),
+        },
+        TaskEntry {
+            name: "review-pr".to_string(),
+            label: "Review PR".to_string(),
+            command: "claude:/review-pr".to_string(),
+            cwd: None,
+            builtin: true,
+            file_path: Some(cmd_dir.join("review-pr.md").to_string_lossy().to_string()),
+        },
+    ]
 }
 
 #[tauri::command]
 pub fn list_tasks(root_path: String) -> Result<Vec<TaskEntry>, String> {
     let play_json = Path::new(&root_path).join("PLAY.json");
-    if !play_json.exists() {
-        return Ok(vec![]);
-    }
-    let content = fs::read_to_string(&play_json)
-        .map_err(|e| format!("Failed to read PLAY.json: {}", e))?;
-    let config: PlayConfig = serde_json::from_str(&content)
-        .map_err(|e| format!("Failed to parse PLAY.json: {}", e))?;
 
-    let mut tasks: Vec<TaskEntry> = config
-        .tasks
+    let (config_tasks, include_builtins) = if play_json.exists() {
+        let content = fs::read_to_string(&play_json)
+            .map_err(|e| format!("Failed to read PLAY.json: {}", e))?;
+        let config: PlayConfig = serde_json::from_str(&content)
+            .map_err(|e| format!("Failed to parse PLAY.json: {}", e))?;
+        (config.tasks, config.builtins)
+    } else {
+        (std::collections::HashMap::new(), None)
+    };
+
+    let mut tasks: Vec<TaskEntry> = config_tasks
         .into_iter()
         .map(|(name, def)| TaskEntry {
             label: def.label.unwrap_or_else(|| name.clone()),
             name,
             command: def.command,
             cwd: def.cwd,
+            builtin: false,
+            file_path: None,
         })
         .collect();
+
+    // Append built-in commands only if explicitly opted in via "builtins" field
+    if let Some(ref include_list) = include_builtins {
+        for builtin in builtin_commands() {
+            if include_list.contains(&builtin.name) {
+                tasks.push(builtin);
+            }
+        }
+    }
+
     tasks.sort_by(|a, b| a.name.cmp(&b.name));
     Ok(tasks)
 }

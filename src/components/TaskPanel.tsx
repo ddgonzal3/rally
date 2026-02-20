@@ -10,11 +10,11 @@ interface TaskPanelProps {
   workspaceId: string;
 }
 
-export function TaskPanel({ rootPath }: TaskPanelProps) {
+export function TaskPanel({ rootPath, workspaceId }: TaskPanelProps) {
   const [tasks, setTasks] = useState<TaskEntry[]>([]);
   const [viewingTask, setViewingTask] = useState<string | null>(null);
   const [popupPos, setPopupPos] = useState({ x: 0, y: 0 });
-  const { taskRuns, runTask, stopTask } = useWorkspaceStore();
+  const { taskRuns, runTask, stopTask, openClaudeCommand, openFile } = useWorkspaceStore();
 
   useEffect(() => {
     api.listTasks(rootPath).then(setTasks).catch(() => setTasks([]));
@@ -29,6 +29,18 @@ export function TaskPanel({ rootPath }: TaskPanelProps) {
     setViewingTask(key);
   }
 
+  function handleLabelClick(e: React.MouseEvent, task: TaskEntry) {
+    e.stopPropagation();
+    if (!workspaceId) return;
+    if (task.file_path) {
+      // Built-in commands have their file_path set by the backend (points to ~/.playbench/commands/)
+      openFile(workspaceId, task.file_path);
+    } else {
+      // PLAY.json tasks have auto-generated .md files
+      openFile(workspaceId, `${rootPath}/.claude/commands/_play_${task.name}.md`);
+    }
+  }
+
   return (
     <>
       <div style={styles.separator} />
@@ -36,6 +48,7 @@ export function TaskPanel({ rootPath }: TaskPanelProps) {
         const key = `${rootPath}:${task.name}`;
         const run = taskRuns[key];
         const isRunning = run?.status === "running";
+        const status = run?.status ?? null;
 
         return (
           <div
@@ -43,16 +56,36 @@ export function TaskPanel({ rootPath }: TaskPanelProps) {
             style={styles.row}
             onClick={(e) => handleRowClick(e, key)}
           >
-            <StatusDot status={run?.status ?? null} />
-            <span style={styles.label}>{task.label}</span>
+            <span
+              style={{ ...styles.label, cursor: "pointer" }}
+              onClick={(e) => handleLabelClick(e, task)}
+              title={task.file_path ?? task.command}
+            >
+              {task.label}
+            </span>
             <button
               onClick={(e) => {
                 e.stopPropagation();
-                isRunning ? stopTask(rootPath, task.name) : runTask(rootPath, task.name, task.command, task.cwd);
+                if (task.builtin && task.command.startsWith("claude:")) {
+                  const slashCommand = task.command.replace("claude:", "");
+                  openClaudeCommand(workspaceId, rootPath, slashCommand, task.label);
+                } else if (isRunning) {
+                  stopTask(rootPath, task.name);
+                } else {
+                  runTask(rootPath, task.name, task.command, task.cwd);
+                }
               }}
               style={styles.actionBtn}
             >
-              {isRunning ? <StopIcon /> : <PlayIcon />}
+              {status === "running" ? (
+                <StopIcon />
+              ) : status === "success" ? (
+                <SuccessIcon />
+              ) : status === "error" ? (
+                <ErrorIcon />
+              ) : (
+                <PlayIcon />
+              )}
             </button>
           </div>
         );
@@ -89,19 +122,19 @@ function StopIcon() {
   );
 }
 
-function StatusDot({ status }: { status: string | null }) {
-  if (!status) return <span style={{ ...styles.dot, background: "#444" }} />;
-  const colors: Record<string, string> = {
-    running: "#e8b930",
-    success: "#4caf50",
-    error: "#e06c75",
-    stopped: "#888",
-  };
+function SuccessIcon() {
   return (
-    <span
-      style={{ ...styles.dot, background: colors[status] || "#444" }}
-      className={status === "running" ? "pulse-dot" : undefined}
-    />
+    <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
+      <path d="M2 5.5L4 7.5L8 3" stroke="#4caf50" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+function ErrorIcon() {
+  return (
+    <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
+      <path d="M2.5 2.5L7.5 7.5M7.5 2.5L2.5 7.5" stroke="#e06c75" strokeWidth="1.5" strokeLinecap="round" />
+    </svg>
   );
 }
 
@@ -306,12 +339,6 @@ const styles: Record<string, React.CSSProperties> = {
     cursor: "pointer",
     padding: 0,
     borderRadius: 3,
-    flexShrink: 0,
-  },
-  dot: {
-    width: 7,
-    height: 7,
-    borderRadius: "50%",
     flexShrink: 0,
   },
 };

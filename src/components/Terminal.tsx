@@ -9,6 +9,7 @@ import "@xterm/xterm/css/xterm.css";
 interface TerminalProps {
   cwd: string;
   command?: string;
+  initialInput?: string;
 }
 
 const encoder = new TextEncoder();
@@ -45,7 +46,7 @@ function safeFit(term: XTerminal, fitAddon: FitAddon): boolean {
   return true;
 }
 
-export function Terminal({ cwd, command }: TerminalProps) {
+export function Terminal({ cwd, command, initialInput }: TerminalProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const termRef = useRef<XTerminal | null>(null);
   const ptyIdRef = useRef<string | null>(null);
@@ -60,11 +61,11 @@ export function Terminal({ cwd, command }: TerminalProps) {
       cols: 80,
       rows: 24,
       theme: {
-        background: "#1a1a1a",
+        background: "#1e1e1e",
         foreground: "#e0e0e0",
         cursor: "#a0a0a0",
         selectionBackground: "#44444488",
-        black: "#1a1a1a",
+        black: "#1e1e1e",
         red: "#df7d7d",
         green: "#7ddf7d",
         yellow: "#dfdf7d",
@@ -136,6 +137,18 @@ export function Terminal({ cwd, command }: TerminalProps) {
           }
         });
 
+        // Send initialInput after a delay to let the command start
+        if (initialInput) {
+          setTimeout(() => {
+            if (ptyIdRef.current) {
+              api.writePty(
+                ptyIdRef.current,
+                Array.from(encoder.encode(initialInput + "\n"))
+              );
+            }
+          }, 1500);
+        }
+
         // Sync dimensions after the async gap — a resize may have occurred
         // during the await (before onResize was registered), leaving the
         // PTY at stale dimensions.
@@ -186,7 +199,7 @@ export function Terminal({ cwd, command }: TerminalProps) {
       unlistenExitRef.current?.();
       term.dispose();
     };
-  }, [cwd, command]);
+  }, [cwd, command, initialInput]);
 
   return (
     <div style={styles.container}>
@@ -202,7 +215,7 @@ const styles: Record<string, React.CSSProperties> = {
     flex: 1,
     minWidth: 0,
     minHeight: 0,
-    background: "#1a1a1a",
+    background: "#1e1e1e",
     overflow: "hidden",
   },
   terminal: {

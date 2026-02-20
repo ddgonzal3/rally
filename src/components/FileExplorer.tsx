@@ -1,12 +1,15 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import { useWorkspaceStore } from "../stores/workspaceStore";
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 import { api } from "../lib/tauri";
 import { showContextMenu } from "../lib/contextMenu";
+import { startFileDrag } from "../lib/dragContext";
 import { ChevronIcon, FileIcon } from "./FileIcons";
 import { TaskPanel } from "./TaskPanel";
 import type { GitStatus, PrStatus, ChangesSummary } from "../lib/types";
+
+const FILE_DRAG_THRESHOLD = 5;
 
 /** Button that brightens on hover */
 function HoverButton({ children, onClick, title, baseStyle }: {
@@ -179,11 +182,39 @@ function FileTreeNode({ entry, depth, rootPath }: { entry: FileEntry; depth: num
   }, [entry, loaded, expanded, activeWorkspaceId, openFile]);
 
   const [hovered, setHovered] = useState(false);
+  const dragStartRef = useRef<{ x: number; y: number } | null>(null);
+
+  const handleMouseDown = useCallback((e: React.MouseEvent) => {
+    if (entry.is_dir || e.button !== 0) return;
+    const startX = e.clientX;
+    const startY = e.clientY;
+    dragStartRef.current = { x: startX, y: startY };
+
+    const onMouseMove = (ev: MouseEvent) => {
+      if (!dragStartRef.current) return;
+      const dx = ev.clientX - dragStartRef.current.x;
+      const dy = ev.clientY - dragStartRef.current.y;
+      if (Math.abs(dx) > FILE_DRAG_THRESHOLD || Math.abs(dy) > FILE_DRAG_THRESHOLD) {
+        startFileDrag([entry.path], ev.clientX, ev.clientY);
+        dragStartRef.current = null;
+        document.removeEventListener("mousemove", onMouseMove);
+        document.removeEventListener("mouseup", onMouseUp);
+      }
+    };
+    const onMouseUp = () => {
+      dragStartRef.current = null;
+      document.removeEventListener("mousemove", onMouseMove);
+      document.removeEventListener("mouseup", onMouseUp);
+    };
+    document.addEventListener("mousemove", onMouseMove);
+    document.addEventListener("mouseup", onMouseUp);
+  }, [entry.is_dir, entry.path]);
 
   return (
     <div>
       <button
         onClick={handleClick}
+        onMouseDown={handleMouseDown}
         onContextMenu={(e) => { e.preventDefault(); showContextMenu(fileContextMenu(entry.path, rootPath)); }}
         onMouseEnter={() => setHovered(true)}
         onMouseLeave={() => setHovered(false)}
@@ -227,22 +258,18 @@ function PrBadge({ pr }: { pr?: PrStatus | null }) {
 
 // --- Icons ---
 
-/** Git branch icon colored by repo status. Clickable to open diff when changes exist. */
+/** Git branch icon (light grey like VSCode) with blue change count badge. Clickable to open diff. */
 function GitStatusIcon({ status, syncNeeded, isActive, onClick }: {
   status?: GitStatus;
   syncNeeded?: boolean;
   isActive?: boolean;
   onClick?: () => void;
 }) {
-  let color: string;
   let pulse = false;
-  const hasChanges = (status?.modified_files.length ?? 0) > 0 || (status?.untracked_files.length ?? 0) > 0;
+  const changeCount = (status?.modified_files.length ?? 0) + (status?.untracked_files.length ?? 0);
+  const iconColor = "#b0b0b0"; // Light grey, like VSCode
 
-  if (syncNeeded) { color = "#e8b930"; pulse = true; }
-  else if (isActive) { color = "#5ba0d0"; }
-  else if (!status) { color = "#555"; }
-  else if (hasChanges) { color = "#888"; }
-  else { color = "#4caf50"; }
+  if (syncNeeded) pulse = true;
 
   const [hovered, setHovered] = useState(false);
 
@@ -252,28 +279,41 @@ function GitStatusIcon({ status, syncNeeded, isActive, onClick }: {
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
       className={pulse ? "pulse-dot" : undefined}
-      title={hasChanges ? "View changes" : syncNeeded ? "Sync needed" : isActive ? "Active" : "Clean"}
+      title={changeCount > 0 ? `${changeCount} changes — view diff` : syncNeeded ? "Sync needed" : isActive ? "Active" : "Clean"}
       style={{
         display: "flex", alignItems: "center", justifyContent: "center",
-        background: "none", border: "none", padding: "2px 6px", cursor: "pointer", flexShrink: 0,
-        borderRadius: 4, opacity: hovered ? 1 : 0.6,
-        filter: hovered ? "brightness(1.5)" : "none",
-        transition: "opacity 0.15s, filter 0.15s",
+        background: "none", border: "none", padding: "4px 6px", cursor: "pointer", flexShrink: 0,
+        borderRadius: 4, opacity: hovered ? 1 : 0.7,
+        transition: "opacity 0.15s",
+        position: "relative" as const,
       }}
     >
-      <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-        <circle cx="5" cy="4" r="1.5" stroke={color} strokeWidth="1.4" />
-        <circle cx="5" cy="12" r="1.5" stroke={color} strokeWidth="1.4" />
-        <circle cx="11" cy="7" r="1.5" stroke={color} strokeWidth="1.4" />
-        <path d="M5 5.5V10.5" stroke={color} strokeWidth="1.4" />
-        <path d="M5 5.5C5 5.5 5 7 7 7H9.5" stroke={color} strokeWidth="1.4" strokeLinecap="round" />
+      <svg width="20" height="20" viewBox="0 0 16 16" fill="none" style={{ flexShrink: 0 }}>
+        <circle cx="5" cy="4" r="1.5" stroke={iconColor} strokeWidth="1.4" />
+        <circle cx="5" cy="12" r="1.5" stroke={iconColor} strokeWidth="1.4" />
+        <circle cx="11" cy="7" r="1.5" stroke={iconColor} strokeWidth="1.4" />
+        <path d="M5 5.5V10.5" stroke={iconColor} strokeWidth="1.4" />
+        <path d="M5 5.5C5 5.5 5 7 7 7H9.5" stroke={iconColor} strokeWidth="1.4" strokeLinecap="round" />
       </svg>
+      {changeCount > 0 && (
+        <span style={{
+          position: "absolute" as const, bottom: 0, right: 0,
+          fontSize: 9, fontWeight: 700, lineHeight: "14px",
+          color: "#fff", background: "#3b82f6",
+          borderRadius: 7, padding: "0 4px",
+          minWidth: 14, height: 14,
+          textAlign: "center" as const,
+          boxSizing: "border-box" as const,
+        }}>
+          {changeCount}
+        </span>
+      )}
     </button>
   );
 }
 
 function CuratedIcon({ active }: { active: boolean }) {
-  const color = active ? "#7aa2f7" : "#555";
+  const color = active ? "#ccc" : "#555";
   return (
     <svg width="14" height="14" viewBox="0 0 16 16" fill="none" style={{ flexShrink: 0 }}>
       <rect x="2" y="2" width="5" height="5" rx="1" stroke={color} strokeWidth="1.2" fill={active ? color : "none"} fillOpacity={active ? 0.2 : 0} />
@@ -355,9 +395,6 @@ function RootSection({ rootPath, isGitRepo, isActivePath, onGitClick }: { rootPa
         onContextMenu={handleContextMenu}
         onClick={isGitRepo ? handleSelectRepo : undefined}
       >
-        <button onClick={(e) => { e.stopPropagation(); setExpanded(!expanded); }} style={styles.rootExpandBtn}>
-          <ChevronIcon open={expanded} />
-        </button>
         {isGitRepo ? (
           <GitStatusIcon
             status={gitStatus}
@@ -366,9 +403,14 @@ function RootSection({ rootPath, isGitRepo, isActivePath, onGitClick }: { rootPa
             onClick={onGitClick}
           />
         ) : (
-          <FileIcon name={folderName} isDir isOpen={expanded} />
+          <button onClick={(e) => { e.stopPropagation(); setExpanded(!expanded); }} style={styles.rootExpandBtn}>
+            <FileIcon name={folderName} isDir isOpen={expanded} />
+          </button>
         )}
-        <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 1 }}>
+        <div
+          style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 1, cursor: "pointer" }}
+          onClick={(e) => { e.stopPropagation(); setExpanded(!expanded); }}
+        >
           <span style={styles.rootName}>{folderName}</span>
           {isGitRepo && (
             <div style={styles.rootMeta}>
@@ -682,10 +724,10 @@ const styles: Record<string, React.CSSProperties> = {
   header: {
     display: "flex",
     alignItems: "center",
-    padding: "4px 6px",
-    background: "#252525",
+    padding: "8px 8px",
+    background: "#1a1a1a",
     borderBottom: "1px solid #333",
-    minHeight: 28,
+    minHeight: 32,
     gap: 4,
   },
   headerBtn: {
@@ -701,9 +743,9 @@ const styles: Record<string, React.CSSProperties> = {
     flexShrink: 0,
   },
   headerTitle: {
-    fontSize: 11,
-    fontWeight: 500,
-    color: "#777",
+    fontSize: 12,
+    fontWeight: 600,
+    color: "#888",
   },
   tree: {
     flex: 1,
@@ -754,7 +796,7 @@ const styles: Record<string, React.CSSProperties> = {
     overflow: "hidden",
     textOverflow: "ellipsis",
     whiteSpace: "nowrap" as const,
-    fontSize: 12,
+    fontSize: 13,
     fontWeight: 600,
     color: "#ccc",
   },
@@ -765,8 +807,8 @@ const styles: Record<string, React.CSSProperties> = {
   },
   rootBranch: {
     fontSize: 10,
-    color: "#777",
-    fontWeight: 500,
+    color: "#999",
+    fontWeight: 700,
   },
   curatedBtn: {
     display: "flex",
