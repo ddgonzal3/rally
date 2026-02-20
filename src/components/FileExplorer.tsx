@@ -14,6 +14,9 @@ const FILE_DRAG_THRESHOLD = 5;
 /** Module-level set of expanded folder paths — survives component unmount/remount */
 const expandedPaths = new Set<string>();
 
+/** Module-level cache of directory listings — survives component unmount/remount */
+const directoryCache = new Map<string, FileEntry[]>();
+
 /** Button that brightens on hover */
 function HoverButton({
   children,
@@ -206,14 +209,18 @@ function buildDirNode(
   };
 }
 
-function FileTreeNode({
+const FileTreeNode = React.memo(function FileTreeNode({
   entry,
   depth,
   rootPath,
+  activeWorkspaceId,
+  onOpenFile,
 }: {
   entry: FileEntry;
   depth: number;
   rootPath: string;
+  activeWorkspaceId: string | null;
+  onOpenFile: (workspaceId: string, filePath: string) => void;
 }) {
   const hasPresetChildren = Boolean(
     entry.children && entry.children.length > 0,
@@ -221,15 +228,19 @@ function FileTreeNode({
   const [expanded, setExpanded] = useState(
     () => entry.is_dir && expandedPaths.has(entry.path),
   );
-  const [children, setChildren] = useState<FileEntry[]>(entry.children ?? []);
-  const [loaded, setLoaded] = useState(hasPresetChildren);
-  const { activeWorkspaceId, openFile } = useWorkspaceStore();
+  const [children, setChildren] = useState<FileEntry[]>(
+    entry.children ?? directoryCache.get(entry.path) ?? [],
+  );
+  const [loaded, setLoaded] = useState(
+    hasPresetChildren || directoryCache.has(entry.path),
+  );
 
   // Auto-load children when remounting a previously-expanded folder
   useEffect(() => {
     if (expanded && !loaded && entry.is_dir) {
       invoke<FileEntry[]>("list_directory", { path: entry.path })
         .then((entries) => {
+          directoryCache.set(entry.path, entries);
           setChildren(entries);
           setLoaded(true);
         })
@@ -244,6 +255,7 @@ function FileTreeNode({
           const entries = await invoke<FileEntry[]>("list_directory", {
             path: entry.path,
           });
+          directoryCache.set(entry.path, entries);
           setChildren(entries);
           setLoaded(true);
         } catch (e) {
@@ -257,9 +269,9 @@ function FileTreeNode({
         return next;
       });
     } else if (activeWorkspaceId) {
-      openFile(activeWorkspaceId, entry.path);
+      onOpenFile(activeWorkspaceId, entry.path);
     }
-  }, [entry, loaded, activeWorkspaceId, openFile]);
+  }, [entry, loaded, activeWorkspaceId, onOpenFile]);
 
   const dragStartRef = useRef<{ x: number; y: number } | null>(null);
 
@@ -322,11 +334,13 @@ function FileTreeNode({
             entry={c}
             depth={depth + 1}
             rootPath={rootPath}
+            activeWorkspaceId={activeWorkspaceId}
+            onOpenFile={onOpenFile}
           />
         ))}
     </div>
   );
-}
+});
 
 // --- Git status components ---
 
@@ -518,27 +532,24 @@ function RootSection({
   const [curatedEntries, setCuratedEntries] = useState<CuratedEntry[]>([]);
   const [curatedLoaded, setCuratedLoaded] = useState(false);
 
-  const {
-    activeWorkspaceId,
-    workspaces,
-    removePathFromWorkspace,
-    openFile,
-    openDiff,
-    explorerViewModes,
-    setExplorerViewMode,
-    gitStatuses,
-    prStatuses,
-    syncNeeded,
-  } = useWorkspaceStore();
-  const viewMode = explorerViewModes[rootPath] ?? "files";
+  const activeWorkspaceId = useWorkspaceStore((s) => s.activeWorkspaceId);
+  const openFile = useWorkspaceStore((s) => s.openFile);
+  const removePathFromWorkspace = useWorkspaceStore(
+    (s) => s.removePathFromWorkspace,
+  );
+  const setExplorerViewMode = useWorkspaceStore((s) => s.setExplorerViewMode);
+  const viewMode = useWorkspaceStore(
+    (s) => s.explorerViewModes[rootPath] ?? "files",
+  );
+  const gitStatus = useWorkspaceStore((s) => s.gitStatuses[rootPath]);
+  const prStatus = useWorkspaceStore((s) => s.prStatuses[rootPath]);
+  const pathSyncNeeded = useWorkspaceStore((s) => s.syncNeeded[rootPath]);
+  const canRemove = useWorkspaceStore((s) => {
+    const ws = s.workspaces.find((w) => w.id === s.activeWorkspaceId);
+    return (ws?.paths.length ?? 0) > 1;
+  });
   const setViewMode = (mode: ViewMode) => setExplorerViewMode(rootPath, mode);
-  const ws = workspaces.find((w) => w.id === activeWorkspaceId);
-  const canRemove = (ws?.paths.length ?? 0) > 1;
   const folderName = rootPath.split("/").pop() || rootPath;
-
-  const gitStatus = gitStatuses[rootPath];
-  const prStatus = prStatuses[rootPath];
-  const pathSyncNeeded = syncNeeded[rootPath];
 
   useEffect(() => {
     invoke<FileEntry[]>("list_directory", { path: rootPath })
@@ -654,6 +665,8 @@ function RootSection({
                     entry={entry}
                     depth={1}
                     rootPath={rootPath}
+                    activeWorkspaceId={activeWorkspaceId}
+                    onOpenFile={openFile}
                   />
                 ))}
                 {curatedTree.length === 0 && (
@@ -668,6 +681,8 @@ function RootSection({
                 entry={e}
                 depth={1}
                 rootPath={rootPath}
+                activeWorkspaceId={activeWorkspaceId}
+                onOpenFile={openFile}
               />
             )))}
       {activeWorkspaceId && (
@@ -1179,7 +1194,7 @@ const styles: Record<string, React.CSSProperties> = {
     alignItems: "center",
     gap: 2,
     width: "100%",
-    padding: "1px 4px",
+    padding: "2px 2px",
     background: "none",
     border: "none",
     color: "#ccc",

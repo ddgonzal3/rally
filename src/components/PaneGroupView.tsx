@@ -313,16 +313,19 @@ export function PaneGroupView({
                 title={paneTooltip(pane)}
               >
                 <span style={styles.tabLabel}>{paneLabel(pane)}</span>
-                <span
+                <button
                   data-close
+                  className="tab-close"
                   style={styles.tabClose}
                   onClick={(e) => {
                     e.stopPropagation();
                     closePane(workspaceId, group.id, pane.id);
                   }}
                 >
-                  ×
-                </span>
+                  <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+                    <path d="M2.5 2.5l7 7M9.5 2.5l-7 7" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+                  </svg>
+                </button>
               </div>
             );
           })}
@@ -479,13 +482,19 @@ const styles: Record<string, React.CSSProperties> = {
     fontWeight: 600,
   },
   tabClose: {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    width: 24,
+    height: 24,
+    background: "none",
+    border: "none",
     color: "#555",
     cursor: "pointer",
-    fontSize: 14,
-    lineHeight: 1,
+    borderRadius: 5,
     flexShrink: 0,
-    borderRadius: 3,
-    padding: "0 2px",
+    padding: 0,
+    transition: "background 0.15s, color 0.15s",
   },
   actions: {
     display: "flex",

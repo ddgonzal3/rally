@@ -3,7 +3,23 @@ import react from "@vitejs/plugin-react";
 import path from "path";
 
 export default defineConfig({
-  plugins: [react()],
+  plugins: [
+    react(),
+    {
+      name: "remote-reload",
+      configureServer(server) {
+        server.middlewares.use((req, res, next) => {
+          if (req.url === "/__reload") {
+            server.ws.send({ type: "full-reload", path: "*" });
+            res.writeHead(200);
+            res.end("ok");
+          } else {
+            next();
+          }
+        });
+      },
+    },
+  ],
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src"),

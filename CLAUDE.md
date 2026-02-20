@@ -17,6 +17,7 @@ These repos are often loaded as workspaces in Rally during development:
 ./scripts/check.sh         # Type-check TS + cargo check Rust (fast, no build)
 ./scripts/build.sh         # Full build → .app bundle
 ./scripts/run.sh           # Kill running app → build → relaunch
+./scripts/reload.sh        # Smart reload: triggers webview reload if watcher running, else falls back to run.sh
 ./scripts/build-release.sh # Build + .app + .dmg
 ```
 
@@ -24,13 +25,24 @@ These repos are often loaded as workspaces in Rally during development:
 
 ## IMPORTANT: After Making Changes
 
-**Always run `./scripts/run.sh` after any code change.** This kills the running app, rebuilds, and relaunches automatically. The user should never have to manually close and reopen the app — the script handles it.
+**Detect the watcher before deciding how to reload.** The Vite dev server on port 5173 means `cargo tauri dev` is running with hot-reload. Use the smart script:
 
 ```bash
-./scripts/run.sh
+./scripts/reload.sh
 ```
 
-This is the standard development loop: edit → run.sh → test in app → repeat.
+This script auto-detects the environment:
+- **Watcher running** (port 5173 active): Triggers a webview reload via `curl http://localhost:5173/__reload`. The app stays open — no kill, no rebuild. Takes <1 second.
+- **Watcher NOT running**: Falls back to `./scripts/run.sh` (kill → rebuild → relaunch).
+
+### When to use which
+
+| Change type | Watcher running | Watcher NOT running |
+|-------------|----------------|---------------------|
+| **Frontend only** (TSX, CSS, HTML) | `./scripts/reload.sh` | `./scripts/reload.sh` (auto-falls back to run.sh) |
+| **Rust backend** (.rs files) | `./scripts/run.sh` (needs Rust recompilation) | `./scripts/run.sh` |
+
+**Rule of thumb**: Use `./scripts/reload.sh` for all frontend-only changes. Use `./scripts/run.sh` only when Rust code changed.
 
 ## Architecture
 
@@ -178,9 +190,9 @@ The `/ship` command (commit → push → PR → review → merge) communicates w
 
 ## Development Workflow
 
-1. Make changes to `.tsx`/`.ts` files
+1. Make changes to `.tsx`/`.ts`/`.rs` files
 2. Run `./scripts/check.sh` to verify types
-3. Run `./scripts/run.sh` to build and launch
+3. Run `./scripts/reload.sh` for frontend changes (or `./scripts/run.sh` if Rust changed)
 4. Test in the app
 5. Use `/review-pr` command before opening PRs
 
