@@ -231,7 +231,7 @@ export function App() {
             </div>
             <div
               onMouseDown={handleSidebarResize}
-              style={styles.resizeHandle}
+              style={styles.sidebarResizeHandle}
             />
           </>
         )}
@@ -242,7 +242,7 @@ export function App() {
             </div>
             <div
               onMouseDown={handleExplorerResize}
-              style={styles.resizeHandle}
+              style={styles.explorerResizeHandle}
             />
           </>
         )}
@@ -315,14 +315,23 @@ const styles: Record<string, React.CSSProperties> = {
     flexDirection: "column",
     minWidth: 0,
   },
-  resizeHandle: {
-    width: 5,
-    minWidth: 5,
+  sidebarResizeHandle: {
+    width: 2,
+    minWidth: 2,
     cursor: "col-resize",
     background: "transparent",
     flexShrink: 0,
     zIndex: 10,
-    borderLeft: "1px solid #333",
+    borderLeft: "1px solid #2a2a2a",
+    boxSizing: "border-box" as const,
+  },
+  explorerResizeHandle: {
+    width: 2,
+    minWidth: 2,
+    cursor: "col-resize",
+    background: "transparent",
+    flexShrink: 0,
+    zIndex: 10,
     boxSizing: "border-box" as const,
   },
 };

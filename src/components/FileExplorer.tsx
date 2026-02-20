@@ -1076,7 +1076,7 @@ const styles: Record<string, React.CSSProperties> = {
   header: {
     display: "flex",
     alignItems: "center",
-    padding: "8px 8px",
+    padding: "8px 8px 8px 12px",
     background: "#1a1a1a",
     borderBottom: "1px solid #333",
     minHeight: 32,
@@ -1102,7 +1102,7 @@ const styles: Record<string, React.CSSProperties> = {
   tree: {
     flex: 1,
     overflow: "auto",
-    padding: "0 5px 0 2px",
+    padding: "0 4px 0 4px",
     userSelect: "none",
   },
   card: {

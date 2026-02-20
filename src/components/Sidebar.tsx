@@ -82,7 +82,7 @@ const styles: Record<string, React.CSSProperties> = {
     display: "flex",
     alignItems: "center",
     justifyContent: "space-between",
-    padding: "12px 16px 8px",
+    padding: "12px 20px 8px 16px",
     borderBottom: "1px solid #333",
   },
   title: {
@@ -99,7 +99,7 @@ const styles: Record<string, React.CSSProperties> = {
   },
   item: {
     width: "100%",
-    padding: "10px 16px",
+    padding: "10px 20px 10px 16px",
     background: "none",
     color: "#ccc",
     cursor: "pointer",
@@ -121,7 +121,7 @@ const styles: Record<string, React.CSSProperties> = {
   },
   addBtn: {
     width: "100%",
-    padding: "8px 16px",
+    padding: "8px 20px 8px 16px",
     background: "none",
     border: "none",
     borderBottom: "1px solid #2a2a2a",
@@ -133,7 +133,7 @@ const styles: Record<string, React.CSSProperties> = {
   },
   settingsBtn: {
     width: "100%",
-    padding: "8px 16px",
+    padding: "8px 20px 8px 16px",
     background: "none",
     border: "none",
     color: "#888",

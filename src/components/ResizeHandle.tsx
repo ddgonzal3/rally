@@ -55,19 +55,19 @@ export function ResizeHandle({ direction, onResize }: ResizeHandleProps) {
       onMouseDown={onMouseDown}
       style={{
         flexShrink: 0,
-        width: isVertical ? "100%" : 2,
-        height: isVertical ? 2 : "100%",
+        width: isVertical ? "100%" : 1,
+        height: isVertical ? 1 : "100%",
         cursor: isVertical ? "row-resize" : "col-resize",
-        background: "#333",
+        background: "#2a2a2a",
         transition: "background 0.15s",
         zIndex: 10,
       }}
       onMouseEnter={(e) => {
-        (e.currentTarget as HTMLDivElement).style.background = "#555";
+        (e.currentTarget as HTMLDivElement).style.background = "#444";
       }}
       onMouseLeave={(e) => {
         if (!dragging.current) {
-          (e.currentTarget as HTMLDivElement).style.background = "#333";
+          (e.currentTarget as HTMLDivElement).style.background = "#2a2a2a";
         }
       }}
     />
