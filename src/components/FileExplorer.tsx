@@ -178,6 +178,7 @@ const styles: Record<string, React.CSSProperties> = {
     textOverflow: "ellipsis",
     whiteSpace: "nowrap" as const,
     marginLeft: 2,
+    fontWeight: 500,
   },
   empty: {
     padding: 20,

@@ -2,9 +2,9 @@
 
 use std::sync::{Arc, Mutex};
 
-use workbench::commands;
-use workbench::config_ops;
-use workbench::pty_manager::{self, PtyManager};
+use playbench::commands;
+use playbench::config_ops;
+use playbench::pty_manager::{self, PtyManager};
 
 fn main() {
     let pty_state: pty_manager::PtyState = Arc::new(Mutex::new(PtyManager::new()));

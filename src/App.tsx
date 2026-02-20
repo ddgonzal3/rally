@@ -112,7 +112,7 @@ export function App() {
             </button>
           )}
         </div>
-        <span style={styles.titleText}>Workbench</span>
+        <span style={styles.titleText}>Playbench</span>
       </div>
       <div style={styles.body}>
         {panelCollapsed ? (
