@@ -44,7 +44,7 @@ export function ResizeHandle({ direction, onResize }: ResizeHandleProps) {
       document.body.style.cursor = isVertical ? "row-resize" : "col-resize";
       document.body.style.userSelect = "none";
     },
-    [direction, onResize]
+    [direction, onResize],
   );
 
   const isVertical = direction === "vertical";
@@ -55,8 +55,8 @@ export function ResizeHandle({ direction, onResize }: ResizeHandleProps) {
       onMouseDown={onMouseDown}
       style={{
         flexShrink: 0,
-        width: isVertical ? "100%" : 1,
-        height: isVertical ? 1 : "100%",
+        width: isVertical ? "100%" : 2,
+        height: isVertical ? 2 : "100%",
         cursor: isVertical ? "row-resize" : "col-resize",
         background: "#2a2a2a",
         transition: "background 0.15s",
