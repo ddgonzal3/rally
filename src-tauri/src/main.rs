@@ -52,6 +52,7 @@ fn main() {
             config_ops::list_skills,
             ship_ops::check_ship_signal,
             ship_ops::clear_ship_signal,
+            ship_ops::check_ship_trigger,
             ship_ops::post_merge_sync,
         ])
         .setup(|app| {

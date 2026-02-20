@@ -74,6 +74,23 @@ export interface ShipSignal {
 
 export type ShipPhase = "idle" | "shipping" | "awaiting_review" | "merging" | "syncing";
 
+export type ShipDetailPhase =
+  | "detecting" | "committing" | "pushing" | "creating_pr"
+  | "checking" | "reviewing" | "writing_verdict"
+  | "finishing" | "complete";
+
+export interface ShipSession {
+  ptyId: string;
+  repoPath: string;
+  phase: ShipDetailPhase;
+  outputBuffer: Uint8Array[];
+  exited: boolean;
+  exitCode: number | null;
+  docked: boolean;
+  /** Set when the signal file is detected — carries the verdict */
+  signal?: ShipSignal;
+}
+
 export interface ShipStatus {
   phase: ShipPhase;
   signal?: ShipSignal;
@@ -111,6 +128,7 @@ export interface Pane {
   filePath?: string;
   cwd?: string;
   initialInput?: string;
+  ptyId?: string;  // Connect to existing PTY instead of spawning
 }
 
 export type SplitDirection = "horizontal" | "vertical";

@@ -1,7 +1,20 @@
-<!-- rally-ship-v2 -->
+<!-- rally-ship-v5 -->
 # Ship: Commit, Push, PR, Review, Merge
 
 You are automating the full ship lifecycle for the current branch. Follow each step exactly. Run the shell scripts verbatim — do NOT improvise git commands outside these scripts.
+
+## Progress Tracking
+
+Before starting each major step, run the corresponding progress marker so Rally can display real-time status. These must be run exactly as shown:
+
+- Before Step 1: `echo "<<RALLY_PHASE:detecting>>"`
+- Before Step 2: `echo "<<RALLY_PHASE:committing>>"`
+- Before Step 3: `echo "<<RALLY_PHASE:pushing>>"`
+- Before Step 4: `echo "<<RALLY_PHASE:creating_pr>>"`
+- Before Step 5: `echo "<<RALLY_PHASE:checking>>"`
+- Before Step 6: `echo "<<RALLY_PHASE:reviewing>>"`
+- Before Step 8: `echo "<<RALLY_PHASE:writing_verdict>>"`
+- After Step 9: `echo "<<RALLY_PHASE:complete>>"`
 
 ## Step 1: Detect State
 
@@ -52,7 +65,7 @@ git push --force-with-lease
 ## Step 4: Create PR if Needed
 
 ```bash
-PR_NUM=$(gh pr view --json number -q '.number' 2>/dev/null)
+PR_NUM=$(gh pr view --json number,state -q 'select(.state=="OPEN") | .number' 2>/dev/null)
 if [ -z "$PR_NUM" ]; then
   gh pr create --fill
   PR_NUM=$(gh pr view --json number -q '.number')
@@ -71,6 +84,21 @@ If `MERGEABLE=CONFLICTING`:
 - Tell the user: "PR has merge conflicts. Resolve them before shipping."
 - Write the signal file with `verdict: "manual_review"` and a summary explaining the conflict.
 - STOP.
+
+## Step 5b: Sanity Check — Is This PR Worth Merging?
+
+Before reviewing, check what's actually in this PR:
+
+```bash
+gh pr diff "$PR_NUM" --stat
+```
+
+If the PR contains **only** trivial or empty changes (e.g., just an empty file, only whitespace changes, only a placeholder/stub with no real implementation), do NOT auto-merge. Instead:
+- Write the signal file with `verdict: "manual_review"`
+- Set the summary to explain why: "This PR appears to contain only trivial/empty changes (e.g., an empty markdown file). Please verify this is intentional before merging."
+- STOP.
+
+This prevents accidentally shipping placeholder files, empty stubs, or accidental commits.
 
 ## Step 6: Review
 

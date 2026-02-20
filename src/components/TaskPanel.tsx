@@ -14,7 +14,7 @@ export function TaskPanel({ rootPath, workspaceId }: TaskPanelProps) {
   const [tasks, setTasks] = useState<TaskEntry[]>([]);
   const [viewingTask, setViewingTask] = useState<string | null>(null);
   const [popupPos, setPopupPos] = useState({ x: 0, y: 0 });
-  const { taskRuns, runTask, stopTask, openClaudeCommand, openFile } = useWorkspaceStore();
+  const { taskRuns, runTask, stopTask, openClaudeCommand, openFile, startShipSession } = useWorkspaceStore();
 
   useEffect(() => {
     api.listTasks(rootPath).then(setTasks).catch(() => setTasks([]));
@@ -68,7 +68,11 @@ export function TaskPanel({ rootPath, workspaceId }: TaskPanelProps) {
                 e.stopPropagation();
                 if (task.builtin && task.command.startsWith("claude:")) {
                   const slashCommand = task.command.replace("claude:", "");
-                  openClaudeCommand(workspaceId, rootPath, slashCommand, task.label);
+                  if (slashCommand === "/ship") {
+                    startShipSession(rootPath);
+                  } else {
+                    openClaudeCommand(workspaceId, rootPath, slashCommand, task.label);
+                  }
                 } else if (isRunning) {
                   stopTask(rootPath, task.name);
                 } else {

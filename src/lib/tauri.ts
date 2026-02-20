@@ -78,6 +78,9 @@ export const api = {
   clearShipSignal: (repoPath: string) =>
     invoke<void>("clear_ship_signal", { repoPath }),
 
+  checkShipTrigger: () =>
+    invoke<string | null>("check_ship_trigger"),
+
   postMergeSync: (cwd: string, mainBranch: string, mergedBranch: string) =>
     invoke<string>("post_merge_sync", { cwd, mainBranch, mergedBranch }),
 

@@ -77,6 +77,10 @@ impl PtyManager {
             cmd.env(key, value);
         }
         // When launched as .app, PATH is minimal. Grab full PATH from a login shell.
+        // Prepend ~/.rally/bin so Rally CLI tools (ship, etc.) are available.
+        let rally_bin = std::env::var("HOME")
+            .map(|h| format!("{}/.rally/bin", h))
+            .unwrap_or_default();
         if let Ok(output) = std::process::Command::new(&shell)
             .args(["-lc", "echo $PATH"])
             .output()
@@ -84,7 +88,12 @@ impl PtyManager {
             if let Ok(path) = String::from_utf8(output.stdout) {
                 let path = path.trim();
                 if !path.is_empty() {
-                    cmd.env("PATH", path);
+                    let full_path = if rally_bin.is_empty() {
+                        path.to_string()
+                    } else {
+                        format!("{}:{}", rally_bin, path)
+                    };
+                    cmd.env("PATH", full_path);
                 }
             }
         }

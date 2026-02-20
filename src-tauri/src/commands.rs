@@ -253,9 +253,10 @@ struct RallyConfig {
     include: Vec<String>,
     #[serde(default)]
     tasks: std::collections::HashMap<String, TaskDef>,
-    /// Opt-in list of built-in commands to show (e.g. ["ship", "review-pr"]).
-    /// If absent, no built-ins are shown.
-    builtins: Option<Vec<String>>,
+    /// Opt-out list of built-in commands to hide (e.g. ["ship"]).
+    /// If absent, all built-ins are shown.
+    #[serde(default, rename = "excludeBuiltins")]
+    exclude_builtins: Vec<String>,
     /// Set to true to hide .claude directory from curated view.
     #[serde(default, rename = "hideClaude")]
     hide_claude: bool,
@@ -379,6 +380,14 @@ fn builtin_commands() -> Vec<TaskEntry> {
             builtin: true,
             file_path: Some(cmd_dir.join("review-pr.md").to_string_lossy().to_string()),
         },
+        TaskEntry {
+            name: "merge-pr".to_string(),
+            label: "Merge PR".to_string(),
+            command: "claude:/merge-pr".to_string(),
+            cwd: None,
+            builtin: true,
+            file_path: Some(cmd_dir.join("merge-pr.md").to_string_lossy().to_string()),
+        },
     ]
 }
 
@@ -386,14 +395,14 @@ fn builtin_commands() -> Vec<TaskEntry> {
 pub fn list_tasks(root_path: String) -> Result<Vec<TaskEntry>, String> {
     let rally_json = Path::new(&root_path).join("RALLY.json");
 
-    let (config_tasks, include_builtins) = if rally_json.exists() {
+    let (config_tasks, exclude_builtins) = if rally_json.exists() {
         let content = fs::read_to_string(&rally_json)
             .map_err(|e| format!("Failed to read RALLY.json: {}", e))?;
         let config: RallyConfig = serde_json::from_str(&content)
             .map_err(|e| format!("Failed to parse RALLY.json: {}", e))?;
-        (config.tasks, config.builtins)
+        (config.tasks, config.exclude_builtins)
     } else {
-        (std::collections::HashMap::new(), None)
+        (std::collections::HashMap::new(), Vec::new())
     };
 
     let mut tasks: Vec<TaskEntry> = config_tasks
@@ -408,12 +417,10 @@ pub fn list_tasks(root_path: String) -> Result<Vec<TaskEntry>, String> {
         })
         .collect();
 
-    // Append built-in commands only if explicitly opted in via "builtins" field
-    if let Some(ref include_list) = include_builtins {
-        for builtin in builtin_commands() {
-            if include_list.contains(&builtin.name) {
-                tasks.push(builtin);
-            }
+    // Include all built-in commands except those in the exclude list
+    for builtin in builtin_commands() {
+        if !exclude_builtins.contains(&builtin.name) {
+            tasks.push(builtin);
         }
     }
 

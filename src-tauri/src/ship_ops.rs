@@ -5,10 +5,12 @@ use std::path::PathBuf;
 
 use crate::git_ops;
 
-const SHIP_COMMAND_VERSION: &str = "<!-- rally-ship-v2 -->";
+const SHIP_COMMAND_VERSION: &str = "<!-- rally-ship-v5 -->";
 const SHIP_COMMAND_CONTENT: &str = include_str!("../resources/commands/ship.md");
 const REVIEW_COMMAND_VERSION: &str = "<!-- rally-review-pr-v1 -->";
 const REVIEW_COMMAND_CONTENT: &str = include_str!("../resources/commands/review-pr.md");
+const MERGE_COMMAND_VERSION: &str = "<!-- rally-merge-pr-v1 -->";
+const MERGE_COMMAND_CONTENT: &str = include_str!("../resources/commands/merge-pr.md");
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FlaggedItem {
@@ -107,14 +109,49 @@ pub fn ensure_default_commands() -> Result<(), String> {
     let app_dir = rally_commands_dir()?;
     install_command(&app_dir, "ship.md", SHIP_COMMAND_VERSION, SHIP_COMMAND_CONTENT)?;
     install_command(&app_dir, "review-pr.md", REVIEW_COMMAND_VERSION, REVIEW_COMMAND_CONTENT)?;
+    install_command(&app_dir, "merge-pr.md", MERGE_COMMAND_VERSION, MERGE_COMMAND_CONTENT)?;
 
     // Symlink from ~/.claude/commands/ → ~/.rally/commands/
     let claude_dir = PathBuf::from(&home).join(".claude").join("commands");
     fs::create_dir_all(&claude_dir)
         .map_err(|e| format!("Failed to create ~/.claude/commands: {}", e))?;
 
-    for filename in &["ship.md", "review-pr.md"] {
+    for filename in &["ship.md", "review-pr.md", "merge-pr.md"] {
         symlink_command(&app_dir.join(filename), &claude_dir.join(filename))?;
+    }
+
+    // Install `ship` CLI script to ~/.rally/bin/ (available in all Rally terminals)
+    install_ship_script(&home)?;
+
+    Ok(())
+}
+
+/// Install the `ship` shell script to ~/.rally/bin/.
+/// Rally terminals have ~/.rally/bin on PATH, so `ship` is available everywhere.
+fn install_ship_script(home: &str) -> Result<(), String> {
+    let bin_dir = PathBuf::from(home).join(".rally").join("bin");
+    fs::create_dir_all(&bin_dir)
+        .map_err(|e| format!("Failed to create ~/.rally/bin: {}", e))?;
+
+    let script = r#"#!/bin/zsh
+repo=$(git rev-parse --show-toplevel 2>/dev/null)
+if [ -z "$repo" ]; then echo "Not in a git repository"; exit 1; fi
+mkdir -p ~/.rally/ship-triggers
+printf '{"repo_path":"%s"}\n' "$repo" > ~/.rally/ship-triggers/$(date +%s).json
+echo "Ship triggered for $(basename "$repo") — check Rally for progress"
+"#;
+
+    let script_path = bin_dir.join("ship");
+    fs::write(&script_path, script)
+        .map_err(|e| format!("Failed to write ship script: {}", e))?;
+
+    // Make executable
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let perms = std::fs::Permissions::from_mode(0o755);
+        fs::set_permissions(&script_path, perms)
+            .map_err(|e| format!("Failed to chmod ship script: {}", e))?;
     }
 
     Ok(())
@@ -144,21 +181,71 @@ pub fn clear_ship_signal(repo_path: String) -> Result<(), String> {
     Ok(())
 }
 
-/// Post-merge sync: checkout main, pull, delete merged branch locally.
+/// Check for ship trigger files written by the `ship` zsh alias.
+/// Returns the repo_path from the first trigger found, or None.
+/// Deletes the trigger file after reading it.
+#[tauri::command]
+pub fn check_ship_trigger() -> Result<Option<String>, String> {
+    let home = std::env::var("HOME").map_err(|_| "HOME not set".to_string())?;
+    let dir = PathBuf::from(home).join(".rally").join("ship-triggers");
+    if !dir.exists() {
+        return Ok(None);
+    }
+    let entries = fs::read_dir(&dir).map_err(|e| format!("Failed to read trigger dir: {}", e))?;
+    for entry in entries {
+        let entry = entry.map_err(|e| format!("Failed to read entry: {}", e))?;
+        let path = entry.path();
+        if path.extension().map_or(false, |e| e == "json") {
+            let content = fs::read_to_string(&path)
+                .map_err(|e| format!("Failed to read trigger: {}", e))?;
+            // Delete trigger file immediately (consume it)
+            let _ = fs::remove_file(&path);
+            if let Ok(val) = serde_json::from_str::<serde_json::Value>(&content) {
+                if let Some(repo_path) = val.get("repo_path").and_then(|v| v.as_str()) {
+                    return Ok(Some(repo_path.to_string()));
+                }
+            }
+        }
+    }
+    Ok(None)
+}
+
+/// Post-merge sync: checkout main, pull, then sync the feature branch
+/// by resetting the now-merged commits and rebasing onto main.
+/// Leaves the repo on the feature branch, synced with main.
 #[tauri::command]
 pub fn post_merge_sync(
     cwd: String,
     main_branch: String,
     merged_branch: String,
 ) -> Result<String, String> {
+    // 1. Update main with the merged changes
     git_ops::git_cmd(&cwd, &["checkout", &main_branch])?;
     git_ops::git_cmd(&cwd, &["pull"])?;
 
-    // Delete the merged branch locally (ignore error if already gone)
-    let _ = git_ops::git_cmd(&cwd, &["branch", "-d", &merged_branch]);
+    // 2. Go back to the feature branch
+    git_ops::git_cmd(&cwd, &["checkout", &merged_branch])?;
+
+    // 3. Count how many commits the feature branch is ahead of main
+    //    (these are the commits that were squash-merged and are now redundant)
+    let count_output = git_ops::git_cmd(
+        &cwd,
+        &["rev-list", "--count", &format!("{}..{}", main_branch, merged_branch)],
+    )?;
+    let count: usize = count_output.trim().parse().unwrap_or(0);
+
+    // 4. Reset those commits and rebase onto main (gsync)
+    if count > 0 {
+        git_ops::git_cmd(&cwd, &["reset", "--hard", &format!("HEAD~{}", count)])?;
+    }
+    git_ops::git_cmd(&cwd, &["rebase", &main_branch])?;
+
+    // 5. Push the synced branch to remote so local and remote stay in sync
+    //    (force-with-lease because the history was rewritten by reset+rebase)
+    git_ops::git_cmd(&cwd, &["push", "--force-with-lease"])?;
 
     Ok(format!(
-        "Synced to {} and cleaned up {}",
-        main_branch, merged_branch
+        "Synced {} with {} (reset {} commits, rebased, pushed)",
+        merged_branch, main_branch, count
     ))
 }

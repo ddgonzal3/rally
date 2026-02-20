@@ -349,7 +349,7 @@ export function PaneGroupView({
                   onLaunch={() => handleLaunchClaude(pane.id)}
                 />
               ) : (
-                <Terminal cwd={paneCwd} command={pane.command} initialInput={pane.initialInput} />
+                <Terminal cwd={paneCwd} command={pane.command} initialInput={pane.initialInput} ptyId={pane.ptyId} />
               )}
             </div>
           );

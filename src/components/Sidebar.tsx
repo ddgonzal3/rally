@@ -4,45 +4,8 @@ import { AddWorkspaceModal } from "./AddWorkspaceModal";
 import { SettingsPanel } from "./SettingsPanel";
 import { api } from "../lib/tauri";
 import { showContextMenu } from "../lib/contextMenu";
-import type { GitStatus } from "../lib/types";
-
-/** Aggregate dot: worst status across all paths in a workspace.
- *  Split dot when both changes AND sync needed. */
-function WorkspaceDot({ paths, gitStatuses, syncNeeded }: {
-  paths: string[];
-  gitStatuses: Record<string, GitStatus>;
-  syncNeeded: Record<string, boolean>;
-}) {
-  const anySyncNeeded = paths.some((p) => syncNeeded[p]);
-  const anyTrackedChanges = paths.some((p) => (gitStatuses[p]?.modified_files.length ?? 0) > 0);
-  const anyLoaded = paths.some((p) => gitStatuses[p]);
-
-  if (!anyLoaded) return <span style={{ ...styles.dot, background: "#555" }} />;
-
-  // Split dot: both changes AND sync needed
-  if (anySyncNeeded && anyTrackedChanges) {
-    return (
-      <span
-        style={{
-          ...styles.dot,
-          background: "linear-gradient(90deg, #e8b930 50%, #888 50%)",
-        }}
-        className="pulse-dot"
-      />
-    );
-  }
-
-  let color: string;
-  let pulse = false;
-  if (anySyncNeeded) { color = "#e8b930"; pulse = true; }
-  else if (anyTrackedChanges) { color = "#888"; }
-  else { color = "#4caf50"; }
-
-  return <span style={{ ...styles.dot, background: color }} className={pulse ? "pulse-dot" : undefined} />;
-}
-
-export function Sidebar() {
-  const { workspaces, activeWorkspaceId, setActive, removeWorkspace, gitStatuses, syncNeeded } =
+export function Sidebar({ width }: { width: number }) {
+  const { workspaces, activeWorkspaceId, setActive, removeWorkspace } =
     useWorkspaceStore();
   const [showAddModal, setShowAddModal] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
@@ -55,7 +18,7 @@ export function Sidebar() {
 
   return (
     <>
-      <div style={styles.sidebar}>
+      <div style={{ ...styles.sidebar, width, minWidth: width }}>
         <div style={styles.header}>
           <span style={styles.title}>Workspaces</span>
         </div>
@@ -83,11 +46,6 @@ export function Sidebar() {
                 onMouseLeave={() => setHoveredId(null)}
               >
                 <div style={styles.itemRow}>
-                  <WorkspaceDot
-                    paths={ws.paths}
-                    gitStatuses={gitStatuses}
-                    syncNeeded={syncNeeded}
-                  />
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={styles.itemName}>{ws.name}</div>
                   </div>
@@ -128,10 +86,7 @@ export function Sidebar() {
 
 const styles: Record<string, React.CSSProperties> = {
   sidebar: {
-    width: 220,
-    minWidth: 220,
     background: "#1a1a1a",
-    borderRight: "1px solid #333",
     display: "flex",
     flexDirection: "column",
     paddingTop: 0,
@@ -154,12 +109,6 @@ const styles: Record<string, React.CSSProperties> = {
     flex: 1,
     overflow: "auto",
     padding: "4px 0",
-  },
-  dot: {
-    width: 8,
-    height: 8,
-    borderRadius: "50%",
-    flexShrink: 0,
   },
   item: {
     width: "100%",

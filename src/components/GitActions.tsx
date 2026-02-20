@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useWorkspaceStore } from "../stores/workspaceStore";
-import type { PrStatus, ShipStatus } from "../lib/types";
+import type { PrStatus } from "../lib/types";
 
 function openUrl(url: string) {
   invoke("plugin:shell|open", { path: url }).catch(() => {
@@ -53,60 +53,6 @@ function PrStatusBar({ pr }: { pr?: PrStatus | null }) {
   );
 }
 
-function ShipStatusBar({ shipStatus }: { shipStatus?: ShipStatus }) {
-  if (!shipStatus || shipStatus.phase === "idle") return null;
-
-  if (shipStatus.phase === "merging") {
-    return (
-      <div style={styles.shipBar}>
-        <span style={styles.shipSpinner}>⟳</span>
-        <span style={styles.shipText}>
-          Merging PR #{shipStatus.pr_number}...
-        </span>
-      </div>
-    );
-  }
-
-  if (shipStatus.phase === "syncing") {
-    return (
-      <div style={styles.shipBar}>
-        <span style={styles.shipSpinner}>⟳</span>
-        <span style={styles.shipText}>Syncing...</span>
-      </div>
-    );
-  }
-
-  if (shipStatus.phase === "awaiting_review") {
-    return (
-      <div style={styles.shipBarReview}>
-        <span style={styles.shipReviewIcon}>◆</span>
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <span style={styles.shipReviewTitle}>Review Needed</span>
-          {shipStatus.signal?.summary && (
-            <div style={styles.shipReviewSummary}>{shipStatus.signal.summary}</div>
-          )}
-          {shipStatus.signal?.flagged_items && shipStatus.signal.flagged_items.length > 0 && (
-            <div style={styles.shipReviewCount}>
-              {shipStatus.signal.flagged_items.length} flagged item{shipStatus.signal.flagged_items.length !== 1 ? "s" : ""}
-            </div>
-          )}
-        </div>
-      </div>
-    );
-  }
-
-  if (shipStatus.phase === "shipping") {
-    return (
-      <div style={styles.shipBar}>
-        <span style={styles.shipSpinner}>⟳</span>
-        <span style={styles.shipText}>Shipping...</span>
-      </div>
-    );
-  }
-
-  return null;
-}
-
 export function GitActions() {
   const {
     activeWorkspaceId,
@@ -114,7 +60,6 @@ export function GitActions() {
     gitStatuses,
     prStatuses,
     syncNeeded,
-    shipStatuses,
     getActivePath,
     syncPath,
     syncAndPushPath,
@@ -137,7 +82,7 @@ export function GitActions() {
   const status = activePath ? gitStatuses[activePath] : null;
   const pr = activePath ? prStatuses[activePath] : null;
   const needsSync = activePath ? syncNeeded[activePath] : false;
-  const shipStatus = activePath ? shipStatuses[activePath] : undefined;
+
   const branch = status?.branch ?? ws?.branch ?? "";
   const mainBranch = ws?.main_branch ?? "main";
 
@@ -175,7 +120,6 @@ export function GitActions() {
       </div>
 
       <PrStatusBar pr={pr} />
-      <ShipStatusBar shipStatus={shipStatus} />
 
       <div style={styles.actions}>
         <button
@@ -407,56 +351,6 @@ const styles: Record<string, React.CSSProperties> = {
     padding: "0 4px",
     flexShrink: 0,
   },
-  shipBar: {
-    display: "flex",
-    alignItems: "center",
-    gap: 8,
-    padding: "6px 8px",
-    marginBottom: 6,
-    borderRadius: 4,
-    background: "#1a2a3a",
-    border: "1px solid #2a4a6a",
-  },
-  shipSpinner: {
-    fontSize: 14,
-    color: "#7db8df",
-    animation: "spin 1s linear infinite",
-  },
-  shipText: {
-    fontSize: 12,
-    color: "#7db8df",
-    fontWeight: 600,
-  },
-  shipBarReview: {
-    display: "flex",
-    alignItems: "flex-start",
-    gap: 8,
-    padding: "8px 10px",
-    marginBottom: 6,
-    borderRadius: 4,
-    background: "#2a2510",
-    border: "1px solid #5a4a1a",
-  },
-  shipReviewIcon: {
-    fontSize: 14,
-    color: "#e8b930",
-    flexShrink: 0,
-    marginTop: 1,
-  },
-  shipReviewTitle: {
-    fontSize: 12,
-    fontWeight: 700,
-    color: "#e8b930",
-  },
-  shipReviewSummary: {
-    fontSize: 11,
-    color: "#bba850",
-    marginTop: 2,
-    lineHeight: 1.4,
-  },
-  shipReviewCount: {
-    fontSize: 10,
-    color: "#998830",
-    marginTop: 4,
+  _placeholder: { /* ship styles removed — now in ShipStatusPill */
   },
 };

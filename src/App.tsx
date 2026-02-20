@@ -3,17 +3,25 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { Sidebar } from "./components/Sidebar";
 import { FileExplorer } from "./components/FileExplorer";
 import { PaneLayout } from "./components/PaneLayout";
-import { GitActions } from "./components/GitActions";
 import { useWorkspaceStore } from "./stores/workspaceStore";
 import { startExternalFileDrag, updateDragPosition, endDrag } from "./lib/dragContext";
 import { FILE_DROP_COMMIT_EVENT } from "./components/DropZoneOverlay";
+import { ToastContainer } from "./components/ToastContainer";
+import { ShipStatusPill } from "./components/ShipStatusPill";
 
 export function App() {
   const { loadWorkspaces, refreshAllGitStatuses, refreshAllPrStatuses, pollShipSignals } =
     useWorkspaceStore();
   const [panelCollapsed, setPanelCollapsed] = useState(false);
   const [fileExplorerCollapsed, setFileExplorerCollapsed] = useState(false);
-  const [fileExplorerWidth, setFileExplorerWidth] = useState(220);
+  const [sidebarWidth, setSidebarWidth] = useState(() => {
+    const saved = localStorage.getItem("rally:sidebarWidth");
+    return saved ? Number(saved) : 220;
+  });
+  const [fileExplorerWidth, setFileExplorerWidth] = useState(() => {
+    const saved = localStorage.getItem("rally:fileExplorerWidth");
+    return saved ? Number(saved) : 220;
+  });
   const resizingRef = useRef(false);
 
   useEffect(() => {
@@ -92,19 +100,47 @@ export function App() {
 
   const appWindow = getCurrentWindow();
 
+  const handleSidebarResize = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    resizingRef.current = true;
+    const startX = e.clientX;
+    const startWidth = sidebarWidth;
+    let finalWidth = startWidth;
+
+    const onMouseMove = (ev: MouseEvent) => {
+      if (!resizingRef.current) return;
+      finalWidth = Math.max(120, Math.min(400, startWidth + (ev.clientX - startX)));
+      setSidebarWidth(finalWidth);
+    };
+    const onMouseUp = () => {
+      resizingRef.current = false;
+      localStorage.setItem("rally:sidebarWidth", String(finalWidth));
+      document.removeEventListener("mousemove", onMouseMove);
+      document.removeEventListener("mouseup", onMouseUp);
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+    };
+    document.addEventListener("mousemove", onMouseMove);
+    document.addEventListener("mouseup", onMouseUp);
+    document.body.style.cursor = "col-resize";
+    document.body.style.userSelect = "none";
+  }, [sidebarWidth]);
+
   const handleExplorerResize = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
     resizingRef.current = true;
     const startX = e.clientX;
     const startWidth = fileExplorerWidth;
+    let finalWidth = startWidth;
 
     const onMouseMove = (ev: MouseEvent) => {
       if (!resizingRef.current) return;
-      const newWidth = Math.max(140, Math.min(500, startWidth + (ev.clientX - startX)));
-      setFileExplorerWidth(newWidth);
+      finalWidth = Math.max(140, Math.min(500, startWidth + (ev.clientX - startX)));
+      setFileExplorerWidth(finalWidth);
     };
     const onMouseUp = () => {
       resizingRef.current = false;
+      localStorage.setItem("rally:fileExplorerWidth", String(finalWidth));
       document.removeEventListener("mousemove", onMouseMove);
       document.removeEventListener("mouseup", onMouseUp);
       document.body.style.cursor = "";
@@ -168,7 +204,17 @@ export function App() {
         <span style={styles.titleText}>Rally</span>
       </div>
       <div style={styles.body}>
-        {!panelCollapsed && <Sidebar />}
+        {!panelCollapsed && (
+          <>
+            <Sidebar width={sidebarWidth} />
+            <div
+              onMouseDown={handleSidebarResize}
+              style={styles.sidebarResizeHandle}
+              onMouseEnter={(e) => { (e.currentTarget as HTMLDivElement).style.background = "#555"; }}
+              onMouseLeave={(e) => { if (!resizingRef.current) (e.currentTarget as HTMLDivElement).style.background = "#333"; }}
+            />
+          </>
+        )}
         {!fileExplorerCollapsed && (
           <>
             <FileExplorer width={fileExplorerWidth} onCollapse={() => setFileExplorerCollapsed(true)} />
@@ -182,9 +228,10 @@ export function App() {
         )}
         <div style={styles.main}>
           <PaneLayout />
-          <GitActions />
         </div>
       </div>
+      <ShipStatusPill />
+      <ToastContainer />
     </div>
   );
 }
@@ -247,6 +294,15 @@ const styles: Record<string, React.CSSProperties> = {
     display: "flex",
     flexDirection: "column",
     minWidth: 0,
+  },
+  sidebarResizeHandle: {
+    width: 1,
+    minWidth: 1,
+    cursor: "col-resize",
+    background: "#333",
+    transition: "background 0.15s",
+    flexShrink: 0,
+    zIndex: 10,
   },
   explorerResizeHandle: {
     width: 1,

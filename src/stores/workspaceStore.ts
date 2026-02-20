@@ -1,6 +1,8 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import { invoke } from "@tauri-apps/api/core";
+import { addToast } from "../components/ToastContainer";
 import type {
   Workspace,
   GitStatus,
@@ -13,6 +15,8 @@ import type {
   PaneGroup,
   TaskRun,
   ShipStatus,
+  ShipSession,
+  ShipDetailPhase,
 } from "../lib/types";
 import {
   createDefaultLayout,
@@ -42,6 +46,8 @@ interface WorkspaceState {
   taskRuns: Record<string, TaskRun>;
   /** Ship status keyed by repo path */
   shipStatuses: Record<string, ShipStatus>;
+  /** Active ship session (detached PTY running /ship) */
+  shipSession: ShipSession | null;
   loading: boolean;
 
   // Workspace actions
@@ -118,6 +124,12 @@ interface WorkspaceState {
   // Ship actions
   pollShipSignals: () => Promise<void>;
   handleAutoMerge: (repoPath: string) => Promise<void>;
+  /** Spawn a detached PTY running /ship. Shows status pill. */
+  startShipSession: (repoPath: string) => Promise<void>;
+  /** Dock the ship terminal into the top-left pane group */
+  dockShipSession: (workspaceId: string) => void;
+  /** Kill PTY and clear ship session */
+  dismissShipSession: () => void;
 
   /** Open a Claude pane that auto-sends a slash command. Does NOT steal focus. */
   openClaudeCommand: (workspaceId: string, cwd: string, slashCommand: string, title: string) => void;
@@ -179,6 +191,7 @@ export const useWorkspaceStore = create<WorkspaceState>()(
   explorerViewModes: {},
   taskRuns: {},
   shipStatuses: {},
+  shipSession: null,
   loading: false,
 
   // --- Workspace actions ---
@@ -325,8 +338,9 @@ export const useWorkspaceStore = create<WorkspaceState>()(
   mergePrForPath: async (path, method) => {
     const result = await api.gitMergePr(path, method ?? "squash");
     // Mark all paths with same repo URL as needing sync
+    // Skip if repo_url is empty — repos without a remote aren't related
     const ws = get().workspaces.find((w) => w.paths.includes(path));
-    if (ws) {
+    if (ws && ws.repo_url) {
       const allPaths = get().workspaces
         .filter((w) => w.repo_url === ws.repo_url)
         .flatMap((w) => w.paths);
@@ -352,6 +366,14 @@ export const useWorkspaceStore = create<WorkspaceState>()(
   // --- Ship actions ---
 
   pollShipSignals: async () => {
+    // Check for trigger files from the `ship` zsh alias
+    try {
+      const triggerPath = await api.checkShipTrigger();
+      if (triggerPath && !get().shipSession) {
+        get().startShipSession(triggerPath);
+      }
+    } catch { /* trigger check failed — ignore */ }
+
     const workspaces = get().workspaces;
     const allPaths = new Set<string>();
     for (const ws of workspaces) {
@@ -375,6 +397,18 @@ export const useWorkspaceStore = create<WorkspaceState>()(
           continue;
         }
 
+        // If there's an active ship session for this repo, attach the signal to it
+        const session = get().shipSession;
+        if (session && session.repoPath === repoPath && !session.signal) {
+          set((s) => ({
+            shipSession: s.shipSession ? {
+              ...s.shipSession,
+              signal,
+              phase: signal.verdict === "manual_review" ? "complete" : s.shipSession.phase,
+            } : null,
+          }));
+        }
+
         if (signal.verdict === "auto_merge") {
           // Trigger auto-merge flow
           set((s) => ({
@@ -383,9 +417,39 @@ export const useWorkspaceStore = create<WorkspaceState>()(
               [repoPath]: { phase: "merging", signal, pr_number: signal.pr_number },
             },
           }));
+          addToast({
+            type: "info",
+            title: `Merging PR #${signal.pr_number}`,
+            message: signal.summary || "Auto-merging approved PR",
+            actions: signal.pr_url
+              ? [{ label: "View PR", onClick: () => invoke("plugin:shell|open", { path: signal.pr_url }) }]
+              : undefined,
+          });
           // Don't await — let it run async
           get().handleAutoMerge(repoPath);
         } else if (signal.verdict === "manual_review") {
+          // Only notify on transition into awaiting_review (not every poll)
+          // Skip toast if there's an active ship session for this repo (the card handles it)
+          const hasShipSession = get().shipSession?.repoPath === repoPath;
+          if (currentStatus?.phase !== "awaiting_review" && !hasShipSession) {
+            const items = signal.flagged_items?.length ?? 0;
+            const message = items > 0
+              ? `${items} flagged item${items !== 1 ? "s" : ""}: ${signal.summary}`
+              : signal.summary || "Manual review required";
+
+            const actions: { label: string; onClick: () => void }[] = [];
+            if (signal.pr_url) {
+              actions.push({ label: "View PR", onClick: () => invoke("plugin:shell|open", { path: signal.pr_url }) });
+            }
+
+            addToast({
+              type: "warning",
+              title: `Review Needed — PR #${signal.pr_number}`,
+              message,
+              actions: actions.length > 0 ? actions : undefined,
+              duration: 0, // persistent — user needs to act
+            });
+          }
           set((s) => ({
             shipStatuses: {
               ...s.shipStatuses,
@@ -429,8 +493,9 @@ export const useWorkspaceStore = create<WorkspaceState>()(
       // Auto-sync the shipping branch back to main
       await api.postMergeSync(repoPath, mainBranch, signal.branch);
 
-      // Mark related repos as needing sync
-      if (ws) {
+      // Mark related repos (same remote, different paths) as needing sync
+      // Skip if repo_url is empty — repos without a remote aren't related
+      if (ws && ws.repo_url) {
         const relatedPaths = get().workspaces
           .filter((w) => w.repo_url === ws.repo_url)
           .flatMap((w) => w.paths)
@@ -452,6 +517,16 @@ export const useWorkspaceStore = create<WorkspaceState>()(
       await get().refreshGitStatusForPath(repoPath, mainBranch);
       await get().refreshPrStatusForPath(repoPath);
 
+      // Notify that merge + sync completed
+      addToast({
+        type: "success",
+        title: `PR #${signal.pr_number} Merged`,
+        message: `Branch synced with ${mainBranch} and ready to work on`,
+        actions: signal.pr_url
+          ? [{ label: "View PR", onClick: () => invoke("plugin:shell|open", { path: signal.pr_url }) }]
+          : undefined,
+      });
+
       // Done
       set((s) => ({
         shipStatuses: { ...s.shipStatuses, [repoPath]: { phase: "idle" } },
@@ -466,6 +541,143 @@ export const useWorkspaceStore = create<WorkspaceState>()(
         },
       }));
     }
+  },
+
+  startShipSession: async (repoPath) => {
+    // Don't start a second session
+    if (get().shipSession) return;
+
+    // Clear any stale signal file from a previous ship run for this repo
+    await api.clearShipSignal(repoPath).catch(() => {});
+    // Clear stale ship status
+    set((s) => ({
+      shipStatuses: { ...s.shipStatuses, [repoPath]: { phase: "idle" } },
+    }));
+
+    try {
+      // Spawn at 80x24 (standard size). The floating terminal will resize
+      // the PTY when opened — going wider is clean, going narrower garbles.
+      const ptyId = await api.spawnPty(
+        repoPath,
+        'claude --dangerously-skip-permissions "/ship"',
+        80,
+        24
+      );
+
+      set({
+        shipSession: {
+          ptyId,
+          repoPath,
+          phase: "detecting",
+          outputBuffer: [],
+          exited: false,
+          exitCode: null,
+          docked: false,
+        },
+      });
+
+      // Listen for PTY output — buffer raw bytes and parse phase markers
+      const phaseRegex = /<<RALLY_PHASE:(\w+)>>/;
+      const unlistenOutput = await listen<{ data: number[] }>(
+        `pty-output-${ptyId}`,
+        (event) => {
+          const chunk = new Uint8Array(event.payload.data);
+
+          // Scan for phase markers in this chunk
+          const text = new TextDecoder().decode(chunk);
+          const match = phaseRegex.exec(text);
+          if (match) {
+            const phase = match[1] as ShipDetailPhase;
+            set((s) => {
+              if (!s.shipSession || s.shipSession.ptyId !== ptyId) return s;
+              return { shipSession: { ...s.shipSession, phase } };
+            });
+          }
+
+          // Buffer raw bytes — no TextDecoder/TextEncoder round-trip.
+          // The round-trip corrupts multi-byte UTF-8 characters (box-drawing,
+          // bullets, spinners) that are split across 4096-byte PTY read
+          // boundaries, producing ? replacement characters in the display.
+          // Phase markers are stripped at display time instead.
+          set((s) => {
+            if (!s.shipSession || s.shipSession.ptyId !== ptyId) return s;
+            return {
+              shipSession: {
+                ...s.shipSession,
+                outputBuffer: [...s.shipSession.outputBuffer, chunk],
+              },
+            };
+          });
+        }
+      );
+
+      // Listen for PTY exit
+      const unlistenExit = await listen<{ code: number | null }>(
+        `pty-exit-${ptyId}`,
+        (event) => {
+          set((s) => {
+            if (!s.shipSession || s.shipSession.ptyId !== ptyId) return s;
+            return {
+              shipSession: {
+                ...s.shipSession,
+                exited: true,
+                exitCode: event.payload.code,
+                // Show "finishing" until we detect the signal with the verdict
+                phase: s.shipSession.signal ? s.shipSession.phase : "finishing",
+              },
+            };
+          });
+          unlistenOutput();
+          unlistenExit();
+          // Immediately poll for the signal instead of waiting up to 5s
+          setTimeout(() => get().pollShipSignals(), 500);
+        }
+      );
+    } catch (e) {
+      console.error("Failed to start ship session:", e);
+      set({ shipSession: null });
+    }
+  },
+
+  dockShipSession: (workspaceId) => {
+    const session = get().shipSession;
+    if (!session) return;
+
+    const layout = get().getOrCreateLayout(workspaceId);
+
+    // Find the top-left pane group (same logic as openFile)
+    let targetGroupId: string | null = null;
+    const root = layout.root;
+    if (root.type === "split" && root.direction === "vertical") {
+      targetGroupId = findFirstGroupInSubtree(root.children[0]);
+    }
+    if (!targetGroupId) {
+      targetGroupId = findFirstGroupInSubtree(root);
+    }
+    if (!targetGroupId) return;
+
+    const repoName = session.repoPath.split("/").pop() ?? "Ship";
+    const pane: Pane = {
+      id: crypto.randomUUID(),
+      type: "claude",
+      title: `Ship: ${repoName}`,
+      cwd: session.repoPath,
+      ptyId: session.ptyId,
+    };
+
+    get().addPaneToGroup(workspaceId, targetGroupId, pane);
+    set((s) => ({
+      shipSession: s.shipSession ? { ...s.shipSession, docked: true } : null,
+    }));
+  },
+
+  dismissShipSession: () => {
+    const session = get().shipSession;
+    if (!session) return;
+    if (!session.exited) {
+      api.killPty(session.ptyId).catch(() => {});
+    }
+    set({ shipSession: null });
   },
 
   openClaudeCommand: (workspaceId, cwd, slashCommand, title) => {
@@ -486,12 +698,11 @@ export const useWorkspaceStore = create<WorkspaceState>()(
       id: crypto.randomUUID(),
       type: "claude",
       title,
-      command: "claude --dangerously-skip-permissions",
+      command: `claude --dangerously-skip-permissions "${slashCommand}"`,
       cwd,
-      initialInput: slashCommand,
     };
 
-    // Add pane to group but do NOT set it as active (no focus steal)
+    // Add pane to group and switch to it (user explicitly clicked the command)
     const group = layout.groups[targetGroupId];
     if (!group) return;
     set((s) => ({
@@ -504,7 +715,7 @@ export const useWorkspaceStore = create<WorkspaceState>()(
             [targetGroupId]: {
               ...group,
               panes: [...group.panes, pane],
-              // Keep existing activePaneId — don't switch focus
+              activePaneId: pane.id,
             },
           },
         },

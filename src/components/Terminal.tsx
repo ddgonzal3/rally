@@ -4,12 +4,14 @@ import { FitAddon } from "@xterm/addon-fit";
 import { WebLinksAddon } from "@xterm/addon-web-links";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { api } from "../lib/tauri";
+import { useWorkspaceStore } from "../stores/workspaceStore";
 import "@xterm/xterm/css/xterm.css";
 
 interface TerminalProps {
   cwd: string;
   command?: string;
   initialInput?: string;
+  ptyId?: string;  // Connect to existing PTY instead of spawning
 }
 
 const encoder = new TextEncoder();
@@ -46,7 +48,7 @@ function safeFit(term: XTerminal, fitAddon: FitAddon): boolean {
   return true;
 }
 
-export function Terminal({ cwd, command, initialInput }: TerminalProps) {
+export function Terminal({ cwd, command, initialInput, ptyId: existingPtyId }: TerminalProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const termRef = useRef<XTerminal | null>(null);
   const ptyIdRef = useRef<string | null>(null);
@@ -60,6 +62,7 @@ export function Terminal({ cwd, command, initialInput }: TerminalProps) {
     const term = new XTerminal({
       cols: 80,
       rows: 24,
+      macOptionIsMeta: true,
       theme: {
         background: "#1e1e1e",
         foreground: "#e0e0e0",
@@ -89,8 +92,94 @@ export function Terminal({ cwd, command, initialInput }: TerminalProps) {
     termRef.current = term;
     fitAddonRef.current = fitAddon;
 
+    // Track whether this terminal owns the PTY (should kill on unmount)
+    const ownsPty = !existingPtyId;
+    // When attaching to an existing PTY (ship dock), lock cols to prevent
+    // SIGWINCH redraw garble from Claude Code's rich terminal UI
+    const lockCols = !!existingPtyId;
+    const LOCKED_COLS = 80; // Must match ship PTY spawn size
     let ptySpawned = false;
     let rafId: number | null = null;
+
+    /** Fit rows to container, keeping cols locked at LOCKED_COLS. */
+    function fitRowsOnly(): boolean {
+      const dims = fitAddon.proposeDimensions();
+      if (!dims || !Number.isFinite(dims.rows)) return false;
+      const rows = Math.max(MIN_ROWS, Math.round(dims.rows));
+      if (rows === term.rows && term.cols === LOCKED_COLS) return false;
+      const core = (term as any)._core;
+      if (core?._renderService) core._renderService.clear();
+      term.resize(LOCKED_COLS, rows);
+      return true;
+    }
+
+    async function connectToPty(ptyId: string) {
+      ptyIdRef.current = ptyId;
+
+      unlistenOutputRef.current = await listen<{ data: number[] }>(
+        `pty-output-${ptyId}`,
+        (event) => {
+          term.write(new Uint8Array(event.payload.data));
+        }
+      );
+
+      unlistenExitRef.current = await listen<{ code: number | null }>(
+        `pty-exit-${ptyId}`,
+        (event) => {
+          const code = event.payload.code;
+          term.writeln(
+            `\r\n\x1b[90m[Process exited${code != null ? ` with code ${code}` : ""}]\x1b[0m`
+          );
+        }
+      );
+
+      term.onData((data) => {
+        if (ptyIdRef.current) {
+          api.writePty(
+            ptyIdRef.current,
+            Array.from(encoder.encode(data))
+          );
+        }
+      });
+
+      term.onResize(({ cols, rows }) => {
+        if (ptyIdRef.current && cols >= MIN_COLS && rows >= MIN_ROWS) {
+          // When cols are locked (ship dock), always send the locked cols
+          // to avoid SIGWINCH-triggered col-change garble
+          api.resizePty(ptyIdRef.current, lockCols ? LOCKED_COLS : cols, rows);
+        }
+      });
+    }
+
+    async function attachExistingPty() {
+      if (ptySpawned || !existingPtyId) return;
+      ptySpawned = true;
+
+      try {
+        // Fit rows only — keep cols at LOCKED_COLS to match PTY spawn width
+        // and avoid SIGWINCH col-change garble
+        fitRowsOnly();
+
+        // Replay buffered output from ship session — all generated at
+        // LOCKED_COLS width, so it renders correctly
+        const session = useWorkspaceStore.getState().shipSession;
+        if (session && session.ptyId === existingPtyId) {
+          for (const chunk of session.outputBuffer) {
+            term.write(chunk);
+          }
+        }
+
+        await connectToPty(existingPtyId);
+
+        // Sync PTY rows (cols stay locked)
+        fitRowsOnly();
+        if (term.rows >= MIN_ROWS) {
+          api.resizePty(existingPtyId, LOCKED_COLS, term.rows);
+        }
+      } catch (e) {
+        term.writeln(`\x1b[31mFailed to attach to terminal: ${e}\x1b[0m`);
+      }
+    }
 
     async function spawnPty() {
       if (ptySpawned) return;
@@ -103,39 +192,8 @@ export function Terminal({ cwd, command, initialInput }: TerminalProps) {
         const spawnCols = Math.max(term.cols, 80);
         const spawnRows = Math.max(term.rows, 24);
         const ptyId = await api.spawnPty(cwd, command ?? null, spawnCols, spawnRows);
-        ptyIdRef.current = ptyId;
 
-        unlistenOutputRef.current = await listen<{ data: number[] }>(
-          `pty-output-${ptyId}`,
-          (event) => {
-            term.write(new Uint8Array(event.payload.data));
-          }
-        );
-
-        unlistenExitRef.current = await listen<{ code: number | null }>(
-          `pty-exit-${ptyId}`,
-          (event) => {
-            const code = event.payload.code;
-            term.writeln(
-              `\r\n\x1b[90m[Process exited${code != null ? ` with code ${code}` : ""}]\x1b[0m`
-            );
-          }
-        );
-
-        term.onData((data) => {
-          if (ptyIdRef.current) {
-            api.writePty(
-              ptyIdRef.current,
-              Array.from(encoder.encode(data))
-            );
-          }
-        });
-
-        term.onResize(({ cols, rows }) => {
-          if (ptyIdRef.current && cols >= MIN_COLS && rows >= MIN_ROWS) {
-            api.resizePty(ptyIdRef.current, cols, rows);
-          }
-        });
+        await connectToPty(ptyId);
 
         // Send initialInput after a delay to let the command start
         if (initialInput) {
@@ -172,6 +230,8 @@ export function Terminal({ cwd, command, initialInput }: TerminalProps) {
       }
     }
 
+    const initFn = existingPtyId ? attachExistingPty : spawnPty;
+
     const el = containerRef.current;
     const observer = new ResizeObserver(() => {
       if (el.clientWidth < 100 || el.clientHeight < 50) return;
@@ -180,9 +240,9 @@ export function Terminal({ cwd, command, initialInput }: TerminalProps) {
       rafId = requestAnimationFrame(() => {
         rafId = null;
         if (!ptySpawned) {
-          spawnPty();
+          initFn();
         } else {
-          safeFit(term, fitAddon);
+          lockCols ? fitRowsOnly() : safeFit(term, fitAddon);
         }
       });
     });
@@ -191,15 +251,15 @@ export function Terminal({ cwd, command, initialInput }: TerminalProps) {
     return () => {
       if (rafId !== null) cancelAnimationFrame(rafId);
       observer.disconnect();
-      if (ptyIdRef.current) {
+      if (ptyIdRef.current && ownsPty) {
         api.killPty(ptyIdRef.current);
-        ptyIdRef.current = null;
       }
+      ptyIdRef.current = null;
       unlistenOutputRef.current?.();
       unlistenExitRef.current?.();
       term.dispose();
     };
-  }, [cwd, command, initialInput]);
+  }, [cwd, command, initialInput, existingPtyId]);
 
   return (
     <div style={styles.container}>

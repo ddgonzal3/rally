@@ -253,7 +253,7 @@ pub fn merge_pr(cwd: &str, method: &str) -> Result<String, String> {
         _ => "--squash", // default to squash
     };
 
-    gh(cwd, &["pr", "merge", method_flag, "--delete-branch"])
+    gh(cwd, &["pr", "merge", method_flag])
 }
 
 /// Get detailed changes: staged, unstaged, and untracked files.

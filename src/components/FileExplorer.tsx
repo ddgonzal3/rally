@@ -231,18 +231,6 @@ function FileTreeNode({ entry, depth, rootPath }: { entry: FileEntry; depth: num
 
 // --- Git status components ---
 
-function StatusDot({ status, syncNeeded, isActive }: { status?: GitStatus; syncNeeded?: boolean; isActive?: boolean }) {
-  if (!status) return <span style={{ ...styles.dot, background: "#555" }} />;
-  let color: string;
-  let pulse = false;
-  const hasTrackedChanges = status.modified_files.length > 0;
-  if (syncNeeded) { color = "#e8b930"; pulse = true; }
-  else if (isActive) { color = "#5ba0d0"; } // blue = active
-  else if (hasTrackedChanges) { color = "#888"; } // muted = has work, not selected
-  else { color = "#4caf50"; } // green = available
-  return <span style={{ ...styles.dot, background: color }} className={pulse ? "pulse-dot" : undefined} />;
-}
-
 function PrBadge({ pr }: { pr?: PrStatus | null }) {
   if (!pr || pr.state !== "OPEN") return null;
   const detail = pr.is_draft ? "draft"
@@ -258,18 +246,15 @@ function PrBadge({ pr }: { pr?: PrStatus | null }) {
 
 // --- Icons ---
 
-/** Git branch icon (light grey like VSCode) with blue change count badge. Clickable to open diff. */
+/** Git branch icon with blue change count badge. Icon turns amber when sync needed. */
 function GitStatusIcon({ status, syncNeeded, isActive, onClick }: {
   status?: GitStatus;
   syncNeeded?: boolean;
   isActive?: boolean;
   onClick?: () => void;
 }) {
-  let pulse = false;
   const changeCount = (status?.modified_files.length ?? 0) + (status?.untracked_files.length ?? 0);
-  const iconColor = "#b0b0b0"; // Light grey, like VSCode
-
-  if (syncNeeded) pulse = true;
+  const iconColor = syncNeeded ? "#e8b930" : "#b0b0b0";
 
   const [hovered, setHovered] = useState(false);
 
@@ -278,8 +263,8 @@ function GitStatusIcon({ status, syncNeeded, isActive, onClick }: {
       onClick={(e) => { e.stopPropagation(); if (onClick) onClick(); }}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
-      className={pulse ? "pulse-dot" : undefined}
-      title={changeCount > 0 ? `${changeCount} changes — view diff` : syncNeeded ? "Sync needed" : isActive ? "Active" : "Clean"}
+      className={syncNeeded ? "pulse-dot" : undefined}
+      title={syncNeeded ? "Sync needed — behind main" : changeCount > 0 ? `${changeCount} changes — view diff` : isActive ? "Active" : "Clean"}
       style={{
         display: "flex", alignItems: "center", justifyContent: "center",
         background: "none", border: "none", padding: "4px 6px", cursor: "pointer", flexShrink: 0,
@@ -414,7 +399,12 @@ function RootSection({ rootPath, isGitRepo, isActivePath, onGitClick }: { rootPa
           <span style={styles.rootName}>{folderName}</span>
           {isGitRepo && (
             <div style={styles.rootMeta}>
-              <span style={styles.rootBranch}>{gitStatus?.branch ?? "..."}</span>
+              <span style={styles.rootBranch}>
+                {gitStatus?.branch ?? "..."}
+                {gitStatus && gitStatus.ahead > 0 && (
+                  <span style={styles.aheadCount}>+{gitStatus.ahead}</span>
+                )}
+              </span>
               <PrBadge pr={prStatus} />
             </div>
           )}
@@ -752,12 +742,6 @@ const styles: Record<string, React.CSSProperties> = {
     overflow: "auto",
     padding: "2px 0",
   },
-  dot: {
-    width: 8,
-    height: 8,
-    borderRadius: "50%",
-    flexShrink: 0,
-  },
   prBadge: {
     display: "inline-block",
     padding: "0 4px",
@@ -809,6 +793,12 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: 10,
     color: "#999",
     fontWeight: 700,
+  },
+  aheadCount: {
+    color: "#e5a63a",
+    marginLeft: 4,
+    fontSize: 9,
+    fontWeight: 600,
   },
   curatedBtn: {
     display: "flex",

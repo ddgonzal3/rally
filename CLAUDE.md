@@ -4,6 +4,13 @@
 
 Rally is a **Tauri v2 macOS app** (Rust backend + React frontend) for orchestrating multiple Claude Code sessions, git workflows, and dev processes across repo workspaces.
 
+## Frequently Used Repos
+
+These repos are often loaded as workspaces in Rally during development:
+
+- `~/splice/playtest` — Test/scratch repo for trying Rally features
+- `~/splice/playground-main` — Splice Playground (main working repo)
+
 ## Build Commands
 
 ```bash
@@ -130,7 +137,7 @@ src-tauri/resources/commands/    ← Source .md files (compiled into binary)
 
 - **Symlinks, not copies**: The app never writes real files into `~/.claude/`. If the user has their own `ship.md` (a real file, not a symlink), the app leaves it alone.
 - **Version markers**: Each .md starts with `<!-- rally-ship-v1 -->`. The app only overwrites if the version is older.
-- **`builtins` (opt-in)**: Built-ins only appear if explicitly listed in RALLY.json: `{ "builtins": ["ship", "review-pr"] }`. No RALLY.json or no `builtins` field = no built-in commands shown.
+- **All built-ins shown by default**: Ship, Review PR, and Merge PR appear in every workspace automatically. To hide specific commands, use `"excludeBuiltins": ["ship"]` in RALLY.json.
 - **No focus steal**: Clicking a built-in command opens a Claude pane but does not switch focus away from the current pane.
 
 ### Ship Signal Protocol
