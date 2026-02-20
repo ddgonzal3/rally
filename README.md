@@ -1,4 +1,4 @@
-# Workbench
+# Playbench
 
 A macOS app for orchestrating multiple Claude Code sessions, git workflows, and dev processes across repo workspaces.
 
