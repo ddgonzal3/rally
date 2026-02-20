@@ -27,7 +27,7 @@ export function PaneLayout() {
         node={layout.root}
         layout={layout}
         workspaceId={ws.id}
-        workspacePath={ws.path}
+        workspacePath={ws.paths[0]}
       />
     </div>
   );

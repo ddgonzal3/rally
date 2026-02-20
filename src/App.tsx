@@ -7,7 +7,7 @@ import { GitActions } from "./components/GitActions";
 import { useWorkspaceStore } from "./stores/workspaceStore";
 
 export function App() {
-  const { loadWorkspaces, refreshAllGitStatuses } =
+  const { loadWorkspaces, refreshAllGitStatuses, refreshAllPrStatuses } =
     useWorkspaceStore();
   const [panelCollapsed, setPanelCollapsed] = useState(false);
   const [fileExplorerCollapsed, setFileExplorerCollapsed] = useState(false);
@@ -15,9 +15,16 @@ export function App() {
   const resizingRef = useRef(false);
 
   useEffect(() => {
-    loadWorkspaces().then(() => refreshAllGitStatuses());
-    const interval = setInterval(refreshAllGitStatuses, 10000);
-    return () => clearInterval(interval);
+    loadWorkspaces().then(() => {
+      refreshAllGitStatuses();
+      refreshAllPrStatuses();
+    });
+    const gitInterval = setInterval(refreshAllGitStatuses, 10000);
+    const prInterval = setInterval(refreshAllPrStatuses, 20000);
+    return () => {
+      clearInterval(gitInterval);
+      clearInterval(prInterval);
+    };
   }, []);
 
   // Cmd+W closes the active tab instead of the window
@@ -95,52 +102,34 @@ export function App() {
               />
             </svg>
           </button>
-          {!panelCollapsed && (
-            <button
-              style={styles.panelToggle}
-              onClick={() => setFileExplorerCollapsed(!fileExplorerCollapsed)}
-              title={fileExplorerCollapsed ? "Show files" : "Hide files"}
-            >
-              <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
-                <path
-                  d="M2 3h4l2 2h6v8H2V3z"
-                  stroke="#888" strokeWidth="1.2"
-                  fill={fileExplorerCollapsed ? "none" : "#888"}
-                  strokeLinejoin="round"
-                />
-              </svg>
-            </button>
-          )}
+          <button
+            style={styles.panelToggle}
+            onClick={() => setFileExplorerCollapsed(!fileExplorerCollapsed)}
+            title={fileExplorerCollapsed ? "Show files" : "Hide files"}
+          >
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
+              <path
+                d="M2 3h4l2 2h6v8H2V3z"
+                stroke="#888" strokeWidth="1.2"
+                fill={fileExplorerCollapsed ? "none" : "#888"}
+                strokeLinejoin="round"
+              />
+            </svg>
+          </button>
         </div>
         <span style={styles.titleText}>Playbench</span>
       </div>
       <div style={styles.body}>
-        {panelCollapsed ? (
-          <div style={styles.collapsedStrip}>
-            <button
-              style={styles.expandBtn}
-              onClick={() => setPanelCollapsed(false)}
-              title="Expand sidebar"
-            >
-              <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
-                <path d="M6 3l5 5-5 5V3z" />
-              </svg>
-            </button>
-          </div>
-        ) : (
+        {!panelCollapsed && <Sidebar />}
+        {!fileExplorerCollapsed && (
           <>
-            <Sidebar />
-            {!fileExplorerCollapsed && (
-              <>
-                <FileExplorer width={fileExplorerWidth} onCollapse={() => setFileExplorerCollapsed(true)} />
-                <div
-                  onMouseDown={handleExplorerResize}
-                  style={styles.explorerResizeHandle}
-                  onMouseEnter={(e) => { (e.currentTarget as HTMLDivElement).style.background = "#555"; }}
-                  onMouseLeave={(e) => { if (!resizingRef.current) (e.currentTarget as HTMLDivElement).style.background = "#333"; }}
-                />
-              </>
-            )}
+            <FileExplorer width={fileExplorerWidth} onCollapse={() => setFileExplorerCollapsed(true)} />
+            <div
+              onMouseDown={handleExplorerResize}
+              style={styles.explorerResizeHandle}
+              onMouseEnter={(e) => { (e.currentTarget as HTMLDivElement).style.background = "#555"; }}
+              onMouseLeave={(e) => { if (!resizingRef.current) (e.currentTarget as HTMLDivElement).style.background = "#333"; }}
+            />
           </>
         )}
         <div style={styles.main}>
@@ -211,33 +200,13 @@ const styles: Record<string, React.CSSProperties> = {
     flexDirection: "column",
     minWidth: 0,
   },
-  collapsedStrip: {
-    width: 32,
-    minWidth: 32,
-    background: "#252525",
-    borderRight: "1px solid #333",
-    display: "flex",
-    flexDirection: "column",
-    alignItems: "center",
-    paddingTop: 8,
-  },
   explorerResizeHandle: {
-    width: 4,
-    minWidth: 4,
+    width: 1,
+    minWidth: 1,
     cursor: "col-resize",
     background: "#333",
     transition: "background 0.15s",
     flexShrink: 0,
     zIndex: 10,
-  },
-  expandBtn: {
-    background: "none",
-    border: "none",
-    color: "#888",
-    cursor: "pointer",
-    padding: 4,
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
   },
 };

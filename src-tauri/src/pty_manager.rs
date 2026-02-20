@@ -28,7 +28,7 @@ pub struct PtyInfo {
 struct PtySession {
     writer: Box<dyn Write + Send>,
     pair: portable_pty::PtyPair,
-    child: Box<dyn portable_pty::Child + Send>,
+    child: Arc<Mutex<Box<dyn portable_pty::Child + Send + Sync>>>,
     cwd: String,
     command: Option<String>,
 }
@@ -51,6 +51,7 @@ impl PtyManager {
         command: Option<String>,
         cols: u16,
         rows: u16,
+        exit_on_complete: bool,
     ) -> Result<String, String> {
         let pty_system = native_pty_system();
         let pair = pty_system
@@ -64,25 +65,28 @@ impl PtyManager {
 
         let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/zsh".to_string());
 
-        let mut cmd = if let Some(ref cmd_str) = command {
-            // Run commands through a login shell so PATH is fully loaded
-            let mut builder = CommandBuilder::new(&shell);
-            builder.arg("-l");
-            builder.arg("-c");
-            builder.arg(cmd_str);
-            builder.cwd(&cwd);
-            builder
-        } else {
-            // Default: spawn user's shell
-            let mut builder = CommandBuilder::new(&shell);
-            builder.arg("-l"); // login shell
-            builder.cwd(&cwd);
-            builder
-        };
+        // Always spawn an interactive login shell — this ensures .zshrc/.zprofile
+        // are fully loaded so tools like claude, node, etc. are on PATH.
+        // If a command is provided, we write it to stdin after spawn.
+        let mut cmd = CommandBuilder::new(&shell);
+        cmd.arg("-l");
+        cmd.cwd(&cwd);
 
         // Inherit environment
         for (key, value) in std::env::vars() {
             cmd.env(key, value);
+        }
+        // When launched as .app, PATH is minimal. Grab full PATH from a login shell.
+        if let Ok(output) = std::process::Command::new(&shell)
+            .args(["-lc", "echo $PATH"])
+            .output()
+        {
+            if let Ok(path) = String::from_utf8(output.stdout) {
+                let path = path.trim();
+                if !path.is_empty() {
+                    cmd.env("PATH", path);
+                }
+            }
         }
         // Remove env vars that prevent Claude Code from launching inside Playbench PTYs
         cmd.env_remove("CLAUDECODE");
@@ -99,6 +103,7 @@ impl PtyManager {
             .slave
             .spawn_command(cmd)
             .map_err(|e| format!("Failed to spawn command: {}", e))?;
+        let child = Arc::new(Mutex::new(child));
 
         let writer = pair
             .master
@@ -115,15 +120,21 @@ impl PtyManager {
             .map_err(|e| format!("Failed to clone PTY reader: {}", e))?;
 
         let app_handle_clone = app_handle.clone();
+        let child_clone = child.clone();
         thread::spawn(move || {
             let mut buf = [0u8; 4096];
             loop {
                 match reader.read(&mut buf) {
                     Ok(0) => {
-                        // EOF — process exited
+                        // EOF — process exited. Get the real exit code.
+                        let code = child_clone
+                            .lock()
+                            .ok()
+                            .and_then(|mut c| c.wait().ok())
+                            .map(|status| status.exit_code() as i32);
                         let _ = app_handle_clone.emit(
                             &format!("pty-exit-{}", reader_id),
-                            PtyExitPayload { code: None },
+                            PtyExitPayload { code },
                         );
                         break;
                     }
@@ -146,6 +157,18 @@ impl PtyManager {
                 }
             }
         });
+
+        // If a command was requested, write it to stdin so it runs in the
+        // fully-initialized shell (with .zshrc PATH etc.)
+        let mut writer = writer;
+        if let Some(ref cmd_str) = command {
+            let input = if exit_on_complete {
+                format!("{}; exit $?\n", cmd_str)
+            } else {
+                format!("{}\n", cmd_str)
+            };
+            let _ = writer.write_all(input.as_bytes());
+        }
 
         self.sessions.insert(
             pty_id.clone(),
@@ -196,8 +219,10 @@ impl PtyManager {
     }
 
     pub fn kill(&mut self, pty_id: &str) -> Result<(), String> {
-        if let Some(mut session) = self.sessions.remove(pty_id) {
-            let _ = session.child.kill();
+        if let Some(session) = self.sessions.remove(pty_id) {
+            if let Ok(mut child) = session.child.lock() {
+                let _ = child.kill();
+            }
         }
         Ok(())
     }
@@ -234,9 +259,10 @@ pub fn spawn_pty(
     command: Option<String>,
     cols: u16,
     rows: u16,
+    exit_on_complete: Option<bool>,
 ) -> Result<String, String> {
     let mut manager = state.lock().map_err(|e| e.to_string())?;
-    manager.spawn(app_handle, cwd, command, cols, rows)
+    manager.spawn(app_handle, cwd, command, cols, rows, exit_on_complete.unwrap_or(false))
 }
 
 #[tauri::command]

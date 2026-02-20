@@ -1,7 +1,7 @@
 export interface Workspace {
   id: string;
   name: string;
-  path: string;
+  paths: string[];
   repo_url: string;
   branch: string;
   main_branch: string;
@@ -24,9 +24,53 @@ export interface GitStatus {
   untracked_files: string[];
 }
 
+export interface PushResult {
+  output: string;
+  method: "push" | "force-with-lease" | "set-upstream";
+}
+
+export interface PrStatus {
+  number: number;
+  title: string;
+  url: string;
+  state: "OPEN" | "CLOSED" | "MERGED";
+  is_draft: boolean;
+  mergeable: "MERGEABLE" | "CONFLICTING" | "UNKNOWN";
+  review_decision: "APPROVED" | "CHANGES_REQUESTED" | "REVIEW_REQUIRED" | null;
+  checks_status: "pass" | "fail" | "pending" | null;
+}
+
+export interface ChangedFile {
+  path: string;
+  status: string; // "M" modified, "A" added, "D" deleted, "R" renamed
+}
+
+export interface ChangesSummary {
+  staged: ChangedFile[];
+  unstaged: ChangedFile[];
+  untracked: string[];
+}
+
+// --- Task Runner Types ---
+
+export interface TaskEntry {
+  name: string;
+  command: string;
+  label: string;
+  cwd?: string;
+}
+
+export interface TaskRun {
+  taskName: string;
+  ptyId: string;
+  status: "running" | "success" | "error" | "stopped";
+  exitCode: number | null;
+  output: Uint8Array[];
+}
+
 // --- Pane & Layout Types ---
 
-export type PaneType = "claude" | "terminal" | "claude-launcher" | "editor";
+export type PaneType = "claude" | "terminal" | "claude-launcher" | "editor" | "diff";
 
 export interface Pane {
   id: string;
@@ -34,6 +78,7 @@ export interface Pane {
   title: string;
   command?: string;
   filePath?: string;
+  cwd?: string;
 }
 
 export type SplitDirection = "horizontal" | "vertical";

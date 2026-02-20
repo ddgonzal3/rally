@@ -1,7 +1,8 @@
-import React, { useCallback, useRef } from "react";
+import React, { useCallback, useRef, useState, useEffect } from "react";
 import { Terminal } from "./Terminal";
 import { ClaudeLauncher } from "./ClaudeLauncher";
 import { EditorPane } from "./EditorPane";
+import { DiffView } from "./DiffView";
 import { DropZoneTarget, type DropPosition } from "./DropZoneOverlay";
 import { useWorkspaceStore } from "../stores/workspaceStore";
 import { getDragState, startDrag, endDrag } from "../lib/dragContext";
@@ -17,8 +18,86 @@ interface PaneGroupViewProps {
 
 function paneLabel(pane: Pane): string {
   if (pane.type === "claude" || pane.type === "claude-launcher") return "claude";
-  if (pane.type === "editor") return pane.title;
+  if (pane.type === "editor" || pane.type === "diff") return pane.title;
   return "zsh";
+}
+
+// --- Path Picker Popover ---
+
+type PendingAction = {
+  type: "terminal" | "claude" | "split-h" | "split-v";
+  anchorRect: DOMRect;
+};
+
+function PathPickerPopover({
+  paths,
+  anchorRect,
+  onPick,
+  onClose,
+}: {
+  paths: string[];
+  anchorRect: DOMRect;
+  onPick: (path: string) => void;
+  onClose: () => void;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    function handleClick(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) {
+        onClose();
+      }
+    }
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, [onClose]);
+
+  return (
+    <div
+      ref={ref}
+      style={{
+        position: "fixed",
+        top: anchorRect.bottom + 4,
+        left: anchorRect.left,
+        background: "#2a2a2a",
+        border: "1px solid #444",
+        borderRadius: 6,
+        padding: "4px 0",
+        zIndex: 1000,
+        minWidth: 180,
+        boxShadow: "0 4px 12px rgba(0,0,0,0.4)",
+      }}
+    >
+      <div style={{ padding: "4px 12px", fontSize: 10, color: "#888", fontWeight: 500 }}>
+        Select working directory
+      </div>
+      {paths.map((p) => {
+        const name = p.split("/").pop() || p;
+        return (
+          <button
+            key={p}
+            onClick={() => { onPick(p); onClose(); }}
+            title={p}
+            style={{
+              display: "block",
+              width: "100%",
+              padding: "5px 12px",
+              fontSize: 12,
+              color: "#ccc",
+              background: "none",
+              border: "none",
+              cursor: "pointer",
+              textAlign: "left",
+            }}
+            onMouseEnter={(e) => { (e.target as HTMLElement).style.background = "#333"; }}
+            onMouseLeave={(e) => { (e.target as HTMLElement).style.background = "none"; }}
+          >
+            {name}
+          </button>
+        );
+      })}
+    </div>
+  );
 }
 
 export function PaneGroupView({
@@ -27,6 +106,7 @@ export function PaneGroupView({
   workspacePath,
 }: PaneGroupViewProps) {
   const {
+    workspaces,
     setActivePane,
     closePane,
     addPaneToGroup,
@@ -35,26 +115,46 @@ export function PaneGroupView({
     dropPaneOnGroup,
   } = useWorkspaceStore();
 
+  const ws = workspaces.find((w) => w.id === workspaceId);
+  const paths = ws?.paths ?? [workspacePath];
+  const isMultiRoot = paths.length > 1;
+
   const activePaneId = group.activePaneId;
   const dragStartRef = useRef<{ x: number; y: number; paneId: string } | null>(null);
+  const [pendingAction, setPendingAction] = useState<PendingAction | null>(null);
 
-  function handleAddTerminal() {
-    const pane: Pane = {
-      id: crypto.randomUUID(),
-      type: "terminal",
-      title: "Terminal",
-    };
-    addPaneToGroup(workspaceId, group.id, pane);
+  function executeAction(actionType: PendingAction["type"], cwd: string) {
+    if (actionType === "terminal") {
+      const pane: Pane = {
+        id: crypto.randomUUID(),
+        type: "terminal",
+        title: "Terminal",
+        cwd,
+      };
+      addPaneToGroup(workspaceId, group.id, pane);
+    } else if (actionType === "claude") {
+      const pane: Pane = {
+        id: crypto.randomUUID(),
+        type: "claude",
+        title: "Claude Code",
+        command: "claude --dangerously-skip-permissions",
+        cwd,
+      };
+      addPaneToGroup(workspaceId, group.id, pane);
+    } else if (actionType === "split-h") {
+      splitGroup(workspaceId, group.id, "horizontal", cwd);
+    } else if (actionType === "split-v") {
+      splitGroup(workspaceId, group.id, "vertical", cwd);
+    }
   }
 
-  function handleAddClaude() {
-    const pane: Pane = {
-      id: crypto.randomUUID(),
-      type: "claude",
-      title: "Claude Code",
-      command: "claude --dangerously-skip-permissions",
-    };
-    addPaneToGroup(workspaceId, group.id, pane);
+  function handleAction(actionType: PendingAction["type"], e: React.MouseEvent) {
+    if (!isMultiRoot) {
+      executeAction(actionType, workspacePath);
+      return;
+    }
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    setPendingAction({ type: actionType, anchorRect: rect });
   }
 
   function handleLaunchClaude(paneId: string) {
@@ -146,7 +246,7 @@ export function PaneGroupView({
         <div style={styles.actions}>
           <button
             style={styles.actionBtn}
-            onClick={handleAddTerminal}
+            onClick={(e) => handleAction("terminal", e)}
             title="New terminal tab"
           >
             <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
@@ -155,7 +255,7 @@ export function PaneGroupView({
           </button>
           <button
             style={styles.actionBtn}
-            onClick={handleAddClaude}
+            onClick={(e) => handleAction("claude", e)}
             title="New Claude Code tab"
           >
             <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
@@ -165,7 +265,7 @@ export function PaneGroupView({
           </button>
           <button
             style={styles.actionBtn}
-            onClick={() => splitGroup(workspaceId, group.id, "horizontal")}
+            onClick={(e) => handleAction("split-h", e)}
             title="Split right"
           >
             <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
@@ -175,7 +275,7 @@ export function PaneGroupView({
           </button>
           <button
             style={styles.actionBtn}
-            onClick={() => splitGroup(workspaceId, group.id, "vertical")}
+            onClick={(e) => handleAction("split-v", e)}
             title="Split down"
           >
             <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
@@ -186,10 +286,21 @@ export function PaneGroupView({
         </div>
       </div>
 
+      {/* Path picker popover */}
+      {pendingAction && (
+        <PathPickerPopover
+          paths={paths}
+          anchorRect={pendingAction.anchorRect}
+          onPick={(cwd) => executeAction(pendingAction.type, cwd)}
+          onClose={() => setPendingAction(null)}
+        />
+      )}
+
       {/* Pane content — all mounted, only active visible */}
       <div style={styles.content}>
         {group.panes.map((pane) => {
           const isActive = pane.id === activePaneId;
+          const paneCwd = pane.cwd || workspacePath;
           return (
             <div
               key={pane.id}
@@ -205,15 +316,23 @@ export function PaneGroupView({
                 visibility: isActive ? "visible" : "hidden",
               }}
             >
-              {pane.type === "editor" && pane.filePath ? (
+              {pane.type === "diff" && pane.cwd ? (
+                pane.filePath ? (
+                  <DiffView rootPath={pane.cwd} filePath={pane.filePath} isUntracked={pane.command === "untracked"} />
+                ) : (
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100%", color: "#555", fontSize: 13 }}>
+                    Select a file from the changes list
+                  </div>
+                )
+              ) : pane.type === "editor" && pane.filePath ? (
                 <EditorPane filePath={pane.filePath} />
               ) : pane.type === "claude-launcher" ? (
                 <ClaudeLauncher
-                  workspacePath={workspacePath}
+                  workspacePath={paneCwd}
                   onLaunch={() => handleLaunchClaude(pane.id)}
                 />
               ) : (
-                <Terminal cwd={workspacePath} command={pane.command} />
+                <Terminal cwd={paneCwd} command={pane.command} />
               )}
             </div>
           );
@@ -237,33 +356,30 @@ const styles: Record<string, React.CSSProperties> = {
   },
   tabBar: {
     display: "flex",
-    alignItems: "flex-end",
+    alignItems: "stretch",
     background: "#252525",
-    minHeight: 30,
-    maxHeight: 30,
+    minHeight: 26,
+    maxHeight: 26,
     overflow: "hidden",
     flexShrink: 0,
-    paddingLeft: 4,
-    paddingTop: 2,
   },
   tabs: {
     display: "flex",
     flex: 1,
     overflow: "hidden",
-    gap: 1,
   },
   tab: {
     display: "flex",
     alignItems: "center",
     gap: 6,
-    padding: "4px 12px",
-    fontSize: 12,
+    padding: "0 12px",
+    fontSize: 11,
     fontWeight: 500,
     color: "#777",
     cursor: "grab",
     background: "#252525",
     border: "none",
-    borderRadius: "6px 6px 0 0",
+    borderRight: "1px solid #1a1a1a",
     whiteSpace: "nowrap" as const,
     userSelect: "none" as const,
     minWidth: 0,
@@ -276,6 +392,7 @@ const styles: Record<string, React.CSSProperties> = {
   tabLabel: {
     overflow: "hidden",
     textOverflow: "ellipsis",
+    fontWeight: 600,
   },
   tabClose: {
     color: "#555",
@@ -290,20 +407,20 @@ const styles: Record<string, React.CSSProperties> = {
     display: "flex",
     alignItems: "center",
     gap: 2,
-    padding: "0 8px 4px",
+    padding: "0 6px",
     flexShrink: 0,
   },
   actionBtn: {
     display: "flex",
     alignItems: "center",
     justifyContent: "center",
-    width: 26,
-    height: 26,
+    width: 22,
+    height: 22,
     background: "none",
     border: "none",
     color: "#777",
     cursor: "pointer",
-    fontSize: 13,
+    fontSize: 12,
     borderRadius: 4,
     transition: "background 0.1s, color 0.1s",
   },

@@ -37,13 +37,13 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
   // Load configs and skills
   useEffect(() => {
     invoke<ConfigFile[]>("list_claude_configs", {
-      workspacePath: ws?.path ?? null,
+      workspacePath: ws?.paths[0] ?? null,
     }).then(setConfigs);
 
     invoke<SkillInfo[]>("list_skills", {
-      workspacePath: ws?.path ?? null,
+      workspacePath: ws?.paths[0] ?? null,
     }).then(setSkills);
-  }, [ws?.path]);
+  }, [ws?.paths[0]]);
 
   // Load file content when selected
   useEffect(() => {

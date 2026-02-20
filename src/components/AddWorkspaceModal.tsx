@@ -1,7 +1,6 @@
 import React, { useState } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
 import { useWorkspaceStore } from "../stores/workspaceStore";
-import { api } from "../lib/tauri";
 
 interface AddWorkspaceModalProps {
   onClose: () => void;
@@ -10,32 +9,31 @@ interface AddWorkspaceModalProps {
 export function AddWorkspaceModal({ onClose }: AddWorkspaceModalProps) {
   const { addWorkspace } = useWorkspaceStore();
   const [name, setName] = useState("");
-  const [path, setPath] = useState("");
-  const [repoUrl, setRepoUrl] = useState("");
-  const [branch, setBranch] = useState("");
-  const [mainBranch, setMainBranch] = useState("main");
+  const [paths, setPaths] = useState<string[]>([]);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
-  async function handleBrowse() {
+  async function handleAddDirectory() {
     const selected = await open({ directory: true, multiple: false });
     if (selected) {
-      setPath(selected as string);
-      // Auto-detect git info
-      try {
-        const info = await api.detectGitInfo(selected as string);
-        if (info.repo_url) setRepoUrl(info.repo_url);
-        if (info.branch) setBranch(info.branch);
-        if (info.name && !name) setName(info.name);
-      } catch {
-        // Not a git repo, that's fine
+      const dir = selected as string;
+      if (paths.includes(dir)) return; // avoid duplicates
+      setPaths((prev) => [...prev, dir]);
+      // Auto-fill name from first folder
+      if (!name) {
+        const folderName = dir.split("/").pop();
+        if (folderName) setName(folderName);
       }
     }
   }
 
+  function handleRemovePath(index: number) {
+    setPaths((prev) => prev.filter((_, i) => i !== index));
+  }
+
   async function handleSubmit() {
-    if (!name.trim() || !path.trim()) {
-      setError("Name and path are required");
+    if (!name.trim() || paths.length === 0) {
+      setError("Name and at least one directory are required");
       return;
     }
     setLoading(true);
@@ -43,10 +41,7 @@ export function AddWorkspaceModal({ onClose }: AddWorkspaceModalProps) {
     try {
       await addWorkspace({
         name: name.trim(),
-        path: path.trim(),
-        repoUrl: repoUrl.trim(),
-        branch: branch.trim() || "main",
-        mainBranch: mainBranch.trim() || "main",
+        paths,
       });
       onClose();
     } catch (e: any) {
@@ -74,46 +69,26 @@ export function AddWorkspaceModal({ onClose }: AddWorkspaceModalProps) {
             autoFocus
           />
 
-          <label style={styles.label}>Path</label>
-          <div style={styles.pathRow}>
-            <input
-              style={{ ...styles.input, flex: 1 }}
-              value={path}
-              onChange={(e) => setPath(e.target.value)}
-              placeholder="/Users/you/repos/project"
-            />
-            <button style={styles.browseBtn} onClick={handleBrowse}>
-              Browse
-            </button>
-          </div>
-          <span style={styles.hint}>
-            Select an existing repo folder — git info will be detected automatically
-          </span>
-
-          <label style={styles.label}>Repo URL</label>
-          <input
-            style={styles.input}
-            value={repoUrl}
-            onChange={(e) => setRepoUrl(e.target.value)}
-            placeholder="git@github.com:org/repo.git"
-          />
-
-          <label style={styles.label}>Branch</label>
-          <input
-            style={styles.input}
-            value={branch}
-            onChange={(e) => setBranch(e.target.value)}
-            placeholder="e.g., danny/dev"
-          />
-
-          <label style={styles.label}>Main Branch</label>
-          <input
-            style={styles.input}
-            value={mainBranch}
-            onChange={(e) => setMainBranch(e.target.value)}
-            placeholder="main"
-          />
-
+          <label style={styles.label}>Directories</label>
+          {paths.length > 0 && (
+            <div style={styles.pathList}>
+              {paths.map((p, i) => (
+                <div key={p} style={styles.pathItem}>
+                  <span style={styles.pathText}>{p}</span>
+                  <button
+                    style={styles.removeBtn}
+                    onClick={() => handleRemovePath(i)}
+                    title="Remove"
+                  >
+                    ×
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+          <button style={styles.browseBtn} onClick={handleAddDirectory}>
+            + Add Directory
+          </button>
           {error && <div style={styles.error}>{error}</div>}
         </div>
 
@@ -194,6 +169,37 @@ const styles: Record<string, React.CSSProperties> = {
     display: "flex",
     gap: 6,
   },
+  pathList: {
+    display: "flex",
+    flexDirection: "column" as const,
+    gap: 4,
+  },
+  pathItem: {
+    display: "flex",
+    alignItems: "center",
+    gap: 6,
+    padding: "5px 10px",
+    background: "#1a1a1a",
+    border: "1px solid #3a3a3a",
+    borderRadius: 4,
+  },
+  pathText: {
+    flex: 1,
+    fontSize: 12,
+    color: "#ccc",
+    overflow: "hidden",
+    textOverflow: "ellipsis",
+    whiteSpace: "nowrap" as const,
+  },
+  removeBtn: {
+    background: "none",
+    border: "none",
+    color: "#888",
+    fontSize: 16,
+    cursor: "pointer",
+    padding: "0 2px",
+    lineHeight: 1,
+  },
   browseBtn: {
     padding: "7px 14px",
     background: "#333",
@@ -203,6 +209,7 @@ const styles: Record<string, React.CSSProperties> = {
     cursor: "pointer",
     fontSize: 12,
     whiteSpace: "nowrap" as const,
+    alignSelf: "flex-start" as const,
   },
   hint: {
     fontSize: 10,

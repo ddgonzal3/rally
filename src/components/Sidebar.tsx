@@ -2,28 +2,33 @@ import React, { useState } from "react";
 import { useWorkspaceStore } from "../stores/workspaceStore";
 import { AddWorkspaceModal } from "./AddWorkspaceModal";
 import { SettingsPanel } from "./SettingsPanel";
+import { api } from "../lib/tauri";
+import { showContextMenu } from "../lib/contextMenu";
 import type { GitStatus } from "../lib/types";
 
-function StatusBadge({ status }: { status?: GitStatus }) {
-  if (!status) return <span style={styles.badge}>...</span>;
+/** Aggregate dot: worst status across all paths in a workspace */
+function WorkspaceDot({ paths, gitStatuses, syncNeeded }: {
+  paths: string[];
+  gitStatuses: Record<string, GitStatus>;
+  syncNeeded: Record<string, boolean>;
+}) {
+  const anySyncNeeded = paths.some((p) => syncNeeded[p]);
+  const anyTrackedChanges = paths.some((p) => (gitStatuses[p]?.modified_files.length ?? 0) > 0);
+  const anyLoaded = paths.some((p) => gitStatuses[p]);
 
-  const parts: string[] = [];
-  if (status.dirty) parts.push("modified");
-  if (status.ahead > 0) parts.push(`+${status.ahead}`);
-  if (status.behind > 0) parts.push(`-${status.behind}`);
+  if (!anyLoaded) return <span style={{ ...styles.dot, background: "#555" }} />;
 
-  if (parts.length === 0) {
-    return <span style={{ ...styles.badge, background: "#2d5a2d" }}>clean</span>;
-  }
-  return (
-    <span style={{ ...styles.badge, background: status.dirty ? "#5a3a2d" : "#3a3a2d" }}>
-      {parts.join(" ")}
-    </span>
-  );
+  let color: string;
+  let pulse = false;
+  if (anySyncNeeded) { color = "#e8b930"; pulse = true; }
+  else if (anyTrackedChanges) { color = "#888"; }
+  else { color = "#4caf50"; }
+
+  return <span style={{ ...styles.dot, background: color }} className={pulse ? "pulse-dot" : undefined} />;
 }
 
 export function Sidebar() {
-  const { workspaces, activeWorkspaceId, setActive, removeWorkspace, gitStatuses } =
+  const { workspaces, activeWorkspaceId, setActive, removeWorkspace, gitStatuses, syncNeeded } =
     useWorkspaceStore();
   const [showAddModal, setShowAddModal] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
@@ -45,6 +50,7 @@ export function Sidebar() {
           {workspaces.map((ws) => {
             const isActive = ws.id === activeWorkspaceId;
             const isHovered = ws.id === hoveredId;
+
             return (
               <div
                 key={ws.id}
@@ -53,14 +59,23 @@ export function Sidebar() {
                   ...(isActive ? styles.itemActive : {}),
                 }}
                 onClick={() => setActive(ws.id)}
+                onContextMenu={(e) => {
+                  e.preventDefault();
+                  showContextMenu([
+                    { label: "Reveal in Finder", action: () => api.revealInFinder(ws.paths[0]) },
+                  ]);
+                }}
                 onMouseEnter={() => setHoveredId(ws.id)}
                 onMouseLeave={() => setHoveredId(null)}
               >
                 <div style={styles.itemRow}>
+                  <WorkspaceDot
+                    paths={ws.paths}
+                    gitStatuses={gitStatuses}
+                    syncNeeded={syncNeeded}
+                  />
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={styles.itemName}>{ws.name}</div>
-                    <div style={styles.itemBranch}>{ws.branch}</div>
-                    <StatusBadge status={gitStatuses[ws.id]} />
                   </div>
                   {isHovered && (
                     <button
@@ -126,6 +141,12 @@ const styles: Record<string, React.CSSProperties> = {
     overflow: "auto",
     padding: "4px 0",
   },
+  dot: {
+    width: 8,
+    height: 8,
+    borderRadius: "50%",
+    flexShrink: 0,
+  },
   item: {
     width: "100%",
     padding: "10px 16px",
@@ -143,27 +164,11 @@ const styles: Record<string, React.CSSProperties> = {
   },
   itemRow: {
     display: "flex",
-    alignItems: "flex-start",
-    gap: 4,
+    alignItems: "center",
+    gap: 8,
   },
   itemName: {
     fontWeight: 600,
-    marginBottom: 2,
-  },
-  itemBranch: {
-    fontSize: 11,
-    color: "#888",
-    marginBottom: 4,
-    fontWeight: 500,
-  },
-  badge: {
-    display: "inline-block",
-    padding: "1px 6px",
-    borderRadius: 3,
-    fontSize: 10,
-    fontWeight: 600,
-    color: "#ccc",
-    background: "#333",
   },
   deleteBtn: {
     background: "none",

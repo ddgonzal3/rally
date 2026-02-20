@@ -1,6 +1,6 @@
 use std::process::Command;
 
-use crate::workspace::GitStatus;
+use crate::workspace::{ChangedFile, ChangesSummary, GitStatus, PrStatus, PushResult};
 
 /// Run a git command in a given directory and return stdout
 pub fn git_cmd(cwd: &str, args: &[&str]) -> Result<String, String> {
@@ -34,7 +34,7 @@ fn gh(cwd: &str, args: &[&str]) -> Result<String, String> {
     }
 }
 
-pub fn status(cwd: &str) -> Result<GitStatus, String> {
+pub fn status(cwd: &str, main_branch: &str) -> Result<GitStatus, String> {
     let branch = git_cmd(cwd, &["symbolic-ref", "--short", "HEAD"])?;
 
     let status_output = git_cmd(cwd, &["status", "--porcelain"])?;
@@ -51,8 +51,9 @@ pub fn status(cwd: &str) -> Result<GitStatus, String> {
 
     let dirty = !modified.is_empty() || !untracked.is_empty();
 
-    // Count ahead/behind vs origin/main
-    let (ahead, behind) = match git_cmd(cwd, &["rev-list", "--left-right", "--count", "HEAD...origin/main"]) {
+    // Count ahead/behind vs origin/<main_branch>
+    let remote_ref = format!("HEAD...origin/{}", main_branch);
+    let (ahead, behind) = match git_cmd(cwd, &["rev-list", "--left-right", "--count", &remote_ref]) {
         Ok(counts) => {
             let parts: Vec<&str> = counts.split_whitespace().collect();
             if parts.len() == 2 {
@@ -120,14 +121,62 @@ pub fn commit(cwd: &str, message: &str) -> Result<String, String> {
     git_cmd(cwd, &["commit", "-m", message])
 }
 
-/// Push current branch, set upstream if needed
-pub fn push(cwd: &str) -> Result<String, String> {
+/// Push current branch with smart fallback:
+/// 1. Try normal push
+/// 2. If rejected (diverged after rebase) → force-with-lease
+/// 3. If no upstream → set-upstream
+pub fn push(cwd: &str) -> Result<PushResult, String> {
     let branch = git_cmd(cwd, &["symbolic-ref", "--short", "HEAD"])?;
 
-    // Try normal push first, fall back to setting upstream
+    // Try normal push first
     match git_cmd(cwd, &["push"]) {
-        Ok(out) => Ok(out),
-        Err(_) => git_cmd(cwd, &["push", "--set-upstream", "origin", &branch]),
+        Ok(out) => return Ok(PushResult {
+            output: if out.is_empty() { format!("Pushed {} to origin", branch) } else { out },
+            method: "push".to_string(),
+        }),
+        Err(e) => {
+            // Check if it's a diverged/rejected error (common after rebase)
+            let err_lower = e.to_lowercase();
+            if err_lower.contains("rejected")
+                || err_lower.contains("non-fast-forward")
+                || err_lower.contains("diverged")
+                || err_lower.contains("failed to push")
+            {
+                // Try force-with-lease (safe force push)
+                match git_cmd(cwd, &["push", "--force-with-lease"]) {
+                    Ok(out) => return Ok(PushResult {
+                        output: if out.is_empty() {
+                            format!("Force-pushed {} (with lease)", branch)
+                        } else {
+                            out
+                        },
+                        method: "force-with-lease".to_string(),
+                    }),
+                    Err(e2) => return Err(format!("Push --force-with-lease failed: {}", e2)),
+                }
+            }
+
+            // Check if it's a no-upstream error
+            if err_lower.contains("no upstream")
+                || err_lower.contains("has no upstream")
+                || err_lower.contains("set-upstream")
+            {
+                match git_cmd(cwd, &["push", "--set-upstream", "origin", &branch]) {
+                    Ok(out) => return Ok(PushResult {
+                        output: if out.is_empty() {
+                            format!("Pushed {} and set upstream", branch)
+                        } else {
+                            out
+                        },
+                        method: "set-upstream".to_string(),
+                    }),
+                    Err(e2) => return Err(format!("Push --set-upstream failed: {}", e2)),
+                }
+            }
+
+            // Unknown push error
+            Err(e)
+        }
     }
 }
 
@@ -148,4 +197,129 @@ pub fn create_pr(cwd: &str, title: Option<&str>, body: Option<&str>) -> Result<S
     }
 
     gh(cwd, &args)
+}
+
+/// Get PR status for the current branch. Returns None-equivalent error if no PR exists.
+pub fn pr_status(cwd: &str) -> Result<PrStatus, String> {
+    let json_str = gh(
+        cwd,
+        &[
+            "pr", "view", "--json",
+            "number,title,url,state,isDraft,mergeable,reviewDecision,statusCheckRollup",
+        ],
+    )?;
+
+    let v: serde_json::Value =
+        serde_json::from_str(&json_str).map_err(|e| format!("Failed to parse PR JSON: {}", e))?;
+
+    // Parse statusCheckRollup into a summary status
+    let checks_status = match v.get("statusCheckRollup") {
+        Some(serde_json::Value::Array(checks)) if !checks.is_empty() => {
+            let all_pass = checks
+                .iter()
+                .all(|c| c.get("conclusion").and_then(|v| v.as_str()) == Some("SUCCESS"));
+            let any_fail = checks.iter().any(|c| {
+                let conclusion = c.get("conclusion").and_then(|v| v.as_str()).unwrap_or("");
+                conclusion == "FAILURE" || conclusion == "ERROR"
+            });
+            if any_fail {
+                Some("fail".to_string())
+            } else if all_pass {
+                Some("pass".to_string())
+            } else {
+                Some("pending".to_string())
+            }
+        }
+        _ => None,
+    };
+
+    Ok(PrStatus {
+        number: v["number"].as_u64().unwrap_or(0) as u32,
+        title: v["title"].as_str().unwrap_or("").to_string(),
+        url: v["url"].as_str().unwrap_or("").to_string(),
+        state: v["state"].as_str().unwrap_or("OPEN").to_string(),
+        is_draft: v["isDraft"].as_bool().unwrap_or(false),
+        mergeable: v["mergeable"].as_str().unwrap_or("UNKNOWN").to_string(),
+        review_decision: v["reviewDecision"].as_str().map(|s| s.to_string()),
+        checks_status,
+    })
+}
+
+/// Merge a PR using gh CLI
+pub fn merge_pr(cwd: &str, method: &str) -> Result<String, String> {
+    let method_flag = match method {
+        "rebase" => "--rebase",
+        "merge" => "--merge",
+        _ => "--squash", // default to squash
+    };
+
+    gh(cwd, &["pr", "merge", method_flag, "--delete-branch"])
+}
+
+/// Get detailed changes: staged, unstaged, and untracked files.
+/// Parses `git status --porcelain` two-column format.
+pub fn changes(cwd: &str) -> Result<ChangesSummary, String> {
+    let output = git_cmd(cwd, &["status", "--porcelain"])?;
+    let mut staged = Vec::new();
+    let mut unstaged = Vec::new();
+    let mut untracked = Vec::new();
+
+    for line in output.lines() {
+        if line.len() < 3 { continue; }
+        let index_status = line.chars().nth(0).unwrap_or(' ');
+        let work_status = line.chars().nth(1).unwrap_or(' ');
+        let path = line[3..].to_string();
+
+        if index_status == '?' {
+            untracked.push(path);
+            continue;
+        }
+
+        // Staged changes (index column)
+        if index_status != ' ' && index_status != '?' {
+            staged.push(ChangedFile {
+                path: path.clone(),
+                status: index_status.to_string(),
+            });
+        }
+
+        // Unstaged changes (working tree column)
+        if work_status != ' ' && work_status != '?' {
+            unstaged.push(ChangedFile {
+                path: path.clone(),
+                status: work_status.to_string(),
+            });
+        }
+    }
+
+    Ok(ChangesSummary { staged, unstaged, untracked })
+}
+
+/// Get file content at HEAD revision.
+pub fn file_at_head(cwd: &str, file_path: &str) -> Result<String, String> {
+    // Get relative path from repo root
+    let repo_root = git_cmd(cwd, &["rev-parse", "--show-toplevel"])?;
+    let full_path = if file_path.starts_with('/') {
+        file_path.to_string()
+    } else {
+        format!("{}/{}", cwd, file_path)
+    };
+    let rel = full_path
+        .strip_prefix(&repo_root)
+        .unwrap_or(&full_path)
+        .trim_start_matches('/');
+    let spec = format!("HEAD:{}", rel);
+    git_cmd(cwd, &["show", &spec])
+}
+
+/// Stage a file.
+pub fn stage_file(cwd: &str, file_path: &str) -> Result<(), String> {
+    git_cmd(cwd, &["add", file_path])?;
+    Ok(())
+}
+
+/// Unstage a file.
+pub fn unstage_file(cwd: &str, file_path: &str) -> Result<(), String> {
+    git_cmd(cwd, &["restore", "--staged", file_path])?;
+    Ok(())
 }
