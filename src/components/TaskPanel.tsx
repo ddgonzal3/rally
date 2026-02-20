@@ -38,7 +38,7 @@ export function TaskPanel({ rootPath, workspaceId, expanded, onToggle }: TaskPan
     if (task.file_path) {
       openFile(workspaceId, task.file_path);
     } else {
-      openFile(workspaceId, `${rootPath}/.claude/commands/_rally_${task.name}.md`);
+      openFile(workspaceId, `${rootPath}/RALLY.json`);
     }
   }
 

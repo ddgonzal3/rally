@@ -4,6 +4,7 @@ import { ClaudeLauncher } from "./ClaudeLauncher";
 import { EditorPane } from "./EditorPane";
 import { DiffView } from "./DiffView";
 import { DropZoneTarget, type DropPosition } from "./DropZoneOverlay";
+import { PaneTabIcon } from "./FileIcons";
 import { useWorkspaceStore } from "../stores/workspaceStore";
 import { getDragState, startDrag, endDrag } from "../lib/dragContext";
 import type { PaneGroup, Pane } from "../lib/types";
@@ -304,6 +305,7 @@ export function PaneGroupView({
             return (
               <div
                 key={pane.id}
+                className={`pane-tab${isActive ? " pane-tab-active" : ""}`}
                 onMouseDown={(e) => handleTabMouseDown(e, pane.id)}
                 style={{
                   ...styles.tab,
@@ -312,6 +314,10 @@ export function PaneGroupView({
                 onClick={() => setActivePane(workspaceId, group.id, pane.id)}
                 title={paneTooltip(pane)}
               >
+                <PaneTabIcon
+                  type={pane.type}
+                  fileName={pane.title || pane.filePath?.split("/").pop()}
+                />
                 <span style={styles.tabLabel}>{paneLabel(pane)}</span>
                 <button
                   data-close
@@ -385,6 +391,11 @@ export function PaneGroupView({
 
       {/* Pane content — all mounted, only active visible */}
       <div style={styles.content}>
+        {group.panes.length === 0 && (
+          <div style={styles.emptyState}>
+            <span style={styles.emptyText}>No open tabs</span>
+          </div>
+        )}
         {group.panes.map((pane) => {
           const isActive = pane.id === activePaneId;
           const paneCwd = pane.cwd || workspacePath;
@@ -445,8 +456,8 @@ const styles: Record<string, React.CSSProperties> = {
     display: "flex",
     alignItems: "stretch",
     background: "#1a1a1a",
-    minHeight: 32,
-    maxHeight: 32,
+    minHeight: 28,
+    maxHeight: 28,
     overflow: "hidden",
     flexShrink: 0,
   },
@@ -458,15 +469,15 @@ const styles: Record<string, React.CSSProperties> = {
   tab: {
     display: "flex",
     alignItems: "center",
-    gap: 6,
-    padding: "0 12px",
+    gap: 4,
+    padding: "0 2px 0 8px",
     fontSize: 12,
     fontWeight: 500,
     color: "#777",
     cursor: "pointer",
     background: "#1a1a1a",
     border: "none",
-    borderRight: "1px solid #151515",
+    borderRight: "1px solid #2d2d2d",
     whiteSpace: "nowrap" as const,
     userSelect: "none" as const,
     minWidth: 0,
@@ -485,13 +496,13 @@ const styles: Record<string, React.CSSProperties> = {
     display: "flex",
     alignItems: "center",
     justifyContent: "center",
-    width: 24,
-    height: 24,
+    width: 20,
+    height: 20,
     background: "none",
     border: "none",
     color: "#555",
     cursor: "pointer",
-    borderRadius: 5,
+    borderRadius: 4,
     flexShrink: 0,
     padding: 0,
     transition: "background 0.15s, color 0.15s",
@@ -523,5 +534,21 @@ const styles: Record<string, React.CSSProperties> = {
     minHeight: 0,
     minWidth: 0,
     overflow: "hidden",
+  },
+  emptyState: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    background: "#1e1e1e",
+  },
+  emptyText: {
+    color: "#444",
+    fontSize: 13,
+    fontWeight: 500,
   },
 };

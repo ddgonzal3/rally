@@ -867,8 +867,19 @@ export const useWorkspaceStore = create<WorkspaceState>()(
     if (!group) return;
 
     if (group.panes.length <= 1) {
-      // Last pane in group — close the whole group
-      get().closeGroup(workspaceId, groupId);
+      // Last pane in group — keep the group but show empty state
+      set((s) => ({
+        layouts: {
+          ...s.layouts,
+          [workspaceId]: {
+            ...layout,
+            groups: {
+              ...layout.groups,
+              [groupId]: { ...group, panes: [], activePaneId: "" },
+            },
+          },
+        },
+      }));
       return;
     }
 
