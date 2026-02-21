@@ -1,6 +1,7 @@
 import React, { useCallback, useRef, useState, useEffect } from "react";
 import { Terminal } from "./Terminal";
 import { ClaudeLauncher } from "./ClaudeLauncher";
+import { ClaudeTerminalWrapper } from "./ClaudeTerminalWrapper";
 import { EditorPane } from "./EditorPane";
 import { DiffView } from "./DiffView";
 import { DropZoneTarget, type DropPosition } from "./DropZoneOverlay";
@@ -125,6 +126,7 @@ export function PaneGroupView({
   const dropPaneOnGroup = useWorkspaceStore((s) => s.dropPaneOnGroup);
   const dropFileOnGroup = useWorkspaceStore((s) => s.dropFileOnGroup);
   const reorderPanes = useWorkspaceStore((s) => s.reorderPanes);
+  const closeGroup = useWorkspaceStore((s) => s.closeGroup);
 
   const ws = workspaces.find((w) => w.id === workspaceId);
   const paths = ws?.paths ?? [workspacePath];
@@ -203,7 +205,7 @@ export function PaneGroupView({
       const dy = ev.clientY - startY;
 
       if (!reordering && (Math.abs(dx) > DRAG_THRESHOLD || Math.abs(dy) > DRAG_THRESHOLD)) {
-        if (Math.abs(dy) > Math.abs(dx) * 1.5 || Math.abs(dy) > 30) {
+        if (Math.abs(dy) > Math.abs(dx) * 1.5 || Math.abs(dy) > 15) {
           startDrag(group.id, dragStartRef.current.paneId, ev.clientX, ev.clientY);
           dragStartRef.current = null;
           indicator.remove();
@@ -338,6 +340,7 @@ export function PaneGroupView({
         </div>
         <div style={styles.actions}>
           <button
+            className="tab-action"
             style={styles.actionBtn}
             onClick={(e) => handleAction("terminal", e)}
             title="New terminal tab"
@@ -347,6 +350,7 @@ export function PaneGroupView({
             </svg>
           </button>
           <button
+            className="tab-action"
             style={styles.actionBtn}
             onClick={(e) => handleAction("claude", e)}
             title="New Claude Code tab"
@@ -357,6 +361,7 @@ export function PaneGroupView({
             </svg>
           </button>
           <button
+            className="tab-action"
             style={styles.actionBtn}
             onClick={(e) => handleAction("split-h", e)}
             title="Split right"
@@ -367,6 +372,7 @@ export function PaneGroupView({
             </svg>
           </button>
           <button
+            className="tab-action"
             style={styles.actionBtn}
             onClick={(e) => handleAction("split-v", e)}
             title="Split down"
@@ -374,6 +380,17 @@ export function PaneGroupView({
             <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
               <rect x="1.5" y="2.5" width="13" height="11" rx="1.5" stroke="currentColor" strokeWidth="1.2" />
               <line x1="1.5" y1="8" x2="14.5" y2="8" stroke="currentColor" strokeWidth="1.2" />
+            </svg>
+          </button>
+          <div style={{ width: 1, height: 14, background: "#333", margin: "0 2px" }} />
+          <button
+            className="tab-action"
+            style={styles.actionBtn}
+            onClick={() => closeGroup(workspaceId, group.id)}
+            title="Close panel"
+          >
+            <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+              <path d="M2.5 2.5l7 7M9.5 2.5l-7 7" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
             </svg>
           </button>
         </div>
@@ -429,6 +446,8 @@ export function PaneGroupView({
                   workspacePath={paneCwd}
                   onLaunch={() => handleLaunchClaude(pane.id)}
                 />
+              ) : pane.type === "claude" ? (
+                <ClaudeTerminalWrapper cwd={paneCwd} command={pane.command} initialInput={pane.initialInput} ptyId={pane.ptyId} />
               ) : (
                 <Terminal cwd={paneCwd} command={pane.command} initialInput={pane.initialInput} ptyId={pane.ptyId} />
               )}
@@ -436,9 +455,10 @@ export function PaneGroupView({
           );
         })}
 
-        {/* Drop zone target — always mounted for hit testing */}
-        <DropZoneTarget groupId={group.id} paneCount={group.panes.length} onDrop={handleDrop} onFileDrop={handleFileDrop} />
       </div>
+
+      {/* Drop zone target — always mounted, covers full container (incl. tab bar) for earlier activation */}
+      <DropZoneTarget groupId={group.id} paneCount={group.panes.length} onDrop={handleDrop} onFileDrop={handleFileDrop} />
     </div>
   );
 }
@@ -451,6 +471,7 @@ const styles: Record<string, React.CSSProperties> = {
     minWidth: 0,
     minHeight: 0,
     overflow: "hidden",
+    position: "relative",
   },
   tabBar: {
     display: "flex",
@@ -544,7 +565,7 @@ const styles: Record<string, React.CSSProperties> = {
     display: "flex",
     alignItems: "center",
     justifyContent: "center",
-    background: "#1e1e1e",
+    background: "#1a1a1a",
   },
   emptyText: {
     color: "#444",

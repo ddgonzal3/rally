@@ -68,6 +68,10 @@ export function DropZoneTarget({
   let visible = false;
   let hovered: DropPosition | null = null;
 
+  // Expand detection bounds slightly so overlay activates before cursor
+  // fully crosses the resize handle between panels (~6px gap).
+  const HIT_EXPAND = 8;
+
   if (drag.isDragging) {
     const isFileDrag = drag.type === "file";
     const showForPaneDrag = drag.type === "pane" && (!isSameGroup || allowSameGroup);
@@ -80,10 +84,10 @@ export function DropZoneTarget({
         if (
           rect.width > 0 &&
           rect.height > 0 &&
-          mx >= rect.left &&
-          mx <= rect.right &&
-          my >= rect.top &&
-          my <= rect.bottom
+          mx >= rect.left - HIT_EXPAND &&
+          mx <= rect.right + HIT_EXPAND &&
+          my >= rect.top - HIT_EXPAND &&
+          my <= rect.bottom + HIT_EXPAND
         ) {
           const pos = getDropPosition(rect, mx, my);
           // "center" on same group is a no-op (tab is already here)

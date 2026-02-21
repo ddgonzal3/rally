@@ -867,19 +867,13 @@ export const useWorkspaceStore = create<WorkspaceState>()(
     if (!group) return;
 
     if (group.panes.length <= 1) {
-      // Last pane in group — keep the group but show empty state
-      set((s) => ({
-        layouts: {
-          ...s.layouts,
-          [workspaceId]: {
-            ...layout,
-            groups: {
-              ...layout.groups,
-              [groupId]: { ...group, panes: [], activePaneId: "" },
-            },
-          },
-        },
-      }));
+      // Last pane in group — collapse it if there are sibling panels,
+      // otherwise keep empty state (can't remove the only panel)
+      const parentInfo = findParent(layout.root, groupId);
+      if (parentInfo) {
+        get().closeGroup(workspaceId, groupId);
+      }
+      // Root (only panel) — just do nothing, keep the group with its last pane
       return;
     }
 
