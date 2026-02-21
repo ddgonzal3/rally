@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { useWorkspaceStore } from "../stores/workspaceStore";
 import { AddWorkspaceModal } from "./AddWorkspaceModal";
 import { SettingsPanel } from "./SettingsPanel";
@@ -13,11 +13,37 @@ export function Sidebar() {
   const [showAddModal, setShowAddModal] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
 
+  useEffect(() => {
+    const openAddWorkspace = () => {
+      setShowAddModal(true);
+    };
+    document.addEventListener("rally-open-add-workspace", openAddWorkspace);
+
+    return () => {
+      document.removeEventListener("rally-open-add-workspace", openAddWorkspace);
+    };
+  }, []);
+
   return (
     <>
       <div style={styles.sidebar}>
         <div style={styles.header}>
           <span style={styles.title}>Workspaces</span>
+          <button
+            className="sidebar-btn"
+            style={styles.headerAddBtn}
+            onClick={() => setShowAddModal(true)}
+            title="Add workspace"
+          >
+            <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+              <path
+                d="M6 2v8M2 6h8"
+                stroke="currentColor"
+                strokeWidth="1.4"
+                strokeLinecap="round"
+              />
+            </svg>
+          </button>
         </div>
 
         <div style={styles.list}>
@@ -57,13 +83,6 @@ export function Sidebar() {
         <div style={styles.bottomBtns}>
           <button
             className="sidebar-btn"
-            style={styles.addBtn}
-            onClick={() => setShowAddModal(true)}
-          >
-            + Add Workspace
-          </button>
-          <button
-            className="sidebar-btn"
             style={styles.settingsBtn}
             onClick={() => setShowSettings(true)}
           >
@@ -93,7 +112,8 @@ const styles: Record<string, React.CSSProperties> = {
     display: "flex",
     alignItems: "center",
     justifyContent: "space-between",
-    padding: "12px 20px 8px 16px",
+    padding: "0 8px 0 12px",
+    minHeight: 34,
     borderBottom: "1px solid #333",
   },
   title: {
@@ -102,6 +122,19 @@ const styles: Record<string, React.CSSProperties> = {
     textTransform: "uppercase" as const,
     letterSpacing: "0.05em",
     color: "#fff",
+  },
+  headerAddBtn: {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    width: 22,
+    height: 22,
+    background: "none",
+    border: "none",
+    color: "#aaa",
+    cursor: "pointer",
+    borderRadius: 4,
+    padding: 0,
   },
   list: {
     flex: 1,
@@ -125,17 +158,6 @@ const styles: Record<string, React.CSSProperties> = {
   },
   bottomBtns: {
     borderTop: "1px solid #333",
-  },
-  addBtn: {
-    width: "100%",
-    padding: "8px 20px 8px 16px",
-    background: "none",
-    border: "none",
-    borderBottom: "1px solid #2a2a2a",
-    color: "#ddd",
-    fontSize: 13,
-    textAlign: "left" as const,
-    fontWeight: 600,
   },
   settingsBtn: {
     width: "100%",

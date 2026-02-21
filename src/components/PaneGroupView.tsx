@@ -103,18 +103,20 @@ export function PaneGroupView({
     executeAction(actionType, activePane?.cwd || workspacePath);
   }
 
-  function handleLaunchClaude(paneId: string) {
+  function handleLaunchClaude(paneId: string, cwd?: string) {
     transformPane(workspaceId, groupId, paneId, {
       type: "claude",
       title: "Claude Code",
       command: "claude --dangerously-skip-permissions",
+      ...(cwd ? { cwd } : {}),
     });
   }
 
-  function handleLaunchTerminal(paneId: string) {
+  function handleLaunchTerminal(paneId: string, cwd?: string) {
     transformPane(workspaceId, groupId, paneId, {
       type: "terminal",
       title: "Terminal",
+      ...(cwd ? { cwd } : {}),
     });
   }
 
@@ -354,9 +356,9 @@ export function PaneGroupView({
             onClick={(e) => handleAction("split-h", e)}
             title="Split right"
           >
-            <svg width="15" height="15" viewBox="0 0 16 16" fill="none">
-              <rect x="1.5" y="2.5" width="13" height="11" rx="1.5" stroke="currentColor" strokeWidth="1.2" />
-              <line x1="8" y1="2.5" x2="8" y2="13.5" stroke="currentColor" strokeWidth="1.2" />
+            <svg width="13" height="13" viewBox="0 0 14 14" fill="none">
+              <rect x="1" y="1.5" width="12" height="10.5" rx="1.5" stroke="currentColor" strokeWidth="1.3" />
+              <line x1="7" y1="1.5" x2="7" y2="12" stroke="currentColor" strokeWidth="1.3" />
             </svg>
           </button>
           <button
@@ -365,9 +367,9 @@ export function PaneGroupView({
             onClick={(e) => handleAction("split-v", e)}
             title="Split down"
           >
-            <svg width="15" height="15" viewBox="0 0 16 16" fill="none">
-              <rect x="1.5" y="2.5" width="13" height="11" rx="1.5" stroke="currentColor" strokeWidth="1.2" />
-              <line x1="1.5" y1="8" x2="14.5" y2="8" stroke="currentColor" strokeWidth="1.2" />
+            <svg width="13" height="13" viewBox="0 0 14 14" fill="none">
+              <rect x="1" y="1.5" width="12" height="10.5" rx="1.5" stroke="currentColor" strokeWidth="1.3" />
+              <line x1="1" y1="6.75" x2="13" y2="6.75" stroke="currentColor" strokeWidth="1.3" />
             </svg>
           </button>
           <button
@@ -421,8 +423,9 @@ export function PaneGroupView({
               ) : pane.type === "claude-launcher" ? (
                 <ClaudeLauncher
                   workspacePath={paneCwd}
-                  onLaunch={() => handleLaunchClaude(pane.id)}
-                  onLaunchTerminal={() => handleLaunchTerminal(pane.id)}
+                  workspacePaths={paths}
+                  onLaunch={(cwd) => handleLaunchClaude(pane.id, cwd)}
+                  onLaunchTerminal={(cwd) => handleLaunchTerminal(pane.id, cwd)}
                 />
               ) : pane.type === "claude" ? (
                 <ClaudeTerminalWrapper cwd={paneCwd} command={pane.command} initialInput={pane.initialInput} ptyId={pane.ptyId}
@@ -512,7 +515,7 @@ const styles: Record<string, React.CSSProperties> = {
   actions: {
     display: "flex",
     alignItems: "center",
-    gap: 1,
+    gap: 0,
     padding: "0 4px",
     flexShrink: 0,
   },

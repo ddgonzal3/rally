@@ -7,11 +7,16 @@ interface AddWorkspaceModalProps {
 }
 
 export function AddWorkspaceModal({ onClose }: AddWorkspaceModalProps) {
-  const { addWorkspace } = useWorkspaceStore();
+  const { addWorkspace, workspaces } = useWorkspaceStore();
   const [name, setName] = useState("");
   const [paths, setPaths] = useState<string[]>([]);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+
+  const trimmedName = name.trim();
+  const nameExists = trimmedName
+    ? workspaces.some((ws) => ws.name.toLowerCase() === trimmedName.toLowerCase())
+    : false;
 
   async function handleAddDirectory() {
     const selected = await open({ directory: true, multiple: false });
@@ -51,53 +56,90 @@ export function AddWorkspaceModal({ onClose }: AddWorkspaceModalProps) {
     }
   }
 
+  const canSubmit = trimmedName && !nameExists && paths.length > 0 && !loading;
+
   return (
     <div style={styles.overlay} onClick={onClose}>
       <div style={styles.modal} onClick={(e) => e.stopPropagation()}>
+        {/* Header */}
         <div style={styles.header}>
-          <span style={styles.title}>Add Workspace</span>
-          <button style={styles.closeBtn} onClick={onClose}>x</button>
+          <span style={styles.title}>New Workspace</span>
+          <button
+            style={styles.closeBtn}
+            onClick={onClose}
+            title="Close"
+          >
+            <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
+              <path d="M1 1l8 8M9 1l-8 8" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
+            </svg>
+          </button>
         </div>
 
+        {/* Body */}
         <div style={styles.body}>
-          <label style={styles.label}>Name</label>
-          <input
-            style={styles.input}
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            placeholder="e.g., playground-dev"
-            autoFocus
-          />
+          <div>
+            <label style={styles.label}>Name</label>
+            <input
+              style={styles.input}
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="e.g., my-project"
+              autoFocus
+              onKeyDown={(e) => { if (e.key === "Enter" && canSubmit) handleSubmit(); }}
+            />
+            {nameExists && (
+              <div style={styles.hint}>A workspace with this name already exists</div>
+            )}
+          </div>
 
-          <label style={styles.label}>Directories</label>
-          {paths.length > 0 && (
-            <div style={styles.pathList}>
-              {paths.map((p, i) => (
-                <div key={p} style={styles.pathItem}>
-                  <span style={styles.pathText}>{p}</span>
-                  <button
-                    style={styles.removeBtn}
-                    onClick={() => handleRemovePath(i)}
-                    title="Remove"
-                  >
-                    ×
-                  </button>
-                </div>
-              ))}
-            </div>
-          )}
-          <button style={styles.browseBtn} onClick={handleAddDirectory}>
-            + Add Directory
-          </button>
+          <div>
+            <label style={styles.label}>Directories</label>
+            {paths.length > 0 && (
+              <div style={styles.pathList}>
+                {paths.map((p, i) => (
+                  <div key={p} style={styles.pathItem}>
+                    <span style={styles.pathText}>
+                      {p.replace(/^\/Users\/[^/]+/, "~")}
+                    </span>
+                    <button
+                      className="tab-action"
+                      style={styles.removeBtn}
+                      onClick={() => handleRemovePath(i)}
+                      title="Remove"
+                    >
+                      <svg width="8" height="8" viewBox="0 0 10 10" fill="none">
+                        <path d="M1 1l8 8M9 1l-8 8" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
+                      </svg>
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+            <button
+              className="sidebar-btn"
+              style={styles.browseBtn}
+              onClick={handleAddDirectory}
+            >
+              <svg width="10" height="10" viewBox="0 0 12 12" fill="none" style={{ marginRight: 5 }}>
+                <path d="M6 2v8M2 6h8" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
+              </svg>
+              Add Directory
+            </button>
+          </div>
+
           {error && <div style={styles.error}>{error}</div>}
         </div>
 
+        {/* Footer */}
         <div style={styles.footer}>
           <button style={styles.cancelBtn} onClick={onClose}>Cancel</button>
           <button
-            style={styles.submitBtn}
+            style={{
+              ...styles.submitBtn,
+              opacity: canSubmit ? 1 : 0.4,
+            }}
             onClick={handleSubmit}
-            disabled={loading}
+            disabled={!canSubmit}
           >
             {loading ? "Adding..." : "Add Workspace"}
           </button>
@@ -111,116 +153,128 @@ const styles: Record<string, React.CSSProperties> = {
   overlay: {
     position: "fixed",
     inset: 0,
-    background: "rgba(0, 0, 0, 0.6)",
+    background: "transparent",
     display: "flex",
     alignItems: "center",
     justifyContent: "center",
     zIndex: 1000,
   },
   modal: {
-    width: 480,
-    background: "#252525",
-    borderRadius: 8,
-    border: "1px solid #3a3a3a",
+    width: 380,
+    background: "#222",
+    borderRadius: 10,
+    border: "1px solid #333",
+    boxShadow: "0 8px 32px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255,255,255,0.03)",
     overflow: "hidden",
   },
   header: {
     display: "flex",
     alignItems: "center",
     justifyContent: "space-between",
-    padding: "12px 16px",
-    borderBottom: "1px solid #333",
+    padding: "14px 16px 10px",
   },
   title: {
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: 600,
-    color: "#e0e0e0",
+    color: "#ddd",
   },
   closeBtn: {
     background: "none",
     border: "none",
-    color: "#888",
-    fontSize: 16,
+    color: "#555",
     cursor: "pointer",
-    padding: "0 4px",
+    padding: 4,
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: 4,
   },
   body: {
-    padding: "16px",
+    padding: "0 16px 16px",
     display: "flex",
     flexDirection: "column",
-    gap: 6,
+    gap: 14,
   },
   label: {
     fontSize: 11,
-    fontWeight: 500,
-    color: "#999",
+    fontWeight: 600,
+    color: "#777",
+    textTransform: "uppercase" as const,
+    letterSpacing: "0.04em",
+    display: "block",
+    marginBottom: 6,
+  },
+  hint: {
+    fontSize: 11,
+    color: "#df7d7d",
     marginTop: 4,
   },
   input: {
-    padding: "7px 10px",
+    width: "100%",
+    padding: "8px 10px",
     background: "#1a1a1a",
-    border: "1px solid #3a3a3a",
-    borderRadius: 4,
+    border: "1px solid #2e2e2e",
+    borderRadius: 6,
     color: "#e0e0e0",
     fontSize: 13,
     outline: "none",
-  },
-  pathRow: {
-    display: "flex",
-    gap: 6,
+    boxSizing: "border-box" as const,
   },
   pathList: {
     display: "flex",
     flexDirection: "column" as const,
     gap: 4,
+    marginBottom: 6,
   },
   pathItem: {
     display: "flex",
     alignItems: "center",
     gap: 6,
-    padding: "5px 10px",
+    padding: "6px 8px",
     background: "#1a1a1a",
-    border: "1px solid #3a3a3a",
-    borderRadius: 4,
+    border: "1px solid #2e2e2e",
+    borderRadius: 6,
   },
   pathText: {
     flex: 1,
     fontSize: 12,
-    color: "#ccc",
+    color: "#aaa",
     overflow: "hidden",
     textOverflow: "ellipsis",
     whiteSpace: "nowrap" as const,
+    direction: "rtl" as const,
+    textAlign: "left" as const,
   },
   removeBtn: {
     background: "none",
     border: "none",
-    color: "#888",
-    fontSize: 16,
+    color: "#555",
     cursor: "pointer",
-    padding: "0 2px",
-    lineHeight: 1,
+    padding: 4,
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: 4,
+    flexShrink: 0,
   },
   browseBtn: {
-    padding: "7px 14px",
-    background: "#333",
-    border: "1px solid #444",
-    borderRadius: 4,
-    color: "#ccc",
+    display: "flex",
+    alignItems: "center",
+    padding: "6px 10px",
+    background: "none",
+    border: "1px solid #333",
+    borderRadius: 6,
+    color: "#888",
     cursor: "pointer",
     fontSize: 12,
-    whiteSpace: "nowrap" as const,
-    alignSelf: "flex-start" as const,
-  },
-  hint: {
-    fontSize: 10,
-    color: "#666",
-    marginTop: -2,
+    fontWeight: 500,
+    width: "fit-content",
   },
   error: {
-    marginTop: 8,
     padding: "6px 10px",
-    borderRadius: 4,
-    border: "1px solid #5a2d2d",
+    borderRadius: 6,
+    background: "rgba(220, 80, 80, 0.08)",
+    border: "1px solid rgba(220, 80, 80, 0.2)",
     color: "#df7d7d",
     fontSize: 12,
   },
@@ -228,26 +282,26 @@ const styles: Record<string, React.CSSProperties> = {
     display: "flex",
     justifyContent: "flex-end",
     gap: 8,
-    padding: "12px 16px",
-    borderTop: "1px solid #333",
+    padding: "10px 16px 14px",
   },
   cancelBtn: {
-    padding: "7px 16px",
+    padding: "6px 14px",
     background: "none",
-    border: "1px solid #3a3a3a",
-    borderRadius: 4,
-    color: "#999",
+    border: "none",
+    borderRadius: 6,
+    color: "#666",
     cursor: "pointer",
-    fontSize: 13,
+    fontSize: 12,
+    fontWeight: 500,
   },
   submitBtn: {
-    padding: "7px 16px",
-    background: "#7c6ef5",
+    padding: "6px 14px",
+    background: "#fff",
     border: "none",
-    borderRadius: 4,
-    color: "#fff",
+    borderRadius: 6,
+    color: "#111",
     cursor: "pointer",
-    fontSize: 13,
-    fontWeight: 500,
+    fontSize: 12,
+    fontWeight: 600,
   },
 };

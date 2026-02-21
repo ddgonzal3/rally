@@ -2,10 +2,17 @@ use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::Path;
 use std::process::Command;
+use tauri::Emitter;
 
 use crate::git_ops;
 use crate::git_watch::GitWatchState;
 use crate::workspace::{self, ChangesSummary, GitStatus, PrStatus, PushResult, Workspace};
+
+fn emit_workspaces_updated(app: &tauri::AppHandle) {
+    if let Err(e) = app.emit("rally-workspaces-updated", ()) {
+        eprintln!("Failed to emit rally-workspaces-updated: {}", e);
+    }
+}
 
 #[derive(Debug, Serialize)]
 pub struct FileEntry {
@@ -89,6 +96,7 @@ pub fn update_git_watch_roots(
 
 #[tauri::command]
 pub fn create_workspace(
+    app: tauri::AppHandle,
     name: String,
     paths: Vec<String>,
 ) -> Result<Workspace, String> {
@@ -116,18 +124,25 @@ pub fn create_workspace(
 
     workspaces.push(ws.clone());
     workspace::save_workspaces(&workspaces)?;
+    emit_workspaces_updated(&app);
     Ok(ws)
 }
 
 #[tauri::command]
-pub fn remove_workspace(id: String) -> Result<(), String> {
+pub fn remove_workspace(app: tauri::AppHandle, id: String) -> Result<(), String> {
     let mut workspaces = workspace::load_workspaces();
     workspaces.retain(|w| w.id != id);
-    workspace::save_workspaces(&workspaces)
+    workspace::save_workspaces(&workspaces)?;
+    emit_workspaces_updated(&app);
+    Ok(())
 }
 
 #[tauri::command]
-pub fn add_workspace_path(id: String, path: String) -> Result<Workspace, String> {
+pub fn add_workspace_path(
+    app: tauri::AppHandle,
+    id: String,
+    path: String,
+) -> Result<Workspace, String> {
     let mut workspaces = workspace::load_workspaces();
     let ws = workspaces
         .iter_mut()
@@ -140,11 +155,16 @@ pub fn add_workspace_path(id: String, path: String) -> Result<Workspace, String>
 
     let result = ws.clone();
     workspace::save_workspaces(&workspaces)?;
+    emit_workspaces_updated(&app);
     Ok(result)
 }
 
 #[tauri::command]
-pub fn remove_workspace_path(id: String, path: String) -> Result<Workspace, String> {
+pub fn remove_workspace_path(
+    app: tauri::AppHandle,
+    id: String,
+    path: String,
+) -> Result<Workspace, String> {
     let mut workspaces = workspace::load_workspaces();
     let ws = workspaces
         .iter_mut()
@@ -158,6 +178,7 @@ pub fn remove_workspace_path(id: String, path: String) -> Result<Workspace, Stri
     ws.paths.retain(|p| p != &path);
     let result = ws.clone();
     workspace::save_workspaces(&workspaces)?;
+    emit_workspaces_updated(&app);
     Ok(result)
 }
 

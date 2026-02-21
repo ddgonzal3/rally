@@ -9,15 +9,44 @@ interface ClaudeTerminalWrapperProps {
   onPtySpawned?: (ptyId: string) => void;
 }
 
+const MIN_OVERLAY_MS = 1500;
+const MAX_OVERLAY_MS = 5000;
+
 export function ClaudeTerminalWrapper({ cwd, command, initialInput, ptyId, onPtySpawned }: ClaudeTerminalWrapperProps) {
   const [ready, setReady] = useState(!!ptyId);
   const containerRef = useRef<HTMLDivElement>(null);
+  const ptyArrivedRef = useRef(!!ptyId);
+  const minElapsedRef = useRef(!!ptyId);
 
+  // Track when ptyId arrives
   useEffect(() => {
-    if (ptyId) return;
-    const timer = setTimeout(() => setReady(true), 2500);
-    return () => clearTimeout(timer);
+    if (ptyId) ptyArrivedRef.current = true;
   }, [ptyId]);
+
+  // Minimum overlay duration — always show at least MIN_OVERLAY_MS
+  useEffect(() => {
+    if (ready) return;
+    const timer = setTimeout(() => {
+      minElapsedRef.current = true;
+      if (ptyArrivedRef.current) setReady(true);
+    }, MIN_OVERLAY_MS);
+    return () => clearTimeout(timer);
+  }, [ready]);
+
+  // When ptyId arrives after min elapsed, dismiss overlay
+  useEffect(() => {
+    if (ready || !ptyId) return;
+    if (minElapsedRef.current) {
+      setReady(true);
+    }
+  }, [ptyId, ready]);
+
+  // Max overlay fallback — dismiss after MAX_OVERLAY_MS regardless
+  useEffect(() => {
+    if (ready) return;
+    const timer = setTimeout(() => setReady(true), MAX_OVERLAY_MS);
+    return () => clearTimeout(timer);
+  }, [ready]);
 
   // Focus the terminal when overlay disappears
   useEffect(() => {

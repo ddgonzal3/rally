@@ -1,5 +1,6 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+use std::collections::HashSet;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
@@ -9,12 +10,54 @@ use rally::git_watch::GitWatchState;
 use rally::pty_manager::{self, PtyManager};
 use rally::ship_ops;
 use tauri::menu::{MenuItemBuilder, PredefinedMenuItem, SubmenuBuilder};
+use tauri::Emitter;
 use tauri::Manager;
 use tauri_plugin_dialog::{DialogExt, MessageDialogButtons, MessageDialogKind};
 
-/// Show the native "Quit Rally?" confirmation dialog.
-/// Uses `quit_showing` to prevent stacking. On confirm, exits the app.
-/// The dialog is parented to the main window so it appears as a visible sheet.
+/// Show the native "Close Window?" confirmation dialog for secondary windows.
+fn show_close_window_dialog(
+    window: tauri::Window,
+    close_window_showing: Arc<AtomicBool>,
+    bypass_close_confirm: Arc<Mutex<HashSet<String>>>,
+) {
+    if close_window_showing.swap(true, Ordering::SeqCst) {
+        return;
+    }
+
+    let s = close_window_showing.clone();
+    let label = window.label().to_string();
+    window
+        .dialog()
+        .message("Are you sure you want to close this window?")
+        .title("Close Window")
+        .kind(MessageDialogKind::Warning)
+        .buttons(MessageDialogButtons::OkCancelCustom(
+            "Close".into(),
+            "Cancel".into(),
+        ))
+        .show(move |confirmed| {
+            s.store(false, Ordering::SeqCst);
+            if !confirmed {
+                return;
+            }
+
+            if let Ok(mut bypass) = bypass_close_confirm.lock() {
+                bypass.insert(label.clone());
+            } else {
+                eprintln!("Failed to lock close-window bypass set");
+                return;
+            }
+
+            if let Err(e) = window.close() {
+                eprintln!("Failed to close window {}: {}", label, e);
+                if let Ok(mut bypass) = bypass_close_confirm.lock() {
+                    bypass.remove(&label);
+                }
+            }
+        });
+}
+
+/// Show the native "Quit Rally?" confirmation dialog on a best-effort parent window.
 fn show_quit_dialog(app: tauri::AppHandle, quit_showing: Arc<AtomicBool>) {
     // Don't stack dialogs
     if quit_showing.swap(true, Ordering::SeqCst) {
@@ -22,10 +65,16 @@ fn show_quit_dialog(app: tauri::AppHandle, quit_showing: Arc<AtomicBool>) {
     }
 
     let s = quit_showing.clone();
+    let parent_window = app
+        .webview_windows()
+        .into_values()
+        .find(|w| w.is_focused().unwrap_or(false))
+        .or_else(|| app.get_webview_window("main"))
+        .or_else(|| app.webview_windows().into_values().next());
 
-    // Use the window's dialog so it appears as a sheet on the main window
-    if let Some(win) = app.get_webview_window("main") {
-        win.dialog()
+    if let Some(window) = parent_window {
+        window
+            .dialog()
             .message("Are you sure you want to quit Rally?")
             .title("Quit Rally")
             .kind(MessageDialogKind::Warning)
@@ -40,8 +89,25 @@ fn show_quit_dialog(app: tauri::AppHandle, quit_showing: Arc<AtomicBool>) {
                 }
             });
     } else {
-        // No window found — just exit
+        s.store(false, Ordering::SeqCst);
         app.exit(0);
+    }
+}
+
+/// Emit an app event to the focused window only (falls back to app-wide emit
+/// if focus can't be resolved).
+fn emit_to_focused_window(app: &tauri::AppHandle, event: &str) {
+    let focused = app
+        .webview_windows()
+        .into_values()
+        .find(|w| w.is_focused().unwrap_or(false));
+
+    if let Some(win) = focused {
+        if let Err(e) = win.emit(event, ()) {
+            eprintln!("Failed to emit {} to focused window: {}", event, e);
+        }
+    } else if let Err(e) = app.emit(event, ()) {
+        eprintln!("Failed to emit {} app-wide: {}", event, e);
     }
 }
 
@@ -50,6 +116,10 @@ fn main() {
     let git_watch_state = GitWatchState::default();
     // Guard to prevent stacking multiple quit dialogs
     let quit_showing = Arc::new(AtomicBool::new(false));
+    // Guard to prevent stacking close-window dialogs
+    let close_window_showing = Arc::new(AtomicBool::new(false));
+    // Window labels that are allowed to bypass close confirmation once.
+    let bypass_close_confirm: Arc<Mutex<HashSet<String>>> = Arc::new(Mutex::new(HashSet::new()));
 
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
@@ -97,16 +167,35 @@ fn main() {
             ship_ops::check_ship_trigger,
             ship_ops::post_merge_sync,
         ])
-        // Intercept window close button (red X) — show quit dialog
+        // Intercept window close button (red X):
+        // - if more than one window exists: confirm closing only this window
+        // - if this is the last window: confirm quitting Rally
         .on_window_event({
             let quit_showing = quit_showing.clone();
+            let close_window_showing = close_window_showing.clone();
+            let bypass_close_confirm = bypass_close_confirm.clone();
             move |window, event| {
                 if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                    let label = window.label().to_string();
+
+                    if let Ok(mut bypass) = bypass_close_confirm.lock() {
+                        if bypass.remove(&label) {
+                            return;
+                        }
+                    } else {
+                        eprintln!("Failed to lock close-window bypass set");
+                    }
+
                     api.prevent_close();
-                    show_quit_dialog(
-                        window.app_handle().clone(),
-                        quit_showing.clone(),
-                    );
+                    if window.app_handle().webview_windows().len() > 1 {
+                        show_close_window_dialog(
+                            window.clone(),
+                            close_window_showing.clone(),
+                            bypass_close_confirm.clone(),
+                        );
+                    } else {
+                        show_quit_dialog(window.app_handle().clone(), quit_showing.clone());
+                    }
                 }
             }
         })
@@ -114,8 +203,23 @@ fn main() {
         .on_menu_event({
             let quit_showing = quit_showing.clone();
             move |app, event| {
-                if event.id() == "custom-quit" {
-                    show_quit_dialog(app.clone(), quit_showing.clone());
+                match event.id().as_ref() {
+                    "custom-quit" => {
+                        show_quit_dialog(app.clone(), quit_showing.clone());
+                    }
+                    "file-new-workspace" => {
+                        emit_to_focused_window(app, "rally-menu-new-workspace");
+                    }
+                    "file-add-folder" => {
+                        emit_to_focused_window(app, "rally-menu-add-folder");
+                    }
+                    "file-new-window" => {
+                        emit_to_focused_window(app, "rally-menu-new-window");
+                    }
+                    "file-open-current-workspace-new-window" => {
+                        emit_to_focused_window(app, "rally-menu-open-current-workspace-new-window");
+                    }
+                    _ => {}
                 }
             }
         })
@@ -155,6 +259,32 @@ fn main() {
                 .select_all()
                 .build()?;
 
+            let file_submenu = SubmenuBuilder::new(app, "File")
+                .item(
+                    &MenuItemBuilder::with_id("file-new-workspace", "New Workspace...")
+                        .accelerator("CmdOrCtrl+N")
+                        .build(app)?,
+                )
+                .item(
+                    &MenuItemBuilder::with_id("file-add-folder", "Add Folder to Workspace...")
+                        .accelerator("CmdOrCtrl+Shift+O")
+                        .build(app)?,
+                )
+                .separator()
+                .item(
+                    &MenuItemBuilder::with_id("file-new-window", "New Window")
+                        .accelerator("CmdOrCtrl+Shift+N")
+                        .build(app)?,
+                )
+                .item(
+                    &MenuItemBuilder::with_id(
+                        "file-open-current-workspace-new-window",
+                        "Open Current Workspace in New Window",
+                    )
+                    .build(app)?,
+                )
+                .build()?;
+
             let view_submenu = SubmenuBuilder::new(app, "View")
                 .fullscreen()
                 .build()?;
@@ -168,7 +298,7 @@ fn main() {
 
             let menu = tauri::menu::Menu::with_items(
                 app,
-                &[&app_submenu, &edit_submenu, &view_submenu, &window_submenu],
+                &[&app_submenu, &file_submenu, &edit_submenu, &view_submenu, &window_submenu],
             )?;
             app.set_menu(menu)?;
 

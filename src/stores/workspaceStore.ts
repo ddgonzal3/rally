@@ -2,6 +2,7 @@ import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import { addToast } from "../components/ToastContainer";
 import type {
   Workspace,
@@ -40,6 +41,14 @@ export const shipOutputBuffer: Uint8Array[] = [];
  */
 export const scriptOutputBuffers = new Map<string, Uint8Array[]>();
 
+const WINDOW_PERSIST_KEY = (() => {
+  try {
+    return `rally-state:${getCurrentWindow().label}`;
+  } catch {
+    return "rally-state:main";
+  }
+})();
+
 
 interface WorkspaceState {
   workspaces: Workspace[];
@@ -66,8 +75,8 @@ interface WorkspaceState {
   loading: boolean;
 
   // Workspace actions
-  loadWorkspaces: () => Promise<void>;
-  setActive: (id: string) => void;
+  loadWorkspaces: (options?: { keepNullActive?: boolean }) => Promise<void>;
+  setActive: (id: string | null) => void;
   setActivePathIndex: (workspaceId: string, index: number) => void;
   /** Get the currently active repo path for a workspace */
   getActivePath: (workspaceId: string) => string | null;
@@ -256,14 +265,22 @@ export const useWorkspaceStore = create<WorkspaceState>()(
 
   // --- Workspace actions ---
 
-  loadWorkspaces: async () => {
+  loadWorkspaces: async (options) => {
+    const keepNullActive = options?.keepNullActive ?? false;
     set({ loading: true });
     const workspaces = await api.listWorkspaces();
+    const currentActive = get().activeWorkspaceId;
+    const activeExists =
+      currentActive !== null && workspaces.some((w) => w.id === currentActive);
     set({
       workspaces,
       loading: false,
       activeWorkspaceId:
-        get().activeWorkspaceId ?? workspaces[0]?.id ?? null,
+        keepNullActive && currentActive === null
+          ? null
+          : activeExists
+            ? currentActive
+            : workspaces[0]?.id ?? null,
     });
   },
 
@@ -1412,7 +1429,7 @@ export const useWorkspaceStore = create<WorkspaceState>()(
   },
     }),
     {
-      name: "rally-state",
+      name: WINDOW_PERSIST_KEY,
       partialize: (state) => ({
         activeWorkspaceId: state.activeWorkspaceId,
         activePathIndex: state.activePathIndex,

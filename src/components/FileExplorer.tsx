@@ -396,17 +396,16 @@ function GitStatusIcon({
           style={{
             position: "absolute" as const,
             bottom: -1,
-            right: 0,
-            fontSize: 9,
-            fontWeight: 800,
-            lineHeight: "14px",
-            color: "#ffffff",
-            textShadow: "0 0 1px rgba(255, 255, 255, 0.85)",
-            background: "#3f8eff",
-            borderRadius: 7,
-            padding: "0 3px",
-            minWidth: 14,
-            height: 14,
+            right: -1,
+            fontSize: 10,
+            fontWeight: 700,
+            lineHeight: "11px",
+            color: "#fff",
+            background: "#3478e0",
+            borderRadius: 3,
+            padding: "0 2px",
+            minWidth: 10,
+            height: 11,
             textAlign: "center" as const,
             boxSizing: "border-box" as const,
           }}
@@ -1057,6 +1056,19 @@ export function FileExplorer({ onCollapse }: FileExplorerProps) {
     } catch { return new Set(); }
   });
 
+  const handleAddFolder = useCallback(async () => {
+    if (!ws) {
+      addToast({
+        type: "warning",
+        title: "No workspace selected",
+        message: "Create or select a workspace first.",
+      });
+      return;
+    }
+    const selected = await open({ directory: true, multiple: false });
+    if (typeof selected === "string") await addPathToWorkspace(ws.id, selected);
+  }, [ws, addPathToWorkspace]);
+
   useEffect(() => {
     if (!ws) return;
     const detected = new Set<string>();
@@ -1119,12 +1131,6 @@ export function FileExplorer({ onCollapse }: FileExplorerProps) {
         <div style={styles.emptyMsg}>No workspace selected</div>
       </div>
     );
-  }
-
-  async function handleAddFolder() {
-    if (!ws) return;
-    const selected = await open({ directory: true, multiple: false });
-    if (typeof selected === "string") await addPathToWorkspace(ws.id, selected);
   }
 
   function handleGitIconClick(rootPath: string) {
@@ -1201,19 +1207,20 @@ export function FileExplorer({ onCollapse }: FileExplorerProps) {
         <span style={styles.explorerTitle}>Explorer</span>
         <button
           className="tab-action"
-          style={styles.explorerMenuBtn}
+          style={styles.explorerAddBtn}
           onClick={(e) => {
             e.stopPropagation();
-            showContextMenu([
-              { label: "Add Folder to Workspace", action: handleAddFolder },
-            ]);
+            void handleAddFolder();
           }}
-          title="Explorer actions"
+          title="Add folder to workspace"
         >
-          <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
-            <circle cx="8" cy="3" r="1.2" fill="currentColor" />
-            <circle cx="8" cy="8" r="1.2" fill="currentColor" />
-            <circle cx="8" cy="13" r="1.2" fill="currentColor" />
+          <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+            <path
+              d="M6 2v8M2 6h8"
+              stroke="currentColor"
+              strokeWidth="1.4"
+              strokeLinecap="round"
+            />
           </svg>
         </button>
       </div>
@@ -1277,7 +1284,7 @@ const styles: Record<string, React.CSSProperties> = {
     letterSpacing: "0.05em",
     color: "#fff",
   },
-  explorerMenuBtn: {
+  explorerAddBtn: {
     display: "flex",
     alignItems: "center",
     justifyContent: "center",
