@@ -46,7 +46,7 @@ export function ScrollArea({
     clearTimeout(hideTimer.current);
     hideTimer.current = setTimeout(() => {
       if (!dragging.current) setVisible(false);
-    }, 1200);
+    }, 500);
   }, []);
 
   useEffect(() => {
@@ -107,7 +107,7 @@ export function ScrollArea({
       dragging.current = false;
       document.removeEventListener("mousemove", onMove);
       document.removeEventListener("mouseup", onUp);
-      hideTimer.current = setTimeout(() => setVisible(false), 800);
+      hideTimer.current = setTimeout(() => setVisible(false), 300);
     };
     document.addEventListener("mousemove", onMove);
     document.addEventListener("mouseup", onUp);
@@ -133,11 +133,11 @@ export function ScrollArea({
         ref={trackRef}
         onClick={handleTrackClick}
         onMouseEnter={() => { setVisible(true); setHovered(true); clearTimeout(hideTimer.current); }}
-        onMouseLeave={() => { setHovered(false); if (!dragging.current) hideTimer.current = setTimeout(() => setVisible(false), 400); }}
+        onMouseLeave={() => { setHovered(false); if (!dragging.current) hideTimer.current = setTimeout(() => setVisible(false), 200); }}
         style={{
           position: "absolute",
           top: 0,
-          right: 0,
+          right: -1,
           width: 8,
           height: "100%",
           zIndex: 10,
@@ -150,8 +150,8 @@ export function ScrollArea({
           style={{
             position: "absolute",
             top: thumbTop,
-            right: 1,
-            width: 6,
+            right: 0,
+            width: 5,
             height: thumbHeight,
             borderRadius: 3,
             background: hovered ? "rgba(255, 255, 255, 0.22)" : "rgba(255, 255, 255, 0.12)",

@@ -36,7 +36,11 @@ function relativePath(filePath: string, rootPath: string): string {
     : filePath;
 }
 
-function fileContextMenu(filePath: string, rootPath: string, onRefresh?: () => void) {
+function fileContextMenu(
+  filePath: string,
+  rootPath: string,
+  onRefresh?: () => void,
+) {
   return [
     {
       label: "Copy Relative Path",
@@ -64,218 +68,241 @@ function fileContextMenu(filePath: string, rootPath: string, onRefresh?: () => v
   ];
 }
 
-const FileTreeNode = React.memo(function FileTreeNode({
-  entry,
-  depth,
-  rootPath,
-  activeWorkspaceId,
-  activeFilePath,
-  onOpenFile,
-  removeChild,
-}: {
-  entry: FileEntry;
-  depth: number;
-  rootPath: string;
-  activeWorkspaceId: string | null;
-  /** Path of the file currently open in the active editor pane */
-  activeFilePath: string | null;
-  onOpenFile: (workspaceId: string, filePath: string) => void;
-  /** Called by parent to remove a child by path after trash */
-  removeChild?: (path: string) => void;
-}) {
-  const hasPresetChildren = Boolean(
-    entry.children && entry.children.length > 0,
-  );
-  const [expanded, setExpanded] = useState(
-    () => entry.is_dir && expandedPaths.has(entry.path),
-  );
-  const [children, setChildren] = useState<FileEntry[]>(
-    entry.children ?? directoryCache.get(entry.path) ?? [],
-  );
-  const [loaded, setLoaded] = useState(
-    hasPresetChildren || directoryCache.has(entry.path),
-  );
-  const btnRef = useRef<HTMLButtonElement>(null);
+const FileTreeNode = React.memo(
+  function FileTreeNode({
+    entry,
+    depth,
+    rootPath,
+    activeWorkspaceId,
+    activeFilePath,
+    onOpenFile,
+    removeChild,
+  }: {
+    entry: FileEntry;
+    depth: number;
+    rootPath: string;
+    activeWorkspaceId: string | null;
+    /** Path of the file currently open in the active editor pane */
+    activeFilePath: string | null;
+    onOpenFile: (workspaceId: string, filePath: string) => void;
+    /** Called by parent to remove a child by path after trash */
+    removeChild?: (path: string) => void;
+  }) {
+    const hasPresetChildren = Boolean(
+      entry.children && entry.children.length > 0,
+    );
+    const [expanded, setExpanded] = useState(
+      () => entry.is_dir && expandedPaths.has(entry.path),
+    );
+    const [children, setChildren] = useState<FileEntry[]>(
+      entry.children ?? directoryCache.get(entry.path) ?? [],
+    );
+    const [loaded, setLoaded] = useState(
+      hasPresetChildren || directoryCache.has(entry.path),
+    );
+    const btnRef = useRef<HTMLButtonElement>(null);
 
-  const isActiveFile = !entry.is_dir && entry.path === activeFilePath;
-  // This directory is an ancestor of the active file — should auto-expand
-  const isAncestorOfActive =
-    entry.is_dir &&
-    activeFilePath !== null &&
-    activeFilePath.startsWith(entry.path + "/");
+    const isActiveFile = !entry.is_dir && entry.path === activeFilePath;
+    // This directory is an ancestor of the active file — should auto-expand
+    const isAncestorOfActive =
+      entry.is_dir &&
+      activeFilePath !== null &&
+      activeFilePath.startsWith(entry.path + "/");
 
-  // Auto-load children when remounting a previously-expanded folder
-  useEffect(() => {
-    if (expanded && !loaded && entry.is_dir) {
-      invoke<FileEntry[]>("list_directory", { path: entry.path })
-        .then((entries) => {
-          directoryCache.set(entry.path, entries);
-          setChildren(entries);
-          setLoaded(true);
-        })
-        .catch((e) => console.error("Failed to load directory:", e));
-    }
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // Auto-expand ancestor directories when active file changes
-  useEffect(() => {
-    if (!isAncestorOfActive) return;
-    expandedPaths.add(entry.path);
-    setExpanded(true);
-    if (!loaded && !hasPresetChildren) {
-      invoke<FileEntry[]>("list_directory", { path: entry.path })
-        .then((entries) => {
-          directoryCache.set(entry.path, entries);
-          setChildren(entries);
-          setLoaded(true);
-        })
-        .catch((e) => console.error("Failed to load directory:", e));
-    }
-  }, [isAncestorOfActive]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // Scroll active file into view
-  useEffect(() => {
-    if (isActiveFile && btnRef.current) {
-      btnRef.current.scrollIntoView({ block: "nearest" });
-    }
-  }, [isActiveFile]);
-
-  const suppressNextClickRef = useRef(false);
-
-  const handleClick = useCallback(async () => {
-    if (suppressNextClickRef.current) {
-      suppressNextClickRef.current = false;
-      return;
-    }
-    if (entry.is_dir) {
-      if (!loaded) {
-        try {
-          const entries = await invoke<FileEntry[]>("list_directory", {
-            path: entry.path,
-          });
-          directoryCache.set(entry.path, entries);
-          setChildren(entries);
-          setLoaded(true);
-        } catch (e) {
-          console.error("Failed to list directory:", e);
-        }
+    // Auto-load children when remounting a previously-expanded folder
+    useEffect(() => {
+      if (expanded && !loaded && entry.is_dir) {
+        invoke<FileEntry[]>("list_directory", { path: entry.path })
+          .then((entries) => {
+            directoryCache.set(entry.path, entries);
+            setChildren(entries);
+            setLoaded(true);
+          })
+          .catch((e) => console.error("Failed to load directory:", e));
       }
-      setExpanded((prev) => {
-        const next = !prev;
-        if (next) expandedPaths.add(entry.path);
-        else expandedPaths.delete(entry.path);
-        return next;
-      });
-    } else if (activeWorkspaceId) {
-      onOpenFile(activeWorkspaceId, entry.path);
-    }
-  }, [entry, loaded, activeWorkspaceId, onOpenFile]);
+    }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const handleRemoveChild = useCallback((path: string) => {
-    setChildren((prev) => {
-      const updated = prev.filter((ch) => ch.path !== path);
-      directoryCache.set(entry.path, updated);
-      return updated;
-    });
-  }, [entry.path]);
+    // Auto-expand ancestor directories when active file changes
+    useEffect(() => {
+      if (!isAncestorOfActive) return;
+      expandedPaths.add(entry.path);
+      setExpanded(true);
+      if (!loaded && !hasPresetChildren) {
+        invoke<FileEntry[]>("list_directory", { path: entry.path })
+          .then((entries) => {
+            directoryCache.set(entry.path, entries);
+            setChildren(entries);
+            setLoaded(true);
+          })
+          .catch((e) => console.error("Failed to load directory:", e));
+      }
+    }, [isAncestorOfActive]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const dragStartRef = useRef<{ x: number; y: number; startedAt: number } | null>(null);
+    // Scroll active file into view
+    useEffect(() => {
+      if (isActiveFile && btnRef.current) {
+        btnRef.current.scrollIntoView({ block: "nearest" });
+      }
+    }, [isActiveFile]);
 
-  const handleMouseDown = useCallback(
-    (e: React.MouseEvent) => {
-      if (entry.is_dir || e.button !== 0) return;
-      const startX = e.clientX;
-      const startY = e.clientY;
-      dragStartRef.current = { x: startX, y: startY, startedAt: Date.now() };
+    const suppressNextClickRef = useRef(false);
 
-      const onMouseMove = (ev: MouseEvent) => {
-        if (!dragStartRef.current) return;
-        if ((ev.buttons & 1) !== 1) return;
-        const dx = ev.clientX - dragStartRef.current.x;
-        const dy = ev.clientY - dragStartRef.current.y;
-        const heldLongEnough =
-          Date.now() - dragStartRef.current.startedAt >= FILE_DRAG_MIN_HOLD_MS;
-        if (
-          heldLongEnough &&
-          (Math.abs(dx) > FILE_DRAG_THRESHOLD ||
-            Math.abs(dy) > FILE_DRAG_THRESHOLD)
-        ) {
-          suppressNextClickRef.current = true;
-          startFileDrag([entry.path], ev.clientX, ev.clientY);
+    const handleClick = useCallback(async () => {
+      if (suppressNextClickRef.current) {
+        suppressNextClickRef.current = false;
+        return;
+      }
+      if (entry.is_dir) {
+        if (!loaded) {
+          try {
+            const entries = await invoke<FileEntry[]>("list_directory", {
+              path: entry.path,
+            });
+            directoryCache.set(entry.path, entries);
+            setChildren(entries);
+            setLoaded(true);
+          } catch (e) {
+            console.error("Failed to list directory:", e);
+          }
+        }
+        setExpanded((prev) => {
+          const next = !prev;
+          if (next) expandedPaths.add(entry.path);
+          else expandedPaths.delete(entry.path);
+          return next;
+        });
+      } else if (activeWorkspaceId) {
+        onOpenFile(activeWorkspaceId, entry.path);
+      }
+    }, [entry, loaded, activeWorkspaceId, onOpenFile]);
+
+    const handleRemoveChild = useCallback(
+      (path: string) => {
+        setChildren((prev) => {
+          const updated = prev.filter((ch) => ch.path !== path);
+          directoryCache.set(entry.path, updated);
+          return updated;
+        });
+      },
+      [entry.path],
+    );
+
+    const dragStartRef = useRef<{
+      x: number;
+      y: number;
+      startedAt: number;
+    } | null>(null);
+
+    const handleMouseDown = useCallback(
+      (e: React.MouseEvent) => {
+        if (entry.is_dir || e.button !== 0) return;
+        const startX = e.clientX;
+        const startY = e.clientY;
+        dragStartRef.current = { x: startX, y: startY, startedAt: Date.now() };
+
+        const onMouseMove = (ev: MouseEvent) => {
+          if (!dragStartRef.current) return;
+          if ((ev.buttons & 1) !== 1) return;
+          const dx = ev.clientX - dragStartRef.current.x;
+          const dy = ev.clientY - dragStartRef.current.y;
+          const heldLongEnough =
+            Date.now() - dragStartRef.current.startedAt >=
+            FILE_DRAG_MIN_HOLD_MS;
+          if (
+            heldLongEnough &&
+            (Math.abs(dx) > FILE_DRAG_THRESHOLD ||
+              Math.abs(dy) > FILE_DRAG_THRESHOLD)
+          ) {
+            suppressNextClickRef.current = true;
+            startFileDrag([entry.path], ev.clientX, ev.clientY);
+            dragStartRef.current = null;
+            document.removeEventListener("mousemove", onMouseMove);
+            document.removeEventListener("mouseup", onMouseUp);
+          }
+        };
+        const onMouseUp = () => {
           dragStartRef.current = null;
           document.removeEventListener("mousemove", onMouseMove);
           document.removeEventListener("mouseup", onMouseUp);
-        }
-      };
-      const onMouseUp = () => {
-        dragStartRef.current = null;
-        document.removeEventListener("mousemove", onMouseMove);
-        document.removeEventListener("mouseup", onMouseUp);
-      };
-      document.addEventListener("mousemove", onMouseMove);
-      document.addEventListener("mouseup", onMouseUp);
-    },
-    [entry.is_dir, entry.path],
-  );
+        };
+        document.addEventListener("mousemove", onMouseMove);
+        document.addEventListener("mouseup", onMouseUp);
+      },
+      [entry.is_dir, entry.path],
+    );
 
-  return (
-    <div>
-      <button
-        ref={btnRef}
-        className={`file-node${isActiveFile ? " file-node-active" : ""}`}
-        onClick={handleClick}
-        onMouseDown={handleMouseDown}
-        onContextMenu={(e) => {
-          e.preventDefault();
-          showContextMenu(fileContextMenu(entry.path, rootPath, removeChild ? () => removeChild(entry.path) : undefined));
-        }}
-        style={{ ...styles.node, paddingLeft: depth * 10 }}
-      >
-        {entry.is_dir ? (
-          <ChevronIcon open={expanded} />
-        ) : (
-          <span style={styles.spacer} />
-        )}
-        <FileIcon name={entry.name} isDir={entry.is_dir} isOpen={expanded} />
-        <span style={styles.name}>{entry.name}</span>
-      </button>
-      {expanded &&
-        children.map((c) => (
-          <FileTreeNode
-            key={c.path}
-            entry={c}
-            depth={depth + 1}
-            rootPath={rootPath}
-            activeWorkspaceId={activeWorkspaceId}
-            activeFilePath={activeFilePath}
-            onOpenFile={onOpenFile}
-            removeChild={handleRemoveChild}
-          />
-        ))}
-    </div>
-  );
-}, (prev, next) => {
-  // Custom comparison: skip re-render when activeFilePath changes but
-  // this node's active/ancestor status hasn't changed. This reduces
-  // re-renders from ~200 nodes (entire tree) to ~4 (old/new active + ancestors).
-  if (prev.entry !== next.entry) return false;
-  if (prev.depth !== next.depth) return false;
-  if (prev.rootPath !== next.rootPath) return false;
-  if (prev.activeWorkspaceId !== next.activeWorkspaceId) return false;
-  if (prev.onOpenFile !== next.onOpenFile) return false;
-  if (prev.removeChild !== next.removeChild) return false;
+    return (
+      <div>
+        <button
+          ref={btnRef}
+          className={`file-node${isActiveFile ? " file-node-active" : ""}`}
+          onClick={handleClick}
+          onMouseDown={handleMouseDown}
+          onContextMenu={(e) => {
+            e.preventDefault();
+            showContextMenu(
+              fileContextMenu(
+                entry.path,
+                rootPath,
+                removeChild ? () => removeChild(entry.path) : undefined,
+              ),
+            );
+          }}
+          style={{ ...styles.node, paddingLeft: depth * 10 }}
+        >
+          {entry.is_dir ? (
+            <ChevronIcon open={expanded} />
+          ) : (
+            <span style={styles.spacer} />
+          )}
+          <FileIcon name={entry.name} isDir={entry.is_dir} isOpen={expanded} />
+          <span style={styles.name}>{entry.name}</span>
+        </button>
+        {expanded &&
+          children.map((c) => (
+            <FileTreeNode
+              key={c.path}
+              entry={c}
+              depth={depth + 1}
+              rootPath={rootPath}
+              activeWorkspaceId={activeWorkspaceId}
+              activeFilePath={activeFilePath}
+              onOpenFile={onOpenFile}
+              removeChild={handleRemoveChild}
+            />
+          ))}
+      </div>
+    );
+  },
+  (prev, next) => {
+    // Custom comparison: skip re-render when activeFilePath changes but
+    // this node's active/ancestor status hasn't changed. This reduces
+    // re-renders from ~200 nodes (entire tree) to ~4 (old/new active + ancestors).
+    if (prev.entry !== next.entry) return false;
+    if (prev.depth !== next.depth) return false;
+    if (prev.rootPath !== next.rootPath) return false;
+    if (prev.activeWorkspaceId !== next.activeWorkspaceId) return false;
+    if (prev.onOpenFile !== next.onOpenFile) return false;
+    if (prev.removeChild !== next.removeChild) return false;
 
-  // Only re-render if this node's relevance to activeFilePath changed
-  const prevActive = !prev.entry.is_dir && prev.activeFilePath === prev.entry.path;
-  const nextActive = !next.entry.is_dir && next.activeFilePath === next.entry.path;
-  if (prevActive !== nextActive) return false;
+    // Only re-render if this node's relevance to activeFilePath changed
+    const prevActive =
+      !prev.entry.is_dir && prev.activeFilePath === prev.entry.path;
+    const nextActive =
+      !next.entry.is_dir && next.activeFilePath === next.entry.path;
+    if (prevActive !== nextActive) return false;
 
-  const prevAncestor = prev.entry.is_dir && !!prev.activeFilePath?.startsWith(prev.entry.path + "/");
-  const nextAncestor = next.entry.is_dir && !!next.activeFilePath?.startsWith(next.entry.path + "/");
-  if (prevAncestor !== nextAncestor) return false;
+    const prevAncestor =
+      prev.entry.is_dir &&
+      !!prev.activeFilePath?.startsWith(prev.entry.path + "/");
+    const nextAncestor =
+      next.entry.is_dir &&
+      !!next.activeFilePath?.startsWith(next.entry.path + "/");
+    if (prevAncestor !== nextAncestor) return false;
 
-  return true; // equal — skip re-render
-});
+    return true; // equal — skip re-render
+  },
+);
 
 // --- Git status components ---
 
@@ -396,7 +423,11 @@ function RootSection({
   isGitRepo: boolean;
   showChanges: boolean;
   onToggleChanges?: () => void;
-  onSelectChangeFile: (rootPath: string, filePath: string, isUntracked: boolean) => void;
+  onSelectChangeFile: (
+    rootPath: string,
+    filePath: string,
+    isUntracked: boolean,
+  ) => void;
 }) {
   const [filesExpanded, setFilesExpanded] = useState(true);
   const [fsEntries, setFsEntries] = useState<FileEntry[]>([]);
@@ -536,10 +567,7 @@ function RootSection({
               />
             ))}
           {activeWorkspaceId && (
-            <TaskPanel
-              rootPath={rootPath}
-              workspaceId={activeWorkspaceId}
-            />
+            <TaskPanel rootPath={rootPath} workspaceId={activeWorkspaceId} />
           )}
         </>
       )}
@@ -603,22 +631,50 @@ function SectionChevron({ open }: { open: boolean }) {
 function StageActionGlyph({ label }: { label: string }) {
   if (label === "Stage") {
     return (
-      <svg width="13" height="13" viewBox="0 0 13 13" fill="none" aria-hidden="true">
-        <path d="M6.5 2v9M2 6.5h9" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+      <svg
+        width="13"
+        height="13"
+        viewBox="0 0 13 13"
+        fill="none"
+        aria-hidden="true"
+      >
+        <path
+          d="M6.5 2v9M2 6.5h9"
+          stroke="currentColor"
+          strokeWidth="1.5"
+          strokeLinecap="round"
+        />
       </svg>
     );
   }
 
   return (
-    <svg width="13" height="13" viewBox="0 0 13 13" fill="none" aria-hidden="true">
-      <path d="M2 6.5h9" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+    <svg
+      width="13"
+      height="13"
+      viewBox="0 0 13 13"
+      fill="none"
+      aria-hidden="true"
+    >
+      <path
+        d="M2 6.5h9"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+      />
     </svg>
   );
 }
 
 function DiscardActionGlyph() {
   return (
-    <svg width="13" height="13" viewBox="0 0 13 13" fill="none" aria-hidden="true">
+    <svg
+      width="13"
+      height="13"
+      viewBox="0 0 13 13"
+      fill="none"
+      aria-hidden="true"
+    >
       <path
         d="M4 3.2V6h2.8M4 6c0-2.2 1.8-4 4-4a4 4 0 1 1-3.1 6.5"
         stroke="currentColor"
@@ -744,7 +800,9 @@ function ChangesPanel({
 }) {
   const [changes, setChanges] = useState<ChangesSummary | null>(null);
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
-  const [sectionOpen, setSectionOpen] = useState<Record<ChangeSectionKey, boolean>>({
+  const [sectionOpen, setSectionOpen] = useState<
+    Record<ChangeSectionKey, boolean>
+  >({
     staged: true,
     changes: true,
     untracked: true,
@@ -766,7 +824,7 @@ function ChangesPanel({
     document.dispatchEvent(
       new CustomEvent<{ rootPath: string }>(GIT_CHANGES_REFRESH_EVENT, {
         detail: { rootPath },
-      })
+      }),
     );
   }, [rootPath]);
 
@@ -789,7 +847,8 @@ function ChangesPanel({
       }
     };
     document.addEventListener(GIT_CHANGES_REFRESH_EVENT, onRefreshEvent);
-    return () => document.removeEventListener(GIT_CHANGES_REFRESH_EVENT, onRefreshEvent);
+    return () =>
+      document.removeEventListener(GIT_CHANGES_REFRESH_EVENT, onRefreshEvent);
   }, [refresh, rootPath]);
 
   async function stageFile(filePath: string) {
@@ -934,7 +993,6 @@ export function FileExplorer({ onCollapse }: FileExplorerProps) {
   const [gitRoots, setGitRoots] = useState<Set<string>>(new Set());
   const [changesOpen, setChangesOpen] = useState<Set<string>>(new Set());
 
-
   useEffect(() => {
     if (!ws) return;
     const detected = new Set<string>();
@@ -961,18 +1019,15 @@ export function FileExplorer({ onCollapse }: FileExplorerProps) {
     let cancelled = false;
     let unlisten: UnlistenFn | null = null;
 
-    listen<{ rootPath: string }>(
-      BACKEND_GIT_CHANGES_UPDATED_EVENT,
-      (event) => {
-        const rootPath = event.payload?.rootPath;
-        if (!rootPath) return;
-        document.dispatchEvent(
-          new CustomEvent<{ rootPath: string }>(GIT_CHANGES_REFRESH_EVENT, {
-            detail: { rootPath },
-          })
-        );
-      }
-    )
+    listen<{ rootPath: string }>(BACKEND_GIT_CHANGES_UPDATED_EVENT, (event) => {
+      const rootPath = event.payload?.rootPath;
+      if (!rootPath) return;
+      document.dispatchEvent(
+        new CustomEvent<{ rootPath: string }>(GIT_CHANGES_REFRESH_EVENT, {
+          detail: { rootPath },
+        }),
+      );
+    })
       .then((fn) => {
         if (cancelled) fn();
         else unlisten = fn;
@@ -1019,7 +1074,11 @@ export function FileExplorer({ onCollapse }: FileExplorerProps) {
     });
   }
 
-  function handleSelectFile(rootPath: string, filePath: string, isUntracked: boolean) {
+  function handleSelectFile(
+    rootPath: string,
+    filePath: string,
+    isUntracked: boolean,
+  ) {
     if (!activeWorkspaceId) return;
     // Open diff in the first pane
     const store = useWorkspaceStore.getState();
@@ -1113,7 +1172,7 @@ const styles: Record<string, React.CSSProperties> = {
     flexDirection: "column",
     height: "100%",
     minHeight: 0,
-    background: "#1c1c1c",
+    background: "#161616",
     overflow: "hidden",
     userSelect: "none",
   },
@@ -1125,9 +1184,9 @@ const styles: Record<string, React.CSSProperties> = {
     userSelect: "none",
   },
   card: {
-    background: "#1c1c1c",
+    background: "#1b1b1b",
     borderRadius: 6,
-    border: "1px solid #2a2a2a",
+    border: "1px solid #2e2e2e",
     overflow: "clip" as const,
     padding: 0,
   },
@@ -1182,6 +1241,7 @@ const styles: Record<string, React.CSSProperties> = {
     background: "rgba(35, 35, 35, 0.82)",
     WebkitBackdropFilter: "blur(12px) saturate(1.2)",
     backdropFilter: "blur(12px) saturate(1.2)",
+    borderRadius: "6px 6px 0 0",
   },
   rootExpandBtn: {
     display: "flex",
