@@ -47,7 +47,14 @@ export function ResizeHandle({ direction, onResize }: ResizeHandleProps) {
     [direction, onResize],
   );
 
-  const isVertical = direction === "vertical";
+  // "vertical" direction = horizontal line (separates top/bottom)
+  // "horizontal" direction = vertical line (separates left/right)
+  const isHorizontalLine = direction === "vertical";
+
+  // Vertical lines: 1px visible line
+  // Horizontal lines: 80% as noticeable (lower opacity)
+  const lineThickness = 1;
+  const lineOpacity = isHorizontalLine ? 0.8 : 1;
 
   return (
     <div
@@ -55,21 +62,37 @@ export function ResizeHandle({ direction, onResize }: ResizeHandleProps) {
       onMouseDown={onMouseDown}
       style={{
         flexShrink: 0,
-        width: isVertical ? "100%" : 2,
-        height: isVertical ? 2 : "100%",
-        cursor: isVertical ? "row-resize" : "col-resize",
-        background: "#2a2a2a",
-        transition: "background 0.15s",
+        // Wider hit area (6px) for easy grabbing, but thin visible line
+        width: isHorizontalLine ? "100%" : 6,
+        height: isHorizontalLine ? 6 : "100%",
+        cursor: isHorizontalLine ? "row-resize" : "col-resize",
+        background: "transparent",
         zIndex: 10,
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
       }}
       onMouseEnter={(e) => {
-        (e.currentTarget as HTMLDivElement).style.background = "#444";
+        const line = e.currentTarget.firstElementChild as HTMLDivElement;
+        if (line) line.style.background = "#444";
       }}
       onMouseLeave={(e) => {
         if (!dragging.current) {
-          (e.currentTarget as HTMLDivElement).style.background = "#2a2a2a";
+          const line = e.currentTarget.firstElementChild as HTMLDivElement;
+          if (line) line.style.background = "#2a2a2a";
         }
       }}
-    />
+    >
+      <div
+        style={{
+          width: isHorizontalLine ? "100%" : lineThickness,
+          height: isHorizontalLine ? lineThickness : "100%",
+          background: "#2a2a2a",
+          opacity: lineOpacity,
+          transition: "background 0.15s",
+          pointerEvents: "none",
+        }}
+      />
+    </div>
   );
 }
