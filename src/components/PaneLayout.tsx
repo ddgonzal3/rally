@@ -5,9 +5,15 @@ import { useWorkspaceStore } from "../stores/workspaceStore";
 export function PaneLayout() {
   const activeWorkspaceId = useWorkspaceStore((s) => s.activeWorkspaceId);
   const workspaces = useWorkspaceStore((s) => s.workspaces);
-  const layouts = useWorkspaceStore((s) => s.layouts);
   const getOrCreateLayout = useWorkspaceStore((s) => s.getOrCreateLayout);
   const getActivePath = useWorkspaceStore((s) => s.getActivePath);
+  // Only subscribe to the tree structure (root), not group content.
+  // This prevents PaneLayout from re-rendering when tab content changes
+  // (e.g., switching active pane, adding a tab). Only tree structure changes
+  // (adding/removing splits) cause PaneLayout to re-render.
+  const layoutRoot = useWorkspaceStore(
+    (s) => activeWorkspaceId ? s.layouts[activeWorkspaceId]?.root : undefined
+  );
   const ws = workspaces.find((w) => w.id === activeWorkspaceId);
 
   if (!ws) {
@@ -22,14 +28,15 @@ export function PaneLayout() {
     );
   }
 
+  // Ensure layout exists (creates default if needed)
   const layout = getOrCreateLayout(ws.id);
+  const root = layoutRoot ?? layout.root;
   const workspacePath = getActivePath(ws.id) ?? ws.paths[0] ?? "";
 
   return (
     <div style={styles.container}>
       <SplitContainer
-        node={layout.root}
-        layout={layout}
+        node={root}
         workspaceId={ws.id}
         workspacePath={workspacePath}
       />

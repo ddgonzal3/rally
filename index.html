@@ -19,6 +19,8 @@
       }
       .pulse-dot { animation: pulse-glow 1.5s ease-in-out infinite; }
       .file-node:hover { background: #2d2d2d !important; }
+      .file-node-active { background: #2a2a2a !important; color: #fff !important; }
+      .file-node-active::before { content: ''; position: absolute; left: 0; top: 2px; bottom: 2px; width: 2px; background: #5b9e6f; border-radius: 1px; }
       .tab-close:hover, .tab-action:hover { background: rgba(255, 255, 255, 0.12) !important; color: #ccc !important; }
       .pane-tab:not(.pane-tab-active):hover { background: #222 !important; }
       .no-select, .no-select * { -webkit-user-select: none; user-select: none; }

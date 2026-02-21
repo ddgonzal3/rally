@@ -5,8 +5,11 @@ import { SettingsPanel } from "./SettingsPanel";
 import { api } from "../lib/tauri";
 import { showContextMenu } from "../lib/contextMenu";
 export function Sidebar() {
-  const { workspaces, activeWorkspaceId, setActive, removeWorkspace } =
-    useWorkspaceStore();
+  // Individual selectors — avoids re-rendering on unrelated store changes
+  const workspaces = useWorkspaceStore((s) => s.workspaces);
+  const activeWorkspaceId = useWorkspaceStore((s) => s.activeWorkspaceId);
+  const setActive = useWorkspaceStore((s) => s.setActive);
+  const removeWorkspace = useWorkspaceStore((s) => s.removeWorkspace);
   const [showAddModal, setShowAddModal] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
 

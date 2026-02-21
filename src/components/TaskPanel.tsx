@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { Terminal as XTerminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
-import { useWorkspaceStore } from "../stores/workspaceStore";
+import { useWorkspaceStore, taskOutputBuffers } from "../stores/workspaceStore";
 import { api } from "../lib/tauri";
 import type { TaskEntry, TaskRun } from "../lib/types";
 import { CLAUDE_PATH } from "./FileIcons";
@@ -15,7 +15,13 @@ export function TaskPanel({ rootPath, workspaceId }: TaskPanelProps) {
   const [tasks, setTasks] = useState<TaskEntry[]>([]);
   const [viewingTask, setViewingTask] = useState<string | null>(null);
   const [popupPos, setPopupPos] = useState({ x: 0, y: 0 });
-  const { taskRuns, runTask, stopTask, openClaudeCommand, openFile, startShipSession } = useWorkspaceStore();
+  // Individual selectors — avoids re-rendering on unrelated store changes
+  const taskRuns = useWorkspaceStore((s) => s.taskRuns);
+  const runTask = useWorkspaceStore((s) => s.runTask);
+  const stopTask = useWorkspaceStore((s) => s.stopTask);
+  const openClaudeCommand = useWorkspaceStore((s) => s.openClaudeCommand);
+  const openFile = useWorkspaceStore((s) => s.openFile);
+  const startShipSession = useWorkspaceStore((s) => s.startShipSession);
 
   useEffect(() => {
     api.listTasks(rootPath).then(setTasks).catch(() => setTasks([]));
@@ -111,6 +117,7 @@ export function TaskPanel({ rootPath, workspaceId }: TaskPanelProps) {
         <FloatingTerminal
           key={viewingTask}
           run={taskRuns[viewingTask]}
+          bufferKey={viewingTask}
           anchorX={popupPos.x}
           anchorY={popupPos.y}
           onClose={() => setViewingTask(null)}
@@ -176,11 +183,13 @@ function ErrorIcon() {
 
 function FloatingTerminal({
   run,
+  bufferKey,
   anchorX,
   anchorY,
   onClose,
 }: {
   run: TaskRun;
+  bufferKey: string;
   anchorX: number;
   anchorY: number;
   onClose: () => void;
@@ -231,7 +240,9 @@ function FloatingTerminal({
     term.open(containerRef.current);
     termRef.current = term;
 
-    for (const chunk of run.output) {
+    // Replay buffered output from module-level buffer (not Zustand state)
+    const buf = taskOutputBuffers.get(bufferKey) ?? [];
+    for (const chunk of buf) {
       term.write(chunk);
     }
 
@@ -246,22 +257,24 @@ function FloatingTerminal({
     return () => term.dispose();
   }, []);
 
-  // Stream new output if still running
+  // Stream new output if still running — reads from module-level buffer
   useEffect(() => {
     if (!termRef.current || run.status !== "running") return;
 
-    let lastLen = run.output.length;
+    const buf = taskOutputBuffers.get(bufferKey);
+    let lastLen = buf?.length ?? 0;
     const interval = setInterval(() => {
-      if (run.output.length > lastLen) {
-        for (let i = lastLen; i < run.output.length; i++) {
-          termRef.current?.write(run.output[i]);
+      const currentBuf = taskOutputBuffers.get(bufferKey);
+      if (currentBuf && currentBuf.length > lastLen) {
+        for (let i = lastLen; i < currentBuf.length; i++) {
+          termRef.current?.write(currentBuf[i]);
         }
-        lastLen = run.output.length;
+        lastLen = currentBuf.length;
       }
     }, 100);
 
     return () => clearInterval(interval);
-  }, [run.status]);
+  }, [run.status, bufferKey]);
 
   // Dragging
   const handleDragStart = useCallback((e: React.MouseEvent) => {

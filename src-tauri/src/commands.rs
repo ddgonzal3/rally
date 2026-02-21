@@ -230,16 +230,6 @@ pub fn reveal_in_finder(path: String) -> Result<(), String> {
     Ok(())
 }
 
-// --- Curated file explorer ---
-
-#[derive(Debug, Serialize)]
-pub struct CuratedEntry {
-    pub name: String,
-    pub path: String,
-    pub is_dir: bool,
-    pub category: String,
-}
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TaskDef {
     pub command: String,
@@ -250,96 +240,11 @@ pub struct TaskDef {
 #[derive(Debug, Deserialize)]
 struct RallyConfig {
     #[serde(default)]
-    include: Vec<String>,
-    #[serde(default)]
     tasks: std::collections::HashMap<String, TaskDef>,
     /// Opt-out list of built-in commands to hide (e.g. ["ship"]).
     /// If absent, all built-ins are shown.
     #[serde(default, rename = "excludeBuiltins")]
     exclude_builtins: Vec<String>,
-    /// Set to true to hide .claude directory from curated view.
-    #[serde(default, rename = "hideClaude")]
-    hide_claude: bool,
-}
-
-#[tauri::command]
-pub fn list_curated_files(root_path: String) -> Result<Vec<CuratedEntry>, String> {
-    let root = Path::new(&root_path);
-    let mut entries = Vec::new();
-
-    // Check RALLY.json for hideClaude option
-    let hide_claude = {
-        let rally_json = root.join("RALLY.json");
-        if rally_json.exists() {
-            fs::read_to_string(&rally_json)
-                .ok()
-                .and_then(|c| serde_json::from_str::<RallyConfig>(&c).ok())
-                .map(|c| c.hide_claude)
-                .unwrap_or(false)
-        } else {
-            false
-        }
-    };
-
-    // .claude directory — shown as a collapsible folder (unless hidden via RALLY.json)
-    let claude_dir = root.join(".claude");
-    if !hide_claude && claude_dir.is_dir() {
-        entries.push(CuratedEntry {
-            name: ".claude".to_string(),
-            path: claude_dir.to_string_lossy().to_string(),
-            is_dir: true,
-            category: "config".to_string(),
-        });
-    }
-
-    // Config files: CLAUDE.md, README variants
-    for name in &["CLAUDE.md", "README.md", "README", "README.txt"] {
-        let p = root.join(name);
-        if p.exists() {
-            entries.push(CuratedEntry {
-                name: name.to_string(),
-                path: p.to_string_lossy().to_string(),
-                is_dir: false,
-                category: "config".to_string(),
-            });
-        }
-    }
-
-    // RALLY.json includes
-    let rally_json = root.join("RALLY.json");
-    if rally_json.exists() {
-        if let Ok(content) = fs::read_to_string(&rally_json) {
-            if let Ok(config) = serde_json::from_str::<RallyConfig>(&content) {
-                for inc in &config.include {
-                    // Strip trailing slashes before joining to avoid Path preserving them
-                    let inc_clean = inc.trim_end_matches('/');
-                    let resolved = root.join(inc_clean);
-                    if resolved.exists() {
-                        let resolved_str = resolved.to_string_lossy().to_string();
-                        if entries.iter().any(|e| e.path == resolved_str) {
-                            continue;
-                        }
-                        let name = inc_clean.to_string();
-                        entries.push(CuratedEntry {
-                            name,
-                            path: resolved_str,
-                            is_dir: resolved.is_dir(),
-                            category: "include".to_string(),
-                        });
-                    }
-                }
-            }
-        }
-        // Add RALLY.json itself
-        entries.push(CuratedEntry {
-            name: "RALLY.json".to_string(),
-            path: rally_json.to_string_lossy().to_string(),
-            is_dir: false,
-            category: "config".to_string(),
-        });
-    }
-
-    Ok(entries)
 }
 
 // --- Task runner ---

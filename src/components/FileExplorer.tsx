@@ -17,45 +17,12 @@ const expandedPaths = new Set<string>();
 /** Module-level cache of directory listings — survives component unmount/remount */
 const directoryCache = new Map<string, FileEntry[]>();
 
-/** Button that brightens on hover — uses CSS class for compositor-thread hover */
-function HoverButton({
-  children,
-  onClick,
-  title,
-  baseStyle,
-}: {
-  children: React.ReactNode;
-  onClick: (e: React.MouseEvent) => void;
-  title?: string;
-  baseStyle: React.CSSProperties;
-}) {
-  return (
-    <button
-      className="hover-brighten"
-      onClick={onClick}
-      title={title}
-      style={baseStyle}
-    >
-      {children}
-    </button>
-  );
-}
-
 interface FileEntry {
   name: string;
   path: string;
   is_dir: boolean;
   children?: FileEntry[];
 }
-
-interface CuratedEntry {
-  name: string;
-  path: string;
-  is_dir: boolean;
-  category: string;
-}
-
-type ViewMode = "files" | "curated";
 
 // --- Shared tree node ---
 
@@ -81,138 +48,20 @@ function fileContextMenu(filePath: string, rootPath: string) {
   ];
 }
 
-/**
- * Build a tree of FileEntry nodes from flat curated entries.
- * - Top-level dirs (like "docs/") become lazy-loading FileTreeNodes.
- * - Top-level files stay as files.
- * - Nested files (like "surfaces/libs/playground/CLAUDE.md") get grouped
- *   into virtual directory nodes with pre-set children.
- */
-function buildCuratedTree(
-  entries: CuratedEntry[],
-  rootPath: string,
-): FileEntry[] {
-  const topFiles: FileEntry[] = [];
-  const topDirs: FileEntry[] = [];
-  // Only "include" entries with nested paths get tree decomposition
-  const nestedMap = new Map<string, CuratedEntry[]>();
-
-  for (const entry of entries) {
-    // Config, skill, command entries always show flat at root by their name
-    if (entry.category !== "include") {
-      if (entry.is_dir) {
-        topDirs.push({ name: entry.name, path: entry.path, is_dir: true });
-      } else {
-        topFiles.push({ name: entry.name, path: entry.path, is_dir: false });
-      }
-      continue;
-    }
-
-    // Include entries: check if nested
-    const rel = relativePath(entry.path, rootPath);
-    const segments = rel.split("/");
-
-    if (entry.is_dir && segments.length === 1) {
-      topDirs.push({ name: entry.name, path: entry.path, is_dir: true });
-    } else if (!entry.is_dir && segments.length === 1) {
-      topFiles.push({ name: entry.name, path: entry.path, is_dir: false });
-    } else {
-      // Nested include — group by first path segment
-      const firstSeg = segments[0];
-      if (!nestedMap.has(firstSeg)) nestedMap.set(firstSeg, []);
-      nestedMap.get(firstSeg)!.push(entry);
-    }
-  }
-
-  // Build virtual directory trees for nested include entries
-  for (const [dirName, nested] of nestedMap) {
-    const dirPath = rootPath + "/" + dirName;
-    if (topDirs.some((d) => d.path === dirPath)) continue;
-
-    const node = buildDirNode(
-      dirName,
-      dirPath,
-      nested,
-      rootPath + "/" + dirName,
-    );
-    topDirs.push(node);
-  }
-
-  // Sort: dirs first, then alphabetical
-  topDirs.sort((a, b) =>
-    a.name.toLowerCase().localeCompare(b.name.toLowerCase()),
-  );
-  topFiles.sort((a, b) =>
-    a.name.toLowerCase().localeCompare(b.name.toLowerCase()),
-  );
-  return [...topDirs, ...topFiles];
-}
-
-/** Recursively build a virtual directory node from nested curated entries. */
-function buildDirNode(
-  name: string,
-  dirPath: string,
-  entries: CuratedEntry[],
-  stripPrefix: string,
-): FileEntry {
-  const childFiles: FileEntry[] = [];
-  const childDirMap = new Map<string, CuratedEntry[]>();
-
-  for (const entry of entries) {
-    const rel = relativePath(entry.path, stripPrefix);
-    const segments = rel.split("/");
-
-    if (segments.length === 1) {
-      childFiles.push({
-        name: segments[0],
-        path: entry.path,
-        is_dir: entry.is_dir,
-      });
-    } else {
-      const nextDir = segments[0];
-      if (!childDirMap.has(nextDir)) childDirMap.set(nextDir, []);
-      childDirMap.get(nextDir)!.push(entry);
-    }
-  }
-
-  const childDirs: FileEntry[] = [];
-  for (const [subName, subEntries] of childDirMap) {
-    childDirs.push(
-      buildDirNode(
-        subName,
-        stripPrefix + "/" + subName,
-        subEntries,
-        stripPrefix + "/" + subName,
-      ),
-    );
-  }
-
-  childDirs.sort((a, b) =>
-    a.name.toLowerCase().localeCompare(b.name.toLowerCase()),
-  );
-  childFiles.sort((a, b) =>
-    a.name.toLowerCase().localeCompare(b.name.toLowerCase()),
-  );
-
-  return {
-    name,
-    path: dirPath,
-    is_dir: true,
-    children: [...childDirs, ...childFiles],
-  };
-}
-
 const FileTreeNode = React.memo(function FileTreeNode({
   entry,
   depth,
   rootPath,
   activeWorkspaceId,
+  activeFilePath,
   onOpenFile,
 }: {
   entry: FileEntry;
   depth: number;
   rootPath: string;
   activeWorkspaceId: string | null;
+  /** Path of the file currently open in the active editor pane */
+  activeFilePath: string | null;
   onOpenFile: (workspaceId: string, filePath: string) => void;
 }) {
   const hasPresetChildren = Boolean(
@@ -227,6 +76,14 @@ const FileTreeNode = React.memo(function FileTreeNode({
   const [loaded, setLoaded] = useState(
     hasPresetChildren || directoryCache.has(entry.path),
   );
+  const btnRef = useRef<HTMLButtonElement>(null);
+
+  const isActiveFile = !entry.is_dir && entry.path === activeFilePath;
+  // This directory is an ancestor of the active file — should auto-expand
+  const isAncestorOfActive =
+    entry.is_dir &&
+    activeFilePath !== null &&
+    activeFilePath.startsWith(entry.path + "/");
 
   // Auto-load children when remounting a previously-expanded folder
   useEffect(() => {
@@ -240,6 +97,29 @@ const FileTreeNode = React.memo(function FileTreeNode({
         .catch((e) => console.error("Failed to load directory:", e));
     }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Auto-expand ancestor directories when active file changes
+  useEffect(() => {
+    if (!isAncestorOfActive) return;
+    expandedPaths.add(entry.path);
+    setExpanded(true);
+    if (!loaded && !hasPresetChildren) {
+      invoke<FileEntry[]>("list_directory", { path: entry.path })
+        .then((entries) => {
+          directoryCache.set(entry.path, entries);
+          setChildren(entries);
+          setLoaded(true);
+        })
+        .catch((e) => console.error("Failed to load directory:", e));
+    }
+  }, [isAncestorOfActive]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Scroll active file into view
+  useEffect(() => {
+    if (isActiveFile && btnRef.current) {
+      btnRef.current.scrollIntoView({ block: "nearest" });
+    }
+  }, [isActiveFile]);
 
   const handleClick = useCallback(async () => {
     if (entry.is_dir) {
@@ -303,7 +183,8 @@ const FileTreeNode = React.memo(function FileTreeNode({
   return (
     <div>
       <button
-        className="file-node"
+        ref={btnRef}
+        className={`file-node${isActiveFile ? " file-node-active" : ""}`}
         onClick={handleClick}
         onMouseDown={handleMouseDown}
         onContextMenu={(e) => {
@@ -328,6 +209,7 @@ const FileTreeNode = React.memo(function FileTreeNode({
             depth={depth + 1}
             rootPath={rootPath}
             activeWorkspaceId={activeWorkspaceId}
+            activeFilePath={activeFilePath}
             onOpenFile={onOpenFile}
           />
         ))}
@@ -441,24 +323,7 @@ function GitStatusIcon({
   );
 }
 
-function CuratedIcon({ active }: { active: boolean }) {
-  const color = active ? "#ccc" : "#555";
-  return (
-    <svg
-      width="14"
-      height="14"
-      viewBox="0 0 16 16"
-      fill="none"
-      style={{ flexShrink: 0 }}
-    >
-      <line x1="2.5" y1="3.5" x2="13.5" y2="3.5" stroke={color} strokeWidth="1.3" strokeLinecap="round" />
-      <line x1="2.5" y1="8" x2="11" y2="8" stroke={color} strokeWidth="1.3" strokeLinecap="round" />
-      <line x1="2.5" y1="12.5" x2="8" y2="12.5" stroke={color} strokeWidth="1.3" strokeLinecap="round" />
-    </svg>
-  );
-}
-
-// --- Root Section (unified — handles both views) ---
+// --- Root Section ---
 
 function RootSection({
   rootPath,
@@ -472,17 +337,11 @@ function RootSection({
   const [filesExpanded, setFilesExpanded] = useState(true);
   const [fsEntries, setFsEntries] = useState<FileEntry[]>([]);
   const [fsLoaded, setFsLoaded] = useState(false);
-  const [curatedEntries, setCuratedEntries] = useState<CuratedEntry[]>([]);
-  const [curatedLoaded, setCuratedLoaded] = useState(false);
 
   const activeWorkspaceId = useWorkspaceStore((s) => s.activeWorkspaceId);
   const openFile = useWorkspaceStore((s) => s.openFile);
   const removePathFromWorkspace = useWorkspaceStore(
     (s) => s.removePathFromWorkspace,
-  );
-  const setExplorerViewMode = useWorkspaceStore((s) => s.setExplorerViewMode);
-  const viewMode = useWorkspaceStore(
-    (s) => s.explorerViewModes[rootPath] ?? "files",
   );
   const gitStatus = useWorkspaceStore((s) => s.gitStatuses[rootPath]);
   const prStatus = useWorkspaceStore((s) => s.prStatuses[rootPath]);
@@ -491,7 +350,21 @@ function RootSection({
     const ws = s.workspaces.find((w) => w.id === s.activeWorkspaceId);
     return (ws?.paths.length ?? 0) > 1;
   });
-  const setViewMode = (mode: ViewMode) => setExplorerViewMode(rootPath, mode);
+  // Derive active file path from the last-focused group's active editor pane.
+  // Only returns a path if it's under this root — avoids cross-root highlighting.
+  const activeFilePath = useWorkspaceStore((s) => {
+    if (!activeWorkspaceId) return null;
+    const layout = s.layouts[activeWorkspaceId];
+    if (!layout) return null;
+    const activeGroupId = s.activeGroupIds[activeWorkspaceId];
+    const group = activeGroupId ? layout.groups[activeGroupId] : null;
+    if (!group) return null;
+    const pane = group.panes.find((p) => p.id === group.activePaneId);
+    if (pane?.type === "editor" && pane.filePath?.startsWith(rootPath + "/")) {
+      return pane.filePath;
+    }
+    return null;
+  });
   const folderName = rootPath.split("/").pop() || rootPath;
 
   useEffect(() => {
@@ -501,16 +374,6 @@ function RootSection({
         setFsLoaded(true);
       })
       .catch((e) => console.error("Failed to load root:", e));
-  }, [rootPath]);
-
-  useEffect(() => {
-    api
-      .listCuratedFiles(rootPath)
-      .then((r) => {
-        setCuratedEntries(r);
-        setCuratedLoaded(true);
-      })
-      .catch((e) => console.error("Failed to load curated:", e));
   }, [rootPath]);
 
   function handleContextMenu(e: React.MouseEvent) {
@@ -534,11 +397,6 @@ function RootSection({
     }
     showContextMenu(actions);
   }
-
-  const isCurated = viewMode === "curated";
-  const curatedTree = curatedLoaded
-    ? buildCuratedTree(curatedEntries, rootPath)
-    : [];
 
   return (
     <div>
@@ -584,48 +442,21 @@ function RootSection({
             </div>
           )}
         </div>
-        <HoverButton
-          onClick={(e) => {
-            e.stopPropagation();
-            setViewMode(isCurated ? "files" : "curated");
-          }}
-          title={isCurated ? "Show all files" : "Show curated view"}
-          baseStyle={styles.curatedBtn}
-        >
-          <CuratedIcon active={!isCurated} />
-        </HoverButton>
       </div>
 
       {filesExpanded &&
-        (isCurated
-          ? curatedLoaded && (
-              <div>
-                {curatedTree.map((entry) => (
-                  <FileTreeNode
-                    key={entry.path}
-                    entry={entry}
-                    depth={1}
-                    rootPath={rootPath}
-                    activeWorkspaceId={activeWorkspaceId}
-                    onOpenFile={openFile}
-                  />
-                ))}
-                {curatedTree.length === 0 && (
-                  <div style={styles.emptyMsg}>No curated files found</div>
-                )}
-              </div>
-            )
-          : fsLoaded &&
-            fsEntries.map((e) => (
-              <FileTreeNode
-                key={e.path}
-                entry={e}
-                depth={1}
-                rootPath={rootPath}
-                activeWorkspaceId={activeWorkspaceId}
-                onOpenFile={openFile}
-              />
-            )))}
+        fsLoaded &&
+        fsEntries.map((e) => (
+          <FileTreeNode
+            key={e.path}
+            entry={e}
+            depth={1}
+            rootPath={rootPath}
+            activeWorkspaceId={activeWorkspaceId}
+            activeFilePath={activeFilePath}
+            onOpenFile={openFile}
+          />
+        ))}
       {activeWorkspaceId && (
         <TaskPanel
           rootPath={rootPath}
@@ -855,13 +686,13 @@ interface FileExplorerProps {
 }
 
 export function FileExplorer({ onCollapse }: FileExplorerProps) {
-  const {
-    activeWorkspaceId,
-    workspaces,
-    addPathToWorkspace,
-    openDiff,
-    setActivePathIndex,
-  } = useWorkspaceStore();
+  // Individual selectors — avoids re-rendering on unrelated store changes
+  // (git polls, ship polls, task output, etc.)
+  const activeWorkspaceId = useWorkspaceStore((s) => s.activeWorkspaceId);
+  const workspaces = useWorkspaceStore((s) => s.workspaces);
+  const addPathToWorkspace = useWorkspaceStore((s) => s.addPathToWorkspace);
+  const openDiff = useWorkspaceStore((s) => s.openDiff);
+  const setActivePathIndex = useWorkspaceStore((s) => s.setActivePathIndex);
   const ws = workspaces.find((w) => w.id === activeWorkspaceId);
   const [gitRoots, setGitRoots] = useState<Set<string>>(new Set());
   const [changesPath, setChangesPath] = useState<string | null>(null);
@@ -1149,17 +980,6 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: 9,
     fontWeight: 600,
   },
-  curatedBtn: {
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    background: "none",
-    border: "none",
-    cursor: "pointer",
-    padding: "2px",
-    flexShrink: 0,
-    opacity: 0.8,
-  },
   node: {
     display: "flex",
     alignItems: "center",
@@ -1173,6 +993,7 @@ const styles: Record<string, React.CSSProperties> = {
     textAlign: "left" as const,
     lineHeight: 1.4,
     cursor: "pointer",
+    position: "relative" as const,
   },
   spacer: {
     width: 14,

@@ -33,6 +33,13 @@ import { api } from "../lib/tauri";
  */
 export const shipOutputBuffer: Uint8Array[] = [];
 
+/**
+ * Task PTY output buffers — stored outside Zustand state (like shipOutputBuffer)
+ * to avoid O(n) array copies and React re-renders on every PTY output chunk.
+ * Keyed by "rootPath:taskName".
+ */
+export const taskOutputBuffers = new Map<string, Uint8Array[]>();
+
 
 interface WorkspaceState {
   workspaces: Workspace[];
@@ -48,8 +55,6 @@ interface WorkspaceState {
   layouts: Record<string, WorkspaceLayout>;
   /** Tracks the last-focused group per workspace for Cmd+W etc. */
   activeGroupIds: Record<string, string>;
-  /** Per-root-path view mode for file explorer */
-  explorerViewModes: Record<string, "files" | "curated">;
   /** Active task runs keyed by "rootPath:taskName" */
   taskRuns: Record<string, TaskRun>;
   /** Ship status keyed by repo path */
@@ -133,8 +138,6 @@ interface WorkspaceState {
   openFile: (workspaceId: string, filePath: string) => void;
   /** Open a diff view for a repo path */
   openDiff: (workspaceId: string, rootPath: string) => void;
-  setExplorerViewMode: (rootPath: string, mode: "files" | "curated") => void;
-
   // Ship actions
   pollShipSignals: () => Promise<void>;
   handleAutoMerge: (repoPath: string) => Promise<void>;
@@ -204,7 +207,6 @@ export const useWorkspaceStore = create<WorkspaceState>()(
   activePathIndex: {},
   layouts: {},
   activeGroupIds: {},
-  explorerViewModes: {},
   taskRuns: {},
   shipStatuses: {},
   shipSession: null,
@@ -272,6 +274,9 @@ export const useWorkspaceStore = create<WorkspaceState>()(
   refreshGitStatusForPath: async (path, mainBranch) => {
     try {
       const status = await api.gitStatus(path, mainBranch);
+      // Skip update if nothing changed — prevents unnecessary re-renders
+      const prev = get().gitStatuses[path];
+      if (prev && JSON.stringify(prev) === JSON.stringify(status)) return;
       set((s) => ({ gitStatuses: { ...s.gitStatuses, [path]: status } }));
     } catch (e) {
       console.error(`Failed to get git status for ${path}:`, e);
@@ -292,8 +297,13 @@ export const useWorkspaceStore = create<WorkspaceState>()(
   refreshPrStatusForPath: async (path) => {
     try {
       const prStatus = await api.gitPrStatus(path);
+      // Skip update if nothing changed — prevents unnecessary re-renders
+      const prev = get().prStatuses[path];
+      if (prev && JSON.stringify(prev) === JSON.stringify(prStatus)) return;
       set((s) => ({ prStatuses: { ...s.prStatuses, [path]: prStatus } }));
     } catch {
+      const prev = get().prStatuses[path];
+      if (prev === null) return;
       set((s) => ({ prStatuses: { ...s.prStatuses, [path]: null } }));
     }
   },
@@ -373,11 +383,6 @@ export const useWorkspaceStore = create<WorkspaceState>()(
 
   // --- Layout actions ---
 
-  setExplorerViewMode: (rootPath, mode) => {
-    set((s) => ({
-      explorerViewModes: { ...s.explorerViewModes, [rootPath]: mode },
-    }));
-  },
 
   // --- Ship actions ---
 
@@ -749,28 +754,23 @@ export const useWorkspaceStore = create<WorkspaceState>()(
     const effectiveCwd = cwd ? `${rootPath}/${cwd}` : rootPath;
     const ptyId = await api.spawnPty(effectiveCwd, command, 120, 40, true);
 
+    // Reset module-level output buffer (outside Zustand to avoid
+    // O(n) array copies and React re-renders on every PTY chunk)
+    taskOutputBuffers.set(key, []);
+
     set((s) => ({
       taskRuns: {
         ...s.taskRuns,
-        [key]: { taskName, ptyId, status: "running", exitCode: null, output: [] },
+        [key]: { taskName, ptyId, status: "running", exitCode: null },
       },
     }));
 
-    // Buffer PTY output
+    // Buffer PTY output in module-level array (not Zustand state)
     const unlistenOutput = await listen<{ data: number[] }>(
       `pty-output-${ptyId}`,
       (event) => {
-        const chunk = new Uint8Array(event.payload.data);
-        set((s) => {
-          const run = s.taskRuns[key];
-          if (!run) return s;
-          return {
-            taskRuns: {
-              ...s.taskRuns,
-              [key]: { ...run, output: [...run.output, chunk] },
-            },
-          };
-        });
+        const buf = taskOutputBuffers.get(key);
+        if (buf) buf.push(new Uint8Array(event.payload.data));
       }
     );
 
@@ -810,6 +810,7 @@ export const useWorkspaceStore = create<WorkspaceState>()(
 
   clearTask: (rootPath, taskName) => {
     const key = `${rootPath}:${taskName}`;
+    taskOutputBuffers.delete(key);
     set((s) => {
       const { [key]: _, ...rest } = s.taskRuns;
       return { taskRuns: rest };
@@ -1308,7 +1309,6 @@ export const useWorkspaceStore = create<WorkspaceState>()(
         activePathIndex: state.activePathIndex,
         layouts: state.layouts,
         activeGroupIds: state.activeGroupIds,
-        explorerViewModes: state.explorerViewModes,
       }),
       merge: (persisted, current) => {
         const p = persisted as Partial<WorkspaceState> | undefined;
@@ -1317,7 +1317,6 @@ export const useWorkspaceStore = create<WorkspaceState>()(
           activeWorkspaceId: p?.activeWorkspaceId ?? current.activeWorkspaceId,
           layouts: restoreLayouts(p?.layouts ?? {}),
           activeGroupIds: p?.activeGroupIds ?? current.activeGroupIds,
-          explorerViewModes: p?.explorerViewModes ?? current.explorerViewModes,
         };
       },
     }

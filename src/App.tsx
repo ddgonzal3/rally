@@ -10,8 +10,12 @@ import { ToastContainer } from "./components/ToastContainer";
 import { ShipStatusPill } from "./components/ShipStatusPill";
 
 export function App() {
-  const { loadWorkspaces, refreshAllGitStatuses, refreshAllPrStatuses, pollShipSignals } =
-    useWorkspaceStore();
+  // Individual selectors for action functions — prevents App from re-rendering
+  // on every store data change (git/PR/ship polls, task output, etc.)
+  const loadWorkspaces = useWorkspaceStore((s) => s.loadWorkspaces);
+  const refreshAllGitStatuses = useWorkspaceStore((s) => s.refreshAllGitStatuses);
+  const refreshAllPrStatuses = useWorkspaceStore((s) => s.refreshAllPrStatuses);
+  const pollShipSignals = useWorkspaceStore((s) => s.pollShipSignals);
   const [panelCollapsed, setPanelCollapsed] = useState(false);
   const [fileExplorerCollapsed, setFileExplorerCollapsed] = useState(false);
   const [sidebarWidth, setSidebarWidth] = useState(() => {

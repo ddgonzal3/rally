@@ -14,7 +14,7 @@ import type { PaneGroup, Pane } from "../lib/types";
 const DRAG_THRESHOLD = 5; // px before drag starts
 
 interface PaneGroupViewProps {
-  group: PaneGroup;
+  groupId: string;
   workspaceId: string;
   workspacePath: string;
 }
@@ -40,13 +40,17 @@ type PendingAction = {
 };
 
 export function PaneGroupView({
-  group,
+  groupId,
   workspaceId,
   workspacePath,
 }: PaneGroupViewProps) {
-  // Use individual selectors — subscribing to the entire store with
-  // useWorkspaceStore() caused every pane group (and all terminals/editors
-  // inside) to re-render on ANY store change (git polls, ship output, etc.)
+  // Subscribe to this specific group from the store.
+  // This is the key performance optimization: each PaneGroupView only
+  // re-renders when ITS OWN group changes, not when other groups change.
+  // Previously, all groups re-rendered on any layout change due to prop drilling.
+  const group = useWorkspaceStore(
+    (s) => s.layouts[workspaceId]?.groups[groupId]
+  );
   const workspaces = useWorkspaceStore((s) => s.workspaces);
   const setActivePane = useWorkspaceStore((s) => s.setActivePane);
   const closePane = useWorkspaceStore((s) => s.closePane);
@@ -62,6 +66,8 @@ export function PaneGroupView({
   const paths = ws?.paths ?? [workspacePath];
   const isMultiRoot = paths.length > 1;
 
+  if (!group) return null;
+
   const activePaneId = group.activePaneId;
   const dragStartRef = useRef<{ x: number; y: number; paneId: string } | null>(null);
   function executeAction(actionType: PendingAction["type"], cwd: string) {
@@ -72,7 +78,7 @@ export function PaneGroupView({
         title: "Terminal",
         cwd,
       };
-      addPaneToGroup(workspaceId, group.id, pane);
+      addPaneToGroup(workspaceId, groupId, pane);
     } else if (actionType === "claude") {
       const pane: Pane = {
         id: crypto.randomUUID(),
@@ -81,11 +87,11 @@ export function PaneGroupView({
         command: "claude --dangerously-skip-permissions",
         cwd,
       };
-      addPaneToGroup(workspaceId, group.id, pane);
+      addPaneToGroup(workspaceId, groupId, pane);
     } else if (actionType === "split-h") {
-      splitGroup(workspaceId, group.id, "horizontal", cwd);
+      splitGroup(workspaceId, groupId, "horizontal", cwd);
     } else if (actionType === "split-v") {
-      splitGroup(workspaceId, group.id, "vertical", cwd);
+      splitGroup(workspaceId, groupId, "vertical", cwd);
     }
   }
 
@@ -96,7 +102,7 @@ export function PaneGroupView({
   }
 
   function handleLaunchClaude(paneId: string) {
-    transformPane(workspaceId, group.id, paneId, {
+    transformPane(workspaceId, groupId, paneId, {
       type: "claude",
       title: "Claude Code",
       command: "claude --dangerously-skip-permissions",
@@ -104,7 +110,7 @@ export function PaneGroupView({
   }
 
   function handleLaunchTerminal(paneId: string) {
-    transformPane(workspaceId, group.id, paneId, {
+    transformPane(workspaceId, groupId, paneId, {
       type: "terminal",
       title: "Terminal",
     });
@@ -138,7 +144,7 @@ export function PaneGroupView({
 
       if (!reordering && (Math.abs(dx) > DRAG_THRESHOLD || Math.abs(dy) > DRAG_THRESHOLD)) {
         if (Math.abs(dy) > Math.abs(dx) * 1.5 || Math.abs(dy) > 15) {
-          startDrag(group.id, dragStartRef.current.paneId, ev.clientX, ev.clientY);
+          startDrag(groupId, dragStartRef.current.paneId, ev.clientX, ev.clientY);
           dragStartRef.current = null;
           indicator.remove();
           document.removeEventListener("mousemove", onMouseMove);
@@ -157,7 +163,7 @@ export function PaneGroupView({
         if (ev.clientY < barRect.top - TAB_ESCAPE_MARGIN || ev.clientY > barRect.bottom + TAB_ESCAPE_MARGIN) {
           reordering = false;
           indicator.remove();
-          startDrag(group.id, paneId, ev.clientX, ev.clientY);
+          startDrag(groupId, paneId, ev.clientX, ev.clientY);
           dragStartRef.current = null;
           document.removeEventListener("mousemove", onMouseMove);
           document.removeEventListener("mouseup", onMouseUp);
@@ -214,7 +220,7 @@ export function PaneGroupView({
           // (because removing the tab shifts everything after it left by 1)
           const toIndex = dropGap > fromIndex ? dropGap - 1 : dropGap;
           if (toIndex !== fromIndex) {
-            reorderPanes(workspaceId, group.id, fromIndex, toIndex);
+            reorderPanes(workspaceId, groupId, fromIndex, toIndex);
           }
         }
       }
@@ -231,18 +237,18 @@ export function PaneGroupView({
     (position: DropPosition) => {
       const state = getDragState();
       if (!state.groupId || !state.paneId) return;
-      dropPaneOnGroup(workspaceId, state.groupId, state.paneId, group.id, position);
+      dropPaneOnGroup(workspaceId, state.groupId, state.paneId, groupId, position);
       endDrag();
     },
-    [workspaceId, group.id, dropPaneOnGroup]
+    [workspaceId, groupId, dropPaneOnGroup]
   );
 
   const handleFileDrop = useCallback(
     (position: DropPosition, filePaths: string[]) => {
-      dropFileOnGroup(workspaceId, group.id, filePaths, position);
+      dropFileOnGroup(workspaceId, groupId, filePaths, position);
       endDrag();
     },
-    [workspaceId, group.id, dropFileOnGroup]
+    [workspaceId, groupId, dropFileOnGroup]
   );
 
   return (
@@ -261,7 +267,7 @@ export function PaneGroupView({
                   ...styles.tab,
                   ...(isActive ? styles.tabActive : {}),
                 }}
-                onClick={() => setActivePane(workspaceId, group.id, pane.id)}
+                onClick={() => setActivePane(workspaceId, groupId, pane.id)}
                 title={paneTooltip(pane)}
               >
                 <PaneTabIcon
@@ -275,7 +281,7 @@ export function PaneGroupView({
                   style={styles.tabClose}
                   onClick={(e) => {
                     e.stopPropagation();
-                    closePane(workspaceId, group.id, pane.id);
+                    closePane(workspaceId, groupId, pane.id);
                   }}
                 >
                   <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
@@ -334,7 +340,7 @@ export function PaneGroupView({
           <button
             className="tab-action"
             style={styles.actionBtn}
-            onClick={() => closeGroup(workspaceId, group.id)}
+            onClick={() => closeGroup(workspaceId, groupId)}
             title="Close panel"
           >
             <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
@@ -387,10 +393,10 @@ export function PaneGroupView({
                 />
               ) : pane.type === "claude" ? (
                 <ClaudeTerminalWrapper cwd={paneCwd} command={pane.command} initialInput={pane.initialInput} ptyId={pane.ptyId}
-                  onPtySpawned={(id) => transformPane(workspaceId, group.id, pane.id, { ptyId: id })} />
+                  onPtySpawned={(id) => transformPane(workspaceId, groupId, pane.id, { ptyId: id })} />
               ) : (
                 <Terminal cwd={paneCwd} command={pane.command} initialInput={pane.initialInput} ptyId={pane.ptyId}
-                  onPtySpawned={(id) => transformPane(workspaceId, group.id, pane.id, { ptyId: id })} />
+                  onPtySpawned={(id) => transformPane(workspaceId, groupId, pane.id, { ptyId: id })} />
               )}
             </div>
           );
@@ -399,7 +405,7 @@ export function PaneGroupView({
       </div>
 
       {/* Drop zone target — always mounted, covers full container (incl. tab bar) for earlier activation */}
-      <DropZoneTarget groupId={group.id} paneCount={group.panes.length} onDrop={handleDrop} onFileDrop={handleFileDrop} />
+      <DropZoneTarget groupId={groupId} paneCount={group.panes.length} onDrop={handleDrop} onFileDrop={handleFileDrop} />
     </div>
   );
 }
@@ -467,7 +473,7 @@ const styles: Record<string, React.CSSProperties> = {
     borderRadius: 4,
     flexShrink: 0,
     padding: 0,
-    transition: "background 0.15s, color 0.15s",
+    transition: "background 0.06s, color 0.06s",
   },
   actions: {
     display: "flex",

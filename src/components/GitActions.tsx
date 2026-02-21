@@ -54,23 +54,22 @@ function PrStatusBar({ pr }: { pr?: PrStatus | null }) {
 }
 
 export function GitActions() {
-  const {
-    activeWorkspaceId,
-    workspaces,
-    gitStatuses,
-    prStatuses,
-    syncNeeded,
-    getActivePath,
-    syncPath,
-    syncAndPushPath,
-    rebasePath,
-    commitPath,
-    pushPath,
-    createPrForPath,
-    mergePrForPath,
-    refreshGitStatusForPath,
-    refreshPrStatusForPath,
-  } = useWorkspaceStore();
+  // Individual selectors — avoids re-rendering on unrelated store changes
+  const activeWorkspaceId = useWorkspaceStore((s) => s.activeWorkspaceId);
+  const workspaces = useWorkspaceStore((s) => s.workspaces);
+  const gitStatuses = useWorkspaceStore((s) => s.gitStatuses);
+  const prStatuses = useWorkspaceStore((s) => s.prStatuses);
+  const syncNeeded = useWorkspaceStore((s) => s.syncNeeded);
+  const getActivePath = useWorkspaceStore((s) => s.getActivePath);
+  const syncPath = useWorkspaceStore((s) => s.syncPath);
+  const syncAndPushPath = useWorkspaceStore((s) => s.syncAndPushPath);
+  const rebasePath = useWorkspaceStore((s) => s.rebasePath);
+  const commitPath = useWorkspaceStore((s) => s.commitPath);
+  const pushPath = useWorkspaceStore((s) => s.pushPath);
+  const createPrForPath = useWorkspaceStore((s) => s.createPrForPath);
+  const mergePrForPath = useWorkspaceStore((s) => s.mergePrForPath);
+  const refreshGitStatusForPath = useWorkspaceStore((s) => s.refreshGitStatusForPath);
+  const refreshPrStatusForPath = useWorkspaceStore((s) => s.refreshPrStatusForPath);
 
   const [running, setRunning] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);

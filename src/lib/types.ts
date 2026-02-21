@@ -112,7 +112,6 @@ export interface TaskRun {
   ptyId: string;
   status: "running" | "success" | "error" | "stopped";
   exitCode: number | null;
-  output: Uint8Array[];
 }
 
 // --- Pane & Layout Types ---

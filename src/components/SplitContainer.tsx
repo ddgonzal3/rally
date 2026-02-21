@@ -2,29 +2,30 @@ import React from "react";
 import { PaneGroupView } from "./PaneGroupView";
 import { ResizeHandle } from "./ResizeHandle";
 import { useWorkspaceStore } from "../stores/workspaceStore";
-import type { LayoutNode, WorkspaceLayout } from "../lib/types";
+import type { LayoutNode } from "../lib/types";
 
 interface SplitContainerProps {
   node: LayoutNode;
-  layout: WorkspaceLayout;
   workspaceId: string;
   workspacePath: string;
 }
 
-export function SplitContainer({
+/**
+ * Memoized to prevent re-renders when sibling groups change.
+ * Each SplitContainer only re-renders when its own `node` prop changes
+ * (tree structure change), NOT when group content changes.
+ */
+export const SplitContainer = React.memo(function SplitContainer({
   node,
-  layout,
   workspaceId,
   workspacePath,
 }: SplitContainerProps) {
   const updateSplitRatio = useWorkspaceStore((s) => s.updateSplitRatio);
 
   if (node.type === "group") {
-    const group = layout.groups[node.groupId];
-    if (!group) return null;
     return (
       <PaneGroupView
-        group={group}
+        groupId={node.groupId}
         workspaceId={workspaceId}
         workspacePath={workspacePath}
       />
@@ -57,7 +58,6 @@ export function SplitContainer({
       >
         <SplitContainer
           node={first}
-          layout={layout}
           workspaceId={workspaceId}
           workspacePath={workspacePath}
         />
@@ -79,11 +79,10 @@ export function SplitContainer({
       >
         <SplitContainer
           node={second}
-          layout={layout}
           workspaceId={workspaceId}
           workspacePath={workspacePath}
         />
       </div>
     </div>
   );
-}
+});

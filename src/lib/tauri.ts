@@ -56,9 +56,6 @@ export const api = {
   detectGitInfo: (path: string) =>
     invoke<{ repo_url: string; branch: string; name: string }>("detect_git_info", { path }),
 
-  listCuratedFiles: (rootPath: string) =>
-    invoke<{ name: string; path: string; is_dir: boolean; category: string }[]>("list_curated_files", { rootPath }),
-
   revealInFinder: (path: string) =>
     invoke<void>("reveal_in_finder", { path }),
 

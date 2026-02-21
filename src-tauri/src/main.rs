@@ -74,7 +74,6 @@ fn main() {
             commands::git_unstage_file,
             commands::list_directory,
             commands::detect_git_info,
-            commands::list_curated_files,
             commands::reveal_in_finder,
             commands::list_tasks,
             commands::sync_claude_commands,
