@@ -126,6 +126,7 @@ export interface Pane {
   cwd?: string;
   initialInput?: string;
   ptyId?: string;  // Connect to existing PTY instead of spawning
+  scriptBufferKey?: string;  // Key into scriptOutputBuffers for replay on attach
 }
 
 export type SplitDirection = "horizontal" | "vertical";

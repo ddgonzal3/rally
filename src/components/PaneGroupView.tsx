@@ -62,6 +62,7 @@ export function PaneGroupView({
   const dropFileOnGroup = useWorkspaceStore((s) => s.dropFileOnGroup);
   const reorderPanes = useWorkspaceStore((s) => s.reorderPanes);
   const closeGroup = useWorkspaceStore((s) => s.closeGroup);
+  const revealFileInExplorer = useWorkspaceStore((s) => s.revealFileInExplorer);
 
   const ws = workspaces.find((w) => w.id === workspaceId);
   const paths = ws?.paths ?? [workspacePath];
@@ -252,8 +253,17 @@ export function PaneGroupView({
     [workspaceId, groupId, dropFileOnGroup]
   );
 
+  const focusGroup = useCallback(() => {
+    const s = useWorkspaceStore.getState();
+    if (s.activeGroupIds[workspaceId] !== groupId) {
+      useWorkspaceStore.setState({
+        activeGroupIds: { ...s.activeGroupIds, [workspaceId]: groupId },
+      });
+    }
+  }, [workspaceId, groupId]);
+
   return (
-    <div style={styles.container}>
+    <div style={styles.container} onMouseDown={focusGroup}>
       {/* Tab bar */}
       <div style={styles.tabBar}>
         <div style={styles.tabs}>
@@ -269,6 +279,11 @@ export function PaneGroupView({
                   ...(isActive ? styles.tabActive : {}),
                 }}
                 onClick={() => setActivePane(workspaceId, groupId, pane.id)}
+                onDoubleClick={() => {
+                  if (pane.type === "editor" && pane.filePath) {
+                    revealFileInExplorer(pane.filePath);
+                  }
+                }}
                 onContextMenu={(e) => {
                   e.preventDefault();
                   e.stopPropagation();
@@ -314,7 +329,7 @@ export function PaneGroupView({
                     closePane(workspaceId, groupId, pane.id);
                   }}
                 >
-                  <svg width="13" height="13" viewBox="0 0 14 14" fill="none">
+                  <svg width="10" height="10" viewBox="0 0 14 14" fill="none">
                     <path d="M3 3l8 8M11 3l-8 8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
                   </svg>
                 </button>
@@ -414,6 +429,7 @@ export function PaneGroupView({
                   onPtySpawned={(id) => transformPane(workspaceId, groupId, pane.id, { ptyId: id })} />
               ) : (
                 <Terminal cwd={paneCwd} command={pane.command} initialInput={pane.initialInput} ptyId={pane.ptyId}
+                  scriptBufferKey={pane.scriptBufferKey}
                   onPtySpawned={(id) => transformPane(workspaceId, groupId, pane.id, { ptyId: id })} />
               )}
             </div>
@@ -482,13 +498,13 @@ const styles: Record<string, React.CSSProperties> = {
     display: "flex",
     alignItems: "center",
     justifyContent: "center",
-    width: 24,
-    height: 24,
+    width: 18,
+    height: 18,
     background: "none",
     border: "none",
     color: "#aaa",
     cursor: "pointer",
-    borderRadius: 4,
+    borderRadius: 3,
     flexShrink: 0,
     padding: 0,
     transition: "background 0.06s, color 0.06s",

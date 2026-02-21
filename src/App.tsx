@@ -4,6 +4,7 @@ import { Sidebar } from "./components/Sidebar";
 import { FileExplorer } from "./components/FileExplorer";
 import { PaneLayout } from "./components/PaneLayout";
 import { useWorkspaceStore } from "./stores/workspaceStore";
+import { findFirstGroupInSubtree } from "./lib/types";
 import { startExternalFileDrag, updateDragPosition, endDrag } from "./lib/dragContext";
 import { FILE_DROP_COMMIT_EVENT } from "./components/DropZoneOverlay";
 import { ToastContainer } from "./components/ToastContainer";
@@ -16,8 +17,12 @@ export function App() {
   const refreshAllGitStatuses = useWorkspaceStore((s) => s.refreshAllGitStatuses);
   const refreshAllPrStatuses = useWorkspaceStore((s) => s.refreshAllPrStatuses);
   const pollShipSignals = useWorkspaceStore((s) => s.pollShipSignals);
-  const [panelCollapsed, setPanelCollapsed] = useState(false);
-  const [fileExplorerCollapsed, setFileExplorerCollapsed] = useState(false);
+  const [panelCollapsed, setPanelCollapsed] = useState(() =>
+    localStorage.getItem("rally:panelCollapsed") === "true",
+  );
+  const [fileExplorerCollapsed, setFileExplorerCollapsed] = useState(() =>
+    localStorage.getItem("rally:fileExplorerCollapsed") === "true",
+  );
   const [sidebarWidth, setSidebarWidth] = useState(() => {
     const saved = localStorage.getItem("rally:sidebarWidth");
     return saved ? Number(saved) : 220;
@@ -26,6 +31,9 @@ export function App() {
     const saved = localStorage.getItem("rally:fileExplorerWidth");
     return saved ? Number(saved) : 220;
   });
+  useEffect(() => { localStorage.setItem("rally:panelCollapsed", String(panelCollapsed)); }, [panelCollapsed]);
+  useEffect(() => { localStorage.setItem("rally:fileExplorerCollapsed", String(fileExplorerCollapsed)); }, [fileExplorerCollapsed]);
+
   const resizingRef = useRef(false);
   const gitRefreshInFlightRef = useRef(false);
   const prRefreshInFlightRef = useRef(false);
@@ -157,6 +165,7 @@ export function App() {
   }, []);
 
   // Cmd+W closes the active tab instead of the window
+  // Cmd+/ splits the active panel to the right with a new terminal
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key === "w") {
@@ -165,6 +174,21 @@ export function App() {
         if (activeWorkspaceId) {
           closeActiveTab(activeWorkspaceId);
         }
+      }
+      if (e.metaKey && e.key === "/") {
+        e.preventDefault();
+        const s = useWorkspaceStore.getState();
+        const wsId = s.activeWorkspaceId;
+        if (!wsId) return;
+        const layout = s.getOrCreateLayout(wsId);
+        // Use active group, or fall back to first group in layout tree
+        let groupId: string | undefined = s.activeGroupIds[wsId];
+        if (!groupId || !layout.groups[groupId]) {
+          groupId = findFirstGroupInSubtree(layout.root) ?? undefined;
+        }
+        if (!groupId) return;
+        const activePath = s.getActivePath(wsId);
+        s.splitGroup(wsId, groupId, "horizontal", activePath ?? undefined);
       }
     };
     document.addEventListener("keydown", handler);

@@ -4,7 +4,7 @@ import { FitAddon } from "@xterm/addon-fit";
 import { WebLinksAddon } from "@xterm/addon-web-links";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { api } from "../lib/tauri";
-import { useWorkspaceStore, shipOutputBuffer } from "../stores/workspaceStore";
+import { useWorkspaceStore, shipOutputBuffer, scriptOutputBuffers } from "../stores/workspaceStore";
 import { showContextMenu } from "../lib/contextMenu";
 import "@xterm/xterm/css/xterm.css";
 
@@ -16,6 +16,8 @@ interface TerminalProps {
   /** Lock columns to 80 — only for ship dock terminals where SIGWINCH
    *  col changes cause rich TUI garble. Regular terminals should NOT lock. */
   lockCols?: boolean;
+  /** Key into scriptOutputBuffers to replay buffered output on attach */
+  scriptBufferKey?: string;
   /** Called after a new PTY is spawned — lets the parent persist the ptyId
    *  so it survives React remounts (layout restructuring). When provided,
    *  the Terminal will NOT kill the PTY on unmount — the store manages it. */
@@ -56,7 +58,7 @@ function safeFit(term: XTerminal, fitAddon: FitAddon): boolean {
   return true;
 }
 
-export function Terminal({ cwd, command, initialInput, ptyId: existingPtyId, lockCols: lockColsProp, onPtySpawned }: TerminalProps) {
+export function Terminal({ cwd, command, initialInput, ptyId: existingPtyId, lockCols: lockColsProp, scriptBufferKey, onPtySpawned }: TerminalProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const termRef = useRef<XTerminal | null>(null);
   const ptyIdRef = useRef<string | null>(null);
@@ -181,6 +183,14 @@ export function Terminal({ cwd, command, initialInput, ptyId: existingPtyId, loc
         term.selectAll();
         return false;
       }
+      // Let Cmd+/ bubble to document for split shortcut
+      if (ev.key === "/") {
+        return false;
+      }
+      // Let Cmd+W bubble to document for close tab shortcut
+      if (ev.key === "w") {
+        return false;
+      }
       return true;
     });
 
@@ -257,11 +267,19 @@ export function Terminal({ cwd, command, initialInput, ptyId: existingPtyId, loc
           safeFit(term, fitAddon);
         }
 
-        // Replay buffered output from ship session
+        // Replay buffered output from ship session or script run
         if (lockCols) {
           const session = useWorkspaceStore.getState().shipSession;
           if (session && session.ptyId === existingPtyId) {
             for (const chunk of shipOutputBuffer) {
+              term.write(chunk);
+            }
+          }
+        }
+        if (scriptBufferKey) {
+          const buf = scriptOutputBuffers.get(scriptBufferKey);
+          if (buf) {
+            for (const chunk of buf) {
               term.write(chunk);
             }
           }

@@ -21,6 +21,18 @@ export function TaskPanel({ rootPath, workspaceId }: TaskPanelProps) {
   const openClaudeCommand = useWorkspaceStore((s) => s.openClaudeCommand);
   const openFile = useWorkspaceStore((s) => s.openFile);
   const startShipSession = useWorkspaceStore((s) => s.startShipSession);
+  const openScriptTerminal = useWorkspaceStore((s) => s.openScriptTerminal);
+
+  // Poll to pick up build status changes from module-level buffers
+  const [, setTick] = useState(0);
+  const hasRunningWatchers = Object.entries(scriptRuns).some(
+    ([k, r]) => k.startsWith(rootPath + ":") && r.status === "running" && isWatcherScript(r.scriptName)
+  );
+  useEffect(() => {
+    if (!hasRunningWatchers) return;
+    const id = setInterval(() => setTick((t) => t + 1), 1500);
+    return () => clearInterval(id);
+  }, [hasRunningWatchers]);
 
   useEffect(() => {
     api.listScripts(rootPath).then(setEntries).catch(() => setEntries([]));
@@ -48,6 +60,51 @@ export function TaskPanel({ rootPath, workspaceId }: TaskPanelProps) {
     const isRunning = run?.status === "running";
     const status = run?.status ?? null;
     const isClaudeCommand = entry.command.startsWith("claude:");
+    const isWatcher = !isClaudeCommand && isWatcherScript(entry.name);
+
+    if (isWatcher) {
+      const buildStatus = isRunning ? getWatcherBuildStatus(key) : "idle";
+      return (
+        <div
+          key={entry.name}
+          className="file-node"
+          style={styles.row}
+          onClick={() => openScriptFile(entry)}
+        >
+          {isRunning ? <EyeOpenIcon /> : <EyeClosedIcon />}
+          <span
+            style={{ ...styles.label, cursor: "pointer" }}
+            title={entry.file_path ?? entry.command}
+          >
+            {entry.label}
+          </span>
+          {isRunning && <BuildStatusDot status={buildStatus} />}
+          {isRunning && (
+            <button
+              className="tab-action"
+              onClick={(e) => { e.stopPropagation(); openScriptTerminal(workspaceId, rootPath, entry.name); }}
+              style={styles.actionBtn}
+              title="View terminal"
+            >
+              <TerminalIcon />
+            </button>
+          )}
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              if (isRunning) {
+                stopScript(rootPath, entry.name);
+              } else {
+                runScript(rootPath, entry.name, entry.command);
+              }
+            }}
+            style={styles.actionBtn}
+          >
+            {isRunning ? <StopIcon /> : <PlayIcon />}
+          </button>
+        </div>
+      );
+    }
 
     return (
       <div
@@ -59,11 +116,7 @@ export function TaskPanel({ rootPath, workspaceId }: TaskPanelProps) {
             showScriptOutput(e, key);
             return;
           }
-          if (isClaudeCommand) {
-            openScriptFile(entry);
-          } else {
-            openScriptFile(entry);
-          }
+          openScriptFile(entry);
         }}
       >
         {isClaudeCommand ? <CommandIcon /> : <TerminalPromptIcon size={14} color="#5b9e6f" />}
@@ -133,7 +186,99 @@ export function TaskPanel({ rootPath, workspaceId }: TaskPanelProps) {
   );
 }
 
+// --- Watcher detection & status ---
+
+function isWatcherScript(name: string): boolean {
+  return name.toLowerCase().includes("watch");
+}
+
+type WatcherBuildStatus = "idle" | "building" | "success" | "error";
+
+const ERROR_PATTERNS = /\b(error|failed|failure|ERR!|ERROR)\b/i;
+const SUCCESS_PATTERNS = /\b(built in|compiled successfully|ready in|watching for file changes|successfully compiled|ready|complete)\b/i;
+const BUILDING_PATTERNS = /\b(rebuilding|compiling|bundling|transforming)\b/i;
+
+/**
+ * Cached watcher build status — updated incrementally as new output arrives.
+ * Avoids re-decoding the entire buffer on every render.
+ */
+const watcherStatusCache = new Map<string, { status: WatcherBuildStatus; chunkCount: number }>();
+
+function getWatcherBuildStatus(bufferKey: string): WatcherBuildStatus {
+  const buf = scriptOutputBuffers.get(bufferKey);
+  // Just started, no output yet → must be building
+  if (!buf || buf.length === 0) return "building";
+
+  const cached = watcherStatusCache.get(bufferKey);
+  if (cached && cached.chunkCount === buf.length) return cached.status;
+
+  // Only decode NEW chunks since last check
+  const startIdx = cached?.chunkCount ?? 0;
+  // Default to "building" until we see success or error
+  let currentStatus = cached?.status ?? "building";
+
+  if (buf.length > startIdx) {
+    const decoder = new TextDecoder("utf-8", { fatal: false });
+    const newChunks = buf.slice(startIdx);
+    const text = newChunks.map((c) => decoder.decode(c, { stream: true })).join("");
+
+    // Check the new text — last match wins (most recent output)
+    if (BUILDING_PATTERNS.test(text)) currentStatus = "building";
+    if (ERROR_PATTERNS.test(text)) currentStatus = "error";
+    if (SUCCESS_PATTERNS.test(text)) currentStatus = "success";
+  }
+
+  watcherStatusCache.set(bufferKey, { status: currentStatus, chunkCount: buf.length });
+  return currentStatus;
+}
+
 // --- Icons ---
+
+function EyeOpenIcon() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" style={{ flexShrink: 0 }}>
+      <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8S1 12 1 12z" stroke="#5b9e6f" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+      <circle cx="12" cy="12" r="3.5" stroke="#5b9e6f" strokeWidth="1.8" />
+    </svg>
+  );
+}
+
+function EyeClosedIcon() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" style={{ flexShrink: 0 }}>
+      <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94" stroke="#777" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19" stroke="#777" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M1 1l22 22" stroke="#777" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+function BuildStatusDot({ status }: { status: WatcherBuildStatus }) {
+  if (status === "idle") return null;
+  const color = status === "error" ? "#e06c75" : status === "success" ? "#4caf50" : "#e8b930";
+  return (
+    <span
+      style={{
+        width: 6,
+        height: 6,
+        borderRadius: "50%",
+        background: color,
+        flexShrink: 0,
+        ...(status === "building" ? { animation: "pulse-glow 1.5s ease-in-out infinite" } : {}),
+      }}
+    />
+  );
+}
+
+function TerminalIcon() {
+  return (
+    <svg width="11" height="11" viewBox="0 0 12 12" fill="none">
+      <rect x="0.5" y="1" width="11" height="9" rx="1.5" stroke="currentColor" strokeWidth="1.2" />
+      <path d="M3 4.5L5 6L3 7.5" stroke="currentColor" strokeWidth="1.1" strokeLinecap="round" strokeLinejoin="round" />
+      <line x1="6.5" y1="7.5" x2="9" y2="7.5" stroke="currentColor" strokeWidth="1.1" strokeLinecap="round" />
+    </svg>
+  );
+}
 
 function CommandIcon() {
   return (
@@ -377,6 +522,12 @@ const styles: Record<string, React.CSSProperties> = {
     cursor: "pointer",
     padding: 0,
     borderRadius: 3,
+    flexShrink: 0,
+  },
+  watcherActions: {
+    display: "flex",
+    alignItems: "center",
+    gap: 2,
     flexShrink: 0,
   },
 };

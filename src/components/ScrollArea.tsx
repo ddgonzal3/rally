@@ -15,32 +15,37 @@ export function ScrollArea({
   className?: string;
 }) {
   const scrollRef = useRef<HTMLDivElement>(null);
+  const contentRef = useRef<HTMLDivElement>(null);
   const trackRef = useRef<HTMLDivElement>(null);
-  const [thumbHeight, setThumbHeight] = useState(0);
-  const [thumbTop, setThumbTop] = useState(0);
-  const [visible, setVisible] = useState(false);
-  const [hovered, setHovered] = useState(false);
+  const thumbRef = useRef<HTMLDivElement>(null);
   const hideTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
   const dragging = useRef(false);
   const dragStartY = useRef(0);
   const dragStartScroll = useRef(0);
+  const [hovered, setHovered] = useState(false);
+  const [visible, setVisible] = useState(false);
+  // Track thumb dimensions in refs to avoid state updates during scroll
+  const thumbState = useRef({ height: 0, top: 0 });
 
-  const update = useCallback(() => {
+  const updateThumb = useCallback(() => {
     const el = scrollRef.current;
-    if (!el) return;
+    const thumb = thumbRef.current;
+    if (!el || !thumb) return;
     const { scrollTop, scrollHeight, clientHeight } = el;
     if (scrollHeight <= clientHeight) {
-      setVisible(false);
+      thumb.style.opacity = "0";
       return;
     }
     const ratio = clientHeight / scrollHeight;
-    setThumbHeight(Math.max(ratio * clientHeight, 24));
-    const trackSpace = clientHeight - Math.max(ratio * clientHeight, 24);
+    const h = Math.max(ratio * clientHeight, 24);
+    const trackSpace = clientHeight - h;
     const scrollRatio = scrollTop / (scrollHeight - clientHeight);
-    setThumbTop(scrollRatio * trackSpace);
+    const top = scrollRatio * trackSpace;
+    thumbState.current = { height: h, top };
+    thumb.style.height = `${h}px`;
+    thumb.style.top = `${top}px`;
   }, []);
 
-  // Show thumb briefly, then fade out
   const flash = useCallback(() => {
     setVisible(true);
     clearTimeout(hideTimer.current);
@@ -51,29 +56,30 @@ export function ScrollArea({
 
   useEffect(() => {
     const el = scrollRef.current;
-    if (!el) return;
-    const onScroll = () => { update(); flash(); };
+    const content = contentRef.current;
+    if (!el || !content) return;
+
+    // Scroll handler — update thumb position directly (no state)
+    const onScroll = () => { updateThumb(); flash(); };
     el.addEventListener("scroll", onScroll, { passive: true });
-    // Also observe resize to recalc thumb
-    const ro = new ResizeObserver(() => update());
+
+    // ResizeObserver on the scroll container (viewport size changes)
+    const ro = new ResizeObserver(() => updateThumb());
     ro.observe(el);
-    // Initial calc
-    update();
+
+    // ResizeObserver on the content wrapper (content height changes when
+    // folders expand/collapse). Much cheaper than MutationObserver.
+    const contentRo = new ResizeObserver(() => updateThumb());
+    contentRo.observe(content);
+
+    updateThumb();
     return () => {
       el.removeEventListener("scroll", onScroll);
       ro.disconnect();
+      contentRo.disconnect();
       clearTimeout(hideTimer.current);
     };
-  }, [update, flash]);
-
-  // Also observe mutations (children added/removed) to recalc
-  useEffect(() => {
-    const el = scrollRef.current;
-    if (!el) return;
-    const mo = new MutationObserver(() => update());
-    mo.observe(el, { childList: true, subtree: true });
-    return () => mo.disconnect();
-  }, [update]);
+  }, [updateThumb, flash]);
 
   const handleTrackClick = useCallback((e: React.MouseEvent) => {
     const el = scrollRef.current;
@@ -98,7 +104,7 @@ export function ScrollArea({
       const el = scrollRef.current;
       if (!el) return;
       const dy = ev.clientY - dragStartY.current;
-      const trackH = el.clientHeight - thumbHeight;
+      const trackH = el.clientHeight - thumbState.current.height;
       if (trackH <= 0) return;
       const scrollRange = el.scrollHeight - el.clientHeight;
       el.scrollTop = dragStartScroll.current + (dy / trackH) * scrollRange;
@@ -111,7 +117,7 @@ export function ScrollArea({
     };
     document.addEventListener("mousemove", onMove);
     document.addEventListener("mouseup", onUp);
-  }, [thumbHeight]);
+  }, []);
 
   return (
     <div style={{ position: "relative", overflow: "hidden", ...style }} className={className}>
@@ -121,12 +127,14 @@ export function ScrollArea({
           height: "100%",
           overflowY: "scroll",
           overflowX: "hidden",
-          scrollbarWidth: "none",       /* Firefox */
-          msOverflowStyle: "none",      /* IE/Edge */
+          scrollbarWidth: "none",
+          msOverflowStyle: "none",
         } as React.CSSProperties}
         className="hide-native-scrollbar"
       >
-        {children}
+        <div ref={contentRef}>
+          {children}
+        </div>
       </div>
       {/* Custom scrollbar track */}
       <div
@@ -146,13 +154,14 @@ export function ScrollArea({
       >
         {/* Thumb */}
         <div
+          ref={thumbRef}
           onMouseDown={handleThumbDown}
           style={{
             position: "absolute",
-            top: thumbTop,
+            top: 0,
             right: 0,
             width: 5,
-            height: thumbHeight,
+            height: 0,
             borderRadius: 3,
             background: hovered ? "rgba(255, 255, 255, 0.22)" : "rgba(255, 255, 255, 0.12)",
             opacity: visible ? 1 : 0,

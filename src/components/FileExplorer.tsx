@@ -15,8 +15,19 @@ import type { GitStatus, PrStatus, ChangesSummary } from "../lib/types";
 const FILE_DRAG_THRESHOLD = 8;
 const FILE_DRAG_MIN_HOLD_MS = 120;
 
-/** Module-level set of expanded folder paths — survives component unmount/remount */
-const expandedPaths = new Set<string>();
+/** Module-level set of expanded folder paths — persisted to localStorage */
+const expandedPaths = new Set<string>(
+  (() => {
+    try {
+      const saved = localStorage.getItem("rally:expandedPaths");
+      return saved ? JSON.parse(saved) : [];
+    } catch { return []; }
+  })(),
+);
+
+function saveExpandedPaths() {
+  localStorage.setItem("rally:expandedPaths", JSON.stringify([...expandedPaths]));
+}
 
 /** Module-level cache of directory listings — survives component unmount/remount */
 const directoryCache = new Map<string, FileEntry[]>();
@@ -103,11 +114,13 @@ const FileTreeNode = React.memo(
     const btnRef = useRef<HTMLButtonElement>(null);
 
     const isActiveFile = !entry.is_dir && entry.path === activeFilePath;
-    // This directory is an ancestor of the active file — should auto-expand
-    const isAncestorOfActive =
+    // Check if this directory is an ancestor of a file being explicitly revealed
+    const revealPath = useWorkspaceStore((s) => s.revealedFilePath);
+    const isAncestorOfReveal =
       entry.is_dir &&
-      activeFilePath !== null &&
-      activeFilePath.startsWith(entry.path + "/");
+      revealPath !== null &&
+      revealPath.startsWith(entry.path + "/");
+    const isRevealTarget = !entry.is_dir && entry.path === revealPath;
 
     // Auto-load children when remounting a previously-expanded folder
     useEffect(() => {
@@ -122,10 +135,11 @@ const FileTreeNode = React.memo(
       }
     }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-    // Auto-expand ancestor directories when active file changes
+    // Auto-expand ancestor directories only on explicit reveal
     useEffect(() => {
-      if (!isAncestorOfActive) return;
+      if (!isAncestorOfReveal) return;
       expandedPaths.add(entry.path);
+      saveExpandedPaths();
       setExpanded(true);
       if (!loaded && !hasPresetChildren) {
         invoke<FileEntry[]>("list_directory", { path: entry.path })
@@ -136,14 +150,14 @@ const FileTreeNode = React.memo(
           })
           .catch((e) => console.error("Failed to load directory:", e));
       }
-    }, [isAncestorOfActive]); // eslint-disable-line react-hooks/exhaustive-deps
+    }, [isAncestorOfReveal]); // eslint-disable-line react-hooks/exhaustive-deps
 
-    // Scroll active file into view
+    // Scroll revealed file into view
     useEffect(() => {
-      if (isActiveFile && btnRef.current) {
+      if (isRevealTarget && btnRef.current) {
         btnRef.current.scrollIntoView({ block: "nearest" });
       }
-    }, [isActiveFile]);
+    }, [isRevealTarget]);
 
     const suppressNextClickRef = useRef(false);
 
@@ -169,6 +183,7 @@ const FileTreeNode = React.memo(
           const next = !prev;
           if (next) expandedPaths.add(entry.path);
           else expandedPaths.delete(entry.path);
+          saveExpandedPaths();
           return next;
         });
       } else if (activeWorkspaceId) {
@@ -235,7 +250,7 @@ const FileTreeNode = React.memo(
       <div>
         <button
           ref={btnRef}
-          className={`file-node${isActiveFile ? " file-node-active" : ""}`}
+          className={`file-node${isActiveFile || isRevealTarget ? " file-node-active" : ""}`}
           onClick={handleClick}
           onMouseDown={handleMouseDown}
           onContextMenu={(e) => {
@@ -285,20 +300,12 @@ const FileTreeNode = React.memo(
     if (prev.onOpenFile !== next.onOpenFile) return false;
     if (prev.removeChild !== next.removeChild) return false;
 
-    // Only re-render if this node's relevance to activeFilePath changed
+    // Only re-render if this node's active-file highlight status changed
     const prevActive =
       !prev.entry.is_dir && prev.activeFilePath === prev.entry.path;
     const nextActive =
       !next.entry.is_dir && next.activeFilePath === next.entry.path;
     if (prevActive !== nextActive) return false;
-
-    const prevAncestor =
-      prev.entry.is_dir &&
-      !!prev.activeFilePath?.startsWith(prev.entry.path + "/");
-    const nextAncestor =
-      next.entry.is_dir &&
-      !!next.activeFilePath?.startsWith(next.entry.path + "/");
-    if (prevAncestor !== nextAncestor) return false;
 
     return true; // equal — skip re-render
   },
@@ -388,17 +395,18 @@ function GitStatusIcon({
         <span
           style={{
             position: "absolute" as const,
-            bottom: 0,
+            bottom: -1,
             right: 0,
-            fontSize: 10,
+            fontSize: 9,
             fontWeight: 800,
-            lineHeight: "16px",
-            color: "#fff",
+            lineHeight: "14px",
+            color: "#ffffff",
+            textShadow: "0 0 1px rgba(255, 255, 255, 0.85)",
             background: "#3f8eff",
-            borderRadius: 8,
-            padding: "0 4px",
-            minWidth: 16,
-            height: 16,
+            borderRadius: 7,
+            padding: "0 3px",
+            minWidth: 14,
+            height: 14,
             textAlign: "center" as const,
             boxSizing: "border-box" as const,
           }}
@@ -429,7 +437,22 @@ function RootSection({
     isUntracked: boolean,
   ) => void;
 }) {
-  const [filesExpanded, setFilesExpanded] = useState(true);
+  const [filesExpanded, _setFilesExpanded] = useState(() => {
+    const saved = localStorage.getItem(`rally:rootExpanded:${rootPath}`);
+    return saved !== null ? saved === "true" : false;
+  });
+  const setFilesExpanded = useCallback((v: boolean) => {
+    _setFilesExpanded(v);
+    localStorage.setItem(`rally:rootExpanded:${rootPath}`, String(v));
+  }, [rootPath]);
+  const [repoCollapsed, _setRepoCollapsed] = useState(() => {
+    const saved = localStorage.getItem(`rally:repoCollapsed:${rootPath}`);
+    return saved === "true";
+  });
+  const setRepoCollapsed = useCallback((v: boolean) => {
+    _setRepoCollapsed(v);
+    localStorage.setItem(`rally:repoCollapsed:${rootPath}`, String(v));
+  }, [rootPath]);
   const [fsEntries, setFsEntries] = useState<FileEntry[]>([]);
   const [fsLoaded, setFsLoaded] = useState(false);
 
@@ -497,80 +520,115 @@ function RootSection({
     showContextMenu(actions);
   }
 
+  const handleToggleRepo = useCallback(() => {
+    setRepoCollapsed(!repoCollapsed);
+  }, [repoCollapsed, setRepoCollapsed]);
+
+  const filesChevronOpen = !repoCollapsed && !showChanges && filesExpanded;
+
+  const handleToggleFiles = useCallback(() => {
+    if (repoCollapsed) {
+      setRepoCollapsed(false);
+      if (showChanges) onToggleChanges?.();
+      if (!filesExpanded) setFilesExpanded(true);
+      return;
+    }
+    if (showChanges) {
+      if (!filesExpanded) setFilesExpanded(true);
+      onToggleChanges?.();
+      return;
+    }
+    setFilesExpanded(!filesExpanded);
+  }, [
+    repoCollapsed,
+    setRepoCollapsed,
+    showChanges,
+    filesExpanded,
+    setFilesExpanded,
+    onToggleChanges,
+  ]);
+
+  const handleToggleChanges = useCallback(() => {
+    if (repoCollapsed) setRepoCollapsed(false);
+    onToggleChanges?.();
+  }, [repoCollapsed, setRepoCollapsed, onToggleChanges]);
+
   return (
     <div>
-      <div style={styles.rootRow} onContextMenu={handleContextMenu}>
-        {isGitRepo ? (
-          <GitStatusIcon
-            status={gitStatus}
-            syncNeeded={pathSyncNeeded}
-            onClick={onToggleChanges}
-          />
-        ) : (
+      <div style={styles.rootRowSticky} onContextMenu={handleContextMenu}>
+        <div style={styles.rootRow}>
           <button
             onClick={(e) => {
               e.stopPropagation();
-              setFilesExpanded(!filesExpanded);
+              handleToggleFiles();
             }}
-            style={styles.rootExpandBtn}
+            style={styles.rootChevronBtn}
+            title={filesChevronOpen ? "Hide files" : "Show files"}
           >
-            <FileIcon name={folderName} isDir isOpen={filesExpanded} />
+            <ChevronIcon open={filesChevronOpen} />
           </button>
-        )}
-        <div
-          style={{
-            flex: 1,
-            minWidth: 0,
-            display: "flex",
-            flexDirection: "column",
-            gap: 1,
-            cursor: "pointer",
-          }}
-          onClick={() => setFilesExpanded(!filesExpanded)}
-        >
-          <span style={styles.rootName}>{folderName}</span>
-          {isGitRepo && (
-            <div style={styles.rootMeta}>
-              <span style={styles.rootBranch}>
-                {gitStatus?.branch ?? "..."}
-                {gitStatus && gitStatus.ahead > 0 && (
-                  <span style={styles.aheadCount}>+{gitStatus.ahead}</span>
-                )}
-              </span>
-              <PrBadge pr={prStatus} />
-            </div>
-          )}
+          <div
+            style={styles.rootInfo}
+            onClick={(e) => {
+              e.stopPropagation();
+              handleToggleRepo();
+            }}
+            title={repoCollapsed ? "Expand repo" : "Collapse repo"}
+          >
+            <span style={styles.rootName}>{folderName}</span>
+            {isGitRepo && (
+              <div style={styles.rootMeta}>
+                <span style={styles.rootBranch}>
+                  {gitStatus?.branch ?? "..."}
+                  {gitStatus && gitStatus.ahead > 0 && (
+                    <span style={styles.aheadCount}>+{gitStatus.ahead}</span>
+                  )}
+                </span>
+                <PrBadge pr={prStatus} />
+              </div>
+            )}
+          </div>
+          <div style={styles.rootActions}>
+            {isGitRepo && (
+              <GitStatusIcon
+                status={gitStatus}
+                syncNeeded={pathSyncNeeded}
+                onClick={handleToggleChanges}
+              />
+            )}
+          </div>
         </div>
       </div>
 
-      {showChanges ? (
-        <ChangesPanel
-          rootPath={rootPath}
-          onSelectFile={(filePath, isUntracked) =>
-            onSelectChangeFile(rootPath, filePath, isUntracked)
-          }
-        />
-      ) : (
-        <>
-          {filesExpanded &&
-            fsLoaded &&
-            fsEntries.map((e) => (
-              <FileTreeNode
-                key={e.path}
-                entry={e}
-                depth={1}
-                rootPath={rootPath}
-                activeWorkspaceId={activeWorkspaceId}
-                activeFilePath={activeFilePath}
-                onOpenFile={openFile}
-                removeChild={handleRemoveRootChild}
-              />
-            ))}
-          {activeWorkspaceId && (
-            <TaskPanel rootPath={rootPath} workspaceId={activeWorkspaceId} />
-          )}
-        </>
-      )}
+      {!repoCollapsed &&
+        (showChanges ? (
+          <ChangesPanel
+            rootPath={rootPath}
+            onSelectFile={(filePath, isUntracked) =>
+              onSelectChangeFile(rootPath, filePath, isUntracked)
+            }
+          />
+        ) : (
+          <>
+            {filesExpanded &&
+              fsLoaded &&
+              fsEntries.map((e) => (
+                <FileTreeNode
+                  key={e.path}
+                  entry={e}
+                  depth={1}
+                  rootPath={rootPath}
+                  activeWorkspaceId={activeWorkspaceId}
+                  activeFilePath={activeFilePath}
+                  onOpenFile={openFile}
+                  removeChild={handleRemoveRootChild}
+                />
+              ))}
+            {activeWorkspaceId && (
+              <TaskPanel rootPath={rootPath} workspaceId={activeWorkspaceId} />
+            )}
+          </>
+        ))}
     </div>
   );
 }
@@ -991,7 +1049,13 @@ export function FileExplorer({ onCollapse }: FileExplorerProps) {
   const setActivePathIndex = useWorkspaceStore((s) => s.setActivePathIndex);
   const ws = workspaces.find((w) => w.id === activeWorkspaceId);
   const [gitRoots, setGitRoots] = useState<Set<string>>(new Set());
-  const [changesOpen, setChangesOpen] = useState<Set<string>>(new Set());
+  const [changesOpen, setChangesOpen] = useState<Set<string>>(() => {
+    if (!activeWorkspaceId) return new Set();
+    try {
+      const saved = localStorage.getItem(`rally:changesOpen:${activeWorkspaceId}`);
+      return saved ? new Set(JSON.parse(saved)) : new Set();
+    } catch { return new Set(); }
+  });
 
   useEffect(() => {
     if (!ws) return;
@@ -1040,9 +1104,13 @@ export function FileExplorer({ onCollapse }: FileExplorerProps) {
     };
   }, []);
 
-  // Clear changes view when workspace changes
+  // Restore changes view when workspace changes
   useEffect(() => {
-    setChangesOpen(new Set());
+    if (!activeWorkspaceId) { setChangesOpen(new Set()); return; }
+    try {
+      const saved = localStorage.getItem(`rally:changesOpen:${activeWorkspaceId}`);
+      setChangesOpen(saved ? new Set(JSON.parse(saved)) : new Set());
+    } catch { setChangesOpen(new Set()); }
   }, [activeWorkspaceId]);
 
   if (!ws) {
@@ -1070,6 +1138,9 @@ export function FileExplorer({ onCollapse }: FileExplorerProps) {
       const next = new Set(prev);
       if (next.has(rootPath)) next.delete(rootPath);
       else next.add(rootPath);
+      if (activeWorkspaceId) {
+        localStorage.setItem(`rally:changesOpen:${activeWorkspaceId}`, JSON.stringify([...next]));
+      }
       return next;
     });
   }
@@ -1186,8 +1257,8 @@ const styles: Record<string, React.CSSProperties> = {
   card: {
     background: "#1b1b1b",
     borderRadius: 6,
-    border: "1px solid #2e2e2e",
-    overflow: "clip" as const,
+    border: "1px solid transparent",
+    borderBottomColor: "#2e2e2e",
     padding: 0,
   },
   explorerHeader: {
@@ -1228,31 +1299,52 @@ const styles: Record<string, React.CSSProperties> = {
     background: "#333",
     lineHeight: "16px",
   },
+  rootRowSticky: {
+    position: "sticky" as const,
+    top: 0,
+    zIndex: 5,
+    borderRadius: "6px 6px 0 0",
+    overflow: "hidden",
+    border: "1px solid #2e2e2e",
+    borderBottom: "none",
+    margin: "-1px -1px 0 -1px",
+  },
   rootRow: {
     display: "flex",
     alignItems: "center",
     gap: 4,
     padding: "4px 6px",
-    cursor: "pointer",
     minHeight: 32,
-    position: "sticky" as const,
-    top: 0,
-    zIndex: 5,
     background: "rgba(35, 35, 35, 0.82)",
     WebkitBackdropFilter: "blur(12px) saturate(1.2)",
     backdropFilter: "blur(12px) saturate(1.2)",
-    borderRadius: "6px 6px 0 0",
   },
-  rootExpandBtn: {
+  rootChevronBtn: {
     display: "flex",
     alignItems: "center",
     justifyContent: "center",
+    width: 18,
+    height: 18,
     background: "none",
     border: "none",
-    color: "#ccc",
+    borderRadius: 4,
     cursor: "pointer",
     padding: 0,
     flexShrink: 0,
+  },
+  rootInfo: {
+    flex: 1,
+    minWidth: 0,
+    display: "flex",
+    flexDirection: "column" as const,
+    gap: 1,
+    cursor: "pointer",
+  },
+  rootActions: {
+    display: "flex",
+    alignItems: "center",
+    gap: 0,
+    marginLeft: 6,
   },
   rootName: {
     overflow: "hidden",

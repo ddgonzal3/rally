@@ -61,6 +61,8 @@ interface WorkspaceState {
   shipStatuses: Record<string, ShipStatus>;
   /** Active ship session (detached PTY running /ship) */
   shipSession: ShipSession | null;
+  /** File path to reveal in explorer (set on explicit reveal, auto-clears) */
+  revealedFilePath: string | null;
   loading: boolean;
 
   // Workspace actions
@@ -136,6 +138,8 @@ interface WorkspaceState {
   closeActiveTab: (workspaceId: string) => void;
   /** Open a file in an editor pane in the top area of the layout */
   openFile: (workspaceId: string, filePath: string) => void;
+  /** Reveal a file in the explorer (expand ancestors + highlight) */
+  revealFileInExplorer: (filePath: string) => void;
   /** Open a diff view for a repo path */
   openDiff: (workspaceId: string, rootPath: string) => void;
   // Ship actions
@@ -155,6 +159,8 @@ interface WorkspaceState {
   runScript: (rootPath: string, scriptName: string, command: string) => Promise<void>;
   stopScript: (rootPath: string, scriptName: string) => Promise<void>;
   clearScript: (rootPath: string, scriptName: string) => void;
+  /** Open a terminal pane connected to a running script's PTY */
+  openScriptTerminal: (workspaceId: string, rootPath: string, scriptName: string) => void;
 
   /** Move a pane from one group into a new split on a target group */
   dropPaneOnGroup: (
@@ -245,6 +251,7 @@ export const useWorkspaceStore = create<WorkspaceState>()(
   scriptRuns: {},
   shipStatuses: {},
   shipSession: null,
+  revealedFilePath: null,
   loading: false,
 
   // --- Workspace actions ---
@@ -834,6 +841,18 @@ export const useWorkspaceStore = create<WorkspaceState>()(
     const run = get().scriptRuns[key];
     if (!run) return;
     await api.killPty(run.ptyId);
+
+    // Close any open terminal panes connected to this PTY
+    const layouts = get().layouts;
+    for (const [wsId, layout] of Object.entries(layouts)) {
+      for (const [gId, group] of Object.entries(layout.groups)) {
+        const pane = group.panes.find((p) => p.ptyId === run.ptyId);
+        if (pane) {
+          get().closePane(wsId, gId, pane.id);
+        }
+      }
+    }
+
     set((s) => ({
       scriptRuns: {
         ...s.scriptRuns,
@@ -849,6 +868,42 @@ export const useWorkspaceStore = create<WorkspaceState>()(
       const { [key]: _, ...rest } = s.scriptRuns;
       return { scriptRuns: rest };
     });
+  },
+
+  openScriptTerminal: (workspaceId, rootPath, scriptName) => {
+    const key = `${rootPath}:${scriptName}`;
+    const run = get().scriptRuns[key];
+    if (!run) return;
+
+    const layout = get().getOrCreateLayout(workspaceId);
+
+    // Find the active group, or fall back to the first group
+    const activeGroupId = get().activeGroupIds[workspaceId];
+    let targetGroupId = activeGroupId && layout.groups[activeGroupId]
+      ? activeGroupId
+      : findFirstGroupInSubtree(layout.root);
+    if (!targetGroupId) return;
+
+    // Don't open a duplicate — if a terminal pane already exists for this ptyId, switch to it
+    const group = layout.groups[targetGroupId];
+    if (group) {
+      const existing = group.panes.find((p) => p.ptyId === run.ptyId);
+      if (existing) {
+        get().setActivePane(workspaceId, targetGroupId, existing.id);
+        return;
+      }
+    }
+
+    const pane: Pane = {
+      id: crypto.randomUUID(),
+      type: "terminal",
+      title: scriptName,
+      cwd: rootPath,
+      ptyId: run.ptyId,
+      scriptBufferKey: key,
+    };
+
+    get().addPaneToGroup(workspaceId, targetGroupId, pane);
   },
 
   getOrCreateLayout: (workspaceId) => {
@@ -888,6 +943,7 @@ export const useWorkspaceStore = create<WorkspaceState>()(
     };
     const newRoot = replaceNode(layout.root, groupId, splitNode);
     set((s) => ({
+      activeGroupIds: { ...s.activeGroupIds, [workspaceId]: newGroup.id },
       layouts: {
         ...s.layouts,
         [workspaceId]: {
@@ -1176,6 +1232,12 @@ export const useWorkspaceStore = create<WorkspaceState>()(
       filePath,
     };
     get().addPaneToGroup(workspaceId, targetGroupId, pane);
+  },
+
+  revealFileInExplorer: (filePath) => {
+    set({ revealedFilePath: filePath });
+    // Auto-clear after the explorer has had time to expand + scroll
+    setTimeout(() => set({ revealedFilePath: null }), 1000);
   },
 
   openDiff: (workspaceId, rootPath) => {

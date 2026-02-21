@@ -20,9 +20,7 @@ export async function showContextMenu(
   );
   const menu = await Menu.new({ items });
   if (at) {
-    // Tauri's LogicalPosition on macOS expects coordinates scaled down by devicePixelRatio
-    const dpr = window.devicePixelRatio || 1;
-    await menu.popup(new LogicalPosition(at.x / dpr, at.y / dpr));
+    await menu.popup(new LogicalPosition(at.x, at.y));
   } else {
     await menu.popup();
   }
