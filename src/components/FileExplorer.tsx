@@ -1131,7 +1131,7 @@ const styles: Record<string, React.CSSProperties> = {
     whiteSpace: "nowrap" as const,
     fontSize: 13,
     fontWeight: 600,
-    color: "#fff",
+    color: "#eee",
   },
   rootMeta: {
     display: "flex",
@@ -1140,8 +1140,8 @@ const styles: Record<string, React.CSSProperties> = {
   },
   rootBranch: {
     fontSize: 10,
-    color: "#fff",
-    fontWeight: 700,
+    color: "#bbb",
+    fontWeight: 600,
   },
   aheadCount: {
     color: "#e5a63a",

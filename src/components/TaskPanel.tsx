@@ -4,7 +4,7 @@ import { FitAddon } from "@xterm/addon-fit";
 import { useWorkspaceStore } from "../stores/workspaceStore";
 import { api } from "../lib/tauri";
 import type { TaskEntry, TaskRun } from "../lib/types";
-import { ChevronIcon } from "./FileIcons";
+import { CLAUDE_PATH } from "./FileIcons";
 
 interface TaskPanelProps {
   rootPath: string;
@@ -13,8 +13,6 @@ interface TaskPanelProps {
 
 export function TaskPanel({ rootPath, workspaceId }: TaskPanelProps) {
   const [tasks, setTasks] = useState<TaskEntry[]>([]);
-  const [commandsExpanded, setCommandsExpanded] = useState(true);
-  const [scriptsExpanded, setScriptsExpanded] = useState(true);
   const [viewingTask, setViewingTask] = useState<string | null>(null);
   const [popupPos, setPopupPos] = useState({ x: 0, y: 0 });
   const { taskRuns, runTask, stopTask, openClaudeCommand, openFile, startShipSession } = useWorkspaceStore();
@@ -65,7 +63,7 @@ export function TaskPanel({ rootPath, workspaceId }: TaskPanelProps) {
           onClick={(e) => handleLabelClick(e, task)}
           title={task.file_path ?? task.command}
         >
-          {task.label}
+          {isClaudeCommand ? task.label.replace(/^\//, "") : task.label}
         </span>
         <button
           onClick={(e) => {
@@ -101,23 +99,11 @@ export function TaskPanel({ rootPath, workspaceId }: TaskPanelProps) {
 
   return (
     <>
-      {commands.length > 0 && (
+      {tasks.length > 0 && (
         <>
-          <button onClick={() => setCommandsExpanded(!commandsExpanded)} style={styles.sectionToggle}>
-            <ChevronIcon open={commandsExpanded} />
-            <span>Commands</span>
-          </button>
-          {commandsExpanded && commands.map(renderTaskRow)}
-        </>
-      )}
-
-      {scripts.length > 0 && (
-        <>
-          <button onClick={() => setScriptsExpanded(!scriptsExpanded)} style={styles.sectionToggle}>
-            <ChevronIcon open={scriptsExpanded} />
-            <span>Scripts</span>
-          </button>
-          {scriptsExpanded && scripts.map(renderTaskRow)}
+          <div style={styles.divider} />
+          {commands.map(renderTaskRow)}
+          {scripts.map(renderTaskRow)}
         </>
       )}
 
@@ -138,19 +124,18 @@ export function TaskPanel({ rootPath, workspaceId }: TaskPanelProps) {
 
 function CommandIcon() {
   return (
-    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" style={{ flexShrink: 0, opacity: 0.7 }}>
-      <path d="M4 4l3 3-3 3" stroke="#8a8a6a" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
-      <path d="M9 11h4" stroke="#8a8a6a" strokeWidth="1.3" strokeLinecap="round" />
+    <svg width="14" height="14" viewBox="-2 -1 28 26" style={{ flexShrink: 0 }}>
+      <path d={CLAUDE_PATH} fill="#D97757" fillRule="nonzero" />
     </svg>
   );
 }
 
 function ScriptIcon() {
   return (
-    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" style={{ flexShrink: 0, opacity: 0.7 }}>
-      <rect x="2" y="2" width="12" height="12" rx="2" stroke="#8a8a6a" strokeWidth="1.2" />
-      <path d="M5 6l2 2-2 2" stroke="#8a8a6a" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" />
-      <path d="M9 10h3" stroke="#8a8a6a" strokeWidth="1.2" strokeLinecap="round" />
+    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" style={{ flexShrink: 0 }}>
+      <rect x="2" y="2" width="12" height="12" rx="2" stroke="#5b9e6f" strokeWidth="1.2" />
+      <path d="M5 6l2 2-2 2" stroke="#5b9e6f" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M9 10h3" stroke="#5b9e6f" strokeWidth="1.2" strokeLinecap="round" />
     </svg>
   );
 }
@@ -355,20 +340,8 @@ function FloatingTerminal({
 }
 
 const styles: Record<string, React.CSSProperties> = {
-  sectionToggle: {
-    display: "flex",
-    alignItems: "center",
-    width: "100%",
-    gap: 2,
-    padding: "6px 4px 2px",
-    background: "none",
-    border: "none",
-    margin: 0,
-    cursor: "pointer",
-    color: "#fff",
-    fontSize: 12,
-    fontWeight: 700,
-    letterSpacing: "0.03em",
+  divider: {
+    height: 3,
   },
   row: {
     display: "flex",
