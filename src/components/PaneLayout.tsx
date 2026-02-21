@@ -7,6 +7,7 @@ export function PaneLayout() {
   const workspaces = useWorkspaceStore((s) => s.workspaces);
   const layouts = useWorkspaceStore((s) => s.layouts);
   const getOrCreateLayout = useWorkspaceStore((s) => s.getOrCreateLayout);
+  const getActivePath = useWorkspaceStore((s) => s.getActivePath);
   const ws = workspaces.find((w) => w.id === activeWorkspaceId);
 
   if (!ws) {
@@ -22,6 +23,7 @@ export function PaneLayout() {
   }
 
   const layout = getOrCreateLayout(ws.id);
+  const workspacePath = getActivePath(ws.id) ?? ws.paths[0] ?? "";
 
   return (
     <div style={styles.container}>
@@ -29,7 +31,7 @@ export function PaneLayout() {
         node={layout.root}
         layout={layout}
         workspaceId={ws.id}
-        workspacePath={ws.paths[0]}
+        workspacePath={workspacePath}
       />
     </div>
   );

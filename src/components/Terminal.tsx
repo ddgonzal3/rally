@@ -362,7 +362,12 @@ export function Terminal({ cwd, command, initialInput, ptyId: existingPtyId, loc
       unlistenExitRef.current?.();
       term.dispose();
     };
-  }, [cwd, command, initialInput, existingPtyId]);
+    // existingPtyId intentionally excluded — it's only used at mount time to
+    // decide spawn vs. attach. When onPtySpawned stores a new ptyId, we must
+    // NOT tear down the working terminal to re-attach (causes blank terminals
+    // because the resize sends same dimensions → zsh doesn't redraw).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cwd, command, initialInput]);
 
   return (
     <div style={styles.container} onContextMenu={handleContextMenu}>

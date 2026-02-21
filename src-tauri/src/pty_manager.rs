@@ -65,12 +65,26 @@ impl PtyManager {
 
         let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/zsh".to_string());
 
+        // Validate cwd — if empty or non-existent, fall back to home directory.
+        // This prevents terminals from spawning in `/` (the app's process cwd)
+        // when a workspace path is missing or has been deleted from disk.
+        let effective_cwd = if cwd.is_empty() || !std::path::Path::new(&cwd).is_dir() {
+            let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
+            eprintln!(
+                "[pty_manager] cwd {:?} is empty or does not exist, falling back to {:?}",
+                cwd, home
+            );
+            home
+        } else {
+            cwd
+        };
+
         // Always spawn an interactive login shell — this ensures .zshrc/.zprofile
         // are fully loaded so tools like claude, node, etc. are on PATH.
         // If a command is provided, we write it to stdin after spawn.
         let mut cmd = CommandBuilder::new(&shell);
         cmd.arg("-l");
-        cmd.cwd(&cwd);
+        cmd.cwd(&effective_cwd);
 
         // Inherit environment
         for (key, value) in std::env::vars() {
@@ -107,6 +121,10 @@ impl PtyManager {
         // about terminal capabilities/dimensions
         cmd.env("TERM_PROGRAM", "Rally");
         cmd.env_remove("TERM_PROGRAM_VERSION");
+        // Suppress zsh's PROMPT_EOL_MARK — the reverse-video `%` character it
+        // outputs at startup to indicate no trailing newline. In an embedded
+        // terminal this just leaves a white-background box artifact at (0,0).
+        cmd.env("PROMPT_EOL_MARK", "");
 
         let child = pair
             .slave
@@ -185,7 +203,7 @@ impl PtyManager {
                 writer,
                 pair,
                 child,
-                cwd,
+                cwd: effective_cwd,
                 command,
             },
         );

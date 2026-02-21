@@ -181,6 +181,10 @@ The `/ship` command (commit → push → PR → review → merge) communicates w
 | `src/components/TaskPanel.tsx` | Renders task list, routes built-in clicks to Claude panes |
 | `src/stores/workspaceStore.ts` | `pollShipSignals()`, `handleAutoMerge()`, `openClaudeCommand()` |
 
+## Known Pitfalls
+
+Read `PITFALLS.md` before starting any work. Add to it when you discover new pitfalls. These are hard-won lessons — ignoring them wastes time.
+
 ## Known Constraints
 
 - **macOS only** for now (Tauri supports Windows/Linux but untested)
