@@ -1,10 +1,11 @@
-import React, { useEffect, useRef } from "react";
+import React, { useEffect, useRef, useCallback } from "react";
 import { Terminal as XTerminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { WebLinksAddon } from "@xterm/addon-web-links";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { api } from "../lib/tauri";
 import { useWorkspaceStore, shipOutputBuffer } from "../stores/workspaceStore";
+import { showContextMenu } from "../lib/contextMenu";
 import "@xterm/xterm/css/xterm.css";
 
 interface TerminalProps {
@@ -12,6 +13,13 @@ interface TerminalProps {
   command?: string;
   initialInput?: string;
   ptyId?: string;  // Connect to existing PTY instead of spawning
+  /** Lock columns to 80 — only for ship dock terminals where SIGWINCH
+   *  col changes cause rich TUI garble. Regular terminals should NOT lock. */
+  lockCols?: boolean;
+  /** Called after a new PTY is spawned — lets the parent persist the ptyId
+   *  so it survives React remounts (layout restructuring). When provided,
+   *  the Terminal will NOT kill the PTY on unmount — the store manages it. */
+  onPtySpawned?: (ptyId: string) => void;
 }
 
 const encoder = new TextEncoder();
@@ -48,13 +56,61 @@ function safeFit(term: XTerminal, fitAddon: FitAddon): boolean {
   return true;
 }
 
-export function Terminal({ cwd, command, initialInput, ptyId: existingPtyId }: TerminalProps) {
+export function Terminal({ cwd, command, initialInput, ptyId: existingPtyId, lockCols: lockColsProp, onPtySpawned }: TerminalProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const termRef = useRef<XTerminal | null>(null);
   const ptyIdRef = useRef<string | null>(null);
   const fitAddonRef = useRef<FitAddon | null>(null);
   const unlistenOutputRef = useRef<UnlistenFn | null>(null);
   const unlistenExitRef = useRef<UnlistenFn | null>(null);
+
+  const handleContextMenu = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    const term = termRef.current;
+    const ptyId = ptyIdRef.current;
+
+    showContextMenu(
+      [
+        {
+          label: "Copy",
+          accelerator: "CmdOrCtrl+C",
+          action: () => {
+            if (term) {
+              const sel = term.getSelection();
+              if (sel) navigator.clipboard.writeText(sel);
+            }
+          },
+        },
+        {
+          label: "Paste",
+          accelerator: "CmdOrCtrl+V",
+          action: async () => {
+            if (ptyId) {
+              const text = await navigator.clipboard.readText();
+              if (text) api.writePty(ptyId, Array.from(encoder.encode(text)));
+            }
+          },
+        },
+        {
+          label: "Select All",
+          accelerator: "CmdOrCtrl+A",
+          action: () => term?.selectAll(),
+        },
+        "separator",
+        {
+          label: "Clear Terminal",
+          action: () => term?.clear(),
+        },
+        {
+          label: "Kill Terminal",
+          action: () => {
+            if (ptyId) api.killPty(ptyId);
+          },
+        },
+      ],
+      { x: e.clientX, y: e.clientY },
+    );
+  }, []);
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -89,14 +145,44 @@ export function Terminal({ cwd, command, initialInput, ptyId: existingPtyId }: T
 
     term.open(containerRef.current);
 
+    // Handle Cmd+C (copy), Cmd+V (paste), Cmd+A (select all)
+    term.attachCustomKeyEventHandler((ev) => {
+      if (ev.type !== "keydown") return true;
+      const isMeta = ev.metaKey; // Cmd on macOS
+      if (!isMeta) return true;
+
+      if (ev.key === "c") {
+        const sel = term.getSelection();
+        if (sel) {
+          navigator.clipboard.writeText(sel);
+          return false; // prevent xterm from handling
+        }
+        // No selection → let it pass through as Ctrl+C (SIGINT)
+        return true;
+      }
+      if (ev.key === "v") {
+        navigator.clipboard.readText().then((text) => {
+          if (text && ptyIdRef.current) {
+            api.writePty(ptyIdRef.current, Array.from(encoder.encode(text)));
+          }
+        });
+        return false;
+      }
+      if (ev.key === "a") {
+        term.selectAll();
+        return false;
+      }
+      return true;
+    });
+
     termRef.current = term;
     fitAddonRef.current = fitAddon;
 
     // Track whether this terminal owns the PTY (should kill on unmount)
     const ownsPty = !existingPtyId;
-    // When attaching to an existing PTY (ship dock), lock cols to prevent
-    // SIGWINCH redraw garble from Claude Code's rich terminal UI
-    const lockCols = !!existingPtyId;
+    // Only lock cols when explicitly requested (ship dock terminals).
+    // Regular PTY reconnections after layout changes must resize freely.
+    const lockCols = !!lockColsProp;
     const LOCKED_COLS = 80; // Must match ship PTY spawn size
     let ptySpawned = false;
     let rafId: number | null = null;
@@ -156,24 +242,35 @@ export function Terminal({ cwd, command, initialInput, ptyId: existingPtyId }: T
       ptySpawned = true;
 
       try {
-        // Fit rows only — keep cols at LOCKED_COLS to match PTY spawn width
-        // and avoid SIGWINCH col-change garble
-        fitRowsOnly();
+        if (lockCols) {
+          fitRowsOnly();
+        } else {
+          safeFit(term, fitAddon);
+        }
 
         // Replay buffered output from ship session
-        const session = useWorkspaceStore.getState().shipSession;
-        if (session && session.ptyId === existingPtyId) {
-          for (const chunk of shipOutputBuffer) {
-            term.write(chunk);
+        if (lockCols) {
+          const session = useWorkspaceStore.getState().shipSession;
+          if (session && session.ptyId === existingPtyId) {
+            for (const chunk of shipOutputBuffer) {
+              term.write(chunk);
+            }
           }
         }
 
         await connectToPty(existingPtyId);
 
-        // Sync PTY rows (cols stay locked)
-        fitRowsOnly();
-        if (term.rows >= MIN_ROWS) {
-          api.resizePty(existingPtyId, LOCKED_COLS, term.rows);
+        // Sync PTY dimensions — this sends SIGWINCH which makes TUI apps redraw
+        if (lockCols) {
+          fitRowsOnly();
+          if (term.rows >= MIN_ROWS) {
+            api.resizePty(existingPtyId, LOCKED_COLS, term.rows);
+          }
+        } else {
+          safeFit(term, fitAddon);
+          if (term.cols >= MIN_COLS && term.rows >= MIN_ROWS) {
+            api.resizePty(existingPtyId, term.cols, term.rows);
+          }
         }
       } catch (e) {
         term.writeln(`\x1b[31mFailed to attach to terminal: ${e}\x1b[0m`);
@@ -191,6 +288,9 @@ export function Terminal({ cwd, command, initialInput, ptyId: existingPtyId }: T
         const spawnCols = Math.max(term.cols, 80);
         const spawnRows = Math.max(term.rows, 24);
         const ptyId = await api.spawnPty(cwd, command ?? null, spawnCols, spawnRows);
+
+        // Persist ptyId so it survives layout-induced remounts
+        onPtySpawned?.(ptyId);
 
         await connectToPty(ptyId);
 
@@ -250,7 +350,11 @@ export function Terminal({ cwd, command, initialInput, ptyId: existingPtyId }: T
     return () => {
       if (rafId !== null) cancelAnimationFrame(rafId);
       observer.disconnect();
-      if (ptyIdRef.current && ownsPty) {
+      // Kill PTY on unmount ONLY if we own it AND the store isn't managing it.
+      // When onPtySpawned is provided, the store persists the ptyId and handles
+      // cleanup in closePane/closeGroup — so we must not kill here (the component
+      // may just be remounting due to layout restructuring).
+      if (ptyIdRef.current && ownsPty && !onPtySpawned) {
         api.killPty(ptyIdRef.current);
       }
       ptyIdRef.current = null;
@@ -261,7 +365,7 @@ export function Terminal({ cwd, command, initialInput, ptyId: existingPtyId }: T
   }, [cwd, command, initialInput, existingPtyId]);
 
   return (
-    <div style={styles.container}>
+    <div style={styles.container} onContextMenu={handleContextMenu}>
       <div ref={containerRef} style={styles.terminal} />
     </div>
   );

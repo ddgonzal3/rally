@@ -17,7 +17,7 @@ const expandedPaths = new Set<string>();
 /** Module-level cache of directory listings — survives component unmount/remount */
 const directoryCache = new Map<string, FileEntry[]>();
 
-/** Button that brightens on hover */
+/** Button that brightens on hover — uses CSS class for compositor-thread hover */
 function HoverButton({
   children,
   onClick,
@@ -29,19 +29,12 @@ function HoverButton({
   title?: string;
   baseStyle: React.CSSProperties;
 }) {
-  const [hovered, setHovered] = useState(false);
   return (
     <button
+      className="hover-brighten"
       onClick={onClick}
       title={title}
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
-      style={{
-        ...baseStyle,
-        opacity: hovered ? 1 : 0.6,
-        filter: hovered ? "brightness(1.5)" : "none",
-        transition: "opacity 0.15s, filter 0.15s",
-      }}
+      style={baseStyle}
     >
       {children}
     </button>
@@ -385,9 +378,7 @@ function GitStatusIcon({
   const changeCount =
     (status?.modified_files.length ?? 0) +
     (status?.untracked_files.length ?? 0);
-  const iconColor = syncNeeded ? "#e8b930" : "#b0b0b0";
-
-  const [hovered, setHovered] = useState(false);
+  const iconColor = syncNeeded ? "#e8b930" : "#ccc";
 
   return (
     <button
@@ -395,9 +386,7 @@ function GitStatusIcon({
         e.stopPropagation();
         if (onClick) onClick();
       }}
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
-      className={syncNeeded ? "pulse-dot" : undefined}
+      className={`git-status-btn${syncNeeded ? " pulse-dot" : ""}`}
       title={
         syncNeeded
           ? "Sync needed — behind main"
@@ -412,13 +401,9 @@ function GitStatusIcon({
         background: "none",
         border: "none",
         padding: "2px",
-        cursor: "pointer",
         flexShrink: 0,
         borderRadius: 4,
-        opacity: hovered ? 1 : 0.7,
-        transition: "opacity 0.15s",
         position: "relative" as const,
-        willChange: "opacity",
       }}
     >
       <svg
@@ -526,7 +511,6 @@ function RootSection({
   onGitClick?: () => void;
 }) {
   const [filesExpanded, setFilesExpanded] = useState(true);
-  const [commandsExpanded, setCommandsExpanded] = useState(true);
   const [fsEntries, setFsEntries] = useState<FileEntry[]>([]);
   const [fsLoaded, setFsLoaded] = useState(false);
   const [curatedEntries, setCuratedEntries] = useState<CuratedEntry[]>([]);
@@ -689,8 +673,6 @@ function RootSection({
         <TaskPanel
           rootPath={rootPath}
           workspaceId={activeWorkspaceId}
-          expanded={commandsExpanded}
-          onToggle={() => setCommandsExpanded(!commandsExpanded)}
         />
       )}
     </div>
@@ -722,20 +704,17 @@ function ChangeFileItem({
   actionLabel: string;
   onAction: () => void;
 }) {
-  const [hovered, setHovered] = useState(false);
   const fileName = path.split("/").pop() ?? path;
   const dir = path.includes("/") ? path.slice(0, path.lastIndexOf("/")) : "";
 
   return (
     <div
+      className={`change-item${isSelected ? " change-item-selected" : ""}`}
       style={{
         ...styles.changeItem,
         ...(isSelected ? styles.changeItemSelected : {}),
-        ...(hovered && !isSelected ? styles.nodeHover : {}),
       }}
       onClick={onClick}
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
     >
       <span
         style={{
@@ -747,18 +726,17 @@ function ChangeFileItem({
       </span>
       <span style={styles.changeFileName}>{fileName}</span>
       {dir && <span style={styles.changeFileDir}>{dir}</span>}
-      {hovered && (
-        <button
-          style={styles.stageBtn}
-          onClick={(e) => {
-            e.stopPropagation();
-            onAction();
-          }}
-          title={actionLabel}
-        >
-          {actionLabel === "Stage" ? "+" : "−"}
-        </button>
-      )}
+      <button
+        className="stage-btn"
+        style={styles.stageBtn}
+        onClick={(e) => {
+          e.stopPropagation();
+          onAction();
+        }}
+        title={actionLabel}
+      >
+        {actionLabel === "Stage" ? "+" : "−"}
+      </button>
     </div>
   );
 }
@@ -933,6 +911,7 @@ export function FileExplorer({ onCollapse }: FileExplorerProps) {
   // Suppress pointer events briefly after view switch to prevent flash
   const [suppressHover, setSuppressHover] = useState(false);
 
+
   useEffect(() => {
     if (!ws) return;
     const detected = new Set<string>();
@@ -1036,28 +1015,47 @@ export function FileExplorer({ onCollapse }: FileExplorerProps) {
           onSelectFile={handleSelectFile}
         />
       ) : (
-        <div
-          style={{
-            ...styles.tree,
-            ...(suppressHover ? { pointerEvents: "none" as const } : {}),
-          }}
-        >
-          {ws.paths.map((p, index) => (
-            <div
-              key={p}
-              style={{ ...styles.card, marginTop: index === 0 ? 2 : 4 }}
+        <>
+          <div style={styles.explorerHeader}>
+            <span style={styles.explorerTitle}>Explorer</span>
+            <button
+              className="tab-action"
+              style={styles.explorerMenuBtn}
+              onClick={(e) => {
+                e.stopPropagation();
+                showContextMenu([
+                  { label: "Add Folder to Workspace", action: handleAddFolder },
+                ]);
+              }}
+              title="Explorer actions"
             >
-              <RootSection
-                rootPath={p}
-                isGitRepo={gitRoots.has(p)}
-                onGitClick={() => handleGitIconClick(p)}
-              />
-            </div>
-          ))}
-          <button onClick={handleAddFolder} style={styles.addFolderBtn}>
-            + Add Folder
-          </button>
-        </div>
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
+                <circle cx="8" cy="3" r="1.2" fill="currentColor" />
+                <circle cx="8" cy="8" r="1.2" fill="currentColor" />
+                <circle cx="8" cy="13" r="1.2" fill="currentColor" />
+              </svg>
+            </button>
+          </div>
+          <div
+            style={{
+              ...styles.tree,
+              ...(suppressHover ? { pointerEvents: "none" as const } : {}),
+            }}
+          >
+            {ws.paths.map((p, index) => (
+              <div
+                key={p}
+                style={{ ...styles.card, marginTop: index === 0 ? 2 : 4 }}
+              >
+                <RootSection
+                  rootPath={p}
+                  isGitRepo={gitRoots.has(p)}
+                  onGitClick={() => handleGitIconClick(p)}
+                />
+              </div>
+            ))}
+          </div>
+        </>
       )}
     </div>
   );
@@ -1113,17 +1111,33 @@ const styles: Record<string, React.CSSProperties> = {
     border: "1px solid #2a2a2a",
     padding: 0,
   },
-  addFolderBtn: {
-    display: "block",
-    width: "100%",
-    padding: "8px 0",
-    textAlign: "center" as const,
-    color: "#555",
+  explorerHeader: {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    padding: "0 8px 0 12px",
+    minHeight: 34,
+    borderBottom: "1px solid #333",
+    flexShrink: 0,
+  },
+  explorerTitle: {
     fontSize: 11,
-    cursor: "pointer",
-    border: "none",
+    fontWeight: 700,
+    textTransform: "uppercase" as const,
+    letterSpacing: "0.05em",
+    color: "#fff",
+  },
+  explorerMenuBtn: {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    width: 22,
+    height: 22,
     background: "none",
-    fontWeight: 600,
+    border: "none",
+    color: "#777",
+    cursor: "pointer",
+    borderRadius: 4,
   },
   prBadge: {
     display: "inline-block",
@@ -1160,7 +1174,7 @@ const styles: Record<string, React.CSSProperties> = {
     whiteSpace: "nowrap" as const,
     fontSize: 13,
     fontWeight: 600,
-    color: "#ccc",
+    color: "#fff",
   },
   rootMeta: {
     display: "flex",
@@ -1169,7 +1183,7 @@ const styles: Record<string, React.CSSProperties> = {
   },
   rootBranch: {
     fontSize: 10,
-    color: "#999",
+    color: "#fff",
     fontWeight: 700,
   },
   aheadCount: {

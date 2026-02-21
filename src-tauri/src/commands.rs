@@ -366,7 +366,7 @@ fn builtin_commands() -> Vec<TaskEntry> {
     vec![
         TaskEntry {
             name: "ship".to_string(),
-            label: "Ship".to_string(),
+            label: "/ship".to_string(),
             command: "claude:/ship".to_string(),
             cwd: None,
             builtin: true,
@@ -374,7 +374,7 @@ fn builtin_commands() -> Vec<TaskEntry> {
         },
         TaskEntry {
             name: "review-pr".to_string(),
-            label: "Review PR".to_string(),
+            label: "/review-pr".to_string(),
             command: "claude:/review-pr".to_string(),
             cwd: None,
             builtin: true,
@@ -382,7 +382,7 @@ fn builtin_commands() -> Vec<TaskEntry> {
         },
         TaskEntry {
             name: "merge-pr".to_string(),
-            label: "Merge PR".to_string(),
+            label: "/merge-pr".to_string(),
             command: "claude:/merge-pr".to_string(),
             cwd: None,
             builtin: true,

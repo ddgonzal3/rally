@@ -128,23 +128,19 @@ export function FileIcon({
 }
 
 function FolderIcon({ open }: { open?: boolean }) {
-  if (open) {
-    return (
-      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" style={svgIconStyle}>
-        <path
-          d="M1.5 3.5h4l1.5 1.5H14.5v1H2.5l-1 6h11l1.5-5H6L4.5 5.5H1.5z"
-          fill="#C09553"
-          opacity={0.85}
-        />
-      </svg>
-    );
-  }
+  // Matches icons8 folder style: rounded rect with a small smooth tab
+  const d = open
+    ? "M3 4C3 3.17 3.67 2.5 4.5 2.5H8L9.5 4H12.5C13.33 4 14 4.67 14 5.5V6H4.5L3 12H12.5C13.33 12 14 11.33 14 10.5V6"
+    : "M3 4C3 3.17 3.67 2.5 4.5 2.5H8L9.5 4H12.5C13.33 4 14 4.67 14 5.5V11C14 11.83 13.33 12.5 12.5 12.5H4.5C3.67 12.5 3 11.83 3 11Z";
   return (
     <svg width="16" height="16" viewBox="0 0 16 16" fill="none" style={svgIconStyle}>
       <path
-        d="M1.5 3h4.5l1.5 1.5h6v8.5h-12z"
-        fill="#C09553"
-        opacity={0.85}
+        d={d}
+        stroke="#999"
+        strokeWidth="1.3"
+        strokeLinejoin="round"
+        strokeLinecap="round"
+        fill="none"
       />
     </svg>
   );

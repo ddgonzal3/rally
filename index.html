@@ -23,6 +23,20 @@
       .pane-tab:not(.pane-tab-active):hover { background: #222 !important; }
       .no-select, .no-select * { -webkit-user-select: none; user-select: none; }
       .no-select ::selection { background: transparent; }
+      .launch-btn { cursor: pointer !important; }
+      .launch-btn:hover span { color: #ddd !important; }
+      .launch-btn:hover svg path { fill: #888 !important; }
+      .sidebar-item { cursor: pointer; }
+      .sidebar-item:not(.sidebar-item-active):hover { background: #222 !important; }
+      .sidebar-btn:hover { background: #222 !important; }
+      .hover-brighten { opacity: 0.6; transition: opacity 0.15s, filter 0.15s; }
+      .hover-brighten:hover { opacity: 1 !important; filter: brightness(1.5); }
+      .git-status-btn { opacity: 0.7; transition: opacity 0.15s; will-change: opacity; cursor: pointer; }
+      .git-status-btn:hover { opacity: 1 !important; }
+      .change-item { cursor: pointer; }
+      .change-item:not(.change-item-selected):hover { background: #2d2d2d !important; }
+      .change-item .stage-btn { opacity: 0; transition: opacity 0.1s; }
+      .change-item:hover .stage-btn { opacity: 1; }
       @keyframes claude-dot {
         0%, 80%, 100% { opacity: 0.15; transform: scale(0.8); }
         40% { opacity: 1; transform: scale(1.2); }

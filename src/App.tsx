@@ -232,7 +232,9 @@ export function App() {
             <div
               onMouseDown={handleSidebarResize}
               style={styles.sidebarResizeHandle}
-            />
+            >
+              <div style={styles.resizeLine} />
+            </div>
           </>
         )}
         {!fileExplorerCollapsed && (
@@ -243,7 +245,9 @@ export function App() {
             <div
               onMouseDown={handleExplorerResize}
               style={styles.explorerResizeHandle}
-            />
+            >
+              <div style={styles.resizeLine} />
+            </div>
           </>
         )}
         <div style={styles.main}>
@@ -316,22 +320,30 @@ const styles: Record<string, React.CSSProperties> = {
     minWidth: 0,
   },
   sidebarResizeHandle: {
-    width: 2,
-    minWidth: 2,
+    width: 8,
+    minWidth: 8,
     cursor: "col-resize",
     background: "transparent",
     flexShrink: 0,
     zIndex: 10,
-    borderLeft: "1px solid #2a2a2a",
-    boxSizing: "border-box" as const,
+    display: "flex",
+    alignItems: "stretch",
+    justifyContent: "center",
   },
   explorerResizeHandle: {
-    width: 2,
-    minWidth: 2,
+    width: 8,
+    minWidth: 8,
     cursor: "col-resize",
     background: "transparent",
     flexShrink: 0,
     zIndex: 10,
-    boxSizing: "border-box" as const,
+    display: "flex",
+    alignItems: "stretch",
+    justifyContent: "center",
+  },
+  resizeLine: {
+    width: 1,
+    background: "#2a2a2a",
+    pointerEvents: "none" as const,
   },
 };

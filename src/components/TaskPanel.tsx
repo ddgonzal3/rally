@@ -9,12 +9,12 @@ import { ChevronIcon } from "./FileIcons";
 interface TaskPanelProps {
   rootPath: string;
   workspaceId: string;
-  expanded: boolean;
-  onToggle: () => void;
 }
 
-export function TaskPanel({ rootPath, workspaceId, expanded, onToggle }: TaskPanelProps) {
+export function TaskPanel({ rootPath, workspaceId }: TaskPanelProps) {
   const [tasks, setTasks] = useState<TaskEntry[]>([]);
+  const [commandsExpanded, setCommandsExpanded] = useState(true);
+  const [scriptsExpanded, setScriptsExpanded] = useState(true);
   const [viewingTask, setViewingTask] = useState<string | null>(null);
   const [popupPos, setPopupPos] = useState({ x: 0, y: 0 });
   const { taskRuns, runTask, stopTask, openClaudeCommand, openFile, startShipSession } = useWorkspaceStore();
@@ -23,6 +23,9 @@ export function TaskPanel({ rootPath, workspaceId, expanded, onToggle }: TaskPan
     api.listTasks(rootPath).then(setTasks).catch(() => setTasks([]));
     api.syncClaudeCommands(rootPath).catch(() => {});
   }, [rootPath]);
+
+  const commands = tasks.filter((t) => t.command.startsWith("claude:"));
+  const scripts = tasks.filter((t) => !t.command.startsWith("claude:"));
 
   if (tasks.length === 0) return null;
 
@@ -42,66 +45,79 @@ export function TaskPanel({ rootPath, workspaceId, expanded, onToggle }: TaskPan
     }
   }
 
+  function renderTaskRow(task: TaskEntry) {
+    const key = `${rootPath}:${task.name}`;
+    const run = taskRuns[key];
+    const isRunning = run?.status === "running";
+    const status = run?.status ?? null;
+    const isClaudeCommand = task.command.startsWith("claude:");
+
+    return (
+      <div
+        key={task.name}
+        className="file-node"
+        style={styles.row}
+        onClick={(e) => handleRowClick(e, key)}
+      >
+        {isClaudeCommand ? <CommandIcon /> : <ScriptIcon />}
+        <span
+          style={{ ...styles.label, cursor: "pointer" }}
+          onClick={(e) => handleLabelClick(e, task)}
+          title={task.file_path ?? task.command}
+        >
+          {task.label}
+        </span>
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            if (isClaudeCommand) {
+              const slashCommand = task.command.replace("claude:", "");
+              if (slashCommand === "/ship") {
+                startShipSession(rootPath);
+              } else {
+                openClaudeCommand(workspaceId, rootPath, slashCommand, task.label);
+              }
+            } else if (isRunning) {
+              stopTask(rootPath, task.name);
+            } else {
+              runTask(rootPath, task.name, task.command, task.cwd);
+            }
+          }}
+          style={styles.actionBtn}
+        >
+          {status === "running" ? (
+            <StopIcon />
+          ) : status === "success" ? (
+            <SuccessIcon />
+          ) : status === "error" ? (
+            <ErrorIcon />
+          ) : (
+            <PlayIcon />
+          )}
+        </button>
+      </div>
+    );
+  }
+
   return (
     <>
-      <button onClick={onToggle} style={styles.sectionToggle}>
-        <ChevronIcon open={expanded} />
-        <span>Commands</span>
-      </button>
-      {expanded && (
+      {commands.length > 0 && (
         <>
-          {tasks.map((task) => {
-            const key = `${rootPath}:${task.name}`;
-            const run = taskRuns[key];
-            const isRunning = run?.status === "running";
-            const status = run?.status ?? null;
+          <button onClick={() => setCommandsExpanded(!commandsExpanded)} style={styles.sectionToggle}>
+            <ChevronIcon open={commandsExpanded} />
+            <span>Commands</span>
+          </button>
+          {commandsExpanded && commands.map(renderTaskRow)}
+        </>
+      )}
 
-            return (
-              <div
-                key={task.name}
-                className="file-node"
-                style={styles.row}
-                onClick={(e) => handleRowClick(e, key)}
-              >
-                <CommandIcon />
-                <span
-                  style={{ ...styles.label, cursor: "pointer" }}
-                  onClick={(e) => handleLabelClick(e, task)}
-                  title={task.file_path ?? task.command}
-                >
-                  {task.label}
-                </span>
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    if (task.builtin && task.command.startsWith("claude:")) {
-                      const slashCommand = task.command.replace("claude:", "");
-                      if (slashCommand === "/ship") {
-                        startShipSession(rootPath);
-                      } else {
-                        openClaudeCommand(workspaceId, rootPath, slashCommand, task.label);
-                      }
-                    } else if (isRunning) {
-                      stopTask(rootPath, task.name);
-                    } else {
-                      runTask(rootPath, task.name, task.command, task.cwd);
-                    }
-                  }}
-                  style={styles.actionBtn}
-                >
-                  {status === "running" ? (
-                    <StopIcon />
-                  ) : status === "success" ? (
-                    <SuccessIcon />
-                  ) : status === "error" ? (
-                    <ErrorIcon />
-                  ) : (
-                    <PlayIcon />
-                  )}
-                </button>
-              </div>
-            );
-          })}
+      {scripts.length > 0 && (
+        <>
+          <button onClick={() => setScriptsExpanded(!scriptsExpanded)} style={styles.sectionToggle}>
+            <ChevronIcon open={scriptsExpanded} />
+            <span>Scripts</span>
+          </button>
+          {scriptsExpanded && scripts.map(renderTaskRow)}
         </>
       )}
 
@@ -125,6 +141,16 @@ function CommandIcon() {
     <svg width="14" height="14" viewBox="0 0 16 16" fill="none" style={{ flexShrink: 0, opacity: 0.7 }}>
       <path d="M4 4l3 3-3 3" stroke="#8a8a6a" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
       <path d="M9 11h4" stroke="#8a8a6a" strokeWidth="1.3" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function ScriptIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" style={{ flexShrink: 0, opacity: 0.7 }}>
+      <rect x="2" y="2" width="12" height="12" rx="2" stroke="#8a8a6a" strokeWidth="1.2" />
+      <path d="M5 6l2 2-2 2" stroke="#8a8a6a" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M9 10h3" stroke="#8a8a6a" strokeWidth="1.2" strokeLinecap="round" />
     </svg>
   );
 }
@@ -339,9 +365,9 @@ const styles: Record<string, React.CSSProperties> = {
     border: "none",
     margin: 0,
     cursor: "pointer",
-    color: "#666",
-    fontSize: 11,
-    fontWeight: 600,
+    color: "#fff",
+    fontSize: 12,
+    fontWeight: 700,
     letterSpacing: "0.03em",
   },
   row: {

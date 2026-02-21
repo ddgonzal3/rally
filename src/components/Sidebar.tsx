@@ -9,7 +9,6 @@ export function Sidebar() {
     useWorkspaceStore();
   const [showAddModal, setShowAddModal] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
-  const [hoveredId, setHoveredId] = useState<string | null>(null);
 
   return (
     <>
@@ -21,19 +20,16 @@ export function Sidebar() {
         <div style={styles.list}>
           {workspaces.map((ws) => {
             const isActive = ws.id === activeWorkspaceId;
-            const isHovered = ws.id === hoveredId;
 
             return (
               <div
                 key={ws.id}
+                className={`sidebar-item${isActive ? " sidebar-item-active" : ""}`}
                 style={{
                   ...styles.item,
                   ...(isActive ? styles.itemActive : {}),
-                  ...(!isActive && isHovered ? styles.itemHover : {}),
                 }}
                 onClick={() => setActive(ws.id)}
-                onMouseEnter={() => setHoveredId(ws.id)}
-                onMouseLeave={() => setHoveredId(null)}
                 onContextMenu={(e) => {
                   e.preventDefault();
                   showContextMenu([
@@ -50,10 +46,10 @@ export function Sidebar() {
         </div>
 
         <div style={styles.bottomBtns}>
-          <button style={styles.addBtn} onClick={() => setShowAddModal(true)}>
+          <button className="sidebar-btn" style={styles.addBtn} onClick={() => setShowAddModal(true)}>
             + Add Workspace
           </button>
-          <button style={styles.settingsBtn} onClick={() => setShowSettings(true)}>
+          <button className="sidebar-btn" style={styles.settingsBtn} onClick={() => setShowSettings(true)}>
             Settings
           </button>
         </div>
@@ -90,7 +86,7 @@ const styles: Record<string, React.CSSProperties> = {
     fontWeight: 700,
     textTransform: "uppercase" as const,
     letterSpacing: "0.05em",
-    color: "#999",
+    color: "#fff",
   },
   list: {
     flex: 1,
@@ -102,16 +98,12 @@ const styles: Record<string, React.CSSProperties> = {
     padding: "10px 20px 10px 16px",
     background: "none",
     color: "#ccc",
-    cursor: "pointer",
     textAlign: "left" as const,
     fontSize: 13,
   },
   itemActive: {
     background: "#2a2a2a",
     color: "#fff",
-  },
-  itemHover: {
-    background: "#222",
   },
   itemName: {
     fontWeight: 600,
@@ -126,7 +118,6 @@ const styles: Record<string, React.CSSProperties> = {
     border: "none",
     borderBottom: "1px solid #2a2a2a",
     color: "#ccc",
-    cursor: "pointer",
     fontSize: 13,
     textAlign: "left" as const,
     fontWeight: 600,
@@ -137,7 +128,6 @@ const styles: Record<string, React.CSSProperties> = {
     background: "none",
     border: "none",
     color: "#888",
-    cursor: "pointer",
     fontSize: 12,
     textAlign: "left" as const,
     fontWeight: 500,

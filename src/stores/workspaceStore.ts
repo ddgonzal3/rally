@@ -179,11 +179,13 @@ function restoreLayouts(layouts: Record<string, WorkspaceLayout>): Record<string
     for (const [gId, group] of Object.entries(layout.groups)) {
       groups[gId] = {
         ...group,
-        panes: group.panes.map((p) =>
-          p.type === "claude"
-            ? { ...p, type: "claude-launcher" as const, command: undefined }
-            : p
-        ),
+        panes: group.panes.map((p) => {
+          // Strip stale ptyIds — PTYs don't survive app restart
+          const { ptyId: _, ...rest } = p;
+          return rest.type === "claude"
+            ? { ...rest, type: "claude-launcher" as const, command: undefined }
+            : rest;
+        }),
       };
     }
     restored[wsId] = { root: layout.root, groups };
@@ -866,6 +868,12 @@ export const useWorkspaceStore = create<WorkspaceState>()(
     const group = layout.groups[groupId];
     if (!group) return;
 
+    // Kill PTY if the pane has one (store-managed lifecycle)
+    const closingPane = group.panes.find((p) => p.id === paneId);
+    if (closingPane?.ptyId) {
+      api.killPty(closingPane.ptyId).catch(() => {});
+    }
+
     if (group.panes.length <= 1) {
       // Last pane in group — collapse it if there are sibling panels,
       // otherwise keep empty state (can't remove the only panel)
@@ -917,6 +925,15 @@ export const useWorkspaceStore = create<WorkspaceState>()(
 
   closeGroup: (workspaceId, groupId) => {
     const layout = get().getOrCreateLayout(workspaceId);
+
+    // Kill all PTYs in this group (store-managed lifecycle)
+    const group = layout.groups[groupId];
+    if (group) {
+      for (const pane of group.panes) {
+        if (pane.ptyId) api.killPty(pane.ptyId).catch(() => {});
+      }
+    }
+
     const parentInfo = findParent(layout.root, groupId);
 
     if (!parentInfo) {

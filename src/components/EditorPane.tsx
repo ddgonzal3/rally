@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import Editor, { type OnMount } from "@monaco-editor/react";
 import { invoke } from "@tauri-apps/api/core";
+import { showContextMenu } from "../lib/contextMenu";
 
 interface EditorPaneProps {
   filePath: string;
@@ -155,6 +156,7 @@ function TextEditor({ filePath }: { filePath: string }) {
   const [saveMsg, setSaveMsg] = useState("");
   const [error, setError] = useState<string | null>(null);
   const contentRef = useRef("");
+  const editorRef = useRef<any>(null);
   const language = getLanguageFromPath(filePath);
 
   useEffect(() => {
@@ -185,6 +187,7 @@ function TextEditor({ filePath }: { filePath: string }) {
 
   const handleMount: OnMount = useCallback(
     (editor, monaco) => {
+      editorRef.current = editor;
       editor.addCommand(
         monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS,
         () => handleSave()
@@ -192,6 +195,39 @@ function TextEditor({ filePath }: { filePath: string }) {
     },
     [handleSave]
   );
+
+  const handleContextMenu = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    const editor = editorRef.current;
+    if (!editor) return;
+
+    showContextMenu(
+      [
+        {
+          label: "Cut",
+          accelerator: "CmdOrCtrl+X",
+          action: () => editor.trigger("contextMenu", "editor.action.clipboardCutAction"),
+        },
+        {
+          label: "Copy",
+          accelerator: "CmdOrCtrl+C",
+          action: () => editor.trigger("contextMenu", "editor.action.clipboardCopyAction"),
+        },
+        {
+          label: "Paste",
+          accelerator: "CmdOrCtrl+V",
+          action: () => editor.trigger("contextMenu", "editor.action.clipboardPasteAction"),
+        },
+        "separator",
+        {
+          label: "Select All",
+          accelerator: "CmdOrCtrl+A",
+          action: () => editor.trigger("contextMenu", "editor.action.selectAll"),
+        },
+      ],
+      { x: e.clientX, y: e.clientY },
+    );
+  }, []);
 
   if (error) {
     return (
@@ -209,7 +245,7 @@ function TextEditor({ filePath }: { filePath: string }) {
   }
 
   return (
-    <div style={styles.container}>
+    <div style={styles.container} onContextMenu={handleContextMenu}>
       {(dirty || saveMsg) && (
         <div style={styles.statusBar}>
           {dirty && <span style={styles.dirtyDot} />}
@@ -230,6 +266,7 @@ function TextEditor({ filePath }: { filePath: string }) {
         onMount={handleMount}
         loading={<div style={styles.center} />}
         options={{
+          contextmenu: false,
           minimap: { enabled: false },
           fontSize: 13,
           fontFamily: "'SF Mono', 'Fira Code', 'Cascadia Code', monospace",

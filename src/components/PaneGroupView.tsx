@@ -1,4 +1,4 @@
-import React, { useCallback, useRef, useState, useEffect } from "react";
+import React, { useCallback, useRef } from "react";
 import { Terminal } from "./Terminal";
 import { ClaudeLauncher } from "./ClaudeLauncher";
 import { ClaudeTerminalWrapper } from "./ClaudeTerminalWrapper";
@@ -8,6 +8,7 @@ import { DropZoneTarget, type DropPosition } from "./DropZoneOverlay";
 import { PaneTabIcon } from "./FileIcons";
 import { useWorkspaceStore } from "../stores/workspaceStore";
 import { getDragState, startDrag, endDrag } from "../lib/dragContext";
+import { showContextMenu } from "../lib/contextMenu";
 import type { PaneGroup, Pane } from "../lib/types";
 
 const DRAG_THRESHOLD = 5; // px before drag starts
@@ -38,77 +39,6 @@ type PendingAction = {
   anchorRect: DOMRect;
 };
 
-function PathPickerPopover({
-  paths,
-  anchorRect,
-  onPick,
-  onClose,
-}: {
-  paths: string[];
-  anchorRect: DOMRect;
-  onPick: (path: string) => void;
-  onClose: () => void;
-}) {
-  const ref = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    function handleClick(e: MouseEvent) {
-      if (ref.current && !ref.current.contains(e.target as Node)) {
-        onClose();
-      }
-    }
-    document.addEventListener("mousedown", handleClick);
-    return () => document.removeEventListener("mousedown", handleClick);
-  }, [onClose]);
-
-  return (
-    <div
-      ref={ref}
-      style={{
-        position: "fixed",
-        top: anchorRect.bottom + 4,
-        left: anchorRect.left,
-        background: "#2a2a2a",
-        border: "1px solid #444",
-        borderRadius: 6,
-        padding: "4px 0",
-        zIndex: 1000,
-        minWidth: 180,
-        boxShadow: "0 4px 12px rgba(0,0,0,0.4)",
-      }}
-    >
-      <div style={{ padding: "4px 12px", fontSize: 10, color: "#888", fontWeight: 500 }}>
-        Select working directory
-      </div>
-      {paths.map((p) => {
-        const name = p.split("/").pop() || p;
-        return (
-          <button
-            key={p}
-            onClick={() => { onPick(p); onClose(); }}
-            title={p}
-            style={{
-              display: "block",
-              width: "100%",
-              padding: "5px 12px",
-              fontSize: 12,
-              color: "#ccc",
-              background: "none",
-              border: "none",
-              cursor: "pointer",
-              textAlign: "left",
-            }}
-            onMouseEnter={(e) => { (e.target as HTMLElement).style.background = "#333"; }}
-            onMouseLeave={(e) => { (e.target as HTMLElement).style.background = "none"; }}
-          >
-            {name}
-          </button>
-        );
-      })}
-    </div>
-  );
-}
-
 export function PaneGroupView({
   group,
   workspaceId,
@@ -134,8 +64,6 @@ export function PaneGroupView({
 
   const activePaneId = group.activePaneId;
   const dragStartRef = useRef<{ x: number; y: number; paneId: string } | null>(null);
-  const [pendingAction, setPendingAction] = useState<PendingAction | null>(null);
-
   function executeAction(actionType: PendingAction["type"], cwd: string) {
     if (actionType === "terminal") {
       const pane: Pane = {
@@ -161,13 +89,10 @@ export function PaneGroupView({
     }
   }
 
-  function handleAction(actionType: PendingAction["type"], e: React.MouseEvent) {
-    if (!isMultiRoot) {
-      executeAction(actionType, workspacePath);
-      return;
-    }
-    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-    setPendingAction({ type: actionType, anchorRect: rect });
+  function handleAction(actionType: PendingAction["type"], _e: React.MouseEvent) {
+    // Always use the active pane's cwd — never show a picker popup
+    const activePane = group.panes.find((p) => p.id === activePaneId);
+    executeAction(actionType, activePane?.cwd || workspacePath);
   }
 
   function handleLaunchClaude(paneId: string) {
@@ -175,6 +100,13 @@ export function PaneGroupView({
       type: "claude",
       title: "Claude Code",
       command: "claude --dangerously-skip-permissions",
+    });
+  }
+
+  function handleLaunchTerminal(paneId: string) {
+    transformPane(workspaceId, group.id, paneId, {
+      type: "terminal",
+      title: "Terminal",
     });
   }
 
@@ -396,16 +328,6 @@ export function PaneGroupView({
         </div>
       </div>
 
-      {/* Path picker popover */}
-      {pendingAction && (
-        <PathPickerPopover
-          paths={paths}
-          anchorRect={pendingAction.anchorRect}
-          onPick={(cwd) => executeAction(pendingAction.type, cwd)}
-          onClose={() => setPendingAction(null)}
-        />
-      )}
-
       {/* Pane content — all mounted, only active visible */}
       <div style={styles.content}>
         {group.panes.length === 0 && (
@@ -445,11 +367,14 @@ export function PaneGroupView({
                 <ClaudeLauncher
                   workspacePath={paneCwd}
                   onLaunch={() => handleLaunchClaude(pane.id)}
+                  onLaunchTerminal={() => handleLaunchTerminal(pane.id)}
                 />
               ) : pane.type === "claude" ? (
-                <ClaudeTerminalWrapper cwd={paneCwd} command={pane.command} initialInput={pane.initialInput} ptyId={pane.ptyId} />
+                <ClaudeTerminalWrapper cwd={paneCwd} command={pane.command} initialInput={pane.initialInput} ptyId={pane.ptyId}
+                  onPtySpawned={(id) => transformPane(workspaceId, group.id, pane.id, { ptyId: id })} />
               ) : (
-                <Terminal cwd={paneCwd} command={pane.command} initialInput={pane.initialInput} ptyId={pane.ptyId} />
+                <Terminal cwd={paneCwd} command={pane.command} initialInput={pane.initialInput} ptyId={pane.ptyId}
+                  onPtySpawned={(id) => transformPane(workspaceId, group.id, pane.id, { ptyId: id })} />
               )}
             </div>
           );

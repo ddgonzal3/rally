@@ -6,9 +6,10 @@ interface ClaudeTerminalWrapperProps {
   command?: string;
   initialInput?: string;
   ptyId?: string;
+  onPtySpawned?: (ptyId: string) => void;
 }
 
-export function ClaudeTerminalWrapper({ cwd, command, initialInput, ptyId }: ClaudeTerminalWrapperProps) {
+export function ClaudeTerminalWrapper({ cwd, command, initialInput, ptyId, onPtySpawned }: ClaudeTerminalWrapperProps) {
   const [ready, setReady] = useState(!!ptyId);
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -29,7 +30,7 @@ export function ClaudeTerminalWrapper({ cwd, command, initialInput, ptyId }: Cla
 
   return (
     <div ref={containerRef} style={styles.container}>
-      <Terminal cwd={cwd} command={cleanCommand} initialInput={initialInput} ptyId={ptyId} />
+      <Terminal cwd={cwd} command={cleanCommand} initialInput={initialInput} ptyId={ptyId} onPtySpawned={onPtySpawned} />
       {!ready && (
         <div style={styles.overlay}>
           <div style={styles.content}>
@@ -79,7 +80,7 @@ const styles: Record<string, React.CSSProperties> = {
     width: 8,
     height: 8,
     borderRadius: "50%",
-    background: "#e8b930",
+    background: "#888",
     animation: "claude-dot 1.4s ease-in-out infinite",
   },
   text: {
