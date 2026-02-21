@@ -70,7 +70,7 @@ export function DropZoneTarget({
 
   // Expand detection bounds slightly so overlay activates before cursor
   // fully crosses the resize handle between panels (~6px gap).
-  const HIT_EXPAND = 8;
+  const HIT_EXPAND = 20;
 
   if (drag.isDragging) {
     const isFileDrag = drag.type === "file";
@@ -89,7 +89,11 @@ export function DropZoneTarget({
           my >= rect.top - HIT_EXPAND &&
           my <= rect.bottom + HIT_EXPAND
         ) {
-          const pos = getDropPosition(rect, mx, my);
+          // Clamp mouse position to rect bounds so getDropPosition
+          // gets valid 0..1 relative coords even in the HIT_EXPAND zone
+          const clampedX = Math.max(rect.left, Math.min(mx, rect.right));
+          const clampedY = Math.max(rect.top, Math.min(my, rect.bottom));
+          const pos = getDropPosition(rect, clampedX, clampedY);
           // "center" on same group is a no-op (tab is already here)
           if (isSameGroup && pos === "center") {
             // keep visible=false, no overlay
@@ -112,13 +116,15 @@ export function DropZoneTarget({
 
       const rect = el.getBoundingClientRect();
       if (
-        d.mouseX < rect.left ||
-        d.mouseX > rect.right ||
-        d.mouseY < rect.top ||
-        d.mouseY > rect.bottom
+        d.mouseX < rect.left - HIT_EXPAND ||
+        d.mouseX > rect.right + HIT_EXPAND ||
+        d.mouseY < rect.top - HIT_EXPAND ||
+        d.mouseY > rect.bottom + HIT_EXPAND
       ) return;
 
-      const pos = getDropPosition(rect, d.mouseX, d.mouseY);
+      const clampedX = Math.max(rect.left, Math.min(d.mouseX, rect.right));
+      const clampedY = Math.max(rect.top, Math.min(d.mouseY, rect.bottom));
+      const pos = getDropPosition(rect, clampedX, clampedY);
       if (!pos) return;
 
       if (d.type === "file" && d.filePaths.length > 0) {
@@ -170,8 +176,8 @@ const styles: Record<string, React.CSSProperties> = {
   },
   preview: {
     position: "absolute",
-    background: "rgba(255, 255, 255, 0.05)",
-    border: "1px solid rgba(255, 255, 255, 0.12)",
+    background: "rgba(100, 160, 255, 0.12)",
+    border: "1px solid rgba(100, 160, 255, 0.25)",
     borderRadius: 4,
     transition: "all 0.1s ease",
     pointerEvents: "none",

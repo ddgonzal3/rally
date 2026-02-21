@@ -149,6 +149,22 @@ export function PaneGroupView({
         document.body.appendChild(indicator);
       }
 
+      // If reordering but cursor has left the tab bar vertically,
+      // switch to inter-group drag (VS Code behavior)
+      if (reordering && tabsContainer) {
+        const barRect = tabsContainer.getBoundingClientRect();
+        const TAB_ESCAPE_MARGIN = 12; // px beyond tab bar to trigger switch
+        if (ev.clientY < barRect.top - TAB_ESCAPE_MARGIN || ev.clientY > barRect.bottom + TAB_ESCAPE_MARGIN) {
+          reordering = false;
+          indicator.remove();
+          startDrag(group.id, paneId, ev.clientX, ev.clientY);
+          dragStartRef.current = null;
+          document.removeEventListener("mousemove", onMouseMove);
+          document.removeEventListener("mouseup", onMouseUp);
+          return;
+        }
+      }
+
       if (!reordering || !tabsContainer) return;
 
       const tabEls = Array.from(tabsContainer.children) as HTMLElement[];
