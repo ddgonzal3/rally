@@ -1087,11 +1087,11 @@ export function FileExplorer({ onCollapse }: FileExplorerProps) {
           </svg>
         </button>
       </div>
-      <ScrollArea style={{ flex: 1, padding: "0 4px" }}>
+      <ScrollArea style={{ flex: 1, padding: "4px 3px" }}>
         {ws.paths.map((p, index) => (
           <div
             key={p}
-            style={{ ...styles.card, marginTop: index === 0 ? 2 : 4 }}
+            style={{ ...styles.card, marginTop: index === 0 ? 0 : 6 }}
           >
             <RootSection
               rootPath={p}
@@ -1127,9 +1127,8 @@ const styles: Record<string, React.CSSProperties> = {
   card: {
     background: "#1c1c1c",
     borderRadius: 6,
-    margin: "2px -2px",
-    overflow: "hidden",
     border: "1px solid #2a2a2a",
+    overflow: "clip" as const,
     padding: 0,
   },
   explorerHeader: {
@@ -1174,9 +1173,15 @@ const styles: Record<string, React.CSSProperties> = {
     display: "flex",
     alignItems: "center",
     gap: 4,
-    padding: "4px 4px",
+    padding: "4px 6px",
     cursor: "pointer",
     minHeight: 32,
+    position: "sticky" as const,
+    top: 0,
+    zIndex: 5,
+    background: "rgba(35, 35, 35, 0.82)",
+    WebkitBackdropFilter: "blur(12px) saturate(1.2)",
+    backdropFilter: "blur(12px) saturate(1.2)",
   },
   rootExpandBtn: {
     display: "flex",
