@@ -1,8 +1,11 @@
 import { invoke } from "@tauri-apps/api/core";
-import type { Workspace, GitStatus, PushResult, PrStatus, ChangesSummary, TaskEntry, ShipSignal } from "./types";
+import type { Workspace, GitStatus, PushResult, PrStatus, ChangesSummary, ScriptEntry, ShipSignal } from "./types";
 
 export const api = {
   listWorkspaces: () => invoke<Workspace[]>("list_workspaces"),
+
+  updateGitWatchRoots: (roots: string[]) =>
+    invoke<void>("update_git_watch_roots", { roots }),
 
   createWorkspace: (params: {
     name: string;
@@ -53,17 +56,20 @@ export const api = {
   gitUnstageFile: (workspacePath: string, filePath: string) =>
     invoke<void>("git_unstage_file", { workspacePath, filePath }),
 
+  gitDiscardFile: (workspacePath: string, filePath: string, isUntracked: boolean) =>
+    invoke<void>("git_discard_file", { workspacePath, filePath, isUntracked }),
+
   detectGitInfo: (path: string) =>
     invoke<{ repo_url: string; branch: string; name: string }>("detect_git_info", { path }),
 
   revealInFinder: (path: string) =>
     invoke<void>("reveal_in_finder", { path }),
 
-  listTasks: (rootPath: string) =>
-    invoke<TaskEntry[]>("list_tasks", { rootPath }),
+  trashFile: (path: string) =>
+    invoke<void>("trash_file", { path }),
 
-  syncClaudeCommands: (rootPath: string) =>
-    invoke<number>("sync_claude_commands", { rootPath }),
+  listScripts: (rootPath: string) =>
+    invoke<ScriptEntry[]>("list_scripts", { rootPath }),
 
   readFileContent: (path: string) =>
     invoke<string>("read_file_content", { path }),

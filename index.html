@@ -19,15 +19,17 @@
       }
       .pulse-dot { animation: pulse-glow 1.5s ease-in-out infinite; }
       .file-node:hover { background: #2d2d2d !important; }
-      .file-node-active { background: #2a2a2a !important; color: #fff !important; }
-      .file-node-active::before { content: ''; position: absolute; left: 0; top: 2px; bottom: 2px; width: 2px; background: #5b9e6f; border-radius: 1px; }
+      .file-node-active { background: #2a2a2a !important; color: #ddd !important; }
+      .tab-close { opacity: 0; }
+      .tab-close-active { opacity: 1; color: #aaa !important; }
+      .pane-tab:hover .tab-close { opacity: 1; }
       .tab-close:hover, .tab-action:hover { background: rgba(255, 255, 255, 0.12) !important; color: #ccc !important; }
       .pane-tab:not(.pane-tab-active):hover { background: #222 !important; }
       .no-select, .no-select * { -webkit-user-select: none; user-select: none; }
       .no-select ::selection { background: transparent; }
       .launch-btn { cursor: pointer !important; }
       .launch-btn:hover span { color: #ddd !important; }
-      .launch-btn:hover svg path { fill: #888 !important; }
+      .launch-btn:hover svg path { fill: #aaa !important; }
       .sidebar-item { cursor: pointer; }
       .sidebar-item:not(.sidebar-item-active):hover { background: #222 !important; }
       .sidebar-btn:hover { background: #222 !important; }
@@ -37,8 +39,13 @@
       .git-status-btn:hover { opacity: 1 !important; }
       .change-item { cursor: pointer; }
       .change-item:not(.change-item-selected):hover { background: #2d2d2d !important; }
-      .change-item .stage-btn { opacity: 0; transition: opacity 0.1s; }
-      .change-item:hover .stage-btn { opacity: 1; }
+      .change-item .stage-btn { opacity: 0; pointer-events: none; transition: opacity 0.1s, color 0.12s; }
+      .change-item:hover .stage-btn,
+      .change-item-selected .stage-btn { opacity: 1; pointer-events: auto; }
+      .change-item .stage-btn:hover { color: #ddd !important; }
+      .changes-section-btn:hover { color: #fff !important; }
+      .hide-native-scrollbar::-webkit-scrollbar { display: none !important; }
+      .hide-native-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
       @keyframes claude-dot {
         0%, 80%, 100% { opacity: 0.15; transform: scale(0.8); }
         40% { opacity: 1; transform: scale(1.2); }

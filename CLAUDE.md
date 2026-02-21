@@ -102,7 +102,7 @@ Rust Backend (src-tauri/src/)
 | `src/components/Sidebar.tsx` | Workspace list + status badges + Add/Settings buttons |
 | `src/components/GitActions.tsx` | Git operation buttons with result display |
 | `src/components/FileExplorer.tsx` | Lazy-loading directory tree |
-| `src/components/TaskPanel.tsx` | RALLY.json tasks + built-in commands (Ship, Review PR) |
+| `src/components/TaskPanel.tsx` | Auto-discovered scripts + built-in commands (Ship, Review PR) |
 | `src/components/AddWorkspaceModal.tsx` | New workspace form with folder picker + git auto-detect |
 | `src/components/SettingsPanel.tsx` | Monaco editor for CLAUDE.md/skills files |
 | `src/stores/workspaceStore.ts` | Zustand store: workspaces, git statuses, panes, all actions |
@@ -127,7 +127,7 @@ PTY events use the pattern `pty-{eventtype}-{ptyid}`. To add a new event:
 
 ## Built-in Commands (Ship, Review PR)
 
-Rally ships with built-in Claude commands (`/ship`, `/review-pr`) that appear in every workspace's task panel alongside RALLY.json tasks.
+Rally ships with built-in Claude commands (`/ship`, `/review-pr`) that appear in every workspace's task panel alongside auto-discovered scripts from the `scripts/` directory.
 
 ### File Layout
 
@@ -177,8 +177,8 @@ The `/ship` command (commit → push → PR → review → merge) communicates w
 | File | Role |
 |------|------|
 | `src-tauri/src/ship_ops.rs` | Signal file ops, command install + symlinks, post-merge sync |
-| `src-tauri/src/commands.rs` | `list_tasks()` merges RALLY.json tasks + built-in commands |
-| `src/components/TaskPanel.tsx` | Renders task list, routes built-in clicks to Claude panes |
+| `src-tauri/src/commands.rs` | `list_scripts()` discovers scripts from `scripts/` dir + built-in commands |
+| `src/components/TaskPanel.tsx` | Renders script + command list, routes built-in clicks to Claude panes |
 | `src/stores/workspaceStore.ts` | `pollShipSignals()`, `handleAutoMerge()`, `openClaudeCommand()` |
 
 ## Known Pitfalls

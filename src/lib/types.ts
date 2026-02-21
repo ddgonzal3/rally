@@ -96,19 +96,18 @@ export interface ShipStatus {
   pr_number?: number;
 }
 
-// --- Task Runner Types ---
+// --- Script Runner Types ---
 
-export interface TaskEntry {
+export interface ScriptEntry {
   name: string;
   command: string;
   label: string;
-  cwd?: string;
   builtin?: boolean;
   file_path?: string;
 }
 
-export interface TaskRun {
-  taskName: string;
+export interface ScriptRun {
+  scriptName: string;
   ptyId: string;
   status: "running" | "success" | "error" | "stopped";
   exitCode: number | null;

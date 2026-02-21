@@ -1,10 +1,10 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { Terminal as XTerminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
-import { useWorkspaceStore, taskOutputBuffers } from "../stores/workspaceStore";
+import { useWorkspaceStore, scriptOutputBuffers } from "../stores/workspaceStore";
 import { api } from "../lib/tauri";
-import type { TaskEntry, TaskRun } from "../lib/types";
-import { CLAUDE_PATH } from "./FileIcons";
+import type { ScriptEntry, ScriptRun } from "../lib/types";
+import { CLAUDE_PATH, TerminalPromptIcon } from "./FileIcons";
 
 interface TaskPanelProps {
   rootPath: string;
@@ -12,88 +12,85 @@ interface TaskPanelProps {
 }
 
 export function TaskPanel({ rootPath, workspaceId }: TaskPanelProps) {
-  const [tasks, setTasks] = useState<TaskEntry[]>([]);
-  const [viewingTask, setViewingTask] = useState<string | null>(null);
+  const [entries, setEntries] = useState<ScriptEntry[]>([]);
+  const [viewingScript, setViewingScript] = useState<string | null>(null);
   const [popupPos, setPopupPos] = useState({ x: 0, y: 0 });
-  // Individual selectors — avoids re-rendering on unrelated store changes
-  const taskRuns = useWorkspaceStore((s) => s.taskRuns);
-  const runTask = useWorkspaceStore((s) => s.runTask);
-  const stopTask = useWorkspaceStore((s) => s.stopTask);
+  const scriptRuns = useWorkspaceStore((s) => s.scriptRuns);
+  const runScript = useWorkspaceStore((s) => s.runScript);
+  const stopScript = useWorkspaceStore((s) => s.stopScript);
   const openClaudeCommand = useWorkspaceStore((s) => s.openClaudeCommand);
   const openFile = useWorkspaceStore((s) => s.openFile);
   const startShipSession = useWorkspaceStore((s) => s.startShipSession);
 
   useEffect(() => {
-    api.listTasks(rootPath).then(setTasks).catch(() => setTasks([]));
-    api.syncClaudeCommands(rootPath).catch(() => {});
+    api.listScripts(rootPath).then(setEntries).catch(() => setEntries([]));
   }, [rootPath]);
 
-  const commands = tasks.filter((t) => t.command.startsWith("claude:"));
-  const scripts = tasks.filter((t) => !t.command.startsWith("claude:"));
+  const commands = entries.filter((e) => e.command.startsWith("claude:"));
+  const scripts = entries.filter((e) => !e.command.startsWith("claude:"));
 
-  if (tasks.length === 0) return null;
+  if (entries.length === 0) return null;
 
-  function openTaskDefinition(task: TaskEntry) {
-    if (!workspaceId) return;
-    if (task.file_path) {
-      openFile(workspaceId, task.file_path);
-    } else {
-      openFile(workspaceId, `${rootPath}/RALLY.json`);
-    }
+  function openScriptFile(entry: ScriptEntry) {
+    if (!workspaceId || !entry.file_path) return;
+    openFile(workspaceId, entry.file_path);
   }
 
-  function showTaskOutput(e: React.MouseEvent, key: string) {
-    if (!taskRuns[key]) return;
+  function showScriptOutput(e: React.MouseEvent, key: string) {
+    if (!scriptRuns[key]) return;
     setPopupPos({ x: e.clientX, y: e.clientY });
-    setViewingTask(key);
+    setViewingScript(key);
   }
 
-  function renderTaskRow(task: TaskEntry) {
-    const key = `${rootPath}:${task.name}`;
-    const run = taskRuns[key];
+  function renderRow(entry: ScriptEntry) {
+    const key = `${rootPath}:${entry.name}`;
+    const run = scriptRuns[key];
     const isRunning = run?.status === "running";
     const status = run?.status ?? null;
-    const isClaudeCommand = task.command.startsWith("claude:");
+    const isClaudeCommand = entry.command.startsWith("claude:");
 
     return (
       <div
-        key={task.name}
+        key={entry.name}
         className="file-node"
         style={styles.row}
         onClick={(e) => {
-          // Keep output popup available via Cmd/Ctrl+Click without taking over normal selection.
-          if ((e.metaKey || e.ctrlKey) && taskRuns[key]) {
-            showTaskOutput(e, key);
+          if ((e.metaKey || e.ctrlKey) && scriptRuns[key]) {
+            showScriptOutput(e, key);
             return;
           }
-          openTaskDefinition(task);
+          if (isClaudeCommand) {
+            openScriptFile(entry);
+          } else {
+            openScriptFile(entry);
+          }
         }}
       >
-        {isClaudeCommand ? <CommandIcon /> : <ScriptIcon />}
+        {isClaudeCommand ? <CommandIcon /> : <TerminalPromptIcon size={14} color="#5b9e6f" />}
         <span
           style={{ ...styles.label, cursor: "pointer" }}
           onClick={(e) => {
             e.stopPropagation();
-            openTaskDefinition(task);
+            openScriptFile(entry);
           }}
-          title={task.file_path ?? task.command}
+          title={entry.file_path ?? entry.command}
         >
-          {isClaudeCommand ? task.label.replace(/^\//, "") : task.label}
+          {isClaudeCommand ? entry.label.replace(/^\//, "") : entry.label}
         </span>
         <button
           onClick={(e) => {
             e.stopPropagation();
             if (isClaudeCommand) {
-              const slashCommand = task.command.replace("claude:", "");
+              const slashCommand = entry.command.replace("claude:", "");
               if (slashCommand === "/ship") {
                 startShipSession(rootPath);
               } else {
-                openClaudeCommand(workspaceId, rootPath, slashCommand, task.label);
+                openClaudeCommand(workspaceId, rootPath, slashCommand, entry.label);
               }
             } else if (isRunning) {
-              stopTask(rootPath, task.name);
+              stopScript(rootPath, entry.name);
             } else {
-              runTask(rootPath, task.name, task.command, task.cwd);
+              runScript(rootPath, entry.name, entry.command);
             }
           }}
           style={styles.actionBtn}
@@ -114,22 +111,22 @@ export function TaskPanel({ rootPath, workspaceId }: TaskPanelProps) {
 
   return (
     <>
-      {tasks.length > 0 && (
+      {entries.length > 0 && (
         <>
           <div style={styles.divider} />
-          {commands.map(renderTaskRow)}
-          {scripts.map(renderTaskRow)}
+          {commands.map(renderRow)}
+          {scripts.map(renderRow)}
         </>
       )}
 
-      {viewingTask && taskRuns[viewingTask] && (
+      {viewingScript && scriptRuns[viewingScript] && (
         <FloatingTerminal
-          key={viewingTask}
-          run={taskRuns[viewingTask]}
-          bufferKey={viewingTask}
+          key={viewingScript}
+          run={scriptRuns[viewingScript]}
+          bufferKey={viewingScript}
           anchorX={popupPos.x}
           anchorY={popupPos.y}
-          onClose={() => setViewingTask(null)}
+          onClose={() => setViewingScript(null)}
         />
       )}
     </>
@@ -142,16 +139,6 @@ function CommandIcon() {
   return (
     <svg width="14" height="14" viewBox="-2 -1 28 26" style={{ flexShrink: 0 }}>
       <path d={CLAUDE_PATH} fill="#D97757" fillRule="nonzero" />
-    </svg>
-  );
-}
-
-function ScriptIcon() {
-  return (
-    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" style={{ flexShrink: 0 }}>
-      <rect x="2" y="2" width="12" height="12" rx="2" stroke="#5b9e6f" strokeWidth="1.2" />
-      <path d="M5 6l2 2-2 2" stroke="#5b9e6f" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" />
-      <path d="M9 10h3" stroke="#5b9e6f" strokeWidth="1.2" strokeLinecap="round" />
     </svg>
   );
 }
@@ -197,7 +184,7 @@ function FloatingTerminal({
   anchorY,
   onClose,
 }: {
-  run: TaskRun;
+  run: ScriptRun;
   bufferKey: string;
   anchorX: number;
   anchorY: number;
@@ -216,7 +203,6 @@ function FloatingTerminal({
         onClose();
       }
     }
-    // Delay to avoid the opening click immediately closing
     const timer = setTimeout(() => {
       document.addEventListener("mousedown", handleClick);
     }, 50);
@@ -249,8 +235,8 @@ function FloatingTerminal({
     term.open(containerRef.current);
     termRef.current = term;
 
-    // Replay buffered output from module-level buffer (not Zustand state)
-    const buf = taskOutputBuffers.get(bufferKey) ?? [];
+    // Replay buffered output from module-level buffer
+    const buf = scriptOutputBuffers.get(bufferKey) ?? [];
     for (const chunk of buf) {
       term.write(chunk);
     }
@@ -266,14 +252,14 @@ function FloatingTerminal({
     return () => term.dispose();
   }, []);
 
-  // Stream new output if still running — reads from module-level buffer
+  // Stream new output if still running
   useEffect(() => {
     if (!termRef.current || run.status !== "running") return;
 
-    const buf = taskOutputBuffers.get(bufferKey);
+    const buf = scriptOutputBuffers.get(bufferKey);
     let lastLen = buf?.length ?? 0;
     const interval = setInterval(() => {
-      const currentBuf = taskOutputBuffers.get(bufferKey);
+      const currentBuf = scriptOutputBuffers.get(bufferKey);
       if (currentBuf && currentBuf.length > lastLen) {
         for (let i = lastLen; i < currentBuf.length; i++) {
           termRef.current?.write(currentBuf[i]);
@@ -323,7 +309,6 @@ function FloatingTerminal({
         overflow: "hidden",
       }}
     >
-      {/* Titlebar — X on left */}
       <div
         onMouseDown={handleDragStart}
         style={{
@@ -352,10 +337,9 @@ function FloatingTerminal({
           ✕
         </button>
         <span style={{ fontSize: 11, fontWeight: 600, color: "#999" }}>
-          {run.taskName}
+          {run.scriptName}
         </span>
       </div>
-      {/* Terminal */}
       <div ref={containerRef} style={{ height: 300, overflow: "hidden" }} />
     </div>
   );
@@ -379,7 +363,7 @@ const styles: Record<string, React.CSSProperties> = {
     textOverflow: "ellipsis",
     whiteSpace: "nowrap" as const,
     fontWeight: 600,
-    color: "#ccc",
+    color: "#ddd",
   },
   actionBtn: {
     display: "flex",

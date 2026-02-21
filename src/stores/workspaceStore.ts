@@ -13,7 +13,7 @@ import type {
   LayoutNode,
   SplitDirection,
   PaneGroup,
-  TaskRun,
+  ScriptRun,
   ShipStatus,
   ShipSession,
   ShipDetailPhase,
@@ -34,11 +34,11 @@ import { api } from "../lib/tauri";
 export const shipOutputBuffer: Uint8Array[] = [];
 
 /**
- * Task PTY output buffers — stored outside Zustand state (like shipOutputBuffer)
+ * Script PTY output buffers — stored outside Zustand state (like shipOutputBuffer)
  * to avoid O(n) array copies and React re-renders on every PTY output chunk.
- * Keyed by "rootPath:taskName".
+ * Keyed by "rootPath:scriptName".
  */
-export const taskOutputBuffers = new Map<string, Uint8Array[]>();
+export const scriptOutputBuffers = new Map<string, Uint8Array[]>();
 
 
 interface WorkspaceState {
@@ -55,8 +55,8 @@ interface WorkspaceState {
   layouts: Record<string, WorkspaceLayout>;
   /** Tracks the last-focused group per workspace for Cmd+W etc. */
   activeGroupIds: Record<string, string>;
-  /** Active task runs keyed by "rootPath:taskName" */
-  taskRuns: Record<string, TaskRun>;
+  /** Active script runs keyed by "rootPath:scriptName" */
+  scriptRuns: Record<string, ScriptRun>;
   /** Ship status keyed by repo path */
   shipStatuses: Record<string, ShipStatus>;
   /** Active ship session (detached PTY running /ship) */
@@ -151,10 +151,10 @@ interface WorkspaceState {
   /** Open a Claude pane that auto-sends a slash command. Does NOT steal focus. */
   openClaudeCommand: (workspaceId: string, cwd: string, slashCommand: string, title: string) => void;
 
-  // Task runner actions
-  runTask: (rootPath: string, taskName: string, command: string, cwd?: string) => Promise<void>;
-  stopTask: (rootPath: string, taskName: string) => Promise<void>;
-  clearTask: (rootPath: string, taskName: string) => void;
+  // Script runner actions
+  runScript: (rootPath: string, scriptName: string, command: string) => Promise<void>;
+  stopScript: (rootPath: string, scriptName: string) => Promise<void>;
+  clearScript: (rootPath: string, scriptName: string) => void;
 
   /** Move a pane from one group into a new split on a target group */
   dropPaneOnGroup: (
@@ -242,7 +242,7 @@ export const useWorkspaceStore = create<WorkspaceState>()(
   activePathIndex: {},
   layouts: {},
   activeGroupIds: {},
-  taskRuns: {},
+  scriptRuns: {},
   shipStatuses: {},
   shipSession: null,
   loading: false,
@@ -775,28 +775,27 @@ export const useWorkspaceStore = create<WorkspaceState>()(
     }));
   },
 
-  // --- Task runner actions ---
+  // --- Script runner actions ---
 
-  runTask: async (rootPath, taskName, command, cwd?) => {
-    const key = `${rootPath}:${taskName}`;
+  runScript: async (rootPath, scriptName, command) => {
+    const key = `${rootPath}:${scriptName}`;
 
     // Kill existing run if any
-    const existing = get().taskRuns[key];
+    const existing = get().scriptRuns[key];
     if (existing && existing.status === "running") {
       await api.killPty(existing.ptyId);
     }
 
-    const effectiveCwd = cwd ? `${rootPath}/${cwd}` : rootPath;
-    const ptyId = await api.spawnPty(effectiveCwd, command, 120, 40, true);
+    const ptyId = await api.spawnPty(rootPath, command, 120, 40, true);
 
     // Reset module-level output buffer (outside Zustand to avoid
     // O(n) array copies and React re-renders on every PTY chunk)
-    taskOutputBuffers.set(key, []);
+    scriptOutputBuffers.set(key, []);
 
     set((s) => ({
-      taskRuns: {
-        ...s.taskRuns,
-        [key]: { taskName, ptyId, status: "running", exitCode: null },
+      scriptRuns: {
+        ...s.scriptRuns,
+        [key]: { scriptName, ptyId, status: "running", exitCode: null },
       },
     }));
 
@@ -804,7 +803,7 @@ export const useWorkspaceStore = create<WorkspaceState>()(
     const unlistenOutput = await listen<{ data: number[] }>(
       `pty-output-${ptyId}`,
       (event) => {
-        const buf = taskOutputBuffers.get(key);
+        const buf = scriptOutputBuffers.get(key);
         if (buf) buf.push(new Uint8Array(event.payload.data));
       }
     );
@@ -815,10 +814,10 @@ export const useWorkspaceStore = create<WorkspaceState>()(
       (event) => {
         const code = event.payload.code;
         set((s) => ({
-          taskRuns: {
-            ...s.taskRuns,
+          scriptRuns: {
+            ...s.scriptRuns,
             [key]: {
-              ...s.taskRuns[key],
+              ...s.scriptRuns[key],
               status: code === 0 ? "success" : "error",
               exitCode: code,
             },
@@ -830,25 +829,25 @@ export const useWorkspaceStore = create<WorkspaceState>()(
     );
   },
 
-  stopTask: async (rootPath, taskName) => {
-    const key = `${rootPath}:${taskName}`;
-    const run = get().taskRuns[key];
+  stopScript: async (rootPath, scriptName) => {
+    const key = `${rootPath}:${scriptName}`;
+    const run = get().scriptRuns[key];
     if (!run) return;
     await api.killPty(run.ptyId);
     set((s) => ({
-      taskRuns: {
-        ...s.taskRuns,
+      scriptRuns: {
+        ...s.scriptRuns,
         [key]: { ...run, status: "stopped" },
       },
     }));
   },
 
-  clearTask: (rootPath, taskName) => {
-    const key = `${rootPath}:${taskName}`;
-    taskOutputBuffers.delete(key);
+  clearScript: (rootPath, scriptName) => {
+    const key = `${rootPath}:${scriptName}`;
+    scriptOutputBuffers.delete(key);
     set((s) => {
-      const { [key]: _, ...rest } = s.taskRuns;
-      return { taskRuns: rest };
+      const { [key]: _, ...rest } = s.scriptRuns;
+      return { scriptRuns: rest };
     });
   },
 

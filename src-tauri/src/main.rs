@@ -5,6 +5,7 @@ use std::sync::{Arc, Mutex};
 
 use rally::commands;
 use rally::config_ops;
+use rally::git_watch::GitWatchState;
 use rally::pty_manager::{self, PtyManager};
 use rally::ship_ops;
 use tauri::menu::{MenuItemBuilder, PredefinedMenuItem, SubmenuBuilder};
@@ -46,6 +47,7 @@ fn show_quit_dialog(app: tauri::AppHandle, quit_showing: Arc<AtomicBool>) {
 
 fn main() {
     let pty_state: pty_manager::PtyState = Arc::new(Mutex::new(PtyManager::new()));
+    let git_watch_state = GitWatchState::default();
     // Guard to prevent stacking multiple quit dialogs
     let quit_showing = Arc::new(AtomicBool::new(false));
 
@@ -54,8 +56,10 @@ fn main() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_window_state::Builder::new().build())
         .manage(pty_state)
+        .manage(git_watch_state)
         .invoke_handler(tauri::generate_handler![
             commands::list_workspaces,
+            commands::update_git_watch_roots,
             commands::create_workspace,
             commands::remove_workspace,
             commands::add_workspace_path,
@@ -72,11 +76,12 @@ fn main() {
             commands::git_file_at_head,
             commands::git_stage_file,
             commands::git_unstage_file,
+            commands::git_discard_file,
             commands::list_directory,
             commands::detect_git_info,
+            commands::trash_file,
             commands::reveal_in_finder,
-            commands::list_tasks,
-            commands::sync_claude_commands,
+            commands::list_scripts,
             pty_manager::spawn_pty,
             pty_manager::write_pty,
             pty_manager::resize_pty,

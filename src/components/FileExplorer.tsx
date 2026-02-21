@@ -1,12 +1,15 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import { useWorkspaceStore } from "../stores/workspaceStore";
 import { invoke } from "@tauri-apps/api/core";
+import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { open } from "@tauri-apps/plugin-dialog";
 import { api } from "../lib/tauri";
 import { showContextMenu } from "../lib/contextMenu";
 import { startFileDrag } from "../lib/dragContext";
 import { ChevronIcon, FileIcon } from "./FileIcons";
 import { TaskPanel } from "./TaskPanel";
+import { ScrollArea } from "./ScrollArea";
+import { addToast } from "./ToastContainer";
 import type { GitStatus, PrStatus, ChangesSummary } from "../lib/types";
 
 const FILE_DRAG_THRESHOLD = 8;
@@ -33,7 +36,7 @@ function relativePath(filePath: string, rootPath: string): string {
     : filePath;
 }
 
-function fileContextMenu(filePath: string, rootPath: string) {
+function fileContextMenu(filePath: string, rootPath: string, onRefresh?: () => void) {
   return [
     {
       label: "Copy Relative Path",
@@ -46,6 +49,18 @@ function fileContextMenu(filePath: string, rootPath: string) {
     },
     "separator" as const,
     { label: "Reveal in Finder", action: () => api.revealInFinder(filePath) },
+    "separator" as const,
+    {
+      label: "Move to Trash",
+      action: async () => {
+        try {
+          await api.trashFile(filePath);
+          onRefresh?.();
+        } catch (e) {
+          console.error("Failed to trash file:", e);
+        }
+      },
+    },
   ];
 }
 
@@ -56,6 +71,7 @@ const FileTreeNode = React.memo(function FileTreeNode({
   activeWorkspaceId,
   activeFilePath,
   onOpenFile,
+  removeChild,
 }: {
   entry: FileEntry;
   depth: number;
@@ -64,6 +80,8 @@ const FileTreeNode = React.memo(function FileTreeNode({
   /** Path of the file currently open in the active editor pane */
   activeFilePath: string | null;
   onOpenFile: (workspaceId: string, filePath: string) => void;
+  /** Called by parent to remove a child by path after trash */
+  removeChild?: (path: string) => void;
 }) {
   const hasPresetChildren = Boolean(
     entry.children && entry.children.length > 0,
@@ -153,6 +171,14 @@ const FileTreeNode = React.memo(function FileTreeNode({
     }
   }, [entry, loaded, activeWorkspaceId, onOpenFile]);
 
+  const handleRemoveChild = useCallback((path: string) => {
+    setChildren((prev) => {
+      const updated = prev.filter((ch) => ch.path !== path);
+      directoryCache.set(entry.path, updated);
+      return updated;
+    });
+  }, [entry.path]);
+
   const dragStartRef = useRef<{ x: number; y: number; startedAt: number } | null>(null);
 
   const handleMouseDown = useCallback(
@@ -201,7 +227,7 @@ const FileTreeNode = React.memo(function FileTreeNode({
         onMouseDown={handleMouseDown}
         onContextMenu={(e) => {
           e.preventDefault();
-          showContextMenu(fileContextMenu(entry.path, rootPath));
+          showContextMenu(fileContextMenu(entry.path, rootPath, removeChild ? () => removeChild(entry.path) : undefined));
         }}
         style={{ ...styles.node, paddingLeft: depth * 10 }}
       >
@@ -223,6 +249,7 @@ const FileTreeNode = React.memo(function FileTreeNode({
             activeWorkspaceId={activeWorkspaceId}
             activeFilePath={activeFilePath}
             onOpenFile={onOpenFile}
+            removeChild={handleRemoveChild}
           />
         ))}
     </div>
@@ -236,6 +263,7 @@ const FileTreeNode = React.memo(function FileTreeNode({
   if (prev.rootPath !== next.rootPath) return false;
   if (prev.activeWorkspaceId !== next.activeWorkspaceId) return false;
   if (prev.onOpenFile !== next.onOpenFile) return false;
+  if (prev.removeChild !== next.removeChild) return false;
 
   // Only re-render if this node's relevance to activeFilePath changed
   const prevActive = !prev.entry.is_dir && prev.activeFilePath === prev.entry.path;
@@ -292,7 +320,7 @@ function GitStatusIcon({
   const changeCount =
     (status?.modified_files.length ?? 0) +
     (status?.untracked_files.length ?? 0);
-  const iconColor = syncNeeded ? "#e8b930" : "#ccc";
+  const iconColor = syncNeeded ? "#e8b930" : "#ddd";
 
   return (
     <button
@@ -335,15 +363,15 @@ function GitStatusIcon({
             position: "absolute" as const,
             bottom: 0,
             right: 0,
-            fontSize: 9,
-            fontWeight: 700,
-            lineHeight: "14px",
+            fontSize: 10,
+            fontWeight: 800,
+            lineHeight: "16px",
             color: "#fff",
-            background: "#3b82f6",
-            borderRadius: 7,
+            background: "#3f8eff",
+            borderRadius: 8,
             padding: "0 4px",
-            minWidth: 14,
-            height: 14,
+            minWidth: 16,
+            height: 16,
             textAlign: "center" as const,
             boxSizing: "border-box" as const,
           }}
@@ -360,11 +388,15 @@ function GitStatusIcon({
 function RootSection({
   rootPath,
   isGitRepo,
-  onGitClick,
+  showChanges,
+  onToggleChanges,
+  onSelectChangeFile,
 }: {
   rootPath: string;
   isGitRepo: boolean;
-  onGitClick?: () => void;
+  showChanges: boolean;
+  onToggleChanges?: () => void;
+  onSelectChangeFile: (rootPath: string, filePath: string, isUntracked: boolean) => void;
 }) {
   const [filesExpanded, setFilesExpanded] = useState(true);
   const [fsEntries, setFsEntries] = useState<FileEntry[]>([]);
@@ -408,6 +440,10 @@ function RootSection({
       .catch((e) => console.error("Failed to load root:", e));
   }, [rootPath]);
 
+  const handleRemoveRootChild = useCallback((path: string) => {
+    setFsEntries((prev) => prev.filter((e) => e.path !== path));
+  }, []);
+
   function handleContextMenu(e: React.MouseEvent) {
     e.preventDefault();
     const actions: Parameters<typeof showContextMenu>[0] = [
@@ -437,7 +473,7 @@ function RootSection({
           <GitStatusIcon
             status={gitStatus}
             syncNeeded={pathSyncNeeded}
-            onClick={onGitClick}
+            onClick={onToggleChanges}
           />
         ) : (
           <button
@@ -476,24 +512,36 @@ function RootSection({
         </div>
       </div>
 
-      {filesExpanded &&
-        fsLoaded &&
-        fsEntries.map((e) => (
-          <FileTreeNode
-            key={e.path}
-            entry={e}
-            depth={1}
-            rootPath={rootPath}
-            activeWorkspaceId={activeWorkspaceId}
-            activeFilePath={activeFilePath}
-            onOpenFile={openFile}
-          />
-        ))}
-      {activeWorkspaceId && (
-        <TaskPanel
+      {showChanges ? (
+        <ChangesPanel
           rootPath={rootPath}
-          workspaceId={activeWorkspaceId}
+          onSelectFile={(filePath, isUntracked) =>
+            onSelectChangeFile(rootPath, filePath, isUntracked)
+          }
         />
+      ) : (
+        <>
+          {filesExpanded &&
+            fsLoaded &&
+            fsEntries.map((e) => (
+              <FileTreeNode
+                key={e.path}
+                entry={e}
+                depth={1}
+                rootPath={rootPath}
+                activeWorkspaceId={activeWorkspaceId}
+                activeFilePath={activeFilePath}
+                onOpenFile={openFile}
+                removeChild={handleRemoveRootChild}
+              />
+            ))}
+          {activeWorkspaceId && (
+            <TaskPanel
+              rootPath={rootPath}
+              workspaceId={activeWorkspaceId}
+            />
+          )}
+        </>
       )}
     </div>
   );
@@ -504,10 +552,83 @@ function RootSection({
 const STATUS_COLORS: Record<string, string> = {
   M: "#e8b930",
   A: "#4caf50",
+  U: "#4caf50",
   D: "#df7d7d",
   R: "#5ba0d0",
   "?": "#888",
 };
+const GIT_CHANGES_REFRESH_EVENT = "rally:git-changes-refresh";
+const BACKEND_GIT_CHANGES_UPDATED_EVENT = "git-changes-updated";
+
+function ChangeStatusGlyph({ status }: { status: string }) {
+  const color = STATUS_COLORS[status] ?? "#888";
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true">
+      <text
+        x="8"
+        y="11.4"
+        textAnchor="middle"
+        fill={color}
+        fontSize="11.5"
+        fontWeight="700"
+        fontFamily="-apple-system, BlinkMacSystemFont, 'SF Pro Text', sans-serif"
+      >
+        {status}
+      </text>
+    </svg>
+  );
+}
+
+function SectionChevron({ open }: { open: boolean }) {
+  return (
+    <svg
+      width="12"
+      height="12"
+      viewBox="0 0 12 12"
+      fill="none"
+      aria-hidden="true"
+      style={{ transform: open ? "rotate(90deg)" : "none" }}
+    >
+      <path
+        d="M4 2.4L8 6L4 9.6"
+        stroke="currentColor"
+        strokeWidth="1.3"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+function StageActionGlyph({ label }: { label: string }) {
+  if (label === "Stage") {
+    return (
+      <svg width="13" height="13" viewBox="0 0 13 13" fill="none" aria-hidden="true">
+        <path d="M6.5 2v9M2 6.5h9" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+      </svg>
+    );
+  }
+
+  return (
+    <svg width="13" height="13" viewBox="0 0 13 13" fill="none" aria-hidden="true">
+      <path d="M2 6.5h9" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function DiscardActionGlyph() {
+  return (
+    <svg width="13" height="13" viewBox="0 0 13 13" fill="none" aria-hidden="true">
+      <path
+        d="M4 3.2V6h2.8M4 6c0-2.2 1.8-4 4-4a4 4 0 1 1-3.1 6.5"
+        stroke="currentColor"
+        strokeWidth="1.35"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
 
 function ChangeFileItem({
   path,
@@ -516,6 +637,8 @@ function ChangeFileItem({
   onClick,
   actionLabel,
   onAction,
+  secondaryActionLabel,
+  onSecondaryAction,
 }: {
   path: string;
   status: string;
@@ -523,9 +646,12 @@ function ChangeFileItem({
   onClick: () => void;
   actionLabel: string;
   onAction: () => void;
+  secondaryActionLabel?: string;
+  onSecondaryAction?: () => void;
 }) {
   const fileName = path.split("/").pop() ?? path;
   const dir = path.includes("/") ? path.slice(0, path.lastIndexOf("/")) : "";
+  const displayStatus = status === "?" ? "U" : status;
 
   return (
     <div
@@ -536,43 +662,113 @@ function ChangeFileItem({
       }}
       onClick={onClick}
     >
-      <span
-        style={{
-          ...styles.statusLetter,
-          color: STATUS_COLORS[status] ?? "#888",
-        }}
-      >
-        {status}
-      </span>
+      <FileIcon name={fileName} isDir={false} isOpen={false} />
       <span style={styles.changeFileName}>{fileName}</span>
       {dir && <span style={styles.changeFileDir}>{dir}</span>}
+      <span style={{ flex: 1 }} />
+      <div style={styles.changeRight}>
+        {secondaryActionLabel && onSecondaryAction && (
+          <button
+            className="stage-btn change-action-btn"
+            style={styles.stageBtn}
+            onClick={(e) => {
+              e.stopPropagation();
+              onSecondaryAction();
+            }}
+            title={secondaryActionLabel}
+          >
+            <DiscardActionGlyph />
+          </button>
+        )}
+        <button
+          className="stage-btn change-action-btn"
+          style={styles.stageBtn}
+          onClick={(e) => {
+            e.stopPropagation();
+            onAction();
+          }}
+          title={actionLabel}
+        >
+          <StageActionGlyph label={actionLabel} />
+        </button>
+        <span style={styles.statusGlyphWrap}>
+          <ChangeStatusGlyph status={displayStatus} />
+        </span>
+      </div>
+    </div>
+  );
+}
+
+type ChangeSectionKey = "staged" | "changes" | "untracked";
+
+function ChangesSection({
+  title,
+  count,
+  open,
+  onToggle,
+  children,
+}: {
+  title: string;
+  count: number;
+  open: boolean;
+  onToggle: () => void;
+  children: React.ReactNode;
+}) {
+  if (count === 0) return null;
+
+  return (
+    <div style={styles.changeSection}>
       <button
-        className="stage-btn"
-        style={styles.stageBtn}
-        onClick={(e) => {
-          e.stopPropagation();
-          onAction();
-        }}
-        title={actionLabel}
+        className="changes-section-btn"
+        style={styles.sectionHeaderButton}
+        onClick={onToggle}
       >
-        {actionLabel === "Stage" ? "+" : "−"}
+        <span style={styles.sectionChevron}>
+          <SectionChevron open={open} />
+        </span>
+        <span style={styles.sectionTitle}>{title}</span>
+        <span style={{ flex: 1 }} />
+        <span style={styles.sectionCountBadge}>{count}</span>
       </button>
+      {open && <div style={styles.sectionBody}>{children}</div>}
     </div>
   );
 }
 
 function ChangesPanel({
   rootPath,
-  onBack,
   onSelectFile,
 }: {
   rootPath: string;
-  onBack: () => void;
   onSelectFile: (filePath: string, isUntracked: boolean) => void;
 }) {
   const [changes, setChanges] = useState<ChangesSummary | null>(null);
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
-  const folderName = rootPath.split("/").pop() ?? rootPath;
+  const [sectionOpen, setSectionOpen] = useState<Record<ChangeSectionKey, boolean>>({
+    staged: true,
+    changes: true,
+    untracked: true,
+  });
+
+  const toggleSection = useCallback((section: ChangeSectionKey) => {
+    setSectionOpen((prev) => ({ ...prev, [section]: !prev[section] }));
+  }, []);
+
+  useEffect(() => {
+    setSectionOpen({
+      staged: true,
+      changes: true,
+      untracked: true,
+    });
+  }, [rootPath]);
+
+  const notifyChangesUpdated = useCallback(() => {
+    document.dispatchEvent(
+      new CustomEvent<{ rootPath: string }>(GIT_CHANGES_REFRESH_EVENT, {
+        detail: { rootPath },
+      })
+    );
+  }, [rootPath]);
 
   const refresh = useCallback(async () => {
     try {
@@ -585,14 +781,56 @@ function ChangesPanel({
   useEffect(() => {
     refresh();
   }, [refresh]);
+  useEffect(() => {
+    const onRefreshEvent = (event: Event) => {
+      const detail = (event as CustomEvent<{ rootPath?: string }>).detail;
+      if (!detail || detail.rootPath === rootPath) {
+        void refresh();
+      }
+    };
+    document.addEventListener(GIT_CHANGES_REFRESH_EVENT, onRefreshEvent);
+    return () => document.removeEventListener(GIT_CHANGES_REFRESH_EVENT, onRefreshEvent);
+  }, [refresh, rootPath]);
 
   async function stageFile(filePath: string) {
-    await api.gitStageFile(rootPath, filePath);
-    await refresh();
+    try {
+      await api.gitStageFile(rootPath, filePath);
+      notifyChangesUpdated();
+      await refresh();
+    } catch (e) {
+      addToast({
+        type: "warning",
+        title: "Stage failed",
+        message: String(e),
+      });
+    }
   }
   async function unstageFile(filePath: string) {
-    await api.gitUnstageFile(rootPath, filePath);
-    await refresh();
+    try {
+      await api.gitUnstageFile(rootPath, filePath);
+      notifyChangesUpdated();
+      await refresh();
+    } catch (e) {
+      addToast({
+        type: "warning",
+        title: "Unstage failed",
+        message: String(e),
+      });
+    }
+  }
+  async function discardFile(filePath: string, isUntracked: boolean) {
+    try {
+      await api.gitDiscardFile(rootPath, filePath, isUntracked);
+      notifyChangesUpdated();
+      if (selectedFile === filePath) setSelectedFile(null);
+      await refresh();
+    } catch (e) {
+      addToast({
+        type: "warning",
+        title: "Discard failed",
+        message: String(e),
+      });
+    }
   }
 
   function handleSelect(path: string, isUntracked: boolean) {
@@ -606,107 +844,74 @@ function ChangesPanel({
 
   return (
     <>
-      <div style={styles.header}>
-        <button
-          onClick={onBack}
-          title="Back to Projects"
-          style={styles.headerBtn}
-        >
-          <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
-            <path
-              d="M10 3L5 8L10 13"
-              stroke="currentColor"
-              strokeWidth="1.5"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            />
-          </svg>
-        </button>
-        <span style={styles.headerTitle}>{folderName}</span>
-        <span style={styles.changeCount}>{total}</span>
-        <span style={{ flex: 1 }} />
-        <button
-          onClick={refresh}
-          title="Refresh changes"
-          style={styles.headerBtn}
-        >
-          <span style={{ fontSize: 13 }}>↻</span>
-        </button>
-      </div>
-
-      <div style={styles.tree}>
+      <ScrollArea style={{ flex: 1, padding: "0 4px", paddingBottom: 12 }}>
         {!changes ? (
           <div style={styles.emptyMsg}>Loading...</div>
         ) : total === 0 ? (
           <div style={styles.emptyMsg}>No changes</div>
         ) : (
           <>
-            {changes.staged.length > 0 && (
-              <>
-                <div style={styles.sectionHeader}>
-                  STAGED{" "}
-                  <span style={styles.sectionCount}>
-                    {changes.staged.length}
-                  </span>
-                </div>
-                {changes.staged.map((f) => (
-                  <ChangeFileItem
-                    key={`s-${f.path}`}
-                    path={f.path}
-                    status={f.status}
-                    isSelected={selectedFile === f.path}
-                    onClick={() => handleSelect(f.path, false)}
-                    actionLabel="Unstage"
-                    onAction={() => unstageFile(f.path)}
-                  />
-                ))}
-              </>
-            )}
-            {changes.unstaged.length > 0 && (
-              <>
-                <div style={styles.sectionHeader}>
-                  CHANGES{" "}
-                  <span style={styles.sectionCount}>
-                    {changes.unstaged.length}
-                  </span>
-                </div>
-                {changes.unstaged.map((f) => (
-                  <ChangeFileItem
-                    key={`u-${f.path}`}
-                    path={f.path}
-                    status={f.status}
-                    isSelected={selectedFile === f.path}
-                    onClick={() => handleSelect(f.path, false)}
-                    actionLabel="Stage"
-                    onAction={() => stageFile(f.path)}
-                  />
-                ))}
-              </>
-            )}
-            {changes.untracked.length > 0 && (
-              <>
-                <div style={styles.sectionHeader}>
-                  UNTRACKED{" "}
-                  <span style={styles.sectionCount}>
-                    {changes.untracked.length}
-                  </span>
-                </div>
-                {changes.untracked.map((p) => (
-                  <ChangeFileItem
-                    key={`t-${p}`}
-                    path={p}
-                    status="?"
-                    isSelected={selectedFile === p}
-                    onClick={() => handleSelect(p, true)}
-                    actionLabel="Stage"
-                    onAction={() => stageFile(p)}
-                  />
-                ))}
-              </>
-            )}
+            <ChangesSection
+              title="Staged Changes"
+              count={changes.staged.length}
+              open={sectionOpen.staged}
+              onToggle={() => toggleSection("staged")}
+            >
+              {changes.staged.map((f) => (
+                <ChangeFileItem
+                  key={`s-${f.path}`}
+                  path={f.path}
+                  status={f.status}
+                  isSelected={selectedFile === f.path}
+                  onClick={() => handleSelect(f.path, false)}
+                  actionLabel="Unstage"
+                  onAction={() => unstageFile(f.path)}
+                />
+              ))}
+            </ChangesSection>
+            <ChangesSection
+              title="Changes"
+              count={changes.unstaged.length}
+              open={sectionOpen.changes}
+              onToggle={() => toggleSection("changes")}
+            >
+              {changes.unstaged.map((f) => (
+                <ChangeFileItem
+                  key={`u-${f.path}`}
+                  path={f.path}
+                  status={f.status}
+                  isSelected={selectedFile === f.path}
+                  onClick={() => handleSelect(f.path, false)}
+                  actionLabel="Stage"
+                  onAction={() => stageFile(f.path)}
+                  secondaryActionLabel="Discard"
+                  onSecondaryAction={() => discardFile(f.path, false)}
+                />
+              ))}
+            </ChangesSection>
+            <ChangesSection
+              title="Untracked"
+              count={changes.untracked.length}
+              open={sectionOpen.untracked}
+              onToggle={() => toggleSection("untracked")}
+            >
+              {changes.untracked.map((p) => (
+                <ChangeFileItem
+                  key={`t-${p}`}
+                  path={p}
+                  status="?"
+                  isSelected={selectedFile === p}
+                  onClick={() => handleSelect(p, true)}
+                  actionLabel="Stage"
+                  onAction={() => stageFile(p)}
+                  secondaryActionLabel="Discard"
+                  onSecondaryAction={() => discardFile(p, true)}
+                />
+              ))}
+            </ChangesSection>
           </>
         )}
-      </div>
+      </ScrollArea>
     </>
   );
 }
@@ -727,9 +932,7 @@ export function FileExplorer({ onCollapse }: FileExplorerProps) {
   const setActivePathIndex = useWorkspaceStore((s) => s.setActivePathIndex);
   const ws = workspaces.find((w) => w.id === activeWorkspaceId);
   const [gitRoots, setGitRoots] = useState<Set<string>>(new Set());
-  const [changesPath, setChangesPath] = useState<string | null>(null);
-  // Suppress pointer events briefly after view switch to prevent flash
-  const [suppressHover, setSuppressHover] = useState(false);
+  const [changesOpen, setChangesOpen] = useState<Set<string>>(new Set());
 
 
   useEffect(() => {
@@ -747,9 +950,44 @@ export function FileExplorer({ onCollapse }: FileExplorerProps) {
     ).then(() => setGitRoots(detected));
   }, [ws?.paths]);
 
+  useEffect(() => {
+    const roots = ws?.paths ?? [];
+    api.updateGitWatchRoots(roots).catch((e) => {
+      console.error("Failed to update git watch roots:", e);
+    });
+  }, [ws?.id, ws?.paths]);
+
+  useEffect(() => {
+    let cancelled = false;
+    let unlisten: UnlistenFn | null = null;
+
+    listen<{ rootPath: string }>(
+      BACKEND_GIT_CHANGES_UPDATED_EVENT,
+      (event) => {
+        const rootPath = event.payload?.rootPath;
+        if (!rootPath) return;
+        document.dispatchEvent(
+          new CustomEvent<{ rootPath: string }>(GIT_CHANGES_REFRESH_EVENT, {
+            detail: { rootPath },
+          })
+        );
+      }
+    )
+      .then((fn) => {
+        if (cancelled) fn();
+        else unlisten = fn;
+      })
+      .catch((e) => console.error("Failed to listen for git updates:", e));
+
+    return () => {
+      cancelled = true;
+      unlisten?.();
+    };
+  }, []);
+
   // Clear changes view when workspace changes
   useEffect(() => {
-    setChangesPath(null);
+    setChangesOpen(new Set());
   }, [activeWorkspaceId]);
 
   if (!ws) {
@@ -772,12 +1010,17 @@ export function FileExplorer({ onCollapse }: FileExplorerProps) {
       const idx = ws.paths.indexOf(rootPath);
       if (idx >= 0) setActivePathIndex(ws.id, idx);
     }
-    // Switch to changes view
-    setChangesPath(rootPath);
+    // Toggle this card between file tree and changes list
+    setChangesOpen((prev) => {
+      const next = new Set(prev);
+      if (next.has(rootPath)) next.delete(rootPath);
+      else next.add(rootPath);
+      return next;
+    });
   }
 
-  function handleSelectFile(filePath: string, isUntracked: boolean) {
-    if (!activeWorkspaceId || !changesPath) return;
+  function handleSelectFile(rootPath: string, filePath: string, isUntracked: boolean) {
+    if (!activeWorkspaceId) return;
     // Open diff in the first pane
     const store = useWorkspaceStore.getState();
     const layout = store.getOrCreateLayout(activeWorkspaceId);
@@ -790,7 +1033,7 @@ export function FileExplorer({ onCollapse }: FileExplorerProps) {
         store.transformPane(activeWorkspaceId, gid, existing.id, {
           title: `Diff: ${filePath.split("/").pop() ?? filePath}`,
           filePath,
-          cwd: changesPath,
+          cwd: rootPath,
           command: isUntracked ? "untracked" : undefined,
         });
         store.setActivePane(activeWorkspaceId, gid, existing.id);
@@ -799,7 +1042,7 @@ export function FileExplorer({ onCollapse }: FileExplorerProps) {
     }
 
     // No existing diff pane — open one
-    openDiff(activeWorkspaceId, changesPath);
+    openDiff(activeWorkspaceId, rootPath);
     // After opening, update it with the selected file
     setTimeout(() => {
       const updatedLayout = useWorkspaceStore
@@ -813,7 +1056,7 @@ export function FileExplorer({ onCollapse }: FileExplorerProps) {
             .transformPane(activeWorkspaceId, gid, pane.id, {
               title: `Diff: ${filePath.split("/").pop() ?? filePath}`,
               filePath,
-              cwd: changesPath,
+              cwd: rootPath,
               command: isUntracked ? "untracked" : undefined,
             });
           break;
@@ -824,59 +1067,42 @@ export function FileExplorer({ onCollapse }: FileExplorerProps) {
 
   return (
     <div className="no-select" style={styles.container}>
-      {changesPath ? (
-        <ChangesPanel
-          rootPath={changesPath}
-          onBack={() => {
-            setSuppressHover(true);
-            setChangesPath(null);
-            setTimeout(() => setSuppressHover(false), 150);
+      <div style={styles.explorerHeader}>
+        <span style={styles.explorerTitle}>Explorer</span>
+        <button
+          className="tab-action"
+          style={styles.explorerMenuBtn}
+          onClick={(e) => {
+            e.stopPropagation();
+            showContextMenu([
+              { label: "Add Folder to Workspace", action: handleAddFolder },
+            ]);
           }}
-          onSelectFile={handleSelectFile}
-        />
-      ) : (
-        <>
-          <div style={styles.explorerHeader}>
-            <span style={styles.explorerTitle}>Explorer</span>
-            <button
-              className="tab-action"
-              style={styles.explorerMenuBtn}
-              onClick={(e) => {
-                e.stopPropagation();
-                showContextMenu([
-                  { label: "Add Folder to Workspace", action: handleAddFolder },
-                ]);
-              }}
-              title="Explorer actions"
-            >
-              <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
-                <circle cx="8" cy="3" r="1.2" fill="currentColor" />
-                <circle cx="8" cy="8" r="1.2" fill="currentColor" />
-                <circle cx="8" cy="13" r="1.2" fill="currentColor" />
-              </svg>
-            </button>
-          </div>
+          title="Explorer actions"
+        >
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
+            <circle cx="8" cy="3" r="1.2" fill="currentColor" />
+            <circle cx="8" cy="8" r="1.2" fill="currentColor" />
+            <circle cx="8" cy="13" r="1.2" fill="currentColor" />
+          </svg>
+        </button>
+      </div>
+      <ScrollArea style={{ flex: 1, padding: "0 4px" }}>
+        {ws.paths.map((p, index) => (
           <div
-            style={{
-              ...styles.tree,
-              ...(suppressHover ? { pointerEvents: "none" as const } : {}),
-            }}
+            key={p}
+            style={{ ...styles.card, marginTop: index === 0 ? 2 : 4 }}
           >
-            {ws.paths.map((p, index) => (
-              <div
-                key={p}
-                style={{ ...styles.card, marginTop: index === 0 ? 2 : 4 }}
-              >
-                <RootSection
-                  rootPath={p}
-                  isGitRepo={gitRoots.has(p)}
-                  onGitClick={() => handleGitIconClick(p)}
-                />
-              </div>
-            ))}
+            <RootSection
+              rootPath={p}
+              isGitRepo={gitRoots.has(p)}
+              showChanges={changesOpen.has(p)}
+              onToggleChanges={() => handleGitIconClick(p)}
+              onSelectChangeFile={handleSelectFile}
+            />
           </div>
-        </>
-      )}
+        ))}
+      </ScrollArea>
     </div>
   );
 }
@@ -891,35 +1117,10 @@ const styles: Record<string, React.CSSProperties> = {
     overflow: "hidden",
     userSelect: "none",
   },
-  header: {
-    display: "flex",
-    alignItems: "center",
-    padding: "8px 8px 8px 12px",
-    background: "#1a1a1a",
-    borderBottom: "1px solid #333",
-    minHeight: 32,
-    gap: 4,
-  },
-  headerBtn: {
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    background: "none",
-    border: "none",
-    color: "#666",
-    cursor: "pointer",
-    padding: 2,
-    borderRadius: 4,
-    flexShrink: 0,
-  },
-  headerTitle: {
-    fontSize: 12,
-    fontWeight: 600,
-    color: "#888",
-  },
   tree: {
     flex: 1,
-    overflow: "auto",
+    overflowY: "scroll",
+    overflowX: "hidden",
     padding: "0 4px 0 4px",
     userSelect: "none",
   },
@@ -955,7 +1156,7 @@ const styles: Record<string, React.CSSProperties> = {
     height: 22,
     background: "none",
     border: "none",
-    color: "#777",
+    color: "#999",
     cursor: "pointer",
     borderRadius: 4,
   },
@@ -1003,7 +1204,7 @@ const styles: Record<string, React.CSSProperties> = {
   },
   rootBranch: {
     fontSize: 10,
-    color: "#bbb",
+    color: "#ccc",
     fontWeight: 600,
   },
   aheadCount: {
@@ -1020,7 +1221,7 @@ const styles: Record<string, React.CSSProperties> = {
     padding: "2px 2px",
     background: "none",
     border: "none",
-    color: "#ccc",
+    color: "#ddd",
     fontSize: 12,
     textAlign: "left" as const,
     lineHeight: 1.4,
@@ -1043,82 +1244,123 @@ const styles: Record<string, React.CSSProperties> = {
   },
   emptyMsg: {
     padding: "8px 16px",
-    color: "#555",
+    color: "#888",
     fontSize: 11,
   },
   // Changes panel styles
   changeCount: {
-    fontSize: 10,
+    fontSize: 11,
     padding: "1px 6px",
     borderRadius: 8,
-    background: "#333",
-    color: "#aaa",
-    fontWeight: 600,
-  },
-  sectionHeader: {
-    padding: "6px 12px 4px",
-    fontSize: 10,
+    background: "#404040",
+    color: "#f2f2f2",
     fontWeight: 700,
-    color: "#777",
-    letterSpacing: "0.05em",
+  },
+  changeSection: {
+    marginTop: 2,
+  },
+  sectionHeaderButton: {
+    width: "100%",
     display: "flex",
     alignItems: "center",
     gap: 6,
+    padding: "7px 10px 4px",
+    border: "none",
+    background: "none",
+    cursor: "pointer",
+    textAlign: "left" as const,
+    textTransform: "uppercase" as const,
+    fontSize: 11,
+    fontWeight: 700,
+    letterSpacing: "0.045em",
+    color: "#f0f0f0",
   },
-  sectionCount: {
-    fontSize: 9,
-    color: "#555",
-    fontWeight: 600,
+  sectionChevron: {
+    color: "#d4d4d4",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    width: 12,
+    flexShrink: 0,
+  },
+  sectionTitle: {
+    color: "#f0f0f0",
+    fontWeight: 700,
+  },
+  sectionCountBadge: {
+    minWidth: 18,
+    height: 16,
+    padding: "0 5px",
+    borderRadius: 8,
+    background: "#404040",
+    color: "#f5f5f5",
+    fontSize: 11,
+    fontWeight: 700,
+    lineHeight: "16px",
+    textAlign: "center" as const,
+    boxSizing: "border-box" as const,
+  },
+  sectionBody: {
+    paddingBottom: 4,
   },
   changeItem: {
     display: "flex",
     alignItems: "center",
     gap: 6,
-    padding: "4px 12px",
+    padding: "5px 10px",
+    margin: "0 4px",
+    borderRadius: 4,
     cursor: "pointer",
     fontSize: 12,
-    color: "#ccc",
-    position: "relative" as const,
+    color: "#ececec",
+    minHeight: 24,
   },
   changeItemSelected: {
     background: "#2d2d2d",
   },
-  statusLetter: {
-    fontWeight: 700,
-    fontSize: 11,
-    width: 14,
-    textAlign: "center" as const,
-    flexShrink: 0,
-  },
   changeFileName: {
     fontWeight: 500,
+    color: "#f2f2f2",
     overflow: "hidden",
     textOverflow: "ellipsis",
     whiteSpace: "nowrap" as const,
   },
   changeFileDir: {
-    fontSize: 10,
-    color: "#555",
+    fontSize: 11,
+    color: "#aeb3bb",
     overflow: "hidden",
     textOverflow: "ellipsis",
     whiteSpace: "nowrap" as const,
     flexShrink: 0,
+    marginLeft: 2,
+  },
+  changeRight: {
+    display: "flex",
+    alignItems: "center",
+    gap: 3,
+    flexShrink: 0,
+    marginLeft: 8,
+  },
+  statusGlyphWrap: {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    width: 16,
+    marginLeft: 2,
+    flexShrink: 0,
   },
   stageBtn: {
-    position: "absolute" as const,
-    right: 8,
-    background: "#333",
-    border: "1px solid #444",
+    background: "none",
+    border: "none",
     borderRadius: 3,
-    color: "#ccc",
+    color: "#aeb2b8",
     cursor: "pointer",
-    fontSize: 12,
-    fontWeight: 700,
-    width: 20,
-    height: 20,
+    width: 18,
+    height: 18,
     display: "flex",
     alignItems: "center",
     justifyContent: "center",
     padding: 0,
+    flexShrink: 0,
   },
 };

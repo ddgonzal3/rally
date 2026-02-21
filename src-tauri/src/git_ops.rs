@@ -314,12 +314,31 @@ pub fn file_at_head(cwd: &str, file_path: &str) -> Result<String, String> {
 
 /// Stage a file.
 pub fn stage_file(cwd: &str, file_path: &str) -> Result<(), String> {
-    git_cmd(cwd, &["add", file_path])?;
+    git_cmd(cwd, &["add", "--", file_path])?;
     Ok(())
 }
 
 /// Unstage a file.
 pub fn unstage_file(cwd: &str, file_path: &str) -> Result<(), String> {
-    git_cmd(cwd, &["restore", "--staged", file_path])?;
+    if git_cmd(cwd, &["restore", "--staged", "--", file_path]).is_err() {
+        // Fallback for older git versions without `restore`.
+        git_cmd(cwd, &["reset", "HEAD", "--", file_path])?;
+    }
+    Ok(())
+}
+
+/// Discard local changes for a file.
+/// - Tracked file: restore working tree from index/HEAD
+/// - Untracked file: remove from working tree
+pub fn discard_file(cwd: &str, file_path: &str, is_untracked: bool) -> Result<(), String> {
+    if is_untracked {
+        git_cmd(cwd, &["clean", "-f", "--", file_path])?;
+        return Ok(());
+    }
+
+    if git_cmd(cwd, &["restore", "--", file_path]).is_err() {
+        // Fallback for older git versions without `restore`.
+        git_cmd(cwd, &["checkout", "--", file_path])?;
+    }
     Ok(())
 }

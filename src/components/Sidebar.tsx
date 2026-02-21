@@ -36,9 +36,15 @@ export function Sidebar() {
                 onContextMenu={(e) => {
                   e.preventDefault();
                   showContextMenu([
-                    { label: "Reveal in Finder", action: () => api.revealInFinder(ws.paths[0]) },
+                    {
+                      label: "Reveal in Finder",
+                      action: () => api.revealInFinder(ws.paths[0]),
+                    },
                     "separator",
-                    { label: "Remove Workspace", action: () => removeWorkspace(ws.id) },
+                    {
+                      label: "Remove Workspace",
+                      action: () => removeWorkspace(ws.id),
+                    },
                   ]);
                 }}
               >
@@ -49,10 +55,18 @@ export function Sidebar() {
         </div>
 
         <div style={styles.bottomBtns}>
-          <button className="sidebar-btn" style={styles.addBtn} onClick={() => setShowAddModal(true)}>
+          <button
+            className="sidebar-btn"
+            style={styles.addBtn}
+            onClick={() => setShowAddModal(true)}
+          >
             + Add Workspace
           </button>
-          <button className="sidebar-btn" style={styles.settingsBtn} onClick={() => setShowSettings(true)}>
+          <button
+            className="sidebar-btn"
+            style={styles.settingsBtn}
+            onClick={() => setShowSettings(true)}
+          >
             Settings
           </button>
         </div>
@@ -61,9 +75,7 @@ export function Sidebar() {
       {showAddModal && (
         <AddWorkspaceModal onClose={() => setShowAddModal(false)} />
       )}
-      {showSettings && (
-        <SettingsPanel onClose={() => setShowSettings(false)} />
-      )}
+      {showSettings && <SettingsPanel onClose={() => setShowSettings(false)} />}
     </>
   );
 }
@@ -100,13 +112,13 @@ const styles: Record<string, React.CSSProperties> = {
     width: "100%",
     padding: "10px 20px 10px 16px",
     background: "none",
-    color: "#ccc",
+    color: "#ddd",
     textAlign: "left" as const,
     fontSize: 13,
   },
   itemActive: {
     background: "#2a2a2a",
-    color: "#fff",
+    color: "#eee",
   },
   itemName: {
     fontWeight: 600,
@@ -120,7 +132,7 @@ const styles: Record<string, React.CSSProperties> = {
     background: "none",
     border: "none",
     borderBottom: "1px solid #2a2a2a",
-    color: "#ccc",
+    color: "#ddd",
     fontSize: 13,
     textAlign: "left" as const,
     fontWeight: 600,
@@ -130,7 +142,7 @@ const styles: Record<string, React.CSSProperties> = {
     padding: "8px 20px 8px 16px",
     background: "none",
     border: "none",
-    color: "#888",
+    color: "#aaa",
     fontSize: 12,
     textAlign: "left" as const,
     fontWeight: 500,

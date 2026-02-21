@@ -48,7 +48,7 @@ function getFileTypeInfo(name: string): FileTypeInfo | null {
     return { label: "YML", color: "#CB171E", compact: true };
   if (lower.endsWith(".toml")) return { label: "TM", color: "#9B9B9B" };
   if (lower.endsWith(".sh") || lower.endsWith(".bash") || lower.endsWith(".zsh"))
-    return { label: "$_", color: "#89E051" };
+    return null; // handled by TerminalPromptIcon
   if (lower.endsWith(".c") || lower.endsWith(".h"))
     return { label: "C", color: "#A8B4CE" };
   if (
@@ -122,6 +122,7 @@ export function FileIcon({
   isOpen?: boolean;
 }) {
   if (isDir) return <FolderIcon open={isOpen} />;
+  if (isScriptFile(name)) return <TerminalPromptIcon size={16} />;
   const info = getFileTypeInfo(name);
   if (info) return <FileTypeLabel info={info} size={16} />;
   return <DocumentIcon color="#888888" />;
@@ -141,6 +142,32 @@ function FolderIcon({ open }: { open?: boolean }) {
         strokeLinejoin="round"
         strokeLinecap="round"
         fill="none"
+      />
+    </svg>
+  );
+}
+
+function isScriptFile(name: string): boolean {
+  const lower = name.toLowerCase();
+  return lower.endsWith(".sh") || lower.endsWith(".bash") || lower.endsWith(".zsh");
+}
+
+/** Terminal prompt icon (>_) for script files. Shared by file explorer, tabs, and TaskPanel. */
+export function TerminalPromptIcon({ size, color = "#89E051" }: { size: number; color?: string }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 16 16" fill="none" style={{ flexShrink: 0 }}>
+      <path
+        d="M3 4.5L7 8L3 11.5"
+        stroke={color}
+        strokeWidth="1.5"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <path
+        d="M9 11.5H13"
+        stroke={color}
+        strokeWidth="1.5"
+        strokeLinecap="round"
       />
     </svg>
   );
@@ -179,6 +206,7 @@ export function PaneTabIcon({
   if (type === "terminal") return <TerminalTabIcon />;
   if (type === "diff") return <DiffTabIcon />;
   if (type === "editor" && fileName) {
+    if (isScriptFile(fileName)) return <TerminalPromptIcon size={14} />;
     const info = getFileTypeInfo(fileName);
     if (info) return <FileTypeLabel info={info} size={14} />;
     return <SmallDocIcon color={getFileColor(fileName)} />;

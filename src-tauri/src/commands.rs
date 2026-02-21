@@ -4,6 +4,7 @@ use std::path::Path;
 use std::process::Command;
 
 use crate::git_ops;
+use crate::git_watch::GitWatchState;
 use crate::workspace::{self, ChangesSummary, GitStatus, PrStatus, PushResult, Workspace};
 
 #[derive(Debug, Serialize)]
@@ -75,6 +76,15 @@ pub fn detect_git_info(path: String) -> Result<GitRepoInfo, String> {
 #[tauri::command]
 pub fn list_workspaces() -> Vec<Workspace> {
     workspace::load_workspaces()
+}
+
+#[tauri::command]
+pub fn update_git_watch_roots(
+    app: tauri::AppHandle,
+    watch_state: tauri::State<'_, GitWatchState>,
+    roots: Vec<String>,
+) -> Result<(), String> {
+    watch_state.update_roots(app, roots)
 }
 
 #[tauri::command]
@@ -220,6 +230,24 @@ pub fn git_unstage_file(workspace_path: String, file_path: String) -> Result<(),
 }
 
 #[tauri::command]
+pub fn git_discard_file(
+    workspace_path: String,
+    file_path: String,
+    is_untracked: bool,
+) -> Result<(), String> {
+    git_ops::discard_file(&workspace_path, &file_path, is_untracked)
+}
+
+#[tauri::command]
+pub fn trash_file(path: String) -> Result<(), String> {
+    let p = Path::new(&path);
+    if !p.exists() {
+        return Err(format!("Path does not exist: {}", path));
+    }
+    trash::delete(&path).map_err(|e| format!("Failed to move to trash: {}", e))
+}
+
+#[tauri::command]
 pub fn reveal_in_finder(path: String) -> Result<(), String> {
     let p = Path::new(&path);
     if p.is_dir() {
@@ -230,158 +258,126 @@ pub fn reveal_in_finder(path: String) -> Result<(), String> {
     Ok(())
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct TaskDef {
-    pub command: String,
-    pub label: Option<String>,
-    pub cwd: Option<String>,
-}
-
 #[derive(Debug, Deserialize)]
 struct RallyConfig {
-    #[serde(default)]
-    tasks: std::collections::HashMap<String, TaskDef>,
-    /// Opt-out list of built-in commands to hide (e.g. ["ship"]).
-    /// If absent, all built-ins are shown.
     #[serde(default, rename = "excludeBuiltins")]
     exclude_builtins: Vec<String>,
+    #[serde(default, rename = "excludeScripts")]
+    exclude_scripts: Vec<String>,
 }
 
-// --- Task runner ---
+// --- Scripts & commands ---
+
+const SCRIPT_EXTENSIONS: &[&str] = &[".sh", ".bash", ".zsh"];
 
 #[derive(Debug, Serialize)]
-pub struct TaskEntry {
+pub struct ScriptEntry {
     pub name: String,
     pub command: String,
     pub label: String,
-    pub cwd: Option<String>,
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub builtin: bool,
-    /// Path to the command's .md file (for viewing in the editor)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub file_path: Option<String>,
 }
 
 /// Built-in commands that ship with the app.
-fn builtin_commands() -> Vec<TaskEntry> {
-    // Resolve the app's commands directory
+fn builtin_commands() -> Vec<ScriptEntry> {
     let cmd_dir = crate::ship_ops::rally_commands_dir()
         .unwrap_or_else(|_| std::path::PathBuf::from("."));
 
     vec![
-        TaskEntry {
+        ScriptEntry {
             name: "ship".to_string(),
             label: "/ship".to_string(),
             command: "claude:/ship".to_string(),
-            cwd: None,
             builtin: true,
             file_path: Some(cmd_dir.join("ship.md").to_string_lossy().to_string()),
         },
-        TaskEntry {
+        ScriptEntry {
             name: "review-pr".to_string(),
             label: "/review-pr".to_string(),
             command: "claude:/review-pr".to_string(),
-            cwd: None,
             builtin: true,
             file_path: Some(cmd_dir.join("review-pr.md").to_string_lossy().to_string()),
         },
-        TaskEntry {
+        ScriptEntry {
             name: "merge-pr".to_string(),
             label: "/merge-pr".to_string(),
             command: "claude:/merge-pr".to_string(),
-            cwd: None,
             builtin: true,
             file_path: Some(cmd_dir.join("merge-pr.md").to_string_lossy().to_string()),
         },
     ]
 }
 
+/// Discover script files from the `scripts/` directory at the repo root.
+fn discover_scripts(root_path: &str, exclude: &[String]) -> Vec<ScriptEntry> {
+    let scripts_dir = Path::new(root_path).join("scripts");
+    if !scripts_dir.is_dir() {
+        return Vec::new();
+    }
+
+    let mut scripts: Vec<ScriptEntry> = fs::read_dir(&scripts_dir)
+        .into_iter()
+        .flatten() // Result<ReadDir> → ReadDir
+        .flatten() // DirEntry results
+        .filter_map(|entry| {
+            let name = entry.file_name().to_string_lossy().to_string();
+            let lower = name.to_lowercase();
+
+            // Only include script files
+            if !SCRIPT_EXTENSIONS.iter().any(|ext| lower.ends_with(ext)) {
+                return None;
+            }
+            // Skip excluded scripts
+            if exclude.iter().any(|ex| ex == &name) {
+                return None;
+            }
+
+            let full_path = entry.path().to_string_lossy().to_string();
+            let interpreter = if lower.ends_with(".zsh") { "zsh" } else { "bash" };
+            let command = format!("{} \"{}\"", interpreter, full_path);
+
+            Some(ScriptEntry {
+                name: name.clone(),
+                label: name,
+                command,
+                builtin: false,
+                file_path: Some(full_path),
+            })
+        })
+        .collect();
+
+    scripts.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+    scripts
+}
+
 #[tauri::command]
-pub fn list_tasks(root_path: String) -> Result<Vec<TaskEntry>, String> {
+pub fn list_scripts(root_path: String) -> Result<Vec<ScriptEntry>, String> {
     let rally_json = Path::new(&root_path).join("RALLY.json");
 
-    let (config_tasks, exclude_builtins) = if rally_json.exists() {
+    let (exclude_builtins, exclude_scripts) = if rally_json.exists() {
         let content = fs::read_to_string(&rally_json)
             .map_err(|e| format!("Failed to read RALLY.json: {}", e))?;
         let config: RallyConfig = serde_json::from_str(&content)
             .map_err(|e| format!("Failed to parse RALLY.json: {}", e))?;
-        (config.tasks, config.exclude_builtins)
+        (config.exclude_builtins, config.exclude_scripts)
     } else {
-        (std::collections::HashMap::new(), Vec::new())
+        (Vec::new(), Vec::new())
     };
 
-    let mut tasks: Vec<TaskEntry> = config_tasks
-        .into_iter()
-        .map(|(name, def)| TaskEntry {
-            label: def.label.unwrap_or_else(|| name.clone()),
-            name,
-            command: def.command,
-            cwd: def.cwd,
-            builtin: false,
-            file_path: None,
-        })
-        .collect();
+    let mut entries: Vec<ScriptEntry> = Vec::new();
 
-    // Include all built-in commands except those in the exclude list
+    // Add built-in commands (filtered)
     for builtin in builtin_commands() {
         if !exclude_builtins.contains(&builtin.name) {
-            tasks.push(builtin);
+            entries.push(builtin);
         }
     }
 
-    tasks.sort_by(|a, b| a.name.cmp(&b.name));
-    Ok(tasks)
-}
+    // Add discovered scripts (filtered)
+    entries.extend(discover_scripts(&root_path, &exclude_scripts));
 
-const RALLY_CMD_MARKER: &str = "<!-- auto-generated by rally -->";
-
-#[tauri::command]
-pub fn sync_claude_commands(root_path: String) -> Result<u32, String> {
-    let rally_json = Path::new(&root_path).join("RALLY.json");
-    if !rally_json.exists() {
-        return Ok(0);
-    }
-    let content = fs::read_to_string(&rally_json)
-        .map_err(|e| format!("Failed to read RALLY.json: {}", e))?;
-    let config: RallyConfig = serde_json::from_str(&content)
-        .map_err(|e| format!("Failed to parse RALLY.json: {}", e))?;
-
-    let cmds_dir = Path::new(&root_path).join(".claude").join("commands");
-    fs::create_dir_all(&cmds_dir).map_err(|e| e.to_string())?;
-
-    let mut written = 0u32;
-    for (name, def) in &config.tasks {
-        let filename = format!("_rally_{}.md", name);
-        let filepath = cmds_dir.join(&filename);
-        let label = def.label.as_deref().unwrap_or(name);
-        let new_content = format!(
-            "{}\n# {}\n\nRun the following command in the terminal:\n\n```bash\n{}\n```\n",
-            RALLY_CMD_MARKER, label, def.command
-        );
-
-        let existing = fs::read_to_string(&filepath).unwrap_or_default();
-        if existing != new_content {
-            fs::write(&filepath, &new_content).map_err(|e| e.to_string())?;
-            written += 1;
-        }
-    }
-
-    // Clean up stale _rally_ commands
-    if let Ok(dir) = fs::read_dir(&cmds_dir) {
-        for entry in dir.flatten() {
-            let fname = entry.file_name().to_string_lossy().to_string();
-            if fname.starts_with("_rally_") && fname.ends_with(".md") {
-                let task_name = &fname[6..fname.len() - 3];
-                if !config.tasks.contains_key(task_name) {
-                    if let Ok(c) = fs::read_to_string(entry.path()) {
-                        if c.starts_with(RALLY_CMD_MARKER) {
-                            let _ = fs::remove_file(entry.path());
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    Ok(written)
+    Ok(entries)
 }

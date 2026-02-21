@@ -9,6 +9,7 @@ import { PaneTabIcon } from "./FileIcons";
 import { useWorkspaceStore } from "../stores/workspaceStore";
 import { getDragState, startDrag, endDrag } from "../lib/dragContext";
 import { showContextMenu } from "../lib/contextMenu";
+import { api } from "../lib/tauri";
 import type { PaneGroup, Pane } from "../lib/types";
 
 const DRAG_THRESHOLD = 5; // px before drag starts
@@ -268,6 +269,35 @@ export function PaneGroupView({
                   ...(isActive ? styles.tabActive : {}),
                 }}
                 onClick={() => setActivePane(workspaceId, groupId, pane.id)}
+                onContextMenu={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  const items: Parameters<typeof showContextMenu>[0] = [];
+                  if (pane.type === "editor" && pane.filePath) {
+                    items.push({
+                      label: "Reveal in Finder",
+                      action: () => api.revealInFinder(pane.filePath!),
+                    });
+                    items.push("separator");
+                  }
+                  if (pane.type === "terminal" || pane.type === "claude") {
+                    items.push({
+                      label: "Rename Tab",
+                      action: () => {
+                        const name = window.prompt("Tab name:", pane.title || "");
+                        if (name !== null) {
+                          transformPane(workspaceId, groupId, pane.id, { title: name });
+                        }
+                      },
+                    });
+                    items.push("separator");
+                  }
+                  items.push({
+                    label: "Close Tab",
+                    action: () => closePane(workspaceId, groupId, pane.id),
+                  });
+                  showContextMenu(items);
+                }}
                 title={paneTooltip(pane)}
               >
                 <PaneTabIcon
@@ -277,15 +307,15 @@ export function PaneGroupView({
                 <span style={styles.tabLabel}>{paneLabel(pane)}</span>
                 <button
                   data-close
-                  className="tab-close"
+                  className={`tab-close${isActive ? " tab-close-active" : ""}`}
                   style={styles.tabClose}
                   onClick={(e) => {
                     e.stopPropagation();
                     closePane(workspaceId, groupId, pane.id);
                   }}
                 >
-                  <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
-                    <path d="M2.5 2.5l7 7M9.5 2.5l-7 7" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+                  <svg width="13" height="13" viewBox="0 0 14 14" fill="none">
+                    <path d="M3 3l8 8M11 3l-8 8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
                   </svg>
                 </button>
               </div>
@@ -299,19 +329,8 @@ export function PaneGroupView({
             onClick={(e) => handleAction("terminal", e)}
             title="New terminal tab"
           >
-            <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
-              <path d="M6 1v10M1 6h10" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-            </svg>
-          </button>
-          <button
-            className="tab-action"
-            style={styles.actionBtn}
-            onClick={(e) => handleAction("claude", e)}
-            title="New Claude Code tab"
-          >
-            <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
-              <path d="M3 12L8 7L3 2" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-              <path d="M8 13H14" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+            <svg width="13" height="13" viewBox="0 0 14 14" fill="none">
+              <path d="M7 1v12M1 7h12" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
             </svg>
           </button>
           <button
@@ -320,7 +339,7 @@ export function PaneGroupView({
             onClick={(e) => handleAction("split-h", e)}
             title="Split right"
           >
-            <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
+            <svg width="15" height="15" viewBox="0 0 16 16" fill="none">
               <rect x="1.5" y="2.5" width="13" height="11" rx="1.5" stroke="currentColor" strokeWidth="1.2" />
               <line x1="8" y1="2.5" x2="8" y2="13.5" stroke="currentColor" strokeWidth="1.2" />
             </svg>
@@ -331,20 +350,19 @@ export function PaneGroupView({
             onClick={(e) => handleAction("split-v", e)}
             title="Split down"
           >
-            <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
+            <svg width="15" height="15" viewBox="0 0 16 16" fill="none">
               <rect x="1.5" y="2.5" width="13" height="11" rx="1.5" stroke="currentColor" strokeWidth="1.2" />
               <line x1="1.5" y1="8" x2="14.5" y2="8" stroke="currentColor" strokeWidth="1.2" />
             </svg>
           </button>
-          <div style={{ width: 1, height: 14, background: "#333", margin: "0 2px" }} />
           <button
             className="tab-action"
             style={styles.actionBtn}
             onClick={() => closeGroup(workspaceId, groupId)}
             title="Close panel"
           >
-            <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
-              <path d="M2.5 2.5l7 7M9.5 2.5l-7 7" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+            <svg width="13" height="13" viewBox="0 0 14 14" fill="none">
+              <path d="M3 3l8 8M11 3l-8 8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
             </svg>
           </button>
         </div>
@@ -441,7 +459,7 @@ const styles: Record<string, React.CSSProperties> = {
     padding: "0 2px 0 8px",
     fontSize: 12,
     fontWeight: 500,
-    color: "#777",
+    color: "#999",
     cursor: "pointer",
     background: "#1a1a1a",
     border: "none",
@@ -464,11 +482,11 @@ const styles: Record<string, React.CSSProperties> = {
     display: "flex",
     alignItems: "center",
     justifyContent: "center",
-    width: 20,
-    height: 20,
+    width: 24,
+    height: 24,
     background: "none",
     border: "none",
-    color: "#555",
+    color: "#aaa",
     cursor: "pointer",
     borderRadius: 4,
     flexShrink: 0,
@@ -478,19 +496,19 @@ const styles: Record<string, React.CSSProperties> = {
   actions: {
     display: "flex",
     alignItems: "center",
-    gap: 2,
-    padding: "0 6px",
+    gap: 1,
+    padding: "0 4px",
     flexShrink: 0,
   },
   actionBtn: {
     display: "flex",
     alignItems: "center",
     justifyContent: "center",
-    width: 22,
-    height: 22,
+    width: 24,
+    height: 24,
     background: "none",
     border: "none",
-    color: "#777",
+    color: "#aaa",
     cursor: "pointer",
     fontSize: 12,
     borderRadius: 4,

@@ -130,7 +130,7 @@ export function Terminal({ cwd, command, initialInput, ptyId: existingPtyId, loc
       macOptionIsMeta: true,
       theme: {
         background: "#1a1a1a",
-        foreground: "#e0e0e0",
+        foreground: "#e8e8e8",
         cursor: "#a0a0a0",
         selectionBackground: "#44444488",
         black: "#1a1a1a",
