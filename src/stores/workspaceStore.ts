@@ -196,6 +196,41 @@ function restoreLayouts(layouts: Record<string, WorkspaceLayout>): Record<string
   return restored;
 }
 
+function arraysEqual(a: string[], b: string[]): boolean {
+  if (a === b) return true;
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) {
+    if (a[i] !== b[i]) return false;
+  }
+  return true;
+}
+
+function gitStatusEqual(a: GitStatus, b: GitStatus): boolean {
+  return (
+    a.branch === b.branch &&
+    a.dirty === b.dirty &&
+    a.ahead === b.ahead &&
+    a.behind === b.behind &&
+    arraysEqual(a.modified_files, b.modified_files) &&
+    arraysEqual(a.untracked_files, b.untracked_files)
+  );
+}
+
+function prStatusEqual(a: PrStatus | null, b: PrStatus | null): boolean {
+  if (a === b) return true;
+  if (!a || !b) return false;
+  return (
+    a.number === b.number &&
+    a.title === b.title &&
+    a.url === b.url &&
+    a.state === b.state &&
+    a.is_draft === b.is_draft &&
+    a.mergeable === b.mergeable &&
+    a.review_decision === b.review_decision &&
+    a.checks_status === b.checks_status
+  );
+}
+
 export const useWorkspaceStore = create<WorkspaceState>()(
   persist(
     (set, get) => ({
@@ -276,7 +311,7 @@ export const useWorkspaceStore = create<WorkspaceState>()(
       const status = await api.gitStatus(path, mainBranch);
       // Skip update if nothing changed — prevents unnecessary re-renders
       const prev = get().gitStatuses[path];
-      if (prev && JSON.stringify(prev) === JSON.stringify(status)) return;
+      if (prev && gitStatusEqual(prev, status)) return;
       set((s) => ({ gitStatuses: { ...s.gitStatuses, [path]: status } }));
     } catch (e) {
       console.error(`Failed to get git status for ${path}:`, e);
@@ -299,7 +334,7 @@ export const useWorkspaceStore = create<WorkspaceState>()(
       const prStatus = await api.gitPrStatus(path);
       // Skip update if nothing changed — prevents unnecessary re-renders
       const prev = get().prStatuses[path];
-      if (prev && JSON.stringify(prev) === JSON.stringify(prStatus)) return;
+      if (prStatusEqual(prev ?? null, prStatus)) return;
       set((s) => ({ prStatuses: { ...s.prStatuses, [path]: prStatus } }));
     } catch {
       const prev = get().prStatuses[path];
@@ -1021,6 +1056,13 @@ export const useWorkspaceStore = create<WorkspaceState>()(
     const layout = get().getOrCreateLayout(workspaceId);
     const group = layout.groups[groupId];
     if (!group) return;
+    const currentActiveGroupId = get().activeGroupIds[workspaceId];
+    if (
+      group.activePaneId === paneId &&
+      currentActiveGroupId === groupId
+    ) {
+      return;
+    }
 
     // Update MRU history: remove paneId if present, then push to end
     const history = (group.paneHistory ?? []).filter((id) => id !== paneId);
@@ -1116,6 +1158,12 @@ export const useWorkspaceStore = create<WorkspaceState>()(
         (p) => p.type === "editor" && p.filePath === filePath
       );
       if (existing) {
+        if (
+          targetGroup.activePaneId === existing.id &&
+          get().activeGroupIds[workspaceId] === targetGroupId
+        ) {
+          return;
+        }
         get().setActivePane(workspaceId, targetGroupId, existing.id);
         return;
       }

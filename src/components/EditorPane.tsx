@@ -85,12 +85,12 @@ function getLanguageFromPath(path: string): string {
   return map[ext] ?? "plaintext";
 }
 
-export function EditorPane({ filePath }: EditorPaneProps) {
+export const EditorPane = React.memo(function EditorPane({ filePath }: EditorPaneProps) {
   if (isImageFile(filePath)) {
     return <ImageViewer filePath={filePath} />;
   }
   return <TextEditor filePath={filePath} />;
-}
+});
 
 /** Image viewer — loads file as base64 and renders an <img> */
 function ImageViewer({ filePath }: { filePath: string }) {

@@ -27,23 +27,90 @@ export function App() {
     return saved ? Number(saved) : 220;
   });
   const resizingRef = useRef(false);
+  const gitRefreshInFlightRef = useRef(false);
+  const prRefreshInFlightRef = useRef(false);
+  const shipPollInFlightRef = useRef(false);
+  const lastInteractionAtRef = useRef(Date.now());
   const sidebarRef = useRef<HTMLDivElement>(null);
   const explorerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    loadWorkspaces().then(() => {
-      refreshAllGitStatuses();
-      refreshAllPrStatuses();
-    });
-    const gitInterval = setInterval(refreshAllGitStatuses, 10000);
-    const prInterval = setInterval(refreshAllPrStatuses, 20000);
-    const shipInterval = setInterval(pollShipSignals, 5000);
+    const markInteraction = () => {
+      lastInteractionAtRef.current = Date.now();
+    };
+    document.addEventListener("pointerdown", markInteraction, { passive: true });
+    document.addEventListener("keydown", markInteraction, { passive: true });
+    document.addEventListener("wheel", markInteraction, { passive: true });
     return () => {
+      document.removeEventListener("pointerdown", markInteraction);
+      document.removeEventListener("keydown", markInteraction);
+      document.removeEventListener("wheel", markInteraction);
+    };
+  }, []);
+
+  const shouldDeferBackgroundWork = useCallback(() => {
+    if (document.hidden) return true;
+    return Date.now() - lastInteractionAtRef.current < 800;
+  }, []);
+
+  const runGitRefresh = useCallback(async (force = false) => {
+    if (gitRefreshInFlightRef.current) return;
+    if (!force && shouldDeferBackgroundWork()) return;
+    gitRefreshInFlightRef.current = true;
+    try {
+      await refreshAllGitStatuses();
+    } finally {
+      gitRefreshInFlightRef.current = false;
+    }
+  }, [refreshAllGitStatuses, shouldDeferBackgroundWork]);
+
+  const runPrRefresh = useCallback(async (force = false) => {
+    if (prRefreshInFlightRef.current) return;
+    if (!force && shouldDeferBackgroundWork()) return;
+    prRefreshInFlightRef.current = true;
+    try {
+      await refreshAllPrStatuses();
+    } finally {
+      prRefreshInFlightRef.current = false;
+    }
+  }, [refreshAllPrStatuses, shouldDeferBackgroundWork]);
+
+  const runShipPoll = useCallback(async () => {
+    if (shipPollInFlightRef.current) return;
+    if (shouldDeferBackgroundWork()) return;
+    shipPollInFlightRef.current = true;
+    try {
+      await pollShipSignals();
+    } finally {
+      shipPollInFlightRef.current = false;
+    }
+  }, [pollShipSignals, shouldDeferBackgroundWork]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    loadWorkspaces().then(async () => {
+      if (cancelled) return;
+      await Promise.all([runGitRefresh(true), runPrRefresh(true)]);
+    });
+
+    const gitInterval = setInterval(() => {
+      void runGitRefresh();
+    }, 10000);
+    const prInterval = setInterval(() => {
+      void runPrRefresh();
+    }, 20000);
+    const shipInterval = setInterval(() => {
+      void runShipPoll();
+    }, 5000);
+
+    return () => {
+      cancelled = true;
       clearInterval(gitInterval);
       clearInterval(prInterval);
       clearInterval(shipInterval);
     };
-  }, []);
+  }, [loadWorkspaces, runGitRefresh, runPrRefresh, runShipPoll]);
 
   // Finder drag-and-drop: bridge Tauri file drop events into the drag context
   // so each PaneGroup's DropZoneTarget shows the same overlay as tab drags.

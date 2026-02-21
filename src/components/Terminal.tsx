@@ -112,6 +112,15 @@ export function Terminal({ cwd, command, initialInput, ptyId: existingPtyId, loc
     );
   }, []);
 
+  const handleMouseDown = useCallback(() => {
+    // Focus xterm's hidden textarea immediately on click so cursor activation
+    // doesn't depend on downstream async handlers.
+    const textarea = containerRef.current?.querySelector(
+      "textarea.xterm-helper-textarea"
+    ) as HTMLTextAreaElement | null;
+    textarea?.focus();
+  }, []);
+
   useEffect(() => {
     if (!containerRef.current) return;
 
@@ -370,7 +379,11 @@ export function Terminal({ cwd, command, initialInput, ptyId: existingPtyId, loc
   }, [cwd, command, initialInput]);
 
   return (
-    <div style={styles.container} onContextMenu={handleContextMenu}>
+    <div
+      style={styles.container}
+      onMouseDown={handleMouseDown}
+      onContextMenu={handleContextMenu}
+    >
       <div ref={containerRef} style={styles.terminal} />
     </div>
   );

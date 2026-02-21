@@ -9,7 +9,8 @@ import { ChevronIcon, FileIcon } from "./FileIcons";
 import { TaskPanel } from "./TaskPanel";
 import type { GitStatus, PrStatus, ChangesSummary } from "../lib/types";
 
-const FILE_DRAG_THRESHOLD = 5;
+const FILE_DRAG_THRESHOLD = 8;
+const FILE_DRAG_MIN_HOLD_MS = 120;
 
 /** Module-level set of expanded folder paths — survives component unmount/remount */
 const expandedPaths = new Set<string>();
@@ -121,7 +122,13 @@ const FileTreeNode = React.memo(function FileTreeNode({
     }
   }, [isActiveFile]);
 
+  const suppressNextClickRef = useRef(false);
+
   const handleClick = useCallback(async () => {
+    if (suppressNextClickRef.current) {
+      suppressNextClickRef.current = false;
+      return;
+    }
     if (entry.is_dir) {
       if (!loaded) {
         try {
@@ -146,23 +153,28 @@ const FileTreeNode = React.memo(function FileTreeNode({
     }
   }, [entry, loaded, activeWorkspaceId, onOpenFile]);
 
-  const dragStartRef = useRef<{ x: number; y: number } | null>(null);
+  const dragStartRef = useRef<{ x: number; y: number; startedAt: number } | null>(null);
 
   const handleMouseDown = useCallback(
     (e: React.MouseEvent) => {
       if (entry.is_dir || e.button !== 0) return;
       const startX = e.clientX;
       const startY = e.clientY;
-      dragStartRef.current = { x: startX, y: startY };
+      dragStartRef.current = { x: startX, y: startY, startedAt: Date.now() };
 
       const onMouseMove = (ev: MouseEvent) => {
         if (!dragStartRef.current) return;
+        if ((ev.buttons & 1) !== 1) return;
         const dx = ev.clientX - dragStartRef.current.x;
         const dy = ev.clientY - dragStartRef.current.y;
+        const heldLongEnough =
+          Date.now() - dragStartRef.current.startedAt >= FILE_DRAG_MIN_HOLD_MS;
         if (
-          Math.abs(dx) > FILE_DRAG_THRESHOLD ||
-          Math.abs(dy) > FILE_DRAG_THRESHOLD
+          heldLongEnough &&
+          (Math.abs(dx) > FILE_DRAG_THRESHOLD ||
+            Math.abs(dy) > FILE_DRAG_THRESHOLD)
         ) {
+          suppressNextClickRef.current = true;
           startFileDrag([entry.path], ev.clientX, ev.clientY);
           dragStartRef.current = null;
           document.removeEventListener("mousemove", onMouseMove);
@@ -215,6 +227,26 @@ const FileTreeNode = React.memo(function FileTreeNode({
         ))}
     </div>
   );
+}, (prev, next) => {
+  // Custom comparison: skip re-render when activeFilePath changes but
+  // this node's active/ancestor status hasn't changed. This reduces
+  // re-renders from ~200 nodes (entire tree) to ~4 (old/new active + ancestors).
+  if (prev.entry !== next.entry) return false;
+  if (prev.depth !== next.depth) return false;
+  if (prev.rootPath !== next.rootPath) return false;
+  if (prev.activeWorkspaceId !== next.activeWorkspaceId) return false;
+  if (prev.onOpenFile !== next.onOpenFile) return false;
+
+  // Only re-render if this node's relevance to activeFilePath changed
+  const prevActive = !prev.entry.is_dir && prev.activeFilePath === prev.entry.path;
+  const nextActive = !next.entry.is_dir && next.activeFilePath === next.entry.path;
+  if (prevActive !== nextActive) return false;
+
+  const prevAncestor = prev.entry.is_dir && !!prev.activeFilePath?.startsWith(prev.entry.path + "/");
+  const nextAncestor = next.entry.is_dir && !!next.activeFilePath?.startsWith(next.entry.path + "/");
+  if (prevAncestor !== nextAncestor) return false;
+
+  return true; // equal — skip re-render
 });
 
 // --- Git status components ---

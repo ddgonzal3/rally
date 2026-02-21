@@ -33,20 +33,19 @@ export function TaskPanel({ rootPath, workspaceId }: TaskPanelProps) {
 
   if (tasks.length === 0) return null;
 
-  function handleRowClick(e: React.MouseEvent, key: string) {
-    if (!taskRuns[key]) return;
-    setPopupPos({ x: e.clientX, y: e.clientY });
-    setViewingTask(key);
-  }
-
-  function handleLabelClick(e: React.MouseEvent, task: TaskEntry) {
-    e.stopPropagation();
+  function openTaskDefinition(task: TaskEntry) {
     if (!workspaceId) return;
     if (task.file_path) {
       openFile(workspaceId, task.file_path);
     } else {
       openFile(workspaceId, `${rootPath}/RALLY.json`);
     }
+  }
+
+  function showTaskOutput(e: React.MouseEvent, key: string) {
+    if (!taskRuns[key]) return;
+    setPopupPos({ x: e.clientX, y: e.clientY });
+    setViewingTask(key);
   }
 
   function renderTaskRow(task: TaskEntry) {
@@ -61,12 +60,22 @@ export function TaskPanel({ rootPath, workspaceId }: TaskPanelProps) {
         key={task.name}
         className="file-node"
         style={styles.row}
-        onClick={(e) => handleRowClick(e, key)}
+        onClick={(e) => {
+          // Keep output popup available via Cmd/Ctrl+Click without taking over normal selection.
+          if ((e.metaKey || e.ctrlKey) && taskRuns[key]) {
+            showTaskOutput(e, key);
+            return;
+          }
+          openTaskDefinition(task);
+        }}
       >
         {isClaudeCommand ? <CommandIcon /> : <ScriptIcon />}
         <span
           style={{ ...styles.label, cursor: "pointer" }}
-          onClick={(e) => handleLabelClick(e, task)}
+          onClick={(e) => {
+            e.stopPropagation();
+            openTaskDefinition(task);
+          }}
           title={task.file_path ?? task.command}
         >
           {isClaudeCommand ? task.label.replace(/^\//, "") : task.label}
@@ -361,7 +370,7 @@ const styles: Record<string, React.CSSProperties> = {
     alignItems: "center",
     gap: 4,
     padding: "3px 8px 3px 12px",
-    cursor: "default",
+    cursor: "pointer",
     fontSize: 12,
   },
   label: {
