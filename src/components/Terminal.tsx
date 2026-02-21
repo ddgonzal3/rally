@@ -131,11 +131,11 @@ export function Terminal({ cwd, command, initialInput, ptyId: existingPtyId, loc
       rows: 24,
       macOptionIsMeta: true,
       theme: {
-        background: "#1a1a1a",
+        background: "#1e1e1e",
         foreground: "#e8e8e8",
         cursor: "#a0a0a0",
         selectionBackground: "#44444488",
-        black: "#1a1a1a",
+        black: "#1e1e1e",
         red: "#df7d7d",
         green: "#7ddf7d",
         yellow: "#dfdf7d",
@@ -414,7 +414,7 @@ const styles: Record<string, React.CSSProperties> = {
     flex: 1,
     minWidth: 0,
     minHeight: 0,
-    background: "#1a1a1a",
+    background: "#1e1e1e",
     overflow: "hidden",
   },
   terminal: {

@@ -68,11 +68,23 @@ export const api = {
   trashFile: (path: string) =>
     invoke<void>("trash_file", { path }),
 
+  renameFile: (oldPath: string, newPath: string) =>
+    invoke<void>("rename_file", { oldPath, newPath }),
+
   listScripts: (rootPath: string) =>
     invoke<ScriptEntry[]>("list_scripts", { rootPath }),
 
   readFileContent: (path: string) =>
     invoke<string>("read_file_content", { path }),
+
+  writeFileContent: (path: string, content: string) =>
+    invoke<void>("write_file_content", { path, content }),
+
+  createDirectory: (path: string) =>
+    invoke<void>("create_directory", { path }),
+
+  pathStatus: (path: string) =>
+    invoke<{ exists: boolean; is_dir: boolean }>("path_status", { path }),
 
   // Ship operations
   checkShipSignal: (repoPath: string) =>

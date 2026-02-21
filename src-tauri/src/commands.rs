@@ -269,6 +269,18 @@ pub fn trash_file(path: String) -> Result<(), String> {
 }
 
 #[tauri::command]
+pub fn rename_file(old_path: String, new_path: String) -> Result<(), String> {
+    let p = Path::new(&old_path);
+    if !p.exists() {
+        return Err(format!("Path does not exist: {}", old_path));
+    }
+    if Path::new(&new_path).exists() {
+        return Err(format!("Already exists: {}", new_path));
+    }
+    fs::rename(&old_path, &new_path).map_err(|e| format!("Failed to rename: {}", e))
+}
+
+#[tauri::command]
 pub fn reveal_in_finder(path: String) -> Result<(), String> {
     let p = Path::new(&path);
     if p.is_dir() {

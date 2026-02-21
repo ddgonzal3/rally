@@ -1,7 +1,17 @@
-import React, { useState, useEffect, useCallback } from "react";
-import Editor from "@monaco-editor/react";
+import React, { useEffect, useState, useCallback, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useWorkspaceStore } from "../stores/workspaceStore";
+import { api } from "../lib/tauri";
+import { showContextMenu } from "../lib/contextMenu";
+import { ChevronIcon, FileIcon } from "./FileIcons";
+import { ScrollArea } from "./ScrollArea";
+
+interface FileEntry {
+  name: string;
+  path: string;
+  is_dir: boolean;
+  children?: FileEntry[];
+}
 
 interface ConfigFile {
   name: string;
@@ -9,306 +19,449 @@ interface ConfigFile {
   file_type: string;
 }
 
-interface SkillInfo {
-  name: string;
-  path: string;
-  content_preview: string;
+function dirname(path: string): string {
+  const idx = path.lastIndexOf("/");
+  return idx > 0 ? path.slice(0, idx) : "/";
 }
 
-interface SettingsPanelProps {
-  onClose: () => void;
-}
+// --- Simple tree node for ~/.claude/ ---
 
-type Tab = "configs" | "skills";
+function ConfigTreeNode({
+  entry,
+  depth,
+  expandedFolders,
+  onToggleFolder,
+  onClickFile,
+  onRefreshParent,
+}: {
+  entry: FileEntry;
+  depth: number;
+  expandedFolders: Set<string>;
+  onToggleFolder: (path: string) => void;
+  onClickFile: (path: string) => void;
+  onRefreshParent: () => void;
+}) {
+  const [children, setChildren] = useState<FileEntry[]>([]);
+  const [loaded, setLoaded] = useState(false);
+  const expanded = entry.is_dir && expandedFolders.has(entry.path);
 
-export function SettingsPanel({ onClose }: SettingsPanelProps) {
-  const { activeWorkspaceId, workspaces } = useWorkspaceStore();
-  const ws = workspaces.find((w) => w.id === activeWorkspaceId);
-
-  const [tab, setTab] = useState<Tab>("configs");
-  const [configs, setConfigs] = useState<ConfigFile[]>([]);
-  const [skills, setSkills] = useState<SkillInfo[]>([]);
-  const [selectedPath, setSelectedPath] = useState<string | null>(null);
-  const [content, setContent] = useState("");
-  const [dirty, setDirty] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const [saveMsg, setSaveMsg] = useState("");
-
-  // Load configs and skills
+  // Load children when expanded
   useEffect(() => {
-    invoke<ConfigFile[]>("list_claude_configs", {
-      workspacePath: ws?.paths[0] ?? null,
-    }).then(setConfigs);
-
-    invoke<SkillInfo[]>("list_skills", {
-      workspacePath: ws?.paths[0] ?? null,
-    }).then(setSkills);
-  }, [ws?.paths[0]]);
-
-  // Load file content when selected
-  useEffect(() => {
-    if (!selectedPath) return;
-    invoke<string>("read_file_content", { path: selectedPath })
-      .then((c) => {
-        setContent(c);
-        setDirty(false);
-      })
-      .catch(() => {
-        setContent(""); // New file
-        setDirty(false);
-      });
-  }, [selectedPath]);
-
-  const handleSave = useCallback(async () => {
-    if (!selectedPath) return;
-    setSaving(true);
-    try {
-      await invoke("write_file_content", { path: selectedPath, content });
-      setDirty(false);
-      setSaveMsg("Saved");
-      setTimeout(() => setSaveMsg(""), 2000);
-    } catch (e: any) {
-      setSaveMsg(`Error: ${e}`);
-    } finally {
-      setSaving(false);
+    if (expanded && !loaded && entry.is_dir) {
+      invoke<FileEntry[]>("list_directory", { path: entry.path })
+        .then((entries) => {
+          setChildren(entries);
+          setLoaded(true);
+        })
+        .catch((e) => console.error("Failed to load directory:", e));
     }
-  }, [selectedPath, content]);
+  }, [expanded, loaded, entry.is_dir, entry.path]);
 
-  // Select first config by default
-  useEffect(() => {
-    if (!selectedPath && configs.length > 0) {
-      setSelectedPath(configs[0].path);
+  const handleClick = useCallback(() => {
+    if (entry.is_dir) {
+      onToggleFolder(entry.path);
+    } else {
+      onClickFile(entry.path);
     }
-  }, [configs, selectedPath]);
+  }, [entry, onToggleFolder, onClickFile]);
 
-  const allItems =
-    tab === "configs"
-      ? configs.map((c) => ({ name: c.name, path: c.path }))
-      : skills.map((s) => ({ name: s.name, path: s.path }));
+  const refreshChildren = useCallback(() => {
+    if (entry.is_dir) {
+      invoke<FileEntry[]>("list_directory", { path: entry.path })
+        .then((entries) => {
+          setChildren(entries);
+          setLoaded(true);
+        })
+        .catch((e) => console.error("Failed to refresh directory:", e));
+    }
+  }, [entry.is_dir, entry.path]);
+
+  const handleContextMenu = useCallback(
+    (e: React.MouseEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const items: Parameters<typeof showContextMenu>[0] = [
+        {
+          label: "New File...",
+          action: () => {
+            // Dispatch custom event to trigger inline input
+            document.dispatchEvent(
+              new CustomEvent("rally:config-new-item", {
+                detail: {
+                  parentPath: entry.is_dir ? entry.path : dirname(entry.path),
+                  kind: "file",
+                },
+              }),
+            );
+          },
+        },
+        {
+          label: "New Folder...",
+          action: () => {
+            document.dispatchEvent(
+              new CustomEvent("rally:config-new-item", {
+                detail: {
+                  parentPath: entry.is_dir ? entry.path : dirname(entry.path),
+                  kind: "dir",
+                },
+              }),
+            );
+          },
+        },
+        "separator",
+        {
+          label: "Copy Path",
+          action: () => navigator.clipboard.writeText(entry.path),
+        },
+        "separator",
+        {
+          label: "Reveal in Finder",
+          action: () => api.revealInFinder(entry.path),
+        },
+        "separator",
+        {
+          label: "Move to Trash",
+          action: async () => {
+            try {
+              await api.trashFile(entry.path);
+              onRefreshParent();
+            } catch (e) {
+              console.error("Failed to trash:", e);
+            }
+          },
+        },
+      ];
+      showContextMenu(items);
+    },
+    [entry, onRefreshParent],
+  );
 
   return (
-    <div style={styles.overlay} onClick={onClose}>
-      <div style={styles.panel} onClick={(e) => e.stopPropagation()}>
-        <div style={styles.header}>
-          <div style={styles.tabs}>
-            <button
-              style={{
-                ...styles.tab,
-                ...(tab === "configs" ? styles.tabActive : {}),
-              }}
-              onClick={() => setTab("configs")}
-            >
-              CLAUDE.md
-            </button>
-            <button
-              style={{
-                ...styles.tab,
-                ...(tab === "skills" ? styles.tabActive : {}),
-              }}
-              onClick={() => setTab("skills")}
-            >
-              Skills
-            </button>
-          </div>
-          <div style={styles.headerRight}>
-            {saveMsg && <span style={styles.saveMsg}>{saveMsg}</span>}
-            <button
-              style={{
-                ...styles.saveBtn,
-                opacity: dirty ? 1 : 0.4,
-              }}
-              onClick={handleSave}
-              disabled={!dirty || saving}
-            >
-              {saving ? "Saving..." : "Save"}
-            </button>
-            <button style={styles.closeBtn} onClick={onClose}>
-              x
-            </button>
-          </div>
-        </div>
+    <div>
+      <button
+        className="file-node"
+        onClick={handleClick}
+        onContextMenu={handleContextMenu}
+        style={{ ...styles.node, paddingLeft: 4 + depth * 10 }}
+      >
+        {entry.is_dir ? (
+          <ChevronIcon open={expanded} />
+        ) : (
+          <span style={styles.spacer} />
+        )}
+        <FileIcon name={entry.name} isDir={entry.is_dir} isOpen={expanded} />
+        <span style={styles.name}>{entry.name}</span>
+      </button>
+      {expanded &&
+        children.map((c) => (
+          <ConfigTreeNode
+            key={c.path}
+            entry={c}
+            depth={depth + 1}
+            expandedFolders={expandedFolders}
+            onToggleFolder={onToggleFolder}
+            onClickFile={onClickFile}
+            onRefreshParent={refreshChildren}
+          />
+        ))}
+    </div>
+  );
+}
 
-        <div style={styles.body}>
-          <div style={styles.fileList}>
-            {allItems.map((item) => (
-              <button
-                key={item.path}
-                onClick={() => {
-                  setSelectedPath(item.path);
-                  setDirty(false);
-                }}
-                style={{
-                  ...styles.fileItem,
-                  ...(item.path === selectedPath ? styles.fileItemActive : {}),
-                }}
-              >
-                {item.name}
-              </button>
-            ))}
-            {allItems.length === 0 && (
-              <div style={styles.emptyList}>
-                {tab === "skills"
-                  ? "No skills found"
-                  : "No config files found"}
-              </div>
-            )}
-          </div>
+// --- Inline name input for creating new files/folders ---
 
-          <div style={styles.editor}>
-            {selectedPath ? (
-              <Editor
-                height="100%"
-                language={
-                  selectedPath.endsWith(".json") ? "json" : "markdown"
-                }
-                theme="vs-dark"
-                value={content}
-                onChange={(value) => {
-                  setContent(value ?? "");
-                  setDirty(true);
-                }}
-                options={{
-                  minimap: { enabled: false },
-                  fontSize: 13,
-                  fontFamily:
-                    "'SF Mono', 'Fira Code', 'Cascadia Code', monospace",
-                  lineNumbers: "on",
-                  wordWrap: "on",
-                  scrollBeyondLastLine: false,
-                  padding: { top: 8 },
-                }}
-              />
-            ) : (
-              <div style={styles.noSelection}>
-                Select a file to edit
-              </div>
-            )}
-          </div>
-        </div>
+function InlineNameInput({
+  parentPath,
+  kind,
+  onDone,
+}: {
+  parentPath: string;
+  kind: "file" | "dir";
+  onDone: () => void;
+}) {
+  const [value, setValue] = useState("");
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    inputRef.current?.focus();
+  }, []);
+
+  const handleSubmit = useCallback(async () => {
+    const name = value.trim();
+    if (!name) {
+      onDone();
+      return;
+    }
+    const fullPath = parentPath.replace(/\/+$/, "") + "/" + name;
+    try {
+      if (kind === "dir") {
+        await api.createDirectory(fullPath);
+      } else {
+        await api.writeFileContent(fullPath, "");
+      }
+    } catch (e) {
+      console.error("Failed to create:", e);
+    }
+    onDone();
+  }, [value, parentPath, kind, onDone]);
+
+  return (
+    <input
+      ref={inputRef}
+      value={value}
+      onChange={(e) => setValue(e.target.value)}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") void handleSubmit();
+        if (e.key === "Escape") onDone();
+      }}
+      onBlur={onDone}
+      placeholder={kind === "dir" ? "folder name" : "file name"}
+      style={styles.inlineInput}
+    />
+  );
+}
+
+// --- Main component ---
+
+export function GlobalConfigExplorer() {
+  const activeWorkspaceId = useWorkspaceStore((s) => s.activeWorkspaceId);
+  const openFile = useWorkspaceStore((s) => s.openFile);
+
+  const [claudeDir, setClaudeDir] = useState<string | null>(null);
+  const [loaded, setLoaded] = useState(false);
+  const [entries, setEntries] = useState<FileEntry[]>([]);
+  const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set());
+  const [newItem, setNewItem] = useState<{
+    parentPath: string;
+    kind: "file" | "dir";
+  } | null>(null);
+
+  // Resolve ~/.claude/ directory on mount
+  useEffect(() => {
+    let cancelled = false;
+    invoke<ConfigFile[]>("list_claude_configs", { workspacePath: null })
+      .then((files) => {
+        if (cancelled) return;
+        const global = files.find(
+          (f) => f.file_type === "claude-md" && f.path.endsWith("/.claude/CLAUDE.md"),
+        );
+        const dir = global ? dirname(global.path) : null;
+        setClaudeDir(dir);
+        if (dir) {
+          return invoke<FileEntry[]>("list_directory", { path: dir });
+        }
+        return [];
+      })
+      .then((result) => {
+        if (cancelled) return;
+        if (result) setEntries(result);
+      })
+      .catch(() => {})
+      .finally(() => {
+        if (!cancelled) setLoaded(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const refreshRoot = useCallback(() => {
+    if (!claudeDir) return;
+    invoke<FileEntry[]>("list_directory", { path: claudeDir })
+      .then(setEntries)
+      .catch((e) => console.error("Failed to refresh config dir:", e));
+  }, [claudeDir]);
+
+  const handleToggleFolder = useCallback((path: string) => {
+    setExpandedFolders((prev) => {
+      const next = new Set(prev);
+      if (next.has(path)) next.delete(path);
+      else next.add(path);
+      return next;
+    });
+  }, []);
+
+  const handleClickFile = useCallback(
+    (filePath: string) => {
+      if (activeWorkspaceId) {
+        openFile(activeWorkspaceId, filePath);
+      }
+    },
+    [activeWorkspaceId, openFile],
+  );
+
+  // Listen for "new item" events from context menu
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent<{ parentPath: string; kind: "file" | "dir" }>).detail;
+      if (detail) {
+        // Ensure parent folder is expanded
+        setExpandedFolders((prev) => {
+          const next = new Set(prev);
+          next.add(detail.parentPath);
+          return next;
+        });
+        setNewItem(detail);
+      }
+    };
+    document.addEventListener("rally:config-new-item", handler);
+    return () => document.removeEventListener("rally:config-new-item", handler);
+  }, []);
+
+  const handleNewItemDone = useCallback(() => {
+    setNewItem(null);
+    refreshRoot();
+  }, [refreshRoot]);
+
+  const handleRootContextMenu = useCallback(
+    (e: React.MouseEvent) => {
+      e.preventDefault();
+      if (!claudeDir) return;
+      showContextMenu([
+        {
+          label: "New File...",
+          action: () => {
+            setNewItem({ parentPath: claudeDir, kind: "file" });
+          },
+        },
+        {
+          label: "New Folder...",
+          action: () => {
+            setNewItem({ parentPath: claudeDir, kind: "dir" });
+          },
+        },
+        "separator",
+        {
+          label: "Copy Path",
+          action: () => navigator.clipboard.writeText(claudeDir),
+        },
+        "separator",
+        {
+          label: "Reveal in Finder",
+          action: () => api.revealInFinder(claudeDir),
+        },
+      ]);
+    },
+    [claudeDir],
+  );
+
+  if (!loaded) {
+    return (
+      <div style={styles.container}>
+        <div style={styles.header} />
+        <div style={styles.emptyMsg}>Loading...</div>
       </div>
+    );
+  }
+
+  if (!claudeDir) {
+    return (
+      <div style={styles.container}>
+        <div style={styles.header}>
+          <span style={styles.headerText}>Claude Config</span>
+        </div>
+        <div style={styles.emptyMsg}>Could not resolve ~/.claude</div>
+      </div>
+    );
+  }
+
+  return (
+    <div style={styles.container} onContextMenu={handleRootContextMenu}>
+      <div style={styles.header}>
+        <span style={styles.headerText}>Claude Config</span>
+      </div>
+      <ScrollArea style={{ flex: 1, padding: "2px 0" }}>
+        {entries.map((entry) => (
+          <ConfigTreeNode
+            key={entry.path}
+            entry={entry}
+            depth={0}
+            expandedFolders={expandedFolders}
+            onToggleFolder={handleToggleFolder}
+            onClickFile={handleClickFile}
+            onRefreshParent={refreshRoot}
+          />
+        ))}
+        {newItem && newItem.parentPath === claudeDir && (
+          <InlineNameInput
+            parentPath={newItem.parentPath}
+            kind={newItem.kind}
+            onDone={handleNewItemDone}
+          />
+        )}
+      </ScrollArea>
     </div>
   );
 }
 
 const styles: Record<string, React.CSSProperties> = {
-  overlay: {
-    position: "fixed",
-    inset: 0,
-    background: "rgba(0, 0, 0, 0.6)",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    zIndex: 1000,
-  },
-  panel: {
-    width: "80vw",
-    height: "70vh",
-    maxWidth: 1000,
-    background: "#1e1e1e",
-    borderRadius: 8,
-    border: "1px solid #3a3a3a",
+  container: {
     display: "flex",
     flexDirection: "column",
+    height: "100%",
+    minHeight: 0,
+    background: "#1a1a1a",
     overflow: "hidden",
+    userSelect: "none",
   },
   header: {
     display: "flex",
     alignItems: "center",
     justifyContent: "space-between",
-    padding: "0 12px",
+    padding: "0 8px 0 12px",
+    minHeight: 29,
+    maxHeight: 29,
     borderBottom: "1px solid #333",
-    minHeight: 40,
+    flexShrink: 0,
   },
-  tabs: {
-    display: "flex",
-    gap: 0,
-  },
-  tab: {
-    padding: "10px 16px",
-    background: "none",
-    border: "none",
-    borderBottom: "2px solid transparent",
-    color: "#888",
-    cursor: "pointer",
-    fontSize: 12,
-    fontWeight: 500,
-  },
-  tabActive: {
-    color: "#e0e0e0",
-    borderBottomColor: "#7c6ef5",
-  },
-  headerRight: {
-    display: "flex",
-    alignItems: "center",
-    gap: 8,
-  },
-  saveMsg: {
+  headerText: {
     fontSize: 11,
-    color: "#7ddf7d",
-  },
-  saveBtn: {
-    padding: "5px 12px",
-    background: "#7c6ef5",
-    border: "none",
-    borderRadius: 4,
+    fontWeight: 700,
+    textTransform: "uppercase" as const,
+    letterSpacing: "0.05em",
     color: "#fff",
-    cursor: "pointer",
-    fontSize: 12,
-    fontWeight: 500,
   },
-  closeBtn: {
-    background: "none",
-    border: "none",
-    color: "#888",
-    fontSize: 16,
-    cursor: "pointer",
-    padding: "0 4px",
-  },
-  body: {
-    flex: 1,
-    display: "flex",
-    minHeight: 0,
-  },
-  fileList: {
-    width: 200,
-    minWidth: 200,
-    borderRight: "1px solid #333",
-    overflow: "auto",
-    padding: "4px 0",
-  },
-  fileItem: {
-    width: "100%",
+  emptyMsg: {
     padding: "8px 12px",
-    background: "none",
-    border: "none",
-    borderLeft: "3px solid transparent",
-    color: "#ccc",
-    cursor: "pointer",
-    textAlign: "left" as const,
-    fontSize: 12,
-    display: "block",
+    color: "#888",
+    fontSize: 11,
   },
-  fileItemActive: {
-    background: "#2a2a2a",
-    borderLeftColor: "#7c6ef5",
-    color: "#fff",
-  },
-  emptyList: {
-    padding: 16,
-    color: "#666",
-    fontSize: 12,
-    textAlign: "center" as const,
-  },
-  editor: {
-    flex: 1,
-    minWidth: 0,
-  },
-  noSelection: {
+  node: {
     display: "flex",
     alignItems: "center",
-    justifyContent: "center",
-    height: "100%",
-    color: "#666",
-    fontSize: 13,
+    gap: 2,
+    width: "100%",
+    padding: "2px 2px",
+    background: "none",
+    border: "none",
+    color: "#ddd",
+    fontSize: 12,
+    textAlign: "left" as const,
+    lineHeight: 1.4,
+    cursor: "pointer",
+    position: "relative" as const,
+  },
+  spacer: {
+    width: 14,
+    flexShrink: 0,
+  },
+  name: {
+    overflow: "hidden",
+    textOverflow: "ellipsis",
+    whiteSpace: "nowrap" as const,
+    marginLeft: 2,
+    fontWeight: 600,
+  },
+  inlineInput: {
+    display: "block",
+    width: "calc(100% - 16px)",
+    margin: "2px 8px",
+    padding: "2px 6px",
+    fontSize: 12,
+    background: "#2a2a2a",
+    border: "1px solid #555",
+    borderRadius: 3,
+    color: "#eee",
+    outline: "none",
   },
 };

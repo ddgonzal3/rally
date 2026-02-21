@@ -5,6 +5,7 @@ import { useWorkspaceStore, scriptOutputBuffers } from "../stores/workspaceStore
 import { api } from "../lib/tauri";
 import type { ScriptEntry, ScriptRun } from "../lib/types";
 import { CLAUDE_PATH, TerminalPromptIcon } from "./FileIcons";
+import { showContextMenu } from "../lib/contextMenu";
 
 interface TaskPanelProps {
   rootPath: string;
@@ -41,6 +42,13 @@ export function TaskPanel({ rootPath, workspaceId }: TaskPanelProps) {
   const commands = entries.filter((e) => e.command.startsWith("claude:"));
   const scripts = entries.filter((e) => !e.command.startsWith("claude:"));
 
+  const [renamingEntry, setRenamingEntry] = useState<string | null>(null);
+  const [selectedEntry, setSelectedEntry] = useState<string | null>(null);
+
+  const refreshEntries = useCallback(() => {
+    api.listScripts(rootPath).then(setEntries).catch(() => setEntries([]));
+  }, [rootPath]);
+
   if (entries.length === 0) return null;
 
   function openScriptFile(entry: ScriptEntry) {
@@ -54,6 +62,21 @@ export function TaskPanel({ rootPath, workspaceId }: TaskPanelProps) {
     setViewingScript(key);
   }
 
+  function handleEntryContextMenu(e: React.MouseEvent, entry: ScriptEntry) {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!entry.file_path) return;
+    const isLocal = !entry.builtin;
+    const actions: Parameters<typeof showContextMenu>[0] = [
+      { label: "Reveal in Finder", action: () => api.revealInFinder(entry.file_path!) },
+    ];
+    if (isLocal) {
+      actions.push("separator");
+      actions.push({ label: "Rename", action: () => setRenamingEntry(entry.name) });
+    }
+    showContextMenu(actions);
+  }
+
   function renderRow(entry: ScriptEntry) {
     const key = `${rootPath}:${entry.name}`;
     const run = scriptRuns[key];
@@ -62,22 +85,49 @@ export function TaskPanel({ rootPath, workspaceId }: TaskPanelProps) {
     const isClaudeCommand = entry.command.startsWith("claude:");
     const isWatcher = !isClaudeCommand && isWatcherScript(entry.name);
 
+    const isRenaming = renamingEntry === entry.name;
+    const isEntrySelected = selectedEntry === entry.name;
+
     if (isWatcher) {
       const buildStatus = isRunning ? getWatcherBuildStatus(key) : "idle";
       return (
         <div
           key={entry.name}
-          className="file-node"
+          className={`file-node${isEntrySelected ? " file-node-active" : ""}`}
           style={styles.row}
-          onClick={() => openScriptFile(entry)}
+          tabIndex={0}
+          onClick={() => { setSelectedEntry(entry.name); }}
+          onDoubleClick={() => openScriptFile(entry)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && isEntrySelected && !entry.builtin) {
+              e.preventDefault();
+              setRenamingEntry(entry.name);
+            }
+          }}
+          onContextMenu={(e) => handleEntryContextMenu(e, entry)}
         >
           {isRunning ? <EyeOpenIcon /> : <EyeClosedIcon />}
-          <span
-            style={{ ...styles.label, cursor: "pointer" }}
-            title={entry.file_path ?? entry.command}
-          >
-            {entry.label}
-          </span>
+          {isRenaming ? (
+            <RenameInput
+              defaultValue={entry.name}
+              onCommit={async (newName) => {
+                if (entry.file_path) {
+                  const dir = entry.file_path.substring(0, entry.file_path.lastIndexOf("/"));
+                  await api.renameFile(entry.file_path, dir + "/" + newName);
+                  refreshEntries();
+                }
+                setRenamingEntry(null);
+              }}
+              onCancel={() => setRenamingEntry(null)}
+            />
+          ) : (
+            <span
+              style={{ ...styles.label, cursor: "pointer" }}
+              title={entry.file_path ?? entry.command}
+            >
+              {entry.label}
+            </span>
+          )}
           {isRunning && <BuildStatusDot status={buildStatus} />}
           {isRunning && (
             <button
@@ -90,6 +140,7 @@ export function TaskPanel({ rootPath, workspaceId }: TaskPanelProps) {
             </button>
           )}
           <button
+            className={!isRunning ? "script-play-btn" : undefined}
             onClick={(e) => {
               e.stopPropagation();
               if (isRunning) {
@@ -109,28 +160,53 @@ export function TaskPanel({ rootPath, workspaceId }: TaskPanelProps) {
     return (
       <div
         key={entry.name}
-        className="file-node"
+        className={`file-node${isEntrySelected ? " file-node-active" : ""}`}
         style={styles.row}
+        tabIndex={0}
         onClick={(e) => {
           if ((e.metaKey || e.ctrlKey) && scriptRuns[key]) {
             showScriptOutput(e, key);
             return;
           }
-          openScriptFile(entry);
+          setSelectedEntry(entry.name);
         }}
+        onDoubleClick={() => openScriptFile(entry)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" && isEntrySelected && !entry.builtin) {
+            e.preventDefault();
+            setRenamingEntry(entry.name);
+          }
+        }}
+        onContextMenu={(e) => handleEntryContextMenu(e, entry)}
       >
         {isClaudeCommand ? <CommandIcon /> : <TerminalPromptIcon size={14} color="#5b9e6f" />}
-        <span
-          style={{ ...styles.label, cursor: "pointer" }}
-          onClick={(e) => {
-            e.stopPropagation();
-            openScriptFile(entry);
-          }}
-          title={entry.file_path ?? entry.command}
-        >
-          {isClaudeCommand ? entry.label.replace(/^\//, "") : entry.label}
-        </span>
+        {isRenaming ? (
+          <RenameInput
+            defaultValue={entry.name}
+            onCommit={async (newName) => {
+              if (entry.file_path) {
+                const dir = entry.file_path.substring(0, entry.file_path.lastIndexOf("/"));
+                await api.renameFile(entry.file_path, dir + "/" + newName);
+                refreshEntries();
+              }
+              setRenamingEntry(null);
+            }}
+            onCancel={() => setRenamingEntry(null)}
+          />
+        ) : (
+          <span
+            style={{ ...styles.label, cursor: "pointer" }}
+            onClick={(e) => {
+              e.stopPropagation();
+              openScriptFile(entry);
+            }}
+            title={entry.file_path ?? entry.command}
+          >
+            {isClaudeCommand ? entry.label.replace(/^\//, "") : entry.label}
+          </span>
+        )}
         <button
+          className={!status ? "script-play-btn" : undefined}
           onClick={(e) => {
             e.stopPropagation();
             if (isClaudeCommand) {
@@ -280,6 +356,73 @@ function TerminalIcon() {
   );
 }
 
+function RenameInput({
+  defaultValue,
+  onCommit,
+  onCancel,
+}: {
+  defaultValue: string;
+  onCommit: (value: string) => void;
+  onCancel: () => void;
+}) {
+  const ref = useRef<HTMLInputElement>(null);
+  const committed = useRef(false);
+  const didSelect = useRef(false);
+
+  const applySelection = useCallback(() => {
+    const el = ref.current;
+    if (!el || didSelect.current) return;
+    didSelect.current = true;
+    const dot = defaultValue.lastIndexOf(".");
+    el.setSelectionRange(0, dot > 0 ? dot : defaultValue.length);
+  }, [defaultValue]);
+
+  useEffect(() => {
+    setTimeout(() => ref.current?.focus(), 0);
+  }, []);
+
+  const commit = useCallback((value: string) => {
+    if (committed.current) return;
+    committed.current = true;
+    const trimmed = value.trim();
+    if (trimmed && trimmed !== defaultValue) {
+      onCommit(trimmed);
+    } else {
+      onCancel();
+    }
+  }, [defaultValue, onCommit, onCancel]);
+
+  return (
+    <input
+      ref={ref}
+      defaultValue={defaultValue}
+      onFocus={applySelection}
+      onClick={(e) => e.stopPropagation()}
+      onKeyDown={(e) => {
+        e.stopPropagation();
+        if (e.key === "Enter") { e.preventDefault(); commit(e.currentTarget.value); }
+        if (e.key === "Escape") { e.preventDefault(); committed.current = true; onCancel(); }
+      }}
+      onBlur={(e) => commit(e.currentTarget.value)}
+      style={{
+        flex: 1,
+        minWidth: 0,
+        background: "transparent",
+        border: "1px solid #007acc",
+        borderRadius: 2,
+        color: "#e0e0e0",
+        fontSize: 12,
+        fontWeight: 600,
+        fontFamily: "inherit",
+        padding: "1px 4px",
+        outline: "none",
+        lineHeight: "normal",
+        boxShadow: "0 0 0 1px rgba(0,122,204,0.3)",
+      }}
+    />
+  );
+}
+
 function CommandIcon() {
   return (
     <svg width="14" height="14" viewBox="-2 -1 28 26" style={{ flexShrink: 0 }}>
@@ -290,7 +433,7 @@ function CommandIcon() {
 
 function PlayIcon() {
   return (
-    <svg width="10" height="10" viewBox="0 0 10 10" fill="currentColor">
+    <svg width="12" height="12" viewBox="0 0 10 10" fill="currentColor">
       <path d="M2 1l7 4-7 4V1z" />
     </svg>
   );

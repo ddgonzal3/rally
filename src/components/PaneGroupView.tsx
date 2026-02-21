@@ -461,8 +461,8 @@ const styles: Record<string, React.CSSProperties> = {
     display: "flex",
     alignItems: "stretch",
     background: "#1a1a1a",
-    minHeight: 28,
-    maxHeight: 28,
+    minHeight: 29,
+    maxHeight: 29,
     overflow: "hidden",
     flexShrink: 0,
   },
@@ -470,6 +470,7 @@ const styles: Record<string, React.CSSProperties> = {
     display: "flex",
     flex: 1,
     overflow: "hidden",
+    boxShadow: "inset 0 -1px 0 #2d2d2d",
   },
   tab: {
     display: "flex",
@@ -483,6 +484,7 @@ const styles: Record<string, React.CSSProperties> = {
     background: "#1a1a1a",
     border: "none",
     borderRight: "1px solid #2d2d2d",
+    boxShadow: "inset 0 -1px 0 #2d2d2d",
     whiteSpace: "nowrap" as const,
     userSelect: "none" as const,
     minWidth: 0,
@@ -491,6 +493,7 @@ const styles: Record<string, React.CSSProperties> = {
   tabActive: {
     color: "#ddd",
     background: "#1e1e1e",
+    boxShadow: "none",
   },
   tabLabel: {
     overflow: "hidden",
@@ -518,6 +521,7 @@ const styles: Record<string, React.CSSProperties> = {
     gap: 0,
     padding: "0 4px",
     flexShrink: 0,
+    boxShadow: "inset 0 -1px 0 #2d2d2d",
   },
   actionBtn: {
     display: "flex",

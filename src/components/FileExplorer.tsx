@@ -32,11 +32,168 @@ function saveExpandedPaths() {
 /** Module-level cache of directory listings — survives component unmount/remount */
 const directoryCache = new Map<string, FileEntry[]>();
 
+/** Currently selected path in the file tree (for Enter-to-rename) */
+let selectedFilePath: string | null = null;
+
+function setSelectedFilePath(path: string | null) {
+  selectedFilePath = path;
+  document.dispatchEvent(new Event("rally:selection-change"));
+}
+
+function useSelectedFilePath() {
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    const handler = () => setTick((t) => t + 1);
+    document.addEventListener("rally:selection-change", handler);
+    return () => document.removeEventListener("rally:selection-change", handler);
+  }, []);
+  return selectedFilePath;
+}
+
 interface FileEntry {
   name: string;
   path: string;
   is_dir: boolean;
   children?: FileEntry[];
+}
+
+// --- Inline edit state (module-level, shared across tree nodes) ---
+
+type InlineEditState = {
+  type: "rename";
+  path: string;
+} | {
+  type: "create";
+  parentPath: string;
+  isDir: boolean;
+  template?: string;
+} | null;
+
+let inlineEdit: InlineEditState = null;
+let inlineEditVersion = 0;
+
+let inlineEditCooldown = false;
+
+function setInlineEdit(state: InlineEditState) {
+  inlineEdit = state;
+  inlineEditVersion++;
+  // When clearing, set a brief cooldown to prevent the global Enter handler
+  // from immediately re-entering rename mode in the same event cycle
+  if (state === null) {
+    inlineEditCooldown = true;
+    setTimeout(() => { inlineEditCooldown = false; }, 50);
+  }
+  document.dispatchEvent(new Event("rally:inline-edit"));
+}
+
+/** Hook to subscribe to inline edit changes */
+function useInlineEdit() {
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    const handler = () => setTick((t) => t + 1);
+    document.addEventListener("rally:inline-edit", handler);
+    return () => document.removeEventListener("rally:inline-edit", handler);
+  }, []);
+  return inlineEdit;
+}
+
+// --- InlineInput component ---
+
+function InlineInput({
+  defaultValue,
+  onCommit,
+  onCancel,
+  selectBasename,
+  depth,
+  isDir,
+}: {
+  defaultValue: string;
+  onCommit: (value: string) => void;
+  onCancel: () => void;
+  selectBasename?: boolean;
+  depth: number;
+  isDir?: boolean;
+}) {
+  const inputRef = useRef<HTMLInputElement>(null);
+  const committed = useRef(false);
+  const didSelect = useRef(false);
+
+  useEffect(() => {
+    // Use rAF + setTimeout to ensure the input is fully rendered and the
+    // no-select CSS override via .inline-edit-input is active before focusing.
+    requestAnimationFrame(() => {
+      setTimeout(() => {
+        const el = inputRef.current;
+        if (!el || didSelect.current) return;
+        didSelect.current = true;
+        el.focus();
+        if (selectBasename && defaultValue.includes(".")) {
+          el.setSelectionRange(0, defaultValue.lastIndexOf("."));
+        } else {
+          el.select();
+        }
+      }, 0);
+    });
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const commit = useCallback((value: string) => {
+    if (committed.current) return;
+    committed.current = true;
+    const trimmed = value.trim();
+    if (trimmed && trimmed !== defaultValue) {
+      onCommit(trimmed);
+    } else {
+      onCancel();
+    }
+  }, [defaultValue, onCommit, onCancel]);
+
+  return (
+    <div
+      className="inline-edit-input"
+      onMouseDown={(e) => e.stopPropagation()}
+      style={{
+        ...styles.node,
+        paddingLeft: depth * 10,
+      }}
+    >
+      {isDir ? <ChevronIcon open={false} /> : <span style={styles.spacer} />}
+      <FileIcon name={defaultValue || (isDir ? "folder" : "file")} isDir={!!isDir} />
+      <input
+        ref={inputRef}
+        defaultValue={defaultValue}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") {
+            e.preventDefault();
+            commit(e.currentTarget.value);
+          }
+          if (e.key === "Escape") {
+            e.preventDefault();
+            committed.current = true;
+            onCancel();
+          }
+        }}
+        onBlur={(e) => commit(e.currentTarget.value)}
+        style={{
+          flex: 1,
+          minWidth: 0,
+          background: "transparent",
+          border: "1px solid #007acc",
+          borderRadius: 2,
+          color: "#e0e0e0",
+          fontSize: 12,
+          fontWeight: 600,
+          fontFamily: "inherit",
+          padding: "1px 4px",
+          marginLeft: 2,
+          outline: "none",
+          lineHeight: "normal",
+          boxShadow: "0 0 0 1px rgba(0,122,204,0.3)",
+          WebkitUserSelect: "text",
+          userSelect: "text",
+        } as React.CSSProperties}
+      />
+    </div>
+  );
 }
 
 // --- Shared tree node ---
@@ -47,12 +204,32 @@ function relativePath(filePath: string, rootPath: string): string {
     : filePath;
 }
 
+function parentDir(filePath: string): string {
+  return filePath.substring(0, filePath.lastIndexOf("/"));
+}
+
 function fileContextMenu(
   filePath: string,
   rootPath: string,
-  onRefresh?: () => void,
+  isDir: boolean,
+  callbacks: {
+    onTrash?: () => void;
+    onRename?: () => void;
+    onNewFile?: (parentPath: string) => void;
+    onNewFolder?: (parentPath: string) => void;
+  },
 ) {
+  const targetDir = isDir ? filePath : parentDir(filePath);
   return [
+    {
+      label: "New File",
+      action: () => callbacks.onNewFile?.(targetDir),
+    },
+    {
+      label: "New Folder",
+      action: () => callbacks.onNewFolder?.(targetDir),
+    },
+    "separator" as const,
     {
       label: "Copy Relative Path",
       action: () =>
@@ -66,11 +243,15 @@ function fileContextMenu(
     { label: "Reveal in Finder", action: () => api.revealInFinder(filePath) },
     "separator" as const,
     {
+      label: "Rename",
+      action: () => callbacks.onRename?.(),
+    },
+    {
       label: "Move to Trash",
       action: async () => {
         try {
           await api.trashFile(filePath);
-          onRefresh?.();
+          callbacks.onTrash?.();
         } catch (e) {
           console.error("Failed to trash file:", e);
         }
@@ -112,6 +293,12 @@ const FileTreeNode = React.memo(
       hasPresetChildren || directoryCache.has(entry.path),
     );
     const btnRef = useRef<HTMLButtonElement>(null);
+
+    const editState = useInlineEdit();
+    const isRenaming = editState?.type === "rename" && editState.path === entry.path;
+    const isCreatingHere = editState?.type === "create" && editState.parentPath === entry.path;
+    const selected = useSelectedFilePath();
+    const isSelected = entry.path === selected;
 
     const isActiveFile = !entry.is_dir && entry.path === activeFilePath;
     // Check if this directory is an ancestor of a file being explicitly revealed
@@ -166,6 +353,7 @@ const FileTreeNode = React.memo(
         suppressNextClickRef.current = false;
         return;
       }
+      setSelectedFilePath(entry.path);
       if (entry.is_dir) {
         if (!loaded) {
           try {
@@ -191,6 +379,7 @@ const FileTreeNode = React.memo(
       }
     }, [entry, loaded, activeWorkspaceId, onOpenFile]);
 
+
     const handleRemoveChild = useCallback(
       (path: string) => {
         setChildren((prev) => {
@@ -201,6 +390,26 @@ const FileTreeNode = React.memo(
       },
       [entry.path],
     );
+
+    const refreshChildren = useCallback(() => {
+      invoke<FileEntry[]>("list_directory", { path: entry.path })
+        .then((entries) => {
+          directoryCache.set(entry.path, entries);
+          setChildren(entries);
+          setLoaded(true);
+        })
+        .catch((e) => console.error("Failed to refresh directory:", e));
+    }, [entry.path]);
+
+    // Auto-expand directory when creating inside it
+    useEffect(() => {
+      if (isCreatingHere && !expanded) {
+        expandedPaths.add(entry.path);
+        saveExpandedPaths();
+        setExpanded(true);
+        if (!loaded) refreshChildren();
+      }
+    }, [isCreatingHere]); // eslint-disable-line react-hooks/exhaustive-deps
 
     const dragStartRef = useRef<{
       x: number;
@@ -248,31 +457,87 @@ const FileTreeNode = React.memo(
 
     return (
       <div>
-        <button
-          ref={btnRef}
-          className={`file-node${isActiveFile || isRevealTarget ? " file-node-active" : ""}`}
-          onClick={handleClick}
-          onMouseDown={handleMouseDown}
-          onContextMenu={(e) => {
-            e.preventDefault();
-            showContextMenu(
-              fileContextMenu(
-                entry.path,
-                rootPath,
-                removeChild ? () => removeChild(entry.path) : undefined,
-              ),
-            );
-          }}
-          style={{ ...styles.node, paddingLeft: depth * 10 }}
-        >
-          {entry.is_dir ? (
-            <ChevronIcon open={expanded} />
-          ) : (
-            <span style={styles.spacer} />
-          )}
-          <FileIcon name={entry.name} isDir={entry.is_dir} isOpen={expanded} />
-          <span style={styles.name}>{entry.name}</span>
-        </button>
+        {isRenaming ? (
+          <InlineInput
+            defaultValue={entry.name}
+            selectBasename={!entry.is_dir}
+            depth={depth}
+            isDir={entry.is_dir}
+            onCommit={async (newName) => {
+              const newPath = parentDir(entry.path) + "/" + newName;
+              try {
+                await api.renameFile(entry.path, newPath);
+                // Update caches
+                const parent = parentDir(entry.path);
+                directoryCache.delete(parent);
+                // Notify parent to refresh
+                removeChild?.(entry.path);
+                // Re-list parent to get the renamed entry
+                const entries = await invoke<FileEntry[]>("list_directory", { path: parent });
+                directoryCache.set(parent, entries);
+                // Force re-render via a DOM event
+                document.dispatchEvent(new CustomEvent("rally:dir-refresh", { detail: { path: parent } }));
+              } catch (e) {
+                console.error("Rename failed:", e);
+              }
+              setInlineEdit(null);
+            }}
+            onCancel={() => setInlineEdit(null)}
+          />
+        ) : (
+          <button
+            ref={btnRef}
+            className={`file-node${isActiveFile || isRevealTarget || isSelected ? " file-node-active" : ""}`}
+            onClick={handleClick}
+            onMouseDown={handleMouseDown}
+            onContextMenu={(e) => {
+              e.preventDefault();
+              setSelectedFilePath(entry.path);
+              showContextMenu(
+                fileContextMenu(entry.path, rootPath, entry.is_dir, {
+                  onTrash: removeChild ? () => removeChild(entry.path) : undefined,
+                  onRename: () => setInlineEdit({ type: "rename", path: entry.path }),
+                  onNewFile: (p) => setInlineEdit({ type: "create", parentPath: p, isDir: false }),
+                  onNewFolder: (p) => setInlineEdit({ type: "create", parentPath: p, isDir: true }),
+                }),
+              );
+            }}
+            style={{ ...styles.node, paddingLeft: depth * 10 }}
+          >
+            {entry.is_dir ? (
+              <ChevronIcon open={expanded} />
+            ) : (
+              <span style={styles.spacer} />
+            )}
+            <FileIcon name={entry.name} isDir={entry.is_dir} isOpen={expanded} />
+            <span style={styles.name}>{entry.name}</span>
+          </button>
+        )}
+        {expanded && isCreatingHere && editState.type === "create" && (
+          <InlineInput
+            defaultValue=""
+            depth={depth + 1}
+            isDir={editState.isDir}
+            onCommit={async (name) => {
+              const newPath = entry.path + "/" + name;
+              try {
+                if (editState.isDir) {
+                  await api.createDirectory(newPath);
+                } else {
+                  await api.writeFileContent(newPath, editState.template ?? "");
+                }
+                refreshChildren();
+                if (!editState.isDir && activeWorkspaceId) {
+                  onOpenFile(activeWorkspaceId, newPath);
+                }
+              } catch (e) {
+                console.error("Create failed:", e);
+              }
+              setInlineEdit(null);
+            }}
+            onCancel={() => setInlineEdit(null)}
+          />
+        )}
         {expanded &&
           children.map((c) => (
             <FileTreeNode
@@ -387,6 +652,7 @@ function GitStatusIcon({
         height="18"
         viewBox="0 0 24 24"
         fill={iconColor}
+        shapeRendering="geometricPrecision"
         style={{ flexShrink: 0 }}
       >
         <path d="M21.007 8.222A3.738 3.738 0 0 0 15.045 5.2a3.737 3.737 0 0 0 1.156 6.583 2.988 2.988 0 0 1-2.668 1.67h-2.99a4.456 4.456 0 0 0-2.989 1.165V7.4a3.737 3.737 0 1 0-1.494 0v9.117a3.776 3.776 0 1 0 1.816.099 2.99 2.99 0 0 1 2.668-1.667h2.99a4.484 4.484 0 0 0 4.223-3.039 3.736 3.736 0 0 0 3.25-3.687zM4.565 3.738a2.242 2.242 0 1 1 4.484 0 2.242 2.242 0 0 1-4.484 0zm4.484 16.441a2.242 2.242 0 1 1-4.484 0 2.242 2.242 0 0 1 4.484 0zm8.221-9.715a2.242 2.242 0 1 1 0-4.485 2.242 2.242 0 0 1 0 4.485z" />
@@ -395,19 +661,21 @@ function GitStatusIcon({
         <span
           style={{
             position: "absolute" as const,
-            bottom: -1,
-            right: -1,
-            fontSize: 10,
+            bottom: -2,
+            right: changeCount < 10 ? -2 : -4,
+            fontSize: 9,
             fontWeight: 700,
-            lineHeight: "11px",
+            fontFamily: "-apple-system, BlinkMacSystemFont, 'SF Pro Text', system-ui, sans-serif",
+            lineHeight: "12px",
             color: "#fff",
             background: "#3478e0",
-            borderRadius: 3,
-            padding: "0 2px",
-            minWidth: 10,
-            height: 11,
+            borderRadius: 6,
+            padding: "0 3px",
+            minWidth: 12,
+            height: 12,
             textAlign: "center" as const,
             boxSizing: "border-box" as const,
+            WebkitFontSmoothing: "antialiased" as const,
           }}
         >
           {changeCount}
@@ -493,18 +761,71 @@ function RootSection({
       .catch((e) => console.error("Failed to load root:", e));
   }, [rootPath]);
 
+  const editState = useInlineEdit();
+  const isCreatingAtRoot = editState?.type === "create" && (
+    editState.parentPath === rootPath ||
+    editState.parentPath.startsWith(rootPath + "/")
+  );
+
   const handleRemoveRootChild = useCallback((path: string) => {
     setFsEntries((prev) => prev.filter((e) => e.path !== path));
   }, []);
+
+  const refreshRootEntries = useCallback(() => {
+    invoke<FileEntry[]>("list_directory", { path: rootPath })
+      .then((r) => {
+        directoryCache.set(rootPath, r);
+        setFsEntries(r);
+        setFsLoaded(true);
+      })
+      .catch((e) => console.error("Failed to refresh root:", e));
+  }, [rootPath]);
+
+  // Listen for dir-refresh events (triggered by rename)
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent).detail;
+      if (detail?.path === rootPath) refreshRootEntries();
+    };
+    document.addEventListener("rally:dir-refresh", handler);
+    return () => document.removeEventListener("rally:dir-refresh", handler);
+  }, [rootPath, refreshRootEntries]);
 
   function handleContextMenu(e: React.MouseEvent) {
     e.preventDefault();
     const actions: Parameters<typeof showContextMenu>[0] = [
       {
+        label: "New File",
+        action: () => setInlineEdit({ type: "create", parentPath: rootPath, isDir: false }),
+      },
+      {
+        label: "New Folder",
+        action: () => setInlineEdit({ type: "create", parentPath: rootPath, isDir: true }),
+      },
+      "separator",
+      {
+        label: "New Script",
+        action: () => setInlineEdit({
+          type: "create",
+          parentPath: rootPath + "/scripts",
+          isDir: false,
+          template: "#!/bin/bash\n\n",
+        }),
+      },
+      {
+        label: "New Command",
+        action: () => setInlineEdit({
+          type: "create",
+          parentPath: rootPath + "/.claude/commands",
+          isDir: false,
+          template: "# Command Name\n\nDescribe what this command does.\n",
+        }),
+      },
+      "separator",
+      {
         label: "Copy Path",
         action: () => navigator.clipboard.writeText(rootPath),
       },
-      "separator",
       { label: "Reveal in Finder", action: () => api.revealInFinder(rootPath) },
     ];
     if (canRemove) {
@@ -554,7 +875,13 @@ function RootSection({
 
   return (
     <div>
-      <div style={styles.rootRowSticky} onContextMenu={handleContextMenu}>
+      <div style={{
+        ...styles.rootRowSticky,
+        ...(repoCollapsed ? {
+          borderRadius: 6,
+          border: "1px solid #2e2e2e",
+        } : {}),
+      }} onContextMenu={handleContextMenu}>
         <div style={styles.rootRow}>
           <button
             onClick={(e) => {
@@ -609,6 +936,35 @@ function RootSection({
           />
         ) : (
           <>
+            {filesExpanded && isCreatingAtRoot && editState.type === "create" && (
+              <InlineInput
+                defaultValue={editState.template ? "" : ""}
+                depth={1}
+                isDir={editState.isDir}
+                onCommit={async (name) => {
+                  const targetDir = editState.parentPath;
+                  const newPath = targetDir + "/" + name;
+                  try {
+                    // Ensure target directory exists (for scripts/, .claude/commands/)
+                    await api.createDirectory(targetDir);
+                    if (editState.isDir) {
+                      await api.createDirectory(newPath);
+                    } else {
+                      await api.writeFileContent(newPath, editState.template ?? "");
+                    }
+                    refreshRootEntries();
+                    // Open the file in editor if it's not a directory
+                    if (!editState.isDir && activeWorkspaceId) {
+                      openFile(activeWorkspaceId, newPath);
+                    }
+                  } catch (e) {
+                    console.error("Create failed:", e);
+                  }
+                  setInlineEdit(null);
+                }}
+                onCancel={() => setInlineEdit(null)}
+              />
+            )}
             {filesExpanded &&
               fsLoaded &&
               fsEntries.map((e) => (
@@ -1056,6 +1412,21 @@ export function FileExplorer({ onCollapse }: FileExplorerProps) {
     } catch { return new Set(); }
   });
 
+  // Global Enter-to-rename: when a file is selected in the tree, Enter triggers rename
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.key !== "Enter" || e.metaKey || e.ctrlKey || e.altKey) return;
+      // Don't trigger if focus is in an input, textarea, or contentEditable
+      const active = document.activeElement;
+      if (active && (active.tagName === "INPUT" || active.tagName === "TEXTAREA" || (active as HTMLElement).isContentEditable)) return;
+      if (!selectedFilePath || inlineEdit || inlineEditCooldown) return;
+      e.preventDefault();
+      setInlineEdit({ type: "rename", path: selectedFilePath });
+    };
+    document.addEventListener("keydown", handler);
+    return () => document.removeEventListener("keydown", handler);
+  }, []);
+
   const handleAddFolder = useCallback(async () => {
     if (!ws) {
       addToast({
@@ -1273,7 +1644,8 @@ const styles: Record<string, React.CSSProperties> = {
     alignItems: "center",
     justifyContent: "space-between",
     padding: "0 8px 0 12px",
-    minHeight: 34,
+    minHeight: 29,
+    maxHeight: 29,
     borderBottom: "1px solid #333",
     flexShrink: 0,
   },
@@ -1417,8 +1789,9 @@ const styles: Record<string, React.CSSProperties> = {
     padding: "1px 6px",
     borderRadius: 8,
     background: "#404040",
-    color: "#f2f2f2",
-    fontWeight: 700,
+    color: "#fff",
+    fontWeight: 600,
+    WebkitFontSmoothing: "antialiased" as const,
   },
   changeSection: {
     marginTop: 2,
@@ -1457,12 +1830,13 @@ const styles: Record<string, React.CSSProperties> = {
     padding: "0 5px",
     borderRadius: 8,
     background: "#404040",
-    color: "#f5f5f5",
+    color: "#fff",
     fontSize: 11,
-    fontWeight: 700,
+    fontWeight: 600,
     lineHeight: "16px",
     textAlign: "center" as const,
     boxSizing: "border-box" as const,
+    WebkitFontSmoothing: "antialiased" as const,
   },
   sectionBody: {
     paddingBottom: 4,

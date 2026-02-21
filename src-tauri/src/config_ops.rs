@@ -17,6 +17,12 @@ pub struct SkillInfo {
     pub content_preview: String,
 }
 
+#[derive(Debug, Serialize)]
+pub struct PathStatus {
+    pub exists: bool,
+    pub is_dir: bool,
+}
+
 fn home_dir() -> PathBuf {
     PathBuf::from(std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string()))
 }
@@ -39,6 +45,25 @@ pub fn write_file_content(path: String, content: String) -> Result<(), String> {
         fs::create_dir_all(parent).map_err(|e| e.to_string())?;
     }
     fs::write(&path, content).map_err(|e| format!("Failed to write {}: {}", path, e))
+}
+
+#[tauri::command]
+pub fn create_directory(path: String) -> Result<(), String> {
+    fs::create_dir_all(&path).map_err(|e| format!("Failed to create {}: {}", path, e))
+}
+
+#[tauri::command]
+pub fn path_status(path: String) -> PathStatus {
+    match fs::metadata(&path) {
+        Ok(meta) => PathStatus {
+            exists: true,
+            is_dir: meta.is_dir(),
+        },
+        Err(_) => PathStatus {
+            exists: false,
+            is_dir: false,
+        },
+    }
 }
 
 #[tauri::command]
