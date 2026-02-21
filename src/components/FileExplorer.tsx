@@ -451,50 +451,9 @@ function CuratedIcon({ active }: { active: boolean }) {
       fill="none"
       style={{ flexShrink: 0 }}
     >
-      <rect
-        x="2"
-        y="2"
-        width="5"
-        height="5"
-        rx="1"
-        stroke={color}
-        strokeWidth="1.2"
-        fill={active ? color : "none"}
-        fillOpacity={active ? 0.2 : 0}
-      />
-      <rect
-        x="9"
-        y="2"
-        width="5"
-        height="5"
-        rx="1"
-        stroke={color}
-        strokeWidth="1.2"
-        fill={active ? color : "none"}
-        fillOpacity={active ? 0.2 : 0}
-      />
-      <rect
-        x="2"
-        y="9"
-        width="5"
-        height="5"
-        rx="1"
-        stroke={color}
-        strokeWidth="1.2"
-        fill={active ? color : "none"}
-        fillOpacity={active ? 0.2 : 0}
-      />
-      <rect
-        x="9"
-        y="9"
-        width="5"
-        height="5"
-        rx="1"
-        stroke={color}
-        strokeWidth="1.2"
-        fill={active ? color : "none"}
-        fillOpacity={active ? 0.2 : 0}
-      />
+      <line x1="2.5" y1="3.5" x2="13.5" y2="3.5" stroke={color} strokeWidth="1.3" strokeLinecap="round" />
+      <line x1="2.5" y1="8" x2="11" y2="8" stroke={color} strokeWidth="1.3" strokeLinecap="round" />
+      <line x1="2.5" y1="12.5" x2="8" y2="12.5" stroke={color} strokeWidth="1.3" strokeLinecap="round" />
     </svg>
   );
 }
@@ -545,16 +504,14 @@ function RootSection({
   }, [rootPath]);
 
   useEffect(() => {
-    if (viewMode === "curated" && !curatedLoaded) {
-      api
-        .listCuratedFiles(rootPath)
-        .then((r) => {
-          setCuratedEntries(r);
-          setCuratedLoaded(true);
-        })
-        .catch((e) => console.error("Failed to load curated:", e));
-    }
-  }, [viewMode, rootPath, curatedLoaded]);
+    api
+      .listCuratedFiles(rootPath)
+      .then((r) => {
+        setCuratedEntries(r);
+        setCuratedLoaded(true);
+      })
+      .catch((e) => console.error("Failed to load curated:", e));
+  }, [rootPath]);
 
   function handleContextMenu(e: React.MouseEvent) {
     e.preventDefault();
@@ -635,7 +592,7 @@ function RootSection({
           title={isCurated ? "Show all files" : "Show curated view"}
           baseStyle={styles.curatedBtn}
         >
-          <CuratedIcon active={isCurated} />
+          <CuratedIcon active={!isCurated} />
         </HoverButton>
       </div>
 
