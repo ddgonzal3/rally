@@ -6,9 +6,11 @@ Hard-won lessons. Read before starting work. Add new entries when you discover t
 
 Changes to `src-tauri/capabilities/default.json`, `tauri.conf.json`, or **any Rust code** (`.rs` files) are NOT picked up by the Vite watcher / hot-reload. After making such changes, always run `./scripts/run.sh` (kill → rebuild → relaunch). Only pure frontend changes (TSX/CSS/TS) hot-reload via the watcher.
 
-## macOS Cmd+Q Bypasses Frontend Event Handlers
+## macOS Cmd+Q Bypasses ALL Tauri Event Handlers
 
-On macOS, Cmd+Q triggers the native application quit through the app menu system. This bypasses the webview's JavaScript `onCloseRequested` handler entirely. To intercept quit/close, you **must** handle it on the Rust side via `on_window_event` with `WindowEvent::CloseRequested` + `api.prevent_close()`, then emit an event to the frontend for the confirmation dialog. See `main.rs` for the current implementation.
+On macOS, Cmd+Q triggers the native application quit through the app menu system. This goes directly to `RunEvent::Exit` — it bypasses BOTH the webview's JavaScript `onCloseRequested` AND Rust's `WindowEvent::CloseRequested` AND `RunEvent::ExitRequested`. None of them fire. There is **no way to prevent it** through event handlers.
+
+The only solution is to **replace the default Quit menu item** with a custom one bound to `CmdOrCtrl+Q` that routes through `on_menu_event`. The red close button (X) still goes through `WindowEvent::CloseRequested` and can be intercepted via `on_window_event`. See `main.rs` for the current implementation.
 
 ## PTY Output to xterm.js: Always Write Raw Bytes
 

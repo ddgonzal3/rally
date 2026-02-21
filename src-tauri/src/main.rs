@@ -7,52 +7,47 @@ use rally::commands;
 use rally::config_ops;
 use rally::pty_manager::{self, PtyManager};
 use rally::ship_ops;
+use tauri::menu::{MenuItemBuilder, PredefinedMenuItem, SubmenuBuilder};
 use tauri::Manager;
 use tauri_plugin_dialog::{DialogExt, MessageDialogButtons, MessageDialogKind};
 
-#[tauri::command]
-fn confirmed_quit(app: tauri::AppHandle) {
-    app.exit(0);
-}
-
 /// Show the native "Quit Rally?" confirmation dialog.
-/// Uses `quit_showing` to prevent stacking. On confirm, sets `force_quit` and exits.
-fn show_quit_dialog(
-    app: tauri::AppHandle,
-    quit_showing: Arc<AtomicBool>,
-    force_quit: Arc<AtomicBool>,
-) {
+/// Uses `quit_showing` to prevent stacking. On confirm, exits the app.
+/// The dialog is parented to the main window so it appears as a visible sheet.
+fn show_quit_dialog(app: tauri::AppHandle, quit_showing: Arc<AtomicBool>) {
     // Don't stack dialogs
     if quit_showing.swap(true, Ordering::SeqCst) {
         return;
     }
 
     let s = quit_showing.clone();
-    let f = force_quit.clone();
 
-    app.dialog()
-        .message("Are you sure you want to quit Rally?")
-        .title("Quit Rally")
-        .kind(MessageDialogKind::Warning)
-        .buttons(MessageDialogButtons::OkCancelCustom(
-            "Quit".into(),
-            "Cancel".into(),
-        ))
-        .show(move |confirmed| {
-            s.store(false, Ordering::SeqCst);
-            if confirmed {
-                f.store(true, Ordering::SeqCst);
-                app.exit(0);
-            }
-        });
+    // Use the window's dialog so it appears as a sheet on the main window
+    if let Some(win) = app.get_webview_window("main") {
+        win.dialog()
+            .message("Are you sure you want to quit Rally?")
+            .title("Quit Rally")
+            .kind(MessageDialogKind::Warning)
+            .buttons(MessageDialogButtons::OkCancelCustom(
+                "Quit".into(),
+                "Cancel".into(),
+            ))
+            .show(move |confirmed| {
+                s.store(false, Ordering::SeqCst);
+                if confirmed {
+                    app.exit(0);
+                }
+            });
+    } else {
+        // No window found — just exit
+        app.exit(0);
+    }
 }
 
 fn main() {
     let pty_state: pty_manager::PtyState = Arc::new(Mutex::new(PtyManager::new()));
     // Guard to prevent stacking multiple quit dialogs
     let quit_showing = Arc::new(AtomicBool::new(false));
-    // When true, allow the quit to proceed (user already confirmed)
-    let force_quit = Arc::new(AtomicBool::new(false));
 
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
@@ -97,23 +92,26 @@ fn main() {
             ship_ops::clear_ship_signal,
             ship_ops::check_ship_trigger,
             ship_ops::post_merge_sync,
-            confirmed_quit,
         ])
         // Intercept window close button (red X) — show quit dialog
         .on_window_event({
             let quit_showing = quit_showing.clone();
-            let force_quit = force_quit.clone();
             move |window, event| {
                 if let tauri::WindowEvent::CloseRequested { api, .. } = event {
-                    if force_quit.load(Ordering::SeqCst) {
-                        return; // User already confirmed — let it close
-                    }
                     api.prevent_close();
                     show_quit_dialog(
                         window.app_handle().clone(),
                         quit_showing.clone(),
-                        force_quit.clone(),
                     );
+                }
+            }
+        })
+        // Intercept our custom "Quit Rally" menu item — shows confirmation dialog
+        .on_menu_event({
+            let quit_showing = quit_showing.clone();
+            move |app, event| {
+                if event.id() == "custom-quit" {
+                    show_quit_dialog(app.clone(), quit_showing.clone());
                 }
             }
         })
@@ -123,10 +121,56 @@ fn main() {
                 eprintln!("Warning: failed to install default commands: {}", e);
             }
 
+            // Custom app menu: replaces the default Quit with our own that shows
+            // a confirmation dialog. macOS Cmd+Q normally triggers RunEvent::Exit
+            // directly (impossible to prevent), so we replace the Quit menu item
+            // with a custom one bound to Cmd+Q that routes through on_menu_event.
+            let app_submenu = SubmenuBuilder::new(app, "Rally")
+                .about(None)
+                .separator()
+                .services()
+                .separator()
+                .hide()
+                .hide_others()
+                .show_all()
+                .separator()
+                .item(
+                    &MenuItemBuilder::with_id("custom-quit", "Quit Rally")
+                        .accelerator("CmdOrCtrl+Q")
+                        .build(app)?,
+                )
+                .build()?;
+
+            let edit_submenu = SubmenuBuilder::new(app, "Edit")
+                .undo()
+                .redo()
+                .separator()
+                .cut()
+                .copy()
+                .paste()
+                .select_all()
+                .build()?;
+
+            let view_submenu = SubmenuBuilder::new(app, "View")
+                .fullscreen()
+                .build()?;
+
+            let window_submenu = SubmenuBuilder::new(app, "Window")
+                .minimize()
+                .maximize()
+                .separator()
+                .item(&PredefinedMenuItem::close_window(app, Some("Close Window"))?)
+                .build()?;
+
+            let menu = tauri::menu::Menu::with_items(
+                app,
+                &[&app_submenu, &edit_submenu, &view_submenu, &window_submenu],
+            )?;
+            app.set_menu(menu)?;
+
             let win = app.get_webview_window("main").unwrap();
             // Position window on the largest monitor's left half
             if let Ok(monitors) = win.available_monitors() {
-                // Pick the monitor with the largest width (likely the widescreen)
                 if let Some(monitor) = monitors.iter().max_by_key(|m| m.size().width) {
                     let pos = monitor.position();
                     let size = monitor.size();
@@ -143,24 +187,10 @@ fn main() {
         })
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
-        .run({
-            let quit_showing = quit_showing.clone();
-            let force_quit = force_quit.clone();
-            move |app_handle, event| {
-                // Intercept Cmd+Q / app-level quit (ExitRequested)
-                // This is separate from WindowEvent::CloseRequested — macOS Cmd+Q
-                // triggers the app exit directly without going through window close.
-                if let tauri::RunEvent::ExitRequested { api, .. } = event {
-                    if force_quit.load(Ordering::SeqCst) {
-                        return; // User already confirmed — let it exit
-                    }
-                    api.prevent_exit();
-                    show_quit_dialog(
-                        app_handle.clone(),
-                        quit_showing.clone(),
-                        force_quit.clone(),
-                    );
-                }
+        .run(|_app_handle, event| {
+            // Prevent the app from exiting when the last window is "closed"
+            if let tauri::RunEvent::ExitRequested { api, .. } = event {
+                api.prevent_exit();
             }
         });
 }
