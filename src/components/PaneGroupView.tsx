@@ -560,7 +560,7 @@ const styles: Record<string, React.CSSProperties> = {
   tabActive: {
     color: "#ddd",
     background: "#1e1e1e",
-    boxShadow: "none",
+    boxShadow: "inset 0 1px 0 #4191e0, inset 0 -1px 0 #2d2d2d",
   },
   tabLabel: {
     overflow: "hidden",

@@ -66,11 +66,11 @@ export function ResizeHandle({ direction, onResize }: ResizeHandleProps) {
         width: isHorizontalLine ? "100%" : 6,
         height: isHorizontalLine ? 6 : "100%",
         cursor: isHorizontalLine ? "row-resize" : "col-resize",
-        background: "transparent",
+        background: "#1a1a1a",
         zIndex: 10,
         display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
+        alignItems: isHorizontalLine ? "flex-end" : "center",
+        justifyContent: isHorizontalLine ? "center" : "center",
       }}
       onMouseEnter={(e) => {
         const line = e.currentTarget.firstElementChild as HTMLDivElement;
