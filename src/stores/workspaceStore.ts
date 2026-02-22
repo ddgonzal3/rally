@@ -1009,11 +1009,16 @@ export const useWorkspaceStore = create<WorkspaceState>()(
   dismissShipSession: () => {
     const session = get().shipSession;
     if (!session) return;
-    if (session.ptyId && !session.exited) {
-      api.killPty(session.ptyId).catch(() => {});
+    if (session.ptyId) {
+      // PTY-backed: we own the process — kill it and clear the signal
+      if (!session.exited) {
+        api.killPty(session.ptyId).catch(() => {});
+      }
+      api.clearShipSignal(session.repoPath).catch(() => {});
     }
-    // Clear the signal file so the next poll doesn't recreate the session
-    api.clearShipSignal(session.repoPath).catch(() => {});
+    // Headless: external process still running — don't clear the signal,
+    // just dismiss the UI. The signal will be cleaned up when the external
+    // process finishes or goes stale (30 min timeout).
     shipOutputBuffer.length = 0;
     set({ shipSession: null });
   },

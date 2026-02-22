@@ -15,12 +15,13 @@ fi
 ahead=$(git rev-list --count "$main_branch".."$branch" 2>/dev/null || echo "0")
 echo "Syncing $branch (resetting $ahead commit(s), rebasing onto $main_branch)..."
 
-git checkout "$branch"
+git checkout "$main_branch" || { echo "Failed to checkout $main_branch"; exit 1; }
+git pull || { echo "Failed to pull $main_branch"; exit 1; }
+
+git checkout "$branch" || { echo "Failed to checkout $branch"; exit 1; }
 if [ "$ahead" -gt 0 ]; then
-  git reset --hard "HEAD~$ahead"
+  git reset --hard "$main_branch" || { echo "Failed to reset $branch"; exit 1; }
 fi
-git checkout "$main_branch"
-git pull
-git rebase "$main_branch" "$branch"
+git rebase "$main_branch" || { echo "Failed to rebase onto $main_branch"; exit 1; }
 
 echo "$branch synced with $main_branch."

@@ -137,7 +137,7 @@ Read `~/.rally/commands/review-pr.md` and follow its full review process for the
 
 2. Write the phase signal with `"phase": "merging"`, then auto-merge and sync:
    ```bash
-   gmerge
+   "$HOME/.rally/bin/gmerge"
    ```
 
 3. Write the final signal file with `verdict: "auto_merge"`, `phase: "complete"`, and a summary.

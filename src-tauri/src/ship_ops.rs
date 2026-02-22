@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::os::unix;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use crate::git_ops;
 
@@ -56,8 +56,22 @@ fn signal_file_path(repo_path: &str) -> PathBuf {
     signals_dir().join(format!("{}.json", sanitize_repo_path(repo_path)))
 }
 
+/// Write a file and make it executable (chmod 755 on Unix).
+fn write_executable(path: &Path, content: &str) -> Result<(), String> {
+    fs::write(path, content)
+        .map_err(|e| format!("Failed to write {}: {}", path.display(), e))?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let perms = std::fs::Permissions::from_mode(0o755);
+        fs::set_permissions(path, perms)
+            .map_err(|e| format!("Failed to chmod {}: {}", path.display(), e))?;
+    }
+    Ok(())
+}
+
 /// Write a command file if missing or outdated.
-fn install_command(target_dir: &PathBuf, filename: &str, version: &str, content: &str) -> Result<(), String> {
+fn install_command(target_dir: &Path, filename: &str, version: &str, content: &str) -> Result<(), String> {
     let target = target_dir.join(filename);
     if target.exists() {
         if let Ok(existing) = fs::read_to_string(&target) {
@@ -74,7 +88,7 @@ fn install_command(target_dir: &PathBuf, filename: &str, version: &str, content:
 /// Create a symlink at link_path → target_path.
 /// Replaces existing symlinks if they point elsewhere. Skips if a real file exists
 /// (user may have their own version).
-fn symlink_command(target_path: &PathBuf, link_path: &PathBuf) -> Result<(), String> {
+fn symlink_command(target_path: &Path, link_path: &Path) -> Result<(), String> {
     if link_path.exists() || link_path.symlink_metadata().is_ok() {
         // Check if it's already a symlink pointing to our target
         if let Ok(existing_target) = fs::read_link(link_path) {
@@ -150,6 +164,7 @@ pub fn ensure_default_commands() -> Result<(), String> {
 
 /// Install the `ship` shell script to ~/.rally/bin/.
 /// Rally terminals have ~/.rally/bin on PATH, so `ship` is available everywhere.
+/// Always overwrites — this is a thin trigger script, not user-customizable.
 fn install_ship_script(home: &str) -> Result<(), String> {
     let bin_dir = PathBuf::from(home).join(".rally").join("bin");
     fs::create_dir_all(&bin_dir)
@@ -163,39 +178,17 @@ printf '{"repo_path":"%s"}\n' "$repo" > ~/.rally/ship-triggers/$(date +%s).json
 echo "Ship triggered for $(basename "$repo") — check Rally for progress"
 "#;
 
-    let script_path = bin_dir.join("ship");
-    fs::write(&script_path, script)
-        .map_err(|e| format!("Failed to write ship script: {}", e))?;
-
-    // Make executable
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        let perms = std::fs::Permissions::from_mode(0o755);
-        fs::set_permissions(&script_path, perms)
-            .map_err(|e| format!("Failed to chmod ship script: {}", e))?;
-    }
-
-    Ok(())
+    write_executable(&bin_dir.join("ship"), script)
 }
 
 /// Install a script to ~/.rally/bin/ if it doesn't already exist.
 /// Uses install-once strategy: never overwrites existing scripts.
-fn install_script(bin_dir: &PathBuf, name: &str, content: &str) -> Result<(), String> {
+fn install_script(bin_dir: &Path, name: &str, content: &str) -> Result<(), String> {
     let script_path = bin_dir.join(name);
     if script_path.exists() {
         return Ok(()); // User may have customized — don't overwrite
     }
-    fs::write(&script_path, content)
-        .map_err(|e| format!("Failed to write {}: {}", name, e))?;
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        let perms = std::fs::Permissions::from_mode(0o755);
-        fs::set_permissions(&script_path, perms)
-            .map_err(|e| format!("Failed to chmod {}: {}", name, e))?;
-    }
-    Ok(())
+    write_executable(&script_path, content)
 }
 
 // --- Script editor: list + restore Rally scripts ---
@@ -286,15 +279,7 @@ pub fn restore_rally_script(name: String) -> Result<(), String> {
     for (sname, content, _) in known_scripts() {
         if sname == name {
             let path = PathBuf::from(&home).join(".rally").join("bin").join(sname);
-            fs::write(&path, content)
-                .map_err(|e| format!("Failed to write {}: {}", sname, e))?;
-            #[cfg(unix)]
-            {
-                use std::os::unix::fs::PermissionsExt;
-                let perms = std::fs::Permissions::from_mode(0o755);
-                fs::set_permissions(&path, perms)
-                    .map_err(|e| format!("Failed to chmod {}: {}", sname, e))?;
-            }
+            write_executable(&path, content)?;
             return Ok(());
         }
     }
@@ -381,17 +366,16 @@ pub async fn post_merge_sync(
     // 2. Go back to the feature branch
     git_ops::git_cmd(&cwd, &["checkout", &merged_branch]).await?;
 
-    // 3. Count how many commits the feature branch is ahead of main
-    //    (these are the commits that were squash-merged and are now redundant)
+    // 3. Count how many commits the feature branch is ahead of main (for logging)
     let count_output = git_ops::git_cmd(
         &cwd,
         &["rev-list", "--count", &format!("{}..{}", main_branch, merged_branch)],
     ).await?;
     let count: usize = count_output.trim().parse().unwrap_or(0);
 
-    // 4. Reset those commits and rebase onto main (gsync)
+    // 4. Reset branch to main and rebase (idempotent — always correct regardless of count)
     if count > 0 {
-        git_ops::git_cmd(&cwd, &["reset", "--hard", &format!("HEAD~{}", count)]).await?;
+        git_ops::git_cmd(&cwd, &["reset", "--hard", &main_branch]).await?;
     }
     git_ops::git_cmd(&cwd, &["rebase", &main_branch]).await?;
 

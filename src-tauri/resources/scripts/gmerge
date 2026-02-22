@@ -29,13 +29,14 @@ if [ -n "$remote_head" ]; then
   fi
 fi
 
-# Check PR exists and is mergeable
-state=$(gh pr view --json state -q '.state' 2>/dev/null)
-if [ -z "$state" ]; then
+# Check PR exists and is mergeable (single API call)
+pr_json=$(gh pr view --json state,mergeable 2>/dev/null)
+if [ -z "$pr_json" ]; then
   echo "No PR found for branch $branch."
   exit 1
 fi
-mergeable=$(gh pr view --json mergeable -q '.mergeable' 2>/dev/null)
+state=$(echo "$pr_json" | grep -o '"state":"[^"]*"' | head -1 | cut -d'"' -f4)
+mergeable=$(echo "$pr_json" | grep -o '"mergeable":"[^"]*"' | head -1 | cut -d'"' -f4)
 
 if [ "$state" != "OPEN" ]; then
   echo "PR is not open (state: $state)."
@@ -53,14 +54,14 @@ gh pr merge --squash || { echo "Merge failed."; exit 1; }
 
 # Sync local branch with main
 echo "Syncing $branch with $main_branch..."
-git checkout "$main_branch"
-git pull
+git checkout "$main_branch" || { echo "Failed to checkout $main_branch"; exit 1; }
+git pull || { echo "Failed to pull $main_branch"; exit 1; }
 
-git checkout "$branch"
+git checkout "$branch" || { echo "Failed to checkout $branch"; exit 1; }
 ahead=$(git rev-list --count "$main_branch".."$branch" 2>/dev/null || echo "0")
 if [ "$ahead" -gt 0 ]; then
-  git reset --hard "HEAD~$ahead"
-  git rebase "$main_branch"
+  git reset --hard "$main_branch" || { echo "Failed to reset $branch"; exit 1; }
+  git rebase "$main_branch" || { echo "Failed to rebase onto $main_branch"; exit 1; }
 fi
 
 # Push if remote branch still exists (may have been auto-deleted on merge)

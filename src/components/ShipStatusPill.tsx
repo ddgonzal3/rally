@@ -68,15 +68,14 @@ function getDisplayState(session: ShipSession, livePrUrl: string | null) {
     };
   }
   if (isFinishing) {
-    const finishPrUrl = session.signal?.pr_url || livePrUrl;
-    const finishPrNum = session.signal?.pr_number;
+    // No signal yet (exited cleanly, waiting for signal file to appear)
     return {
-      title: finishPrNum ? `Shipping PR #${finishPrNum}` : "Shipping",
+      title: "Shipping",
       subtitle: PHASE_LABELS.finishing,
       extra: null,
       accentColor: "#3b82f6",
       titleColor: "#7db8df",
-      prUrl: finishPrUrl,
+      prUrl: livePrUrl,
     };
   }
   // In progress — derive PR URL from signal too (signal gets attached during shipping)
