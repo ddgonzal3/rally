@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import type { Workspace, GitStatus, PushResult, PrStatus, ChangesSummary, CreatePrResult, MergePrResult, ScriptEntry, ShipSignal } from "./types";
+import type { Workspace, GitStatus, PrStatus, ChangesSummary, ScriptEntry, ShipSignal } from "./types";
 
 export const api = {
   listWorkspaces: () => invoke<Workspace[]>("list_workspaces"),
@@ -23,32 +23,11 @@ export const api = {
   gitStatus: (workspacePath: string, mainBranch: string) =>
     invoke<GitStatus>("git_status", { workspacePath, mainBranch }),
 
-  gitSync: (workspacePath: string, branch: string, mainBranch: string) =>
-    invoke<string>("git_sync", { workspacePath, branch, mainBranch }),
-
-  gitRebase: (workspacePath: string, branch: string, mainBranch: string) =>
-    invoke<string>("git_rebase", { workspacePath, branch, mainBranch }),
-
-  gitCommit: (workspacePath: string, message: string) =>
-    invoke<string>("git_commit", { workspacePath, message }),
-
-  gitPush: (workspacePath: string) =>
-    invoke<PushResult>("git_push", { workspacePath }),
-
-  gitCreatePr: (workspacePath: string, title?: string, body?: string) =>
-    invoke<string>("git_create_pr", { workspacePath, title, body }),
-
   gitPrStatus: (workspacePath: string) =>
     invoke<PrStatus>("git_pr_status", { workspacePath }),
 
   gitMergePr: (workspacePath: string, method: string) =>
     invoke<string>("git_merge_pr", { workspacePath, method }),
-
-  gitCreatePrSmart: (workspacePath: string, mainBranch: string) =>
-    invoke<CreatePrResult>("git_create_pr_smart", { workspacePath, mainBranch }),
-
-  gitMergePrSmart: (workspacePath: string, mainBranch: string) =>
-    invoke<MergePrResult>("git_merge_pr_smart", { workspacePath, mainBranch }),
 
   gitChanges: (workspacePath: string) =>
     invoke<ChangesSummary>("git_changes", { workspacePath }),

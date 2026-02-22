@@ -1,0 +1,16 @@
+#!/bin/bash
+# gpr — Push and create PR into main
+# Installed to ~/.rally/bin/ by Rally on startup
+
+branch=$(git symbolic-ref --short HEAD 2>/dev/null)
+if [ -z "$branch" ]; then echo "Not in a git repo"; exit 1; fi
+if [ "$branch" = "main" ] || [ "$branch" = "master" ]; then
+  echo "Cannot create PR from $branch. Switch to a feature branch first."
+  exit 1
+fi
+
+echo "Pushing $branch..."
+git push 2>/dev/null || git push --set-upstream origin "$branch"
+
+echo "Creating PR..."
+gh pr create --fill

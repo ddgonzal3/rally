@@ -8,7 +8,6 @@ import type {
   Workspace,
   GitStatus,
   PrStatus,
-  PushResult,
   Pane,
   WorkspaceLayout,
   LayoutNode,
@@ -167,15 +166,6 @@ interface WorkspaceState {
   refreshAllGitStatuses: () => Promise<void>;
   refreshPrStatusForPath: (path: string) => Promise<void>;
   refreshAllPrStatuses: () => Promise<void>;
-  syncPath: (path: string, branch: string, mainBranch: string) => Promise<string>;
-  /** Full sync: rebase onto main + smart push to remote. Clears syncNeeded. */
-  syncAndPushPath: (path: string, branch: string, mainBranch: string) => Promise<string>;
-  rebasePath: (path: string, branch: string, mainBranch: string) => Promise<string>;
-  commitPath: (path: string, message: string) => Promise<string>;
-  pushPath: (path: string) => Promise<PushResult>;
-  createPrForPath: (path: string, title?: string, body?: string) => Promise<string>;
-  mergePrForPath: (path: string, method?: string) => Promise<string>;
-
   // Layout actions
   getOrCreateLayout: (workspaceId: string) => WorkspaceLayout;
   splitGroup: (
@@ -632,68 +622,6 @@ export const useWorkspaceStore = create<WorkspaceState>()(
       }
       return changed ? { prStatuses: next } : s;
     });
-  },
-
-  syncPath: async (path, branch, mainBranch) => {
-    const result = await api.gitSync(path, branch, mainBranch);
-    await get().refreshGitStatusForPath(path, mainBranch);
-    return result;
-  },
-
-  syncAndPushPath: async (path, branch, mainBranch) => {
-    await api.gitSync(path, branch, mainBranch);
-    await api.gitPush(path);
-    set((s) => ({ syncNeeded: { ...s.syncNeeded, [path]: false } }));
-    await get().refreshGitStatusForPath(path, mainBranch);
-    await get().refreshPrStatusForPath(path);
-    return "Synced and pushed";
-  },
-
-  rebasePath: async (path, branch, mainBranch) => {
-    const result = await api.gitRebase(path, branch, mainBranch);
-    await get().refreshGitStatusForPath(path, mainBranch);
-    return result;
-  },
-
-  commitPath: async (path, message) => {
-    const result = await api.gitCommit(path, message);
-    // Find main_branch for this path
-    const ws = get().workspaces.find((w) => w.paths.includes(path));
-    if (ws) await get().refreshGitStatusForPath(path, ws.main_branch);
-    return result;
-  },
-
-  pushPath: async (path) => {
-    const result = await api.gitPush(path);
-    const ws = get().workspaces.find((w) => w.paths.includes(path));
-    if (ws) await get().refreshGitStatusForPath(path, ws.main_branch);
-    return result;
-  },
-
-  createPrForPath: async (path, title, body) => {
-    const result = await api.gitCreatePr(path, title, body);
-    await get().refreshPrStatusForPath(path);
-    return result;
-  },
-
-  mergePrForPath: async (path, method) => {
-    const result = await api.gitMergePr(path, method ?? "squash");
-    // Mark all paths with same repo URL as needing sync
-    // Skip if repo_url is empty — repos without a remote aren't related
-    const ws = get().workspaces.find((w) => w.paths.includes(path));
-    if (ws && ws.repo_url) {
-      const allPaths = get().workspaces
-        .filter((w) => w.repo_url === ws.repo_url)
-        .flatMap((w) => w.paths);
-      set((s) => {
-        const newSyncNeeded = { ...s.syncNeeded };
-        for (const p of allPaths) newSyncNeeded[p] = true;
-        return { syncNeeded: newSyncNeeded };
-      });
-      await get().refreshGitStatusForPath(path, ws.main_branch);
-    }
-    await get().refreshPrStatusForPath(path);
-    return result;
   },
 
   // --- Layout actions ---

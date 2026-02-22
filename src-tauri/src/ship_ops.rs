@@ -5,10 +5,17 @@ use std::path::PathBuf;
 
 use crate::git_ops;
 
-const SHIP_COMMAND_VERSION: &str = "<!-- rally-ship-v7 -->";
+const SHIP_COMMAND_VERSION: &str = "<!-- rally-ship-v8 -->";
 const SHIP_COMMAND_CONTENT: &str = include_str!("../resources/commands/ship.md");
-const REVIEW_COMMAND_VERSION: &str = "<!-- rally-review-pr-v2 -->";
+const REVIEW_COMMAND_VERSION: &str = "<!-- rally-review-pr-v3 -->";
 const REVIEW_COMMAND_CONTENT: &str = include_str!("../resources/commands/review-pr.md");
+
+const GSHIP_SCRIPT: &str = include_str!("../resources/scripts/gship");
+const GPR_SCRIPT: &str = include_str!("../resources/scripts/gpr");
+const GMERGE_SCRIPT: &str = include_str!("../resources/scripts/gmerge");
+const GFINISH_SCRIPT: &str = include_str!("../resources/scripts/gfinish");
+const GSYNC_SCRIPT: &str = include_str!("../resources/scripts/gsync");
+const GRB_SCRIPT: &str = include_str!("../resources/scripts/grb");
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FlaggedItem {
@@ -119,6 +126,22 @@ pub fn ensure_default_commands() -> Result<(), String> {
         symlink_command(&app_dir.join(filename), &claude_dir.join(filename))?;
     }
 
+    // Install CLI scripts to ~/.rally/bin/
+    let bin_dir = PathBuf::from(&home).join(".rally").join("bin");
+    fs::create_dir_all(&bin_dir)
+        .map_err(|e| format!("Failed to create ~/.rally/bin: {}", e))?;
+
+    for (name, content) in &[
+        ("gship", GSHIP_SCRIPT),
+        ("gpr", GPR_SCRIPT),
+        ("gmerge", GMERGE_SCRIPT),
+        ("gfinish", GFINISH_SCRIPT),
+        ("gsync", GSYNC_SCRIPT),
+        ("grb", GRB_SCRIPT),
+    ] {
+        install_script(&bin_dir, name, content)?;
+    }
+
     // Install `ship` CLI script to ~/.rally/bin/ (available in all Rally terminals)
     install_ship_script(&home)?;
 
@@ -153,6 +176,25 @@ echo "Ship triggered for $(basename "$repo") — check Rally for progress"
             .map_err(|e| format!("Failed to chmod ship script: {}", e))?;
     }
 
+    Ok(())
+}
+
+/// Install a script to ~/.rally/bin/ if it doesn't already exist.
+/// Uses install-once strategy: never overwrites existing scripts.
+fn install_script(bin_dir: &PathBuf, name: &str, content: &str) -> Result<(), String> {
+    let script_path = bin_dir.join(name);
+    if script_path.exists() {
+        return Ok(()); // User may have customized — don't overwrite
+    }
+    fs::write(&script_path, content)
+        .map_err(|e| format!("Failed to write {}: {}", name, e))?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let perms = std::fs::Permissions::from_mode(0o755);
+        fs::set_permissions(&script_path, perms)
+            .map_err(|e| format!("Failed to chmod {}: {}", name, e))?;
+    }
     Ok(())
 }
 

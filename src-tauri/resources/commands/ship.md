@@ -1,13 +1,13 @@
-<!-- rally-ship-v7 -->
-# Ship: Commit, Push, PR, Review, Merge
+<!-- rally-ship-v8 -->
+# Ship: Sync, Push, PR, Review, Merge
 
-You are automating the full ship lifecycle for the current branch. Follow each step exactly. Run the shell scripts verbatim — do NOT improvise git commands outside these scripts.
+You are automating the ship lifecycle for the current branch. Follow each step exactly. This command does NOT commit — the user must have already committed their work.
 
 ## Progress Tracking via Signal File
 
-Rally tracks ship progress by reading the signal file. Before starting each major step, update the signal file with the current phase. This lets Rally show a status pill regardless of where `/ship` is running.
+Rally tracks ship progress by reading the signal file. Before starting each major step, update the signal file with the current phase.
 
-**First, run this setup once at the very beginning** (before Step 1) to initialize variables and the helper function:
+**First, run this setup once at the very beginning:**
 
 ```bash
 REPO_PATH=$(git rev-parse --show-toplevel)
@@ -39,74 +39,53 @@ cat > "$SIGNAL_FILE" << SIGNAL_EOF
 SIGNAL_EOF
 ```
 
-The phases are: `detecting`, `committing`, `pushing`, `creating_pr`, `checking`, `reviewing`, `writing_verdict`, `complete`.
+Phases: `detecting`, `syncing`, `pushing`, `creating_pr`, `checking`, `reviewing`, `writing_verdict`, `merging`, `complete`.
 
-**Important:** After Step 4 discovers the PR number and URL, update `SHIP_PR_NUM` and `SHIP_PR_URL` so subsequent phase signals include them.
+**Important:** After Step 3 discovers the PR number and URL, update `SHIP_PR_NUM` and `SHIP_PR_URL` so subsequent phase signals include them.
 
-## Step 1: Detect State
+## Step 1: Detect & Guard
 
-Write the phase signal with `"phase": "detecting"`, then run this exact script:
+Write the phase signal with `"phase": "detecting"`, then:
 
 ```bash
 BRANCH=$(git symbolic-ref --short HEAD)
 MAIN_BRANCH=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remotes/origin/@@')
 [ -z "$MAIN_BRANCH" ] && MAIN_BRANCH="main"
 IS_DIRTY=$([ -n "$(git status --porcelain)" ] && echo "true" || echo "false")
-HAS_REMOTE=$(git rev-parse --abbrev-ref --symbolic-full-name @{u} 2>/dev/null && echo "true" || echo "false")
-echo "BRANCH=$BRANCH MAIN=$MAIN_BRANCH DIRTY=$IS_DIRTY REMOTE=$HAS_REMOTE"
+AHEAD=$(git rev-list --count "$MAIN_BRANCH".."$BRANCH" 2>/dev/null || echo "0")
+echo "BRANCH=$BRANCH MAIN=$MAIN_BRANCH DIRTY=$IS_DIRTY AHEAD=$AHEAD"
 SHIP_BRANCH="$BRANCH"
 ```
 
-Store these values for subsequent steps.
+**Guard rails — STOP if any of these fail:**
+- If `BRANCH` equals `MAIN_BRANCH`: "Cannot ship from main. Switch to a feature branch first."
+- If `IS_DIRTY=true`: "Working tree is dirty. Commit your changes first, then run /ship again."
+- If `AHEAD=0`: "No commits ahead of $MAIN_BRANCH. Nothing to ship."
 
-**Guard rail**: If `BRANCH` equals `MAIN_BRANCH`:
+## Step 2: Sync Branch
 
-1. Look at the working tree changes (`git diff --stat`, `git diff --cached --stat`, `git status --porcelain`) to understand what's being shipped.
-2. Generate a short, descriptive kebab-case branch name based on the changes (e.g., `add-user-auth`, `fix-sidebar-layout`, `update-ship-command`). If there are no changes to inspect, use the surrounding conversation context.
-3. Create and switch to the branch:
-   ```bash
-   git checkout -b <generated-branch-name>
-   ```
-4. Update the tracking variable:
-   ```bash
-   SHIP_BRANCH="<generated-branch-name>"
-   ```
-5. Continue with Step 2.
+Write the phase signal with `"phase": "syncing"`, then rebase onto main:
 
-## Step 2: Commit if Dirty
+```bash
+git checkout "$MAIN_BRANCH"
+git pull
+git rebase "$MAIN_BRANCH" "$BRANCH"
+```
 
-Write the phase signal with `"phase": "committing"`, then:
+If the rebase fails due to conflicts:
+- Write signal with `verdict: "manual_review"` and summary explaining the conflict.
+- Tell the user: "Rebase onto $MAIN_BRANCH has conflicts. Resolve them, then run /ship again."
+- STOP.
 
-Only if `IS_DIRTY=true`:
-
-1. First, read the diff to understand what changed:
-   ```bash
-   git diff --stat
-   git diff --cached --stat
-   ```
-
-2. Write a concise, descriptive commit message based on the diff, then:
-   ```bash
-   git add -A
-   git commit -m "<your descriptive message>"
-   ```
-
-   `git add -A` stages everything including new files, respecting `.gitignore`. This is the ONE non-deterministic part — use your judgment on the commit message.
-
-## Step 3: Push
+## Step 3: Push & Create PR
 
 Write the phase signal with `"phase": "pushing"`, then:
 
 ```bash
-git push 2>/dev/null || git push --set-upstream origin "$(git symbolic-ref --short HEAD)"
+git push 2>/dev/null || git push --set-upstream origin "$BRANCH"
 ```
 
-If push is rejected (diverged after rebase), use:
-```bash
-git push --force-with-lease
-```
-
-## Step 4: Create PR if Needed
+If push is rejected (diverged), use `git push --force-with-lease`.
 
 Write the phase signal with `"phase": "creating_pr"`, then:
 
@@ -118,15 +97,11 @@ if [ -z "$PR_NUM" ]; then
 fi
 PR_URL=$(gh pr view "$PR_NUM" --json url -q '.url')
 echo "PR_NUMBER=$PR_NUM PR_URL=$PR_URL"
-```
-
-**Update the tracking variables** so subsequent phase signals include PR info:
-```bash
 SHIP_PR_NUM=$PR_NUM
 SHIP_PR_URL="$PR_URL"
 ```
 
-## Step 5: Check Conflicts
+## Step 4: Check Conflicts
 
 Write the phase signal with `"phase": "checking"`, then:
 
@@ -136,81 +111,71 @@ echo "MERGEABLE=$MERGEABLE"
 ```
 
 If `MERGEABLE=CONFLICTING`:
-- Tell the user: "PR has merge conflicts. Resolve them before shipping."
-- Write the signal file with `verdict: "manual_review"` and a summary explaining the conflict.
+- Write signal with `verdict: "manual_review"` and summary explaining the conflict.
 - STOP.
 
-## Step 5b: Sanity Check — Is This PR Worth Merging?
+**Sanity check:** Run `gh pr diff "$PR_NUM" --stat`. If the PR contains only trivial/empty changes, write signal with `verdict: "manual_review"` and summary explaining why. STOP.
 
-Before reviewing, check what's actually in this PR:
-
-```bash
-gh pr diff "$PR_NUM" --stat
-```
-
-If the PR contains **only** trivial or empty changes (e.g., just an empty file, only whitespace changes, only a placeholder/stub with no real implementation), do NOT auto-merge. Instead:
-- Write the signal file with `verdict: "manual_review"`
-- Set the summary to explain why: "This PR appears to contain only trivial/empty changes (e.g., an empty markdown file). Please verify this is intentional before merging."
-- STOP.
-
-This prevents accidentally shipping placeholder files, empty stubs, or accidental commits.
-
-## Step 6: Review
+## Step 5: Review
 
 Write the phase signal with `"phase": "reviewing"`, then:
 
-Read `~/.rally/commands/review-pr.md` and follow its full review process for the current branch. This is the same process used by the standalone `/review-pr` command.
+Read `~/.rally/commands/review-pr.md` and follow its full review process for the current branch.
 
-**Important differences from standalone review-pr:**
-- After the review fixes are applied and staged, **commit and push them** (review-pr alone only stages):
-  ```bash
-  git add -u
-  git commit -m "fix: address review findings"
-  git push
-  ```
-- Use the review findings to determine the verdict in Step 7.
+**After the review completes, determine the verdict based on findings.**
 
-## Step 7: Determine Verdict
+## Step 6: Apply Verdict
 
-Based on the review:
+### If low-risk (no flagged items requiring user attention):
 
-- **`auto_merge`**: No remaining critical issues. All fixes applied and pushed. PR is ready.
-- **`manual_review`**: There are flagged items the user should look at, or you're unsure about a fix.
+1. If the review made any changes:
+   ```bash
+   git add -u
+   git commit -m "Review fixes"
+   git push
+   ```
 
-## Step 8: Write Final Signal File
+2. Write the phase signal with `"phase": "merging"`, then auto-merge and sync:
+   ```bash
+   gmerge
+   ```
 
-Write the phase signal with `"phase": "writing_verdict"`, then write the final signal with the verdict:
+3. Write the final signal file with `verdict: "auto_merge"`, `phase: "complete"`, and a summary.
+
+4. Print summary: what was reviewed, what was fixed, PR merged and branch synced.
+
+### If flagged (issues requiring user attention):
+
+1. Stage the review changes (do NOT commit or push):
+   ```bash
+   git add -u
+   ```
+
+2. Write the final signal file with `verdict: "manual_review"`, `phase: "complete"`, summary, and flagged_items.
+
+3. Print the review report with flagged items. Then:
+   "Changes staged. Review them, then run `gfinish "your message"` when ready."
+
+## Final Signal File Format
 
 ```bash
 cat > "$SIGNAL_FILE" << 'SIGNAL_EOF'
 {
   "version": 1,
-  "timestamp": "<ISO 8601 timestamp>",
-  "repo_path": "<absolute repo path>",
-  "branch": "<branch name>",
+  "timestamp": "<ISO 8601>",
+  "repo_path": "<repo path>",
+  "branch": "<branch>",
   "verdict": "<auto_merge or manual_review>",
   "phase": "complete",
   "pr_number": <number>,
-  "pr_url": "<full GitHub PR URL>",
-  "summary": "<one paragraph review summary>",
+  "pr_url": "<url>",
+  "summary": "<one paragraph>",
   "flagged_items": []
 }
 SIGNAL_EOF
 ```
 
-For `flagged_items`, include any issues you chose NOT to fix:
+For flagged_items:
 ```json
 { "file": "src/foo.ts", "line": 42, "severity": "suggestion", "description": "Consider extracting..." }
 ```
-
-## Step 9: Final Output
-
-### If `auto_merge`:
-Print a summary of what was done:
-- Commits made
-- PR created/updated
-- Review findings fixed
-- "Signal written — Rally will merge and sync automatically."
-
-### If `manual_review`:
-Print the review report with flagged items. Stay available for the user to discuss and iterate. When the user is satisfied, update the signal file verdict to `auto_merge` and push any final changes.
