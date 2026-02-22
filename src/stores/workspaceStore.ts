@@ -50,6 +50,18 @@ const WINDOW_PERSIST_KEY = (() => {
   }
 })();
 
+const VALID_PANE_TYPES = new Set([
+  "claude",
+  "terminal",
+  "claude-launcher",
+  "editor",
+  "diff",
+]);
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object";
+}
+
 type PersistedWorkspaceState = {
   activeWorkspaceId: string | null;
   activePathIndex: Record<string, number>;
@@ -73,6 +85,8 @@ const workspacePersistStorage = (() => {
       try {
         return JSON.parse(raw);
       } catch {
+        // Self-heal invalid persisted payloads from previous builds.
+        localStorage.removeItem(name);
         return null;
       }
     },
@@ -249,15 +263,130 @@ interface WorkspaceState {
   ) => void;
 }
 
+function sanitizePane(raw: unknown): Pane | null {
+  if (!isRecord(raw)) return null;
+  const id = typeof raw.id === "string" && raw.id ? raw.id : crypto.randomUUID();
+  const rawType = typeof raw.type === "string" ? raw.type : "terminal";
+  if (!VALID_PANE_TYPES.has(rawType)) return null;
+  const type = rawType as Pane["type"];
+  const title =
+    typeof raw.title === "string" && raw.title
+      ? raw.title
+      : type === "editor" || type === "diff"
+        ? "File"
+        : type === "claude" || type === "claude-launcher"
+          ? "Claude Code"
+          : "Terminal";
+
+  const pane: Pane = {
+    id,
+    type,
+    title,
+  };
+  if (typeof raw.command === "string") pane.command = raw.command;
+  if (typeof raw.filePath === "string") pane.filePath = raw.filePath;
+  if (typeof raw.cwd === "string") pane.cwd = raw.cwd;
+  if (typeof raw.initialInput === "string") pane.initialInput = raw.initialInput;
+  if (typeof raw.ptyId === "string") pane.ptyId = raw.ptyId;
+  if (typeof raw.scriptBufferKey === "string") pane.scriptBufferKey = raw.scriptBufferKey;
+  return pane;
+}
+
+function sanitizeGroup(raw: unknown): PaneGroup | null {
+  if (!isRecord(raw)) return null;
+  const id = typeof raw.id === "string" && raw.id ? raw.id : crypto.randomUUID();
+  const rawPanes = Array.isArray(raw.panes) ? raw.panes : [];
+  const panes = rawPanes
+    .map((p) => sanitizePane(p))
+    .filter((p): p is Pane => p !== null);
+  if (panes.length === 0) {
+    const fallbackPane: Pane = {
+      id: crypto.randomUUID(),
+      type: "terminal",
+      title: "Terminal",
+    };
+    panes.push(fallbackPane);
+  }
+
+  const rawActivePaneId =
+    typeof raw.activePaneId === "string" ? raw.activePaneId : "";
+  const activePaneId =
+    panes.some((p) => p.id === rawActivePaneId)
+      ? rawActivePaneId
+      : panes[0].id;
+
+  const paneHistory =
+    Array.isArray(raw.paneHistory)
+      ? raw.paneHistory.filter(
+          (id): id is string =>
+            typeof id === "string" && panes.some((p) => p.id === id),
+        )
+      : undefined;
+
+  return {
+    id,
+    panes,
+    activePaneId,
+    ...(paneHistory && paneHistory.length > 0 ? { paneHistory } : {}),
+  };
+}
+
+function sanitizeLayoutNode(
+  raw: unknown,
+  groups: Record<string, PaneGroup>,
+  depth = 0,
+): LayoutNode | null {
+  if (depth > 64 || !isRecord(raw) || typeof raw.type !== "string") return null;
+  if (raw.type === "group") {
+    if (typeof raw.groupId !== "string" || !groups[raw.groupId]) return null;
+    return { type: "group", groupId: raw.groupId };
+  }
+  if (raw.type !== "split") return null;
+
+  const children = Array.isArray(raw.children) ? raw.children : [];
+  if (children.length !== 2) return null;
+  const first = sanitizeLayoutNode(children[0], groups, depth + 1);
+  const second = sanitizeLayoutNode(children[1], groups, depth + 1);
+  if (!first || !second) return null;
+
+  const direction =
+    raw.direction === "vertical" ? "vertical" : "horizontal";
+  const ratioRaw =
+    typeof raw.ratio === "number" && Number.isFinite(raw.ratio)
+      ? raw.ratio
+      : 0.5;
+  const ratio = Math.min(0.9, Math.max(0.1, ratioRaw));
+  const id = typeof raw.id === "string" && raw.id ? raw.id : crypto.randomUUID();
+
+  return {
+    type: "split",
+    id,
+    direction,
+    children: [first, second],
+    ratio,
+  };
+}
+
 /** On restore, convert active claude sessions back to launchers (fresh start). */
 function restoreLayouts(layouts: Record<string, WorkspaceLayout>): Record<string, WorkspaceLayout> {
   const restored: Record<string, WorkspaceLayout> = {};
-  for (const [wsId, layout] of Object.entries(layouts)) {
+  if (!isRecord(layouts)) return restored;
+
+  for (const [wsId, rawLayout] of Object.entries(layouts)) {
+    if (!isRecord(rawLayout)) {
+      restored[wsId] = createDefaultLayout();
+      continue;
+    }
+
+    const rawGroups = isRecord(rawLayout.groups) ? rawLayout.groups : {};
     const groups: Record<string, PaneGroup> = {};
-    for (const [gId, group] of Object.entries(layout.groups)) {
+    for (const [gId, group] of Object.entries(rawGroups)) {
+      const sanitizedGroup = sanitizeGroup(group);
+      if (!sanitizedGroup) continue;
       groups[gId] = {
-        ...group,
-        panes: group.panes.map((p) => {
+        ...sanitizedGroup,
+        id: gId,
+        panes: sanitizedGroup.panes.map((p) => {
           // Strip stale ptyIds — PTYs don't survive app restart
           const { ptyId: _, ...rest } = p;
           return rest.type === "claude"
@@ -266,7 +395,19 @@ function restoreLayouts(layouts: Record<string, WorkspaceLayout>): Record<string
         }),
       };
     }
-    restored[wsId] = { root: layout.root, groups };
+
+    if (Object.keys(groups).length === 0) {
+      restored[wsId] = createDefaultLayout();
+      continue;
+    }
+
+    const root = sanitizeLayoutNode(rawLayout.root, groups);
+    if (!root) {
+      restored[wsId] = createDefaultLayout();
+      continue;
+    }
+
+    restored[wsId] = { root, groups };
   }
   return restored;
 }

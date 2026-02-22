@@ -595,7 +595,7 @@ export function App() {
         {!fileExplorerCollapsed && (
           <>
             <div ref={explorerRef} style={{ width: fileExplorerWidth, minWidth: fileExplorerWidth, flexShrink: 0 }}>
-              <FileExplorer onCollapse={() => setFileExplorerCollapsed(true)} />
+              <FileExplorer onCollapse={() => setFileExplorerCollapsed(true)} flushLeft={panelCollapsed} />
             </div>
             <div
               onMouseDown={handleExplorerResize}

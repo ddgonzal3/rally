@@ -1571,9 +1571,10 @@ function ChangesPanel({
 
 interface FileExplorerProps {
   onCollapse: () => void;
+  flushLeft?: boolean;
 }
 
-export function FileExplorer({ onCollapse }: FileExplorerProps) {
+export function FileExplorer({ onCollapse, flushLeft }: FileExplorerProps) {
   // Individual selectors — avoids re-rendering on unrelated store changes
   // (git polls, ship polls, task output, etc.)
   const activeWorkspaceId = useWorkspaceStore((s) => s.activeWorkspaceId);
@@ -1784,7 +1785,7 @@ export function FileExplorer({ onCollapse }: FileExplorerProps) {
           </svg>
         </button>
       </div>
-      <ScrollArea style={{ flex: 1, padding: "4px 3px" }}>
+      <ScrollArea style={{ flex: 1, padding: "4px 3px", paddingLeft: flushLeft ? 7 : undefined }}>
         {ws.paths.map((p, index) => (
           <div
             key={p}
