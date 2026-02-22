@@ -3,7 +3,7 @@ import { Terminal } from "./Terminal";
 import { ClaudeLauncher } from "./ClaudeLauncher";
 import { ClaudeTerminalWrapper } from "./ClaudeTerminalWrapper";
 import { EditorPane } from "./EditorPane";
-import { DiffView } from "./DiffView";
+
 import { DropZoneTarget, type DropPosition } from "./DropZoneOverlay";
 import { PaneTabIcon } from "./FileIcons";
 import { useWorkspaceStore } from "../stores/workspaceStore";
@@ -475,20 +475,7 @@ function PaneContent({
                 visibility: isActive ? "visible" : "hidden",
               }}
             >
-              {pane.type === "diff" && pane.cwd ? (
-                pane.filePath ? (
-                  <DiffView
-                    rootPath={pane.cwd}
-                    filePath={pane.filePath}
-                    isUntracked={pane.command === "untracked"}
-                    isActive={isActive}
-                  />
-                ) : (
-                  <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100%", color: "#555", fontSize: 13 }}>
-                    Select a file from the changes list
-                  </div>
-                )
-              ) : pane.type === "editor" && pane.filePath ? (
+              {pane.type === "editor" && pane.filePath ? (
                 <EditorPane filePath={pane.filePath} />
               ) : pane.type === "claude-launcher" ? (
                 <ClaudeLauncher

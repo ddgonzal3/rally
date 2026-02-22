@@ -14,6 +14,7 @@ import { startExternalFileDrag, updateDragPosition, endDrag } from "./lib/dragCo
 import { FILE_DROP_COMMIT_EVENT } from "./components/DropZoneOverlay";
 import { ToastContainer, addToast } from "./components/ToastContainer";
 import { ShipStatusPill } from "./components/ShipStatusPill";
+import { GitDiffOverlay } from "./components/GitDiffOverlay";
 
 export function App() {
   const windowLabel = getCurrentWindow().label;
@@ -624,8 +625,16 @@ export function App() {
         )}
         <div style={styles.main}>
           <PaneLayout />
+          <GitDiffOverlay />
         </div>
       </div>
+      <style>{`
+        .syn-comment { color: #6a737d; font-style: italic; }
+        .syn-string { color: #a5d6ff; }
+        .syn-keyword { color: #ff7b72; }
+        .syn-literal { color: #79c0ff; }
+        .syn-number { color: #d2a8ff; }
+      `}</style>
       <ShipStatusPill />
       <ToastContainer />
     </div>
@@ -690,6 +699,7 @@ const styles: Record<string, React.CSSProperties> = {
     display: "flex",
     flexDirection: "column",
     minWidth: 0,
+    position: "relative",
   },
   sidebarResizeHandle: {
     width: 8,

@@ -355,6 +355,26 @@ pub async fn discard_file(cwd: &str, file_path: &str, is_untracked: bool) -> Res
     Ok(())
 }
 
+/// Get unified diff output for staged or unstaged changes.
+pub async fn diff(cwd: &str, staged: bool) -> Result<String, String> {
+    let mut args = vec!["diff", "--unified=3"];
+    if staged {
+        args.push("--cached");
+    }
+    let output = tokio::process::Command::new("git")
+        .args(&args)
+        .current_dir(cwd)
+        .output()
+        .await
+        .map_err(|e| format!("Failed to run git diff: {}", e))?;
+    Ok(String::from_utf8_lossy(&output.stdout).to_string())
+}
+
+/// Commit only what's currently staged (no auto-add).
+pub async fn commit_staged(cwd: &str, message: &str) -> Result<String, String> {
+    git_cmd(cwd, &["commit", "-m", message]).await
+}
+
 // ---------------------------------------------------------------------------
 // Smart PR creation & merge
 // ---------------------------------------------------------------------------

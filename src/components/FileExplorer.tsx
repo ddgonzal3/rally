@@ -702,6 +702,7 @@ function RootSection({
     rootPath: string,
     filePath: string,
     isUntracked: boolean,
+    section?: "staged" | "unstaged" | "untracked",
   ) => void;
 }) {
   const [filesExpanded, _setFilesExpanded] = useState(() => {
@@ -725,6 +726,7 @@ function RootSection({
 
   const activeWorkspaceId = useWorkspaceStore((s) => s.activeWorkspaceId);
   const openFile = useWorkspaceStore((s) => s.openFile);
+  const openGitDiffOverlay = useWorkspaceStore((s) => s.openGitDiffOverlay);
   const removePathFromWorkspace = useWorkspaceStore(
     (s) => s.removePathFromWorkspace,
   );
@@ -870,8 +872,9 @@ function RootSection({
 
   const handleToggleChanges = useCallback(() => {
     if (repoCollapsed) setRepoCollapsed(false);
-    onToggleChanges?.();
-  }, [repoCollapsed, setRepoCollapsed, onToggleChanges]);
+    // Only toggle the overlay — the inline ChangesPanel derives from overlay state
+    openGitDiffOverlay(rootPath);
+  }, [repoCollapsed, setRepoCollapsed, openGitDiffOverlay, rootPath]);
 
   return (
     <div>
@@ -932,8 +935,8 @@ function RootSection({
         (showChanges ? (
           <ChangesPanel
             rootPath={rootPath}
-            onSelectFile={(filePath, isUntracked) =>
-              onSelectChangeFile(rootPath, filePath, isUntracked)
+            onSelectFile={(filePath, isUntracked, section) =>
+              onSelectChangeFile(rootPath, filePath, isUntracked, section)
             }
           />
         ) : (
@@ -1214,7 +1217,7 @@ function ChangesPanel({
   onSelectFile,
 }: {
   rootPath: string;
-  onSelectFile: (filePath: string, isUntracked: boolean) => void;
+  onSelectFile: (filePath: string, isUntracked: boolean, section?: "staged" | "unstaged" | "untracked") => void;
 }) {
   const [changes, setChanges] = useState<ChangesSummary | null>(null);
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
@@ -1310,9 +1313,9 @@ function ChangesPanel({
     }
   }
 
-  function handleSelect(path: string, isUntracked: boolean) {
+  function handleSelect(path: string, isUntracked: boolean, section?: "staged" | "unstaged" | "untracked") {
     setSelectedFile(path);
-    onSelectFile(path, isUntracked);
+    onSelectFile(path, isUntracked, section);
   }
 
   const total = changes
@@ -1340,7 +1343,7 @@ function ChangesPanel({
                   path={f.path}
                   status={f.status}
                   isSelected={selectedFile === f.path}
-                  onClick={() => handleSelect(f.path, false)}
+                  onClick={() => handleSelect(f.path, false, "staged")}
                   actionLabel="Unstage"
                   onAction={() => unstageFile(f.path)}
                 />
@@ -1358,7 +1361,7 @@ function ChangesPanel({
                   path={f.path}
                   status={f.status}
                   isSelected={selectedFile === f.path}
-                  onClick={() => handleSelect(f.path, false)}
+                  onClick={() => handleSelect(f.path, false, "unstaged")}
                   actionLabel="Stage"
                   onAction={() => stageFile(f.path)}
                   secondaryActionLabel="Discard"
@@ -1378,7 +1381,7 @@ function ChangesPanel({
                   path={p}
                   status="?"
                   isSelected={selectedFile === p}
-                  onClick={() => handleSelect(p, true)}
+                  onClick={() => handleSelect(p, true, "untracked")}
                   actionLabel="Stage"
                   onAction={() => stageFile(p)}
                   secondaryActionLabel="Discard"
@@ -1406,7 +1409,9 @@ export function FileExplorer({ onCollapse, flushLeft }: FileExplorerProps) {
   const activeWorkspaceId = useWorkspaceStore((s) => s.activeWorkspaceId);
   const workspaces = useWorkspaceStore((s) => s.workspaces);
   const addPathToWorkspace = useWorkspaceStore((s) => s.addPathToWorkspace);
-  const openDiff = useWorkspaceStore((s) => s.openDiff);
+  const openGitDiffOverlay = useWorkspaceStore((s) => s.openGitDiffOverlay);
+  const gitDiffOverlayOpen = useWorkspaceStore((s) => s.gitDiffOverlayOpen);
+  const gitDiffOverlayPath = useWorkspaceStore((s) => s.gitDiffOverlayPath);
   const setActivePathIndex = useWorkspaceStore((s) => s.setActivePathIndex);
   const ws = workspaces.find((w) => w.id === activeWorkspaceId);
   const [gitRoots, setGitRoots] = useState<Set<string>>(new Set());
@@ -1541,51 +1546,17 @@ export function FileExplorer({ onCollapse, flushLeft }: FileExplorerProps) {
   function handleSelectFile(
     rootPath: string,
     filePath: string,
-    isUntracked: boolean,
+    _isUntracked: boolean,
+    section?: "staged" | "unstaged" | "untracked",
   ) {
-    if (!activeWorkspaceId) return;
-    // Open diff in the first pane
-    const store = useWorkspaceStore.getState();
-    const layout = store.getOrCreateLayout(activeWorkspaceId);
-
-    // Find/reuse existing diff pane or open new
-    for (const [gid, group] of Object.entries(layout.groups)) {
-      const existing = group.panes.find((p) => p.type === "diff");
-      if (existing) {
-        // Update existing diff pane
-        store.transformPane(activeWorkspaceId, gid, existing.id, {
-          title: `Diff: ${filePath.split("/").pop() ?? filePath}`,
-          filePath,
-          cwd: rootPath,
-          command: isUntracked ? "untracked" : undefined,
-        });
-        store.setActivePane(activeWorkspaceId, gid, existing.id);
-        return;
-      }
+    // Open the git diff overlay for this repo, scrolled to the specific file
+    // If the file is staged, switch to the staged tab
+    if (section === "staged") {
+      useWorkspaceStore.getState().setGitDiffActiveTab("staged");
+    } else {
+      useWorkspaceStore.getState().setGitDiffActiveTab("unstaged");
     }
-
-    // No existing diff pane — open one
-    openDiff(activeWorkspaceId, rootPath);
-    // After opening, update it with the selected file
-    setTimeout(() => {
-      const updatedLayout = useWorkspaceStore
-        .getState()
-        .getOrCreateLayout(activeWorkspaceId);
-      for (const [gid, group] of Object.entries(updatedLayout.groups)) {
-        const pane = group.panes.find((p) => p.type === "diff");
-        if (pane) {
-          useWorkspaceStore
-            .getState()
-            .transformPane(activeWorkspaceId, gid, pane.id, {
-              title: `Diff: ${filePath.split("/").pop() ?? filePath}`,
-              filePath,
-              cwd: rootPath,
-              command: isUntracked ? "untracked" : undefined,
-            });
-          break;
-        }
-      }
-    }, 50);
+    openGitDiffOverlay(rootPath, filePath);
   }
 
   return (
@@ -1620,7 +1591,7 @@ export function FileExplorer({ onCollapse, flushLeft }: FileExplorerProps) {
             <RootSection
               rootPath={p}
               isGitRepo={gitRoots.has(p)}
-              showChanges={changesOpen.has(p)}
+              showChanges={gitDiffOverlayOpen && gitDiffOverlayPath === p}
               onToggleChanges={() => handleGitIconClick(p)}
               onSelectChangeFile={handleSelectFile}
             />

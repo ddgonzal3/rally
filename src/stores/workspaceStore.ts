@@ -145,6 +145,11 @@ interface WorkspaceState {
   shipSession: ShipSession | null;
   /** File path to reveal in explorer (set on explicit reveal, auto-clears) */
   revealedFilePath: string | null;
+  /** Git diff overlay state */
+  gitDiffOverlayOpen: boolean;
+  gitDiffOverlayPath: string | null;
+  gitDiffActiveTab: "unstaged" | "staged";
+  gitDiffScrollToFile: string | null;
   loading: boolean;
 
   // Workspace actions
@@ -213,6 +218,12 @@ interface WorkspaceState {
   openFile: (workspaceId: string, filePath: string) => void;
   /** Reveal a file in the explorer (expand ancestors + highlight) */
   revealFileInExplorer: (filePath: string) => void;
+  /** Open the git diff overlay for a repo path, optionally scrolling to a file */
+  openGitDiffOverlay: (rootPath: string, scrollToFile?: string) => void;
+  /** Close the git diff overlay */
+  closeGitDiffOverlay: () => void;
+  /** Set the active tab in the git diff overlay */
+  setGitDiffActiveTab: (tab: "unstaged" | "staged") => void;
   /** Open a diff view for a repo path */
   openDiff: (workspaceId: string, rootPath: string) => void;
   // Ship actions
@@ -454,6 +465,10 @@ export const useWorkspaceStore = create<WorkspaceState>()(
   shipStatuses: {},
   shipSession: null,
   revealedFilePath: null,
+  gitDiffOverlayOpen: false,
+  gitDiffOverlayPath: null,
+  gitDiffActiveTab: "unstaged" as const,
+  gitDiffScrollToFile: null,
   loading: false,
 
   // --- Workspace actions ---
@@ -1534,6 +1549,35 @@ export const useWorkspaceStore = create<WorkspaceState>()(
     set({ revealedFilePath: filePath });
     // Auto-clear after the explorer has had time to expand + scroll
     setTimeout(() => set({ revealedFilePath: null }), 1000);
+  },
+
+  openGitDiffOverlay: (rootPath, scrollToFile) => {
+    // Toggle: if already open for this path with no specific file, close it
+    const s = get();
+    if (s.gitDiffOverlayOpen && s.gitDiffOverlayPath === rootPath && !scrollToFile) {
+      set({ gitDiffOverlayOpen: false, gitDiffOverlayPath: null, gitDiffScrollToFile: null });
+      return;
+    }
+    set({
+      gitDiffOverlayOpen: true,
+      gitDiffOverlayPath: rootPath,
+      gitDiffScrollToFile: scrollToFile ?? null,
+      // Only reset tab when opening without a specific file
+      // (file-specific opens pre-set the tab via setGitDiffActiveTab)
+      ...(scrollToFile ? {} : { gitDiffActiveTab: "unstaged" as const }),
+    });
+  },
+
+  closeGitDiffOverlay: () => {
+    set({
+      gitDiffOverlayOpen: false,
+      gitDiffOverlayPath: null,
+      gitDiffScrollToFile: null,
+    });
+  },
+
+  setGitDiffActiveTab: (tab) => {
+    set({ gitDiffActiveTab: tab });
   },
 
   openDiff: (workspaceId, rootPath) => {

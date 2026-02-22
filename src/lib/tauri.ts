@@ -44,6 +44,12 @@ export const api = {
   gitDiscardFile: (workspacePath: string, filePath: string, isUntracked: boolean) =>
     invoke<void>("git_discard_file", { workspacePath, filePath, isUntracked }),
 
+  gitDiff: (workspacePath: string, staged: boolean) =>
+    invoke<string>("git_diff", { workspacePath, staged }),
+
+  gitCommitStaged: (workspacePath: string, message: string) =>
+    invoke<string>("git_commit_staged", { workspacePath, message }),
+
   detectGitInfo: (path: string) =>
     invoke<{ repo_url: string; branch: string; name: string }>("detect_git_info", { path }),
 

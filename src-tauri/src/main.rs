@@ -142,6 +142,8 @@ fn main() {
             commands::git_stage_file,
             commands::git_unstage_file,
             commands::git_discard_file,
+            commands::git_diff,
+            commands::git_commit_staged,
             commands::list_directory,
             commands::detect_git_info,
             commands::trash_file,

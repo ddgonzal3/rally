@@ -227,6 +227,16 @@ pub async fn git_discard_file(
 }
 
 #[tauri::command]
+pub async fn git_diff(workspace_path: String, staged: bool) -> Result<String, String> {
+    git_ops::diff(&workspace_path, staged).await
+}
+
+#[tauri::command]
+pub async fn git_commit_staged(workspace_path: String, message: String) -> Result<String, String> {
+    git_ops::commit_staged(&workspace_path, &message).await
+}
+
+#[tauri::command]
 pub fn trash_file(path: String) -> Result<(), String> {
     let p = Path::new(&path);
     if !p.exists() {
