@@ -62,27 +62,37 @@ export function DiffFileSection({
             <>
               <button
                 onClick={handleDiscard}
-                style={confirming ? styles.btnDanger : styles.btn}
-                title={confirming ? "Click again to confirm discard" : "Discard changes"}
+                style={confirming ? styles.iconBtnDanger : styles.iconBtn}
+                title={confirming ? "Click again to confirm" : "Discard changes"}
               >
-                {confirming ? "Confirm?" : "Discard"}
+                {confirming ? (
+                  <span style={{ fontSize: 11, fontWeight: 600 }}>Confirm?</span>
+                ) : (
+                  <svg width="14" height="14" viewBox="0 0 13 13" fill="none">
+                    <path d="M4 3.2V6h2.8M4 6c0-2.2 1.8-4 4-4a4 4 0 1 1-3.1 6.5" stroke="currentColor" strokeWidth="1.35" strokeLinecap="round" strokeLinejoin="round" />
+                  </svg>
+                )}
               </button>
               <button
                 onClick={() => onStage?.(filePath)}
-                style={styles.btnPrimary}
+                style={styles.iconBtn}
                 title="Stage file"
               >
-                Stage
+                <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+                  <path d="M7 3v8M3 7h8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+                </svg>
               </button>
             </>
           )}
           {tab === "staged" && (
             <button
               onClick={() => onUnstage?.(filePath)}
-              style={styles.btn}
+              style={styles.iconBtn}
               title="Unstage file"
             >
-              Unstage
+              <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+                <path d="M3 7h8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+              </svg>
             </button>
           )}
         </div>
@@ -177,44 +187,35 @@ const styles: Record<string, React.CSSProperties> = {
   },
   actions: {
     display: "flex",
-    gap: 6,
+    gap: 2,
     flexShrink: 0,
   },
-  btn: {
-    fontSize: 11,
-    fontWeight: 500,
-    padding: "4px 12px",
-    borderRadius: 14,
+  iconBtn: {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    width: 28,
+    height: 28,
+    borderRadius: 6,
     border: "none",
-    background: "#2d2d2d",
-    color: "#aaa",
+    background: "transparent",
+    color: "#888",
     cursor: "pointer",
-    letterSpacing: "0.01em",
-    transition: "background 150ms, color 150ms",
+    transition: "color 150ms, background 150ms",
   },
-  btnPrimary: {
-    fontSize: 11,
-    fontWeight: 500,
-    padding: "4px 12px",
-    borderRadius: 14,
+  iconBtnDanger: {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    minWidth: 28,
+    height: 28,
+    borderRadius: 6,
     border: "none",
-    background: "#e6edf3",
-    color: "#1a1a1a",
+    background: "rgba(248, 81, 73, 0.15)",
+    color: "#f85149",
     cursor: "pointer",
-    letterSpacing: "0.01em",
-    transition: "background 150ms",
-  },
-  btnDanger: {
-    fontSize: 11,
-    fontWeight: 500,
-    padding: "4px 12px",
-    borderRadius: 14,
-    border: "none",
-    background: "#f85149",
-    color: "#fff",
-    cursor: "pointer",
-    letterSpacing: "0.01em",
-    transition: "background 150ms",
+    padding: "0 6px",
+    transition: "color 150ms, background 150ms",
   },
   hunks: {
     padding: "4px 14px 8px 14px",

@@ -145,6 +145,27 @@ export function GitDiffOverlay() {
     [rootPath, changes, fetchDiffs],
   );
 
+  const [revertConfirming, setRevertConfirming] = useState(false);
+
+  const handleRevertAll = useCallback(async () => {
+    if (!rootPath || !changes) return;
+    if (!revertConfirming) {
+      setRevertConfirming(true);
+      setTimeout(() => setRevertConfirming(false), 3000);
+      return;
+    }
+    setRevertConfirming(false);
+    const allFiles = [
+      ...changes.unstaged.map((f) => f.path),
+      ...changes.untracked,
+    ];
+    for (const f of allFiles) {
+      const isUntracked = changes.untracked.includes(f);
+      await api.gitDiscardFile(rootPath, f, isUntracked);
+    }
+    fetchDiffs();
+  }, [rootPath, changes, revertConfirming, fetchDiffs]);
+
   const handleStageAll = useCallback(async () => {
     if (!rootPath || !changes) return;
     const allFiles = [
@@ -285,15 +306,28 @@ export function GitDiffOverlay() {
             </svg>
             {gitStatus?.branch ?? ""}
           </span>
-          <div style={{ flex: 1 }} />
           {activeTab === "unstaged" && unstagedCount > 0 && (
-            <button onClick={handleStageAll} style={s.bulkActionBtn}>
-              Stage All
-            </button>
+            <>
+              <button onClick={handleRevertAll} style={revertConfirming ? s.bulkActionBtnDanger : s.bulkActionBtn}>
+                <svg width="13" height="13" viewBox="0 0 13 13" fill="none" style={{ marginRight: 4 }}>
+                  <path d="M4 3.2V6h2.8M4 6c0-2.2 1.8-4 4-4a4 4 0 1 1-3.1 6.5" stroke="currentColor" strokeWidth="1.35" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+                {revertConfirming ? "Confirm?" : "Revert all"}
+              </button>
+              <button onClick={handleStageAll} style={s.bulkActionBtn}>
+                <svg width="13" height="13" viewBox="0 0 14 14" fill="none" style={{ marginRight: 4 }}>
+                  <path d="M7 3v8M3 7h8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+                </svg>
+                Stage all
+              </button>
+            </>
           )}
           {activeTab === "staged" && stagedCount > 0 && (
             <button onClick={handleUnstageAll} style={s.bulkActionBtn}>
-              Unstage All
+              <svg width="13" height="13" viewBox="0 0 14 14" fill="none" style={{ marginRight: 4 }}>
+                <path d="M3 7h8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+              </svg>
+              Unstage all
             </button>
           )}
         </div>
@@ -397,10 +431,10 @@ const s: Record<string, React.CSSProperties> = {
     background: "none",
     border: "none",
     color: "#999",
-    fontSize: 11,
+    fontSize: 12,
+    fontWeight: 500,
     cursor: "pointer",
     padding: "4px 8px",
-    borderRadius: 8,
     transition: "color 150ms",
   },
   tab: {
@@ -459,19 +493,39 @@ const s: Record<string, React.CSSProperties> = {
     fontSize: 12,
     color: "#ccc",
     fontFamily: "'SF Mono', 'Menlo', monospace",
+    fontWeight: 600,
     background: "#2a2a2a",
     padding: "5px 14px",
     borderRadius: 20,
     lineHeight: "16px",
   },
   bulkActionBtn: {
-    background: "none",
+    display: "inline-flex",
+    alignItems: "center",
+    background: "#2a2a2a",
     border: "none",
-    color: "#999",
+    color: "#aaa",
     fontSize: 12,
+    fontWeight: 500,
     cursor: "pointer",
-    padding: "4px 8px",
-    transition: "color 150ms",
+    padding: "5px 14px",
+    borderRadius: 20,
+    lineHeight: "16px",
+    transition: "background 150ms, color 150ms",
+  },
+  bulkActionBtnDanger: {
+    display: "inline-flex",
+    alignItems: "center",
+    background: "rgba(248, 81, 73, 0.15)",
+    border: "none",
+    color: "#f85149",
+    fontSize: 12,
+    fontWeight: 500,
+    cursor: "pointer",
+    padding: "5px 14px",
+    borderRadius: 20,
+    lineHeight: "16px",
+    transition: "background 150ms, color 150ms",
   },
   postCommitRow: {
     display: "flex",

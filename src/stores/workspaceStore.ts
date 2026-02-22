@@ -66,6 +66,9 @@ type PersistedWorkspaceState = {
   activePathIndex: Record<string, number>;
   layouts: Record<string, WorkspaceLayout>;
   activeGroupIds: Record<string, string>;
+  gitDiffOverlayOpen: boolean;
+  gitDiffOverlayPath: string | null;
+  gitDiffActiveTab: "unstaged" | "staged";
 };
 
 const workspacePersistStorage = (() => {
@@ -74,6 +77,9 @@ const workspacePersistStorage = (() => {
     activePathIndex: PersistedWorkspaceState["activePathIndex"];
     layouts: PersistedWorkspaceState["layouts"];
     activeGroupIds: PersistedWorkspaceState["activeGroupIds"];
+    gitDiffOverlayOpen: boolean;
+    gitDiffOverlayPath: string | null;
+    gitDiffActiveTab: string;
     version: number;
   } | null = null;
 
@@ -101,7 +107,10 @@ const workspacePersistStorage = (() => {
         lastRefs.activeWorkspaceId === state.activeWorkspaceId &&
         lastRefs.activePathIndex === state.activePathIndex &&
         lastRefs.layouts === state.layouts &&
-        lastRefs.activeGroupIds === state.activeGroupIds
+        lastRefs.activeGroupIds === state.activeGroupIds &&
+        lastRefs.gitDiffOverlayOpen === state.gitDiffOverlayOpen &&
+        lastRefs.gitDiffOverlayPath === state.gitDiffOverlayPath &&
+        lastRefs.gitDiffActiveTab === state.gitDiffActiveTab
       ) {
         return;
       }
@@ -112,6 +121,9 @@ const workspacePersistStorage = (() => {
         activePathIndex: state.activePathIndex,
         layouts: state.layouts,
         activeGroupIds: state.activeGroupIds,
+        gitDiffOverlayOpen: state.gitDiffOverlayOpen,
+        gitDiffOverlayPath: state.gitDiffOverlayPath,
+        gitDiffActiveTab: state.gitDiffActiveTab,
         version: resolvedVersion,
       };
     },
@@ -1759,6 +1771,9 @@ export const useWorkspaceStore = create<WorkspaceState>()(
         activePathIndex: state.activePathIndex,
         layouts: state.layouts,
         activeGroupIds: state.activeGroupIds,
+        gitDiffOverlayOpen: state.gitDiffOverlayOpen,
+        gitDiffOverlayPath: state.gitDiffOverlayPath,
+        gitDiffActiveTab: state.gitDiffActiveTab,
       }),
       merge: (persisted, current) => {
         const p = persisted as Partial<WorkspaceState> | undefined;
@@ -1768,6 +1783,9 @@ export const useWorkspaceStore = create<WorkspaceState>()(
           activePathIndex: p?.activePathIndex ?? current.activePathIndex,
           layouts: restoreLayouts(p?.layouts ?? {}),
           activeGroupIds: p?.activeGroupIds ?? current.activeGroupIds,
+          gitDiffOverlayOpen: p?.gitDiffOverlayOpen ?? false,
+          gitDiffOverlayPath: p?.gitDiffOverlayPath ?? null,
+          gitDiffActiveTab: p?.gitDiffActiveTab ?? "unstaged",
         };
       },
     }
