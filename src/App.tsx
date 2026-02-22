@@ -20,6 +20,7 @@ export function App() {
     new URLSearchParams(window.location.search).get("workspaceId");
   const forceNoWorkspaceSelection =
     new URLSearchParams(window.location.search).get("blankWorkspace") === "1";
+  const BACKGROUND_WORK_DEFER_MS = 2500;
   const panelCollapsedKey = `rally:panelCollapsed:${windowLabel}`;
   const fileExplorerCollapsedKey = `rally:fileExplorerCollapsed:${windowLabel}`;
   const sidebarWidthKey = `rally:sidebarWidth:${windowLabel}`;
@@ -80,17 +81,19 @@ export function App() {
     document.addEventListener("pointerdown", markInteraction, { passive: true });
     document.addEventListener("keydown", markInteraction, { passive: true });
     document.addEventListener("wheel", markInteraction, { passive: true });
+    document.addEventListener("scroll", markInteraction, { passive: true, capture: true });
     return () => {
       document.removeEventListener("pointerdown", markInteraction);
       document.removeEventListener("keydown", markInteraction);
       document.removeEventListener("wheel", markInteraction);
+      document.removeEventListener("scroll", markInteraction, true);
     };
   }, []);
 
   const shouldDeferBackgroundWork = useCallback(() => {
     if (document.hidden) return true;
-    return Date.now() - lastInteractionAtRef.current < 800;
-  }, []);
+    return Date.now() - lastInteractionAtRef.current < BACKGROUND_WORK_DEFER_MS;
+  }, [BACKGROUND_WORK_DEFER_MS]);
 
   const runGitRefresh = useCallback(async (force = false) => {
     if (gitRefreshInFlightRef.current) return;
@@ -163,15 +166,26 @@ export function App() {
   useEffect(() => {
     let cancelled = false;
     let unlisten: UnlistenFn | null = null;
+    const refreshTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
     listen<{ rootPath: string }>("git-changes-updated", (event) => {
       if (cancelled) return;
       const rootPath = event.payload?.rootPath;
       if (!rootPath) return;
-      const ws = useWorkspaceStore.getState().workspaces.find((w) => w.paths.includes(rootPath));
-      if (ws) {
-        void refreshGitStatusForPath(rootPath, ws.main_branch);
-      }
+      const existing = refreshTimers.get(rootPath);
+      if (existing) clearTimeout(existing);
+      const delay = shouldDeferBackgroundWork() ? 1200 : 120;
+      const timer = setTimeout(() => {
+        refreshTimers.delete(rootPath);
+        if (cancelled) return;
+        const ws = useWorkspaceStore
+          .getState()
+          .workspaces.find((w) => w.paths.includes(rootPath));
+        if (ws) {
+          void refreshGitStatusForPath(rootPath, ws.main_branch);
+        }
+      }, delay);
+      refreshTimers.set(rootPath, timer);
     })
       .then((fn) => {
         if (cancelled) fn();
@@ -181,9 +195,11 @@ export function App() {
 
     return () => {
       cancelled = true;
+      for (const timer of refreshTimers.values()) clearTimeout(timer);
+      refreshTimers.clear();
       unlisten?.();
     };
-  }, [refreshGitStatusForPath]);
+  }, [refreshGitStatusForPath, shouldDeferBackgroundWork]);
 
   // Native File menu actions (always handled here so they work even when
   // sidebar/explorer panels are collapsed).

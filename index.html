@@ -47,10 +47,10 @@
       .file-node:hover .script-play-btn { opacity: 1 !important; }
       .change-item { cursor: pointer; }
       .change-item:not(.change-item-selected):hover { background: #2d2d2d !important; }
-      .change-item .stage-btn { opacity: 0; pointer-events: none; transition: opacity 0.1s, color 0.12s; }
-      .change-item:hover .stage-btn,
-      .change-item-selected .stage-btn { opacity: 1; pointer-events: auto; }
-      .change-item .stage-btn:hover { color: #ddd !important; }
+      .change-item .change-action-btn { display: none; transition: color 0.12s; }
+      .change-item:hover .change-action-btn,
+      .change-item-selected .change-action-btn { display: flex; }
+      .change-item .change-action-btn:hover { color: #ddd !important; }
       .changes-section-btn:hover { color: #fff !important; }
       .hide-native-scrollbar::-webkit-scrollbar { display: none !important; }
       .hide-native-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }

@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import type { Workspace, GitStatus, PushResult, PrStatus, ChangesSummary, ScriptEntry, ShipSignal } from "./types";
+import type { Workspace, GitStatus, PushResult, PrStatus, ChangesSummary, CreatePrResult, MergePrResult, ScriptEntry, ShipSignal } from "./types";
 
 export const api = {
   listWorkspaces: () => invoke<Workspace[]>("list_workspaces"),
@@ -43,6 +43,12 @@ export const api = {
 
   gitMergePr: (workspacePath: string, method: string) =>
     invoke<string>("git_merge_pr", { workspacePath, method }),
+
+  gitCreatePrSmart: (workspacePath: string, mainBranch: string) =>
+    invoke<CreatePrResult>("git_create_pr_smart", { workspacePath, mainBranch }),
+
+  gitMergePrSmart: (workspacePath: string, mainBranch: string) =>
+    invoke<MergePrResult>("git_merge_pr_smart", { workspacePath, mainBranch }),
 
   gitChanges: (workspacePath: string) =>
     invoke<ChangesSummary>("git_changes", { workspacePath }),

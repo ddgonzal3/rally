@@ -142,6 +142,8 @@ fn main() {
             commands::git_create_pr,
             commands::git_pr_status,
             commands::git_merge_pr,
+            commands::git_create_pr_smart,
+            commands::git_merge_pr_smart,
             commands::git_changes,
             commands::git_file_at_head,
             commands::git_stage_file,

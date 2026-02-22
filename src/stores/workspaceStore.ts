@@ -50,6 +50,65 @@ const WINDOW_PERSIST_KEY = (() => {
   }
 })();
 
+type PersistedWorkspaceState = {
+  activeWorkspaceId: string | null;
+  activePathIndex: Record<string, number>;
+  layouts: Record<string, WorkspaceLayout>;
+  activeGroupIds: Record<string, string>;
+};
+
+const workspacePersistStorage = (() => {
+  let lastRefs: {
+    activeWorkspaceId: string | null;
+    activePathIndex: PersistedWorkspaceState["activePathIndex"];
+    layouts: PersistedWorkspaceState["layouts"];
+    activeGroupIds: PersistedWorkspaceState["activeGroupIds"];
+    version: number;
+  } | null = null;
+
+  return {
+    getItem: (name: string) => {
+      const raw = localStorage.getItem(name);
+      if (!raw) return null;
+      try {
+        return JSON.parse(raw);
+      } catch {
+        return null;
+      }
+    },
+    setItem: (
+      name: string,
+      value: { state: PersistedWorkspaceState; version?: number },
+    ) => {
+      const { state, version } = value;
+      const resolvedVersion = version ?? 0;
+      if (
+        lastRefs &&
+        lastRefs.version === resolvedVersion &&
+        lastRefs.activeWorkspaceId === state.activeWorkspaceId &&
+        lastRefs.activePathIndex === state.activePathIndex &&
+        lastRefs.layouts === state.layouts &&
+        lastRefs.activeGroupIds === state.activeGroupIds
+      ) {
+        return;
+      }
+
+      localStorage.setItem(name, JSON.stringify(value));
+      lastRefs = {
+        activeWorkspaceId: state.activeWorkspaceId,
+        activePathIndex: state.activePathIndex,
+        layouts: state.layouts,
+        activeGroupIds: state.activeGroupIds,
+        version: resolvedVersion,
+      };
+    },
+    removeItem: (name: string) => {
+      localStorage.removeItem(name);
+      lastRefs = null;
+    },
+  };
+})();
+
 
 interface WorkspaceState {
   workspaces: Workspace[];
@@ -345,13 +404,39 @@ export const useWorkspaceStore = create<WorkspaceState>()(
 
   refreshAllGitStatuses: async () => {
     const workspaces = get().workspaces;
-    const promises: Promise<void>[] = [];
+    const targets: { path: string; mainBranch: string }[] = [];
     for (const ws of workspaces) {
       for (const path of ws.paths) {
-        promises.push(get().refreshGitStatusForPath(path, ws.main_branch));
+        targets.push({ path, mainBranch: ws.main_branch });
       }
     }
-    await Promise.all(promises);
+    if (targets.length === 0) return;
+
+    const results = await Promise.all(
+      targets.map(async ({ path, mainBranch }) => {
+        try {
+          const status = await api.gitStatus(path, mainBranch);
+          return { path, status };
+        } catch (e) {
+          console.error(`Failed to get git status for ${path}:`, e);
+          return null;
+        }
+      }),
+    );
+
+    set((s) => {
+      let changed = false;
+      const next = { ...s.gitStatuses };
+      for (const result of results) {
+        if (!result) continue;
+        const prev = s.gitStatuses[result.path];
+        if (!prev || !gitStatusEqual(prev, result.status)) {
+          next[result.path] = result.status;
+          changed = true;
+        }
+      }
+      return changed ? { gitStatuses: next } : s;
+    });
   },
 
   refreshPrStatusForPath: async (path) => {
@@ -370,13 +455,42 @@ export const useWorkspaceStore = create<WorkspaceState>()(
 
   refreshAllPrStatuses: async () => {
     const workspaces = get().workspaces;
-    const promises: Promise<void>[] = [];
+    const targets: string[] = [];
     for (const ws of workspaces) {
       for (const path of ws.paths) {
-        promises.push(get().refreshPrStatusForPath(path));
+        targets.push(path);
       }
     }
-    await Promise.all(promises);
+    if (targets.length === 0) return;
+
+    const results = await Promise.all(
+      targets.map(async (path) => {
+        try {
+          const prStatus = await api.gitPrStatus(path);
+          return { path, prStatus, error: false as const };
+        } catch {
+          return { path, prStatus: null, error: true as const };
+        }
+      }),
+    );
+
+    set((s) => {
+      let changed = false;
+      const next = { ...s.prStatuses };
+      for (const result of results) {
+        if (result.error) {
+          if (s.prStatuses[result.path] === null) continue;
+          next[result.path] = null;
+          changed = true;
+          continue;
+        }
+        const prev = s.prStatuses[result.path];
+        if (prStatusEqual(prev ?? null, result.prStatus)) continue;
+        next[result.path] = result.prStatus;
+        changed = true;
+      }
+      return changed ? { prStatuses: next } : s;
+    });
   },
 
   syncPath: async (path, branch, mainBranch) => {
@@ -1479,6 +1593,7 @@ export const useWorkspaceStore = create<WorkspaceState>()(
     }),
     {
       name: WINDOW_PERSIST_KEY,
+      storage: workspacePersistStorage,
       partialize: (state) => ({
         activeWorkspaceId: state.activeWorkspaceId,
         activePathIndex: state.activePathIndex,

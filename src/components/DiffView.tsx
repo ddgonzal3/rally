@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback } from "react";
+import React, { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { DiffEditor } from "@monaco-editor/react";
 import { api } from "../lib/tauri";
 import { addToast } from "./ToastContainer";
@@ -21,6 +21,7 @@ interface DiffViewProps {
   rootPath: string;
   filePath: string;
   isUntracked?: boolean;
+  isActive?: boolean;
 }
 
 type ChangeKind = "staged" | "unstaged" | "untracked" | null;
@@ -36,7 +37,12 @@ function toRepoRelativePath(rootPath: string, filePath: string): string {
 /**
  * Full-pane Monaco DiffEditor. Shows HEAD vs working copy for a single file.
  */
-export function DiffView({ rootPath, filePath, isUntracked }: DiffViewProps) {
+export function DiffView({
+  rootPath,
+  filePath,
+  isUntracked,
+  isActive = true,
+}: DiffViewProps) {
   const [original, setOriginal] = useState("");
   const [modified, setModified] = useState("");
   const [loading, setLoading] = useState(true);
@@ -85,10 +91,27 @@ export function DiffView({ rootPath, filePath, isUntracked }: DiffViewProps) {
     [rootPath, showError]
   );
 
+  // Track whether this is the initial load vs a background refresh.
+  // On initial load (file/path change) we show a loading spinner.
+  // On background refresh (reloadToken from file watcher) we silently
+  // re-fetch and only update state if the content actually changed,
+  // preserving the Monaco editor instance and its scroll position.
+  const isInitialLoad = useRef(true);
+
   useEffect(() => {
+    // Reset to initial load when the file identity changes
+    isInitialLoad.current = true;
+  }, [rootPath, filePath, repoFilePath, isUntracked]);
+
+  useEffect(() => {
+    if (!isActive) return;
     let cancelled = false;
-    setLoading(true);
-    setChangeKind(null);
+    const showLoading = isInitialLoad.current;
+    if (showLoading) {
+      setLoading(true);
+      setChangeKind(null);
+    }
+    isInitialLoad.current = false;
 
     (async () => {
       const fullPath = filePath.startsWith("/") ? filePath : `${rootPath}/${repoFilePath}`;
@@ -119,17 +142,19 @@ export function DiffView({ rootPath, filePath, isUntracked }: DiffViewProps) {
       }
 
       if (!cancelled) {
-        setOriginal(orig);
-        setModified(mod);
-        setChangeKind(detectedKind ?? (isUntracked ? "untracked" : null));
-        setLoading(false);
+        const nextKind = detectedKind ?? (isUntracked ? "untracked" : null);
+        setOriginal((prev) => (prev === orig ? prev : orig));
+        setModified((prev) => (prev === mod ? prev : mod));
+        setChangeKind((prev) => (prev === nextKind ? prev : nextKind));
+        if (showLoading) setLoading(false);
       }
     })();
 
     return () => { cancelled = true; };
-  }, [rootPath, filePath, repoFilePath, isUntracked, reloadToken]);
+  }, [rootPath, filePath, repoFilePath, isUntracked, reloadToken, isActive]);
 
   useEffect(() => {
+    if (!isActive) return;
     const onRefreshEvent = (event: Event) => {
       const detail = (event as CustomEvent<{ rootPath?: string }>).detail;
       if (!detail || detail.rootPath === rootPath) {
@@ -138,7 +163,7 @@ export function DiffView({ rootPath, filePath, isUntracked }: DiffViewProps) {
     };
     document.addEventListener(GIT_CHANGES_REFRESH_EVENT, onRefreshEvent);
     return () => document.removeEventListener(GIT_CHANGES_REFRESH_EVENT, onRefreshEvent);
-  }, [rootPath]);
+  }, [rootPath, isActive]);
 
   if (loading) {
     return (
@@ -208,6 +233,12 @@ export function DiffView({ rootPath, filePath, isUntracked }: DiffViewProps) {
             renderSideBySide: true,
             minimap: { enabled: false },
             scrollBeyondLastLine: false,
+            glyphMargin: false,
+            codeLens: false,
+            selectionHighlight: false,
+            occurrencesHighlight: "off",
+            renderValidationDecorations: "off",
+            quickSuggestions: false,
             fontSize: 13,
             lineNumbers: "on",
             padding: { top: 8 },

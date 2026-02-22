@@ -51,6 +51,21 @@ export interface ChangesSummary {
   untracked: string[];
 }
 
+export interface CreatePrResult {
+  pr_number: number;
+  pr_url: string;
+  title: string;
+  branch: string;
+  committed: boolean;
+  branch_created: boolean;
+}
+
+export interface MergePrResult {
+  pr_number: number;
+  branch: string;
+  synced: boolean;
+}
+
 // --- Ship Signal Types ---
 
 export interface ShipSignalFlaggedItem {

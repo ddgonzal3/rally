@@ -22,6 +22,7 @@ export function ScrollArea({
   const dragging = useRef(false);
   const dragStartY = useRef(0);
   const dragStartScroll = useRef(0);
+  const scrollRaf = useRef<number | null>(null);
   const [hovered, setHovered] = useState(false);
   const [visible, setVisible] = useState(false);
   // Track thumb dimensions in refs to avoid state updates during scroll
@@ -60,7 +61,14 @@ export function ScrollArea({
     if (!el || !content) return;
 
     // Scroll handler — update thumb position directly (no state)
-    const onScroll = () => { updateThumb(); flash(); };
+    const onScroll = () => {
+      if (scrollRaf.current !== null) return;
+      scrollRaf.current = requestAnimationFrame(() => {
+        scrollRaf.current = null;
+        updateThumb();
+        flash();
+      });
+    };
     el.addEventListener("scroll", onScroll, { passive: true });
 
     // ResizeObserver on the scroll container (viewport size changes)
@@ -75,6 +83,10 @@ export function ScrollArea({
     updateThumb();
     return () => {
       el.removeEventListener("scroll", onScroll);
+      if (scrollRaf.current !== null) {
+        cancelAnimationFrame(scrollRaf.current);
+        scrollRaf.current = null;
+      }
       ro.disconnect();
       contentRo.disconnect();
       clearTimeout(hideTimer.current);

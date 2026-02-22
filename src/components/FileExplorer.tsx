@@ -9,7 +9,7 @@ import { startFileDrag } from "../lib/dragContext";
 import { ChevronIcon, FileIcon } from "./FileIcons";
 import { TaskPanel } from "./TaskPanel";
 import { ScrollArea } from "./ScrollArea";
-import { addToast } from "./ToastContainer";
+import { addToast, useToastStore } from "./ToastContainer";
 import type { GitStatus, PrStatus, ChangesSummary } from "../lib/types";
 
 const FILE_DRAG_THRESHOLD = 8;
@@ -814,6 +814,7 @@ function RootSection({
   const pathSyncNeeded = useWorkspaceStore((s) => s.syncNeeded[rootPath]);
   const openClaudeCommand = useWorkspaceStore((s) => s.openClaudeCommand);
   const startShipSession = useWorkspaceStore((s) => s.startShipSession);
+  const refreshAllPrStatuses = useWorkspaceStore((s) => s.refreshAllPrStatuses);
   const canRemove = useWorkspaceStore((s) => {
     const ws = s.workspaces.find((w) => w.id === s.activeWorkspaceId);
     return (ws?.paths.length ?? 0) > 1;
@@ -874,6 +875,47 @@ function RootSection({
     return () => document.removeEventListener("rally:dir-refresh", handler);
   }, [rootPath, refreshRootEntries]);
 
+  const handleCreatePr = async (path: string) => {
+    const ws = useWorkspaceStore.getState().workspaces.find((w) => w.paths.includes(path));
+    if (!ws) return;
+    const toastId = addToast({ type: "info", title: "Creating PR...", message: path.split("/").pop() ?? "", duration: 0 });
+    try {
+      const result = await api.gitCreatePrSmart(path, ws.main_branch);
+      useToastStore.getState().dismissToast(toastId);
+      addToast({
+        type: "success",
+        title: `PR #${result.pr_number} created`,
+        message: result.title || result.branch,
+        duration: 0,
+        actions: [{ label: "Open in Browser", onClick: () => { window.open(result.pr_url, "_blank"); } }],
+      });
+    } catch (e) {
+      useToastStore.getState().dismissToast(toastId);
+      addToast({ type: "warning", title: "Create PR failed", message: String(e), duration: 0 });
+    }
+    refreshAllPrStatuses();
+  };
+
+  const handleMergePr = async (path: string) => {
+    const ws = useWorkspaceStore.getState().workspaces.find((w) => w.paths.includes(path));
+    if (!ws) return;
+    const toastId = addToast({ type: "info", title: "Merging PR...", message: path.split("/").pop() ?? "", duration: 0 });
+    try {
+      const result = await api.gitMergePrSmart(path, ws.main_branch);
+      useToastStore.getState().dismissToast(toastId);
+      addToast({
+        type: "success",
+        title: `PR #${result.pr_number} merged`,
+        message: `Branch ${result.branch} ${result.synced ? "synced to main" : "(sync pending)"}`,
+        duration: 0,
+      });
+    } catch (e) {
+      useToastStore.getState().dismissToast(toastId);
+      addToast({ type: "warning", title: "Merge PR failed", message: String(e), duration: 0 });
+    }
+    refreshAllPrStatuses();
+  };
+
   function handleContextMenu(e: React.MouseEvent) {
     e.preventDefault();
     const actions: Parameters<typeof showContextMenu>[0] = [
@@ -915,9 +957,9 @@ function RootSection({
       const hasOpenPr = prStatus?.state === "OPEN";
       actions.push("separator");
       actions.push({
-        label: hasOpenPr ? `Create PR (PR #${prStatus!.number} open)` : "Create PR",
-        action: () => openClaudeCommand(activeWorkspaceId, rootPath, "/create-pr", "Create PR"),
-        disabled: hasOpenPr,
+        label: hasOpenPr ? `Create PR (PR #${prStatus!.number} open)` : !(gitStatus?.dirty || (gitStatus?.ahead ?? 0) > 0) ? "Create PR (no changes)" : "Create PR",
+        action: () => handleCreatePr(rootPath),
+        disabled: hasOpenPr || !(gitStatus?.dirty || (gitStatus?.ahead ?? 0) > 0),
       });
       actions.push({
         label: hasOpenPr ? "Review PR" : "Review PR (no open PR)",
@@ -926,7 +968,7 @@ function RootSection({
       });
       actions.push({
         label: hasOpenPr ? "Merge PR" : "Merge PR (no open PR)",
-        action: () => openClaudeCommand(activeWorkspaceId, rootPath, "/merge-pr", "Merge PR"),
+        action: () => handleMergePr(rootPath),
         disabled: !hasOpenPr,
       });
     }
@@ -1021,9 +1063,15 @@ function RootSection({
               <>
                 <RepoActionButton
                   icon={<CreatePrIcon />}
-                  tooltip={prStatus?.state === "OPEN" ? `Create PR — PR #${prStatus.number} already open` : "Create PR"}
-                  disabled={prStatus?.state === "OPEN"}
-                  onClick={() => activeWorkspaceId && openClaudeCommand(activeWorkspaceId, rootPath, "/create-pr", "Create PR")}
+                  tooltip={
+                    prStatus?.state === "OPEN"
+                      ? `Create PR — PR #${prStatus.number} already open`
+                      : !(gitStatus?.dirty || (gitStatus?.ahead ?? 0) > 0)
+                        ? "Create PR — no changes"
+                        : "Create PR"
+                  }
+                  disabled={prStatus?.state === "OPEN" || !(gitStatus?.dirty || (gitStatus?.ahead ?? 0) > 0)}
+                  onClick={() => handleCreatePr(rootPath)}
                 />
                 <RepoActionButton
                   icon={<ReviewIcon />}
@@ -1035,7 +1083,7 @@ function RootSection({
                   icon={<MergeIcon />}
                   tooltip={prStatus?.state === "OPEN" ? "Merge PR" : "Merge PR — no open PR"}
                   disabled={prStatus?.state !== "OPEN"}
-                  onClick={() => activeWorkspaceId && openClaudeCommand(activeWorkspaceId, rootPath, "/merge-pr", "Merge PR")}
+                  onClick={() => handleMergePr(rootPath)}
                 />
                 <RepoActionButton
                   icon={<ShipIcon />}
@@ -1259,10 +1307,13 @@ function ChangeFileItem({
       }}
       onClick={onClick}
     >
-      <FileIcon name={fileName} isDir={false} isOpen={false} />
-      <span style={styles.changeFileName}>{fileName}</span>
-      {dir && <span style={styles.changeFileDir}>{dir}</span>}
-      <span style={{ flex: 1 }} />
+      <span style={styles.changeFileIcon}>
+        <FileIcon name={fileName} isDir={false} isOpen={false} />
+      </span>
+      <span style={styles.changeFileInfo}>
+        <span style={styles.changeFileName}>{fileName}</span>
+        {dir && <span style={styles.changeFileDir}>{dir}</span>}
+      </span>
       <div style={styles.changeRight}>
         {secondaryActionLabel && onSecondaryAction && (
           <button
@@ -1593,15 +1644,23 @@ export function FileExplorer({ onCollapse }: FileExplorerProps) {
   useEffect(() => {
     let cancelled = false;
     let unlisten: UnlistenFn | null = null;
+    const refreshTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
     listen<{ rootPath: string }>(BACKEND_GIT_CHANGES_UPDATED_EVENT, (event) => {
       const rootPath = event.payload?.rootPath;
       if (!rootPath) return;
-      document.dispatchEvent(
-        new CustomEvent<{ rootPath: string }>(GIT_CHANGES_REFRESH_EVENT, {
-          detail: { rootPath },
-        }),
-      );
+      const existing = refreshTimers.get(rootPath);
+      if (existing) clearTimeout(existing);
+      const timer = setTimeout(() => {
+        refreshTimers.delete(rootPath);
+        if (cancelled) return;
+        document.dispatchEvent(
+          new CustomEvent<{ rootPath: string }>(GIT_CHANGES_REFRESH_EVENT, {
+            detail: { rootPath },
+          }),
+        );
+      }, 120);
+      refreshTimers.set(rootPath, timer);
     })
       .then((fn) => {
         if (cancelled) fn();
@@ -1611,6 +1670,8 @@ export function FileExplorer({ onCollapse }: FileExplorerProps) {
 
     return () => {
       cancelled = true;
+      for (const timer of refreshTimers.values()) clearTimeout(timer);
+      refreshTimers.clear();
       unlisten?.();
     };
   }, []);
@@ -1823,8 +1884,6 @@ const styles: Record<string, React.CSSProperties> = {
     padding: "4px 6px",
     minHeight: 32,
     background: "rgba(35, 35, 35, 0.82)",
-    WebkitBackdropFilter: "blur(12px) saturate(1.2)",
-    backdropFilter: "blur(12px) saturate(1.2)",
   },
   rootChevronBtn: {
     display: "flex",
@@ -1928,8 +1987,8 @@ const styles: Record<string, React.CSSProperties> = {
     width: "100%",
     display: "flex",
     alignItems: "center",
-    gap: 6,
-    padding: "7px 10px 4px",
+    gap: 5,
+    padding: "7px 8px 4px 6px",
     border: "none",
     background: "none",
     cursor: "pointer",
@@ -1972,9 +2031,9 @@ const styles: Record<string, React.CSSProperties> = {
   changeItem: {
     display: "flex",
     alignItems: "center",
-    gap: 6,
-    padding: "5px 10px",
-    margin: "0 4px",
+    gap: 5,
+    padding: "5px 6px 5px 8px",
+    margin: "0 2px",
     borderRadius: 4,
     cursor: "pointer",
     fontSize: 12,
@@ -1984,28 +2043,33 @@ const styles: Record<string, React.CSSProperties> = {
   changeItemSelected: {
     background: "#2d2d2d",
   },
-  changeFileName: {
-    fontWeight: 500,
-    color: "#f2f2f2",
+  changeFileIcon: {
+    display: "flex",
+    alignItems: "center",
+    flexShrink: 0,
+  },
+  changeFileInfo: {
+    flex: 1,
+    minWidth: 0,
     overflow: "hidden",
     textOverflow: "ellipsis",
     whiteSpace: "nowrap" as const,
+  },
+  changeFileName: {
+    fontWeight: 500,
+    color: "#f2f2f2",
   },
   changeFileDir: {
     fontSize: 11,
     color: "#aeb3bb",
-    overflow: "hidden",
-    textOverflow: "ellipsis",
-    whiteSpace: "nowrap" as const,
-    flexShrink: 0,
-    marginLeft: 2,
+    marginLeft: 6,
   },
   changeRight: {
     display: "flex",
     alignItems: "center",
-    gap: 3,
+    gap: 2,
     flexShrink: 0,
-    marginLeft: 8,
+    marginLeft: 4,
   },
   statusGlyphWrap: {
     display: "flex",
@@ -2023,7 +2087,6 @@ const styles: Record<string, React.CSSProperties> = {
     cursor: "pointer",
     width: 18,
     height: 18,
-    display: "flex",
     alignItems: "center",
     justifyContent: "center",
     padding: 0,

@@ -156,15 +156,39 @@ export function Terminal({ cwd, command, initialInput, ptyId: existingPtyId, loc
 
     term.open(containerRef.current);
 
-    // Handle Cmd+C (copy), Cmd+V (paste), Cmd+A (select all)
+    // Handle Cmd+C (copy), Cmd+V (paste), Cmd+A (select all),
+    // and Option+Arrow (word movement)
     term.attachCustomKeyEventHandler((ev) => {
       if (ev.type !== "keydown") return true;
+
+      // Option+Left/Right: send ESC+b / ESC+f for word movement.
+      // macOptionIsMeta makes xterm send CSI modified-key sequences
+      // (e.g. \x1b[1;3D) which most shells don't bind by default.
+      // Intercept and send the emacs-style sequences instead.
+      if (ev.altKey && !ev.metaKey && !ev.ctrlKey) {
+        if (ev.key === "ArrowLeft") {
+          ev.preventDefault();
+          if (ptyIdRef.current) {
+            api.writePty(ptyIdRef.current, Array.from(encoder.encode("\x1bb")));
+          }
+          return false;
+        }
+        if (ev.key === "ArrowRight") {
+          ev.preventDefault();
+          if (ptyIdRef.current) {
+            api.writePty(ptyIdRef.current, Array.from(encoder.encode("\x1bf")));
+          }
+          return false;
+        }
+      }
+
       const isMeta = ev.metaKey; // Cmd on macOS
       if (!isMeta) return true;
 
       if (ev.key === "c") {
         const sel = term.getSelection();
         if (sel) {
+          ev.preventDefault();
           navigator.clipboard.writeText(sel);
           return false; // prevent xterm from handling
         }
@@ -172,6 +196,7 @@ export function Terminal({ cwd, command, initialInput, ptyId: existingPtyId, loc
         return true;
       }
       if (ev.key === "v") {
+        ev.preventDefault();
         navigator.clipboard.readText().then((text) => {
           if (text && ptyIdRef.current) {
             api.writePty(ptyIdRef.current, Array.from(encoder.encode(text)));

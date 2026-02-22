@@ -231,6 +231,16 @@ pub fn git_merge_pr(workspace_path: String, method: String) -> Result<String, St
 }
 
 #[tauri::command]
+pub fn git_create_pr_smart(workspace_path: String, main_branch: String) -> Result<git_ops::CreatePrResult, String> {
+    git_ops::create_pr_smart(&workspace_path, &main_branch)
+}
+
+#[tauri::command]
+pub fn git_merge_pr_smart(workspace_path: String, main_branch: String) -> Result<git_ops::MergePrResult, String> {
+    git_ops::merge_pr_smart(&workspace_path, &main_branch)
+}
+
+#[tauri::command]
 pub fn git_changes(workspace_path: String) -> Result<ChangesSummary, String> {
     git_ops::changes(&workspace_path)
 }
@@ -333,20 +343,6 @@ fn builtin_commands() -> Vec<ScriptEntry> {
             command: "claude:/review-pr".to_string(),
             builtin: true,
             file_path: Some(cmd_dir.join("review-pr.md").to_string_lossy().to_string()),
-        },
-        ScriptEntry {
-            name: "merge-pr".to_string(),
-            label: "/merge-pr".to_string(),
-            command: "claude:/merge-pr".to_string(),
-            builtin: true,
-            file_path: Some(cmd_dir.join("merge-pr.md").to_string_lossy().to_string()),
-        },
-        ScriptEntry {
-            name: "create-pr".to_string(),
-            label: "/create-pr".to_string(),
-            command: "claude:/create-pr".to_string(),
-            builtin: true,
-            file_path: Some(cmd_dir.join("create-pr.md").to_string_lossy().to_string()),
         },
     ]
 }

@@ -342,3 +342,162 @@ pub fn discard_file(cwd: &str, file_path: &str, is_untracked: bool) -> Result<()
     }
     Ok(())
 }
+
+// ---------------------------------------------------------------------------
+// Smart PR creation & merge
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct CreatePrResult {
+    pub pr_number: u32,
+    pub pr_url: String,
+    pub title: String,
+    pub branch: String,
+    pub committed: bool,
+    pub branch_created: bool,
+}
+
+/// Smart PR creation: handles branch creation, committing, pushing, and PR creation.
+pub fn create_pr_smart(cwd: &str, main_branch: &str) -> Result<CreatePrResult, String> {
+    let mut branch = git_cmd(cwd, &["symbolic-ref", "--short", "HEAD"])?;
+    let mut committed = false;
+    let mut branch_created = false;
+
+    // If on main, create a feature branch
+    if branch == main_branch {
+        let diff_stat = git_cmd(cwd, &["diff", "--stat", "HEAD"])
+            .unwrap_or_default();
+        let branch_name = generate_branch_name(&diff_stat);
+        git_cmd(cwd, &["checkout", "-b", &branch_name])?;
+        branch = branch_name;
+        branch_created = true;
+    }
+
+    // If dirty, commit all changes
+    let status_output = git_cmd(cwd, &["status", "--porcelain"])?;
+    if !status_output.is_empty() {
+        git_cmd(cwd, &["add", "-A"])?;
+        let diff_stat = git_cmd(cwd, &["diff", "--cached", "--stat"])?;
+        let msg = generate_commit_message(&diff_stat);
+        git_cmd(cwd, &["commit", "-m", &msg])?;
+        committed = true;
+    }
+
+    // Push
+    push(cwd)?;
+
+    // Create PR
+    let pr_url = create_pr(cwd, None, None)?;
+
+    // Parse PR number from URL (e.g., "https://github.com/org/repo/pull/42")
+    let pr_number = pr_url
+        .rsplit('/')
+        .next()
+        .and_then(|s| s.parse::<u32>().ok())
+        .unwrap_or(0);
+
+    // Get PR title
+    let title = match pr_status(cwd) {
+        Ok(status) => status.title,
+        Err(_) => String::new(),
+    };
+
+    Ok(CreatePrResult {
+        pr_number,
+        pr_url,
+        title,
+        branch,
+        committed,
+        branch_created,
+    })
+}
+
+fn generate_branch_name(diff_stat: &str) -> String {
+    let first_file = diff_stat
+        .lines()
+        .next()
+        .and_then(|l| l.split('|').next())
+        .map(|s| s.trim())
+        .unwrap_or("changes");
+    let sanitized: String = first_file
+        .chars()
+        .map(|c| if c.is_alphanumeric() || c == '-' { c } else { '-' })
+        .collect::<String>()
+        .trim_matches('-')
+        .to_lowercase();
+    let short = if sanitized.len() > 40 { &sanitized[..40] } else { &sanitized };
+    format!("feat/{}", short.trim_end_matches('-'))
+}
+
+fn generate_commit_message(diff_stat: &str) -> String {
+    let file_count = diff_stat.lines().count().saturating_sub(1);
+    if file_count <= 3 {
+        let files: Vec<&str> = diff_stat
+            .lines()
+            .take(file_count)
+            .filter_map(|l| l.split('|').next().map(|s| s.trim()))
+            .collect();
+        format!("Update {}", files.join(", "))
+    } else {
+        format!("Update {} files", file_count)
+    }
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct MergePrResult {
+    pub pr_number: u32,
+    pub branch: String,
+    pub synced: bool,
+}
+
+/// Smart PR merge: squash-merge via gh, then sync feature branch to main.
+pub fn merge_pr_smart(cwd: &str, main_branch: &str) -> Result<MergePrResult, String> {
+    let branch = git_cmd(cwd, &["symbolic-ref", "--short", "HEAD"])?;
+
+    if branch == main_branch {
+        return Err("Cannot merge: currently on main branch".to_string());
+    }
+
+    // Get PR info before merging
+    let pr = pr_status(cwd)?;
+    if pr.state != "OPEN" {
+        return Err(format!("PR #{} is not open (state: {})", pr.number, pr.state));
+    }
+
+    // Squash merge
+    merge_pr(cwd, "squash")?;
+
+    // Sync: checkout main, pull, switch back, rebase, force-push
+    let synced = match sync_branch_after_merge(cwd, &branch, main_branch) {
+        Ok(_) => true,
+        Err(e) => {
+            eprintln!("Post-merge sync failed (PR was merged successfully): {}", e);
+            false
+        }
+    };
+
+    Ok(MergePrResult {
+        pr_number: pr.number,
+        branch,
+        synced,
+    })
+}
+
+fn sync_branch_after_merge(cwd: &str, branch: &str, main_branch: &str) -> Result<(), String> {
+    git_cmd(cwd, &["checkout", main_branch])?;
+    git_cmd(cwd, &["pull"])?;
+    git_cmd(cwd, &["checkout", branch])?;
+
+    let count_str = git_cmd(cwd, &["rev-list", "--count", &format!("{}..HEAD", main_branch)])?;
+    let ahead: u32 = count_str.trim().parse().unwrap_or(0);
+
+    if ahead > 0 {
+        git_cmd(cwd, &["reset", &format!("HEAD~{}", ahead)])?;
+        git_cmd(cwd, &["checkout", "."])?;
+        git_cmd(cwd, &["rebase", main_branch])?;
+    }
+
+    git_cmd(cwd, &["push", "--force-with-lease"])?;
+
+    Ok(())
+}

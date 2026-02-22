@@ -254,14 +254,13 @@ function TextEditor({ filePath }: { filePath: string }) {
       )}
       <Editor
         height="100%"
+        path={filePath}
         language={language}
         theme="vs-dark"
-        value={content}
+        defaultValue={content}
         onChange={(value) => {
-          const v = value ?? "";
-          contentRef.current = v;
-          setContent(v);
-          setDirty(true);
+          contentRef.current = value ?? "";
+          setDirty((prev) => (prev ? prev : true));
         }}
         onMount={handleMount}
         loading={<div style={styles.center} />}
@@ -273,6 +272,13 @@ function TextEditor({ filePath }: { filePath: string }) {
           lineNumbers: "on",
           wordWrap: "off",
           scrollBeyondLastLine: false,
+          glyphMargin: false,
+          codeLens: false,
+          selectionHighlight: false,
+          occurrencesHighlight: "off",
+          renderValidationDecorations: "off",
+          wordBasedSuggestions: "off",
+          quickSuggestions: false,
           padding: { top: 8 },
           renderLineHighlight: "line",
           smoothScrolling: false,
