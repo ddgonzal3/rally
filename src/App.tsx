@@ -30,6 +30,7 @@ export function App() {
   const loadWorkspaces = useWorkspaceStore((s) => s.loadWorkspaces);
   const setActiveWorkspace = useWorkspaceStore((s) => s.setActive);
   const refreshAllGitStatuses = useWorkspaceStore((s) => s.refreshAllGitStatuses);
+  const refreshGitStatusForPath = useWorkspaceStore((s) => s.refreshGitStatusForPath);
   const refreshAllPrStatuses = useWorkspaceStore((s) => s.refreshAllPrStatuses);
   const pollShipSignals = useWorkspaceStore((s) => s.pollShipSignals);
   const [panelCollapsed, setPanelCollapsed] = useState(() =>
@@ -155,6 +156,34 @@ export function App() {
     runShipPoll,
     forceNoWorkspaceSelection,
   ]);
+
+  // Event-driven git status refresh — file watcher emits "git-changes-updated"
+  // with ~700ms debounce. Immediately refresh git status for the affected repo
+  // instead of waiting for the 10s poll.
+  useEffect(() => {
+    let cancelled = false;
+    let unlisten: UnlistenFn | null = null;
+
+    listen<{ rootPath: string }>("git-changes-updated", (event) => {
+      if (cancelled) return;
+      const rootPath = event.payload?.rootPath;
+      if (!rootPath) return;
+      const ws = useWorkspaceStore.getState().workspaces.find((w) => w.paths.includes(rootPath));
+      if (ws) {
+        void refreshGitStatusForPath(rootPath, ws.main_branch);
+      }
+    })
+      .then((fn) => {
+        if (cancelled) fn();
+        else unlisten = fn;
+      })
+      .catch((e) => console.error("Failed to listen for git-changes-updated:", e));
+
+    return () => {
+      cancelled = true;
+      unlisten?.();
+    };
+  }, [refreshGitStatusForPath]);
 
   // Native File menu actions (always handled here so they work even when
   // sidebar/explorer panels are collapsed).

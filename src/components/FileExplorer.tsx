@@ -1020,6 +1020,24 @@ function RootSection({
             {isGitRepo && (
               <>
                 <RepoActionButton
+                  icon={<CreatePrIcon />}
+                  tooltip={prStatus?.state === "OPEN" ? `Create PR — PR #${prStatus.number} already open` : "Create PR"}
+                  disabled={prStatus?.state === "OPEN"}
+                  onClick={() => activeWorkspaceId && openClaudeCommand(activeWorkspaceId, rootPath, "/create-pr", "Create PR")}
+                />
+                <RepoActionButton
+                  icon={<ReviewIcon />}
+                  tooltip={prStatus?.state === "OPEN" ? "Review PR" : "Review PR — no open PR"}
+                  disabled={prStatus?.state !== "OPEN"}
+                  onClick={() => activeWorkspaceId && openClaudeCommand(activeWorkspaceId, rootPath, "/review-pr", "Review PR")}
+                />
+                <RepoActionButton
+                  icon={<MergeIcon />}
+                  tooltip={prStatus?.state === "OPEN" ? "Merge PR" : "Merge PR — no open PR"}
+                  disabled={prStatus?.state !== "OPEN"}
+                  onClick={() => activeWorkspaceId && openClaudeCommand(activeWorkspaceId, rootPath, "/merge-pr", "Merge PR")}
+                />
+                <RepoActionButton
                   icon={<ShipIcon />}
                   tooltip="Ship — commit, push, PR, review, merge"
                   disabled={false}
