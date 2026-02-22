@@ -197,8 +197,10 @@ export function GitDiffOverlay() {
   if (!mounted) return null;
 
   const activeFiles = activeTab === "unstaged" ? unstagedFiles : stagedFiles;
-  const unstagedCount = unstagedFiles.length;
-  const stagedCount = stagedFiles.length;
+  // Use git status counts (source of truth) for tab badges,
+  // not diff-parsed file counts which may miss new/binary files
+  const unstagedCount = (changes?.unstaged.length ?? 0) + (changes?.untracked.length ?? 0);
+  const stagedCount = changes?.staged.length ?? 0;
   const hasStaged = stagedCount > 0;
   const folderName = rootPath?.split("/").pop() ?? "";
 
@@ -217,7 +219,6 @@ export function GitDiffOverlay() {
         <span style={s.title}>
           Changes — {folderName}
         </span>
-        <span style={s.branch}>{gitStatus?.branch ?? ""}</span>
       </div>
 
       {/* Tabs */}
@@ -276,23 +277,27 @@ export function GitDiffOverlay() {
 
       {/* Action bar */}
       <div style={s.actionBar}>
-        <div style={s.actionRow}>
+        {/* Row 1: Branch + bulk action */}
+        <div style={s.branchRow}>
+          <span style={s.branchPill}>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="#ccc" style={{ flexShrink: 0 }}>
+              <path d="M21.007 8.222A3.738 3.738 0 0 0 15.045 5.2a3.737 3.737 0 0 0 1.156 6.583 2.988 2.988 0 0 1-2.668 1.67h-2.99a4.456 4.456 0 0 0-2.989 1.165V7.4a3.737 3.737 0 1 0-1.494 0v9.117a3.776 3.776 0 1 0 1.816.099 2.99 2.99 0 0 1 2.668-1.667h2.99a4.484 4.484 0 0 0 4.223-3.039 3.736 3.736 0 0 0 3.25-3.687zM4.565 3.738a2.242 2.242 0 1 1 4.484 0 2.242 2.242 0 0 1-4.484 0zm4.484 16.441a2.242 2.242 0 1 1-4.484 0 2.242 2.242 0 0 1 4.484 0zm8.221-9.715a2.242 2.242 0 1 1 0-4.485 2.242 2.242 0 0 1 0 4.485z" />
+            </svg>
+            {gitStatus?.branch ?? ""}
+          </span>
+          <div style={{ flex: 1 }} />
           {activeTab === "unstaged" && unstagedCount > 0 && (
-            <button onClick={handleStageAll} style={s.actionBtn}>
+            <button onClick={handleStageAll} style={s.bulkActionBtn}>
               Stage All
             </button>
           )}
           {activeTab === "staged" && stagedCount > 0 && (
-            <button onClick={handleUnstageAll} style={s.actionBtn}>
+            <button onClick={handleUnstageAll} style={s.bulkActionBtn}>
               Unstage All
             </button>
           )}
-          {justCommitted && (
-            <button onClick={handleShip} style={s.shipBtn}>
-              Ship
-            </button>
-          )}
         </div>
+        {/* Row 2: Commit */}
         <div style={s.commitRow}>
           <input
             ref={commitInputRef}
@@ -320,6 +325,20 @@ export function GitDiffOverlay() {
             {committing ? "Committing..." : "Commit"}
           </button>
         </div>
+        {/* Row 3: Post-commit */}
+        {justCommitted && (
+          <div style={s.postCommitRow}>
+            <span style={s.committedLabel}>Committed ✓</span>
+            <div style={{ flex: 1 }} />
+            <button
+              onClick={handleShip}
+              style={s.shipBtn}
+              title="Push, create PR & review"
+            >
+              Ship
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -366,18 +385,6 @@ const s: Record<string, React.CSSProperties> = {
     flex: 1,
     letterSpacing: "-0.01em",
   },
-  branch: {
-    fontSize: 12,
-    color: "#aaa",
-    fontFamily: "'SF Mono', 'Menlo', monospace",
-    background: "#2a2a2a",
-    padding: "5px 14px",
-    borderRadius: 20,
-    lineHeight: "16px",
-    display: "inline-flex",
-    alignItems: "center",
-    justifyContent: "center",
-  },
   tabs: {
     display: "flex",
     alignItems: "center",
@@ -389,7 +396,7 @@ const s: Record<string, React.CSSProperties> = {
   expandCollapseBtn: {
     background: "none",
     border: "none",
-    color: "#6e7681",
+    color: "#999",
     fontSize: 11,
     cursor: "pointer",
     padding: "4px 8px",
@@ -401,7 +408,7 @@ const s: Record<string, React.CSSProperties> = {
     background: "none",
     border: "none",
     borderBottom: "2px solid transparent",
-    color: "#6e7681",
+    color: "#999",
     fontSize: 13,
     cursor: "pointer",
     fontWeight: 500,
@@ -440,25 +447,42 @@ const s: Record<string, React.CSSProperties> = {
     flexDirection: "column",
     gap: 10,
   },
-  actionRow: {
+  branchRow: {
     display: "flex",
+    alignItems: "center",
     gap: 8,
   },
-  actionBtn: {
-    fontSize: 12,
-    fontWeight: 500,
-    padding: "5px 14px",
-    borderRadius: 20,
-    border: "none",
-    background: "#2a2a2a",
-    color: "#ccc",
-    cursor: "pointer",
-    letterSpacing: "0.01em",
-    lineHeight: "16px",
+  branchPill: {
     display: "inline-flex",
     alignItems: "center",
-    justifyContent: "center",
-    transition: "background 150ms, color 150ms",
+    gap: 6,
+    fontSize: 12,
+    color: "#ccc",
+    fontFamily: "'SF Mono', 'Menlo', monospace",
+    background: "#2a2a2a",
+    padding: "5px 14px",
+    borderRadius: 20,
+    lineHeight: "16px",
+  },
+  bulkActionBtn: {
+    background: "none",
+    border: "none",
+    color: "#999",
+    fontSize: 12,
+    cursor: "pointer",
+    padding: "4px 8px",
+    transition: "color 150ms",
+  },
+  postCommitRow: {
+    display: "flex",
+    alignItems: "center",
+    gap: 8,
+  },
+  committedLabel: {
+    fontSize: 13,
+    fontWeight: 500,
+    color: "#3fb950",
+    opacity: 0.8,
   },
   commitRow: {
     display: "flex",
@@ -491,12 +515,12 @@ const s: Record<string, React.CSSProperties> = {
     transition: "opacity 150ms",
   },
   shipBtn: {
-    padding: "5px 14px",
-    borderRadius: 20,
+    padding: "8px 20px",
+    borderRadius: 10,
     border: "none",
-    background: "#3fb950",
-    color: "#fff",
-    fontSize: 12,
+    background: "#e6edf3",
+    color: "#1a1a1a",
+    fontSize: 13,
     lineHeight: "16px",
     display: "inline-flex",
     alignItems: "center",

@@ -270,8 +270,20 @@ pub async fn merge_pr(cwd: &str, method: &str) -> Result<String, String> {
 
 /// Get detailed changes: staged, unstaged, and untracked files.
 /// Parses `git status --porcelain` two-column format.
+/// NOTE: Cannot use git_cmd() here because it trims output, which strips
+/// the leading space that distinguishes unstaged-only files (e.g. " M file").
 pub async fn changes(cwd: &str) -> Result<ChangesSummary, String> {
-    let output = git_cmd(cwd, &["status", "--porcelain"]).await?;
+    let raw = Command::new("git")
+        .args(&["status", "--porcelain"])
+        .current_dir(cwd)
+        .output()
+        .await
+        .map_err(|e| format!("Failed to run git status: {}", e))?;
+    if !raw.status.success() {
+        let stderr = String::from_utf8_lossy(&raw.stderr).trim().to_string();
+        return Err(format!("git status --porcelain failed: {}", stderr));
+    }
+    let output = String::from_utf8_lossy(&raw.stdout).to_string();
     let mut staged = Vec::new();
     let mut unstaged = Vec::new();
     let mut untracked = Vec::new();
