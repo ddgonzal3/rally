@@ -145,8 +145,10 @@ pub fn ensure_default_commands() -> Result<(), String> {
     fs::create_dir_all(&bin_dir)
         .map_err(|e| format!("Failed to create ~/.rally/bin: {}", e))?;
 
+    // gship is a thin trigger (always overwritten, like `ship`)
+    write_executable(&bin_dir.join("gship"), GSHIP_SCRIPT)?;
+
     for (name, content) in &[
-        ("gship", GSHIP_SCRIPT),
         ("gpr", GPR_SCRIPT),
         ("gmerge", GMERGE_SCRIPT),
         ("gfinish", GFINISH_SCRIPT),
@@ -205,7 +207,7 @@ pub struct RallyScriptInfo {
 /// Known scripts: (filename, embedded_content, description)
 fn known_scripts() -> Vec<(&'static str, &'static str, &'static str)> {
     vec![
-        ("gship", GSHIP_SCRIPT, "Launch Claude Code to run /ship"),
+        ("gship", GSHIP_SCRIPT, "Trigger /ship via Rally"),
         ("gpr", GPR_SCRIPT, "Push and create PR into main"),
         ("gmerge", GMERGE_SCRIPT, "Squash merge PR + sync local branch"),
         ("gfinish", GFINISH_SCRIPT, "Commit + push + merge after review"),

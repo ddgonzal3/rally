@@ -869,9 +869,17 @@ export const useWorkspaceStore = create<WorkspaceState>()(
           : undefined,
       });
 
-      // Done
+      // Done — clear ship status and dismiss ship session for this repo
+      const session = get().shipSession;
+      if (session && session.repoPath === repoPath) {
+        if (session.ptyId && !session.exited) {
+          api.killPty(session.ptyId).catch(() => {});
+        }
+        shipOutputBuffer.length = 0;
+      }
       set((s) => ({
         shipStatuses: { ...s.shipStatuses, [repoPath]: { phase: "idle" } },
+        shipSession: s.shipSession?.repoPath === repoPath ? null : s.shipSession,
       }));
     } catch (e) {
       console.error(`Auto-merge failed for ${repoPath}:`, e);
