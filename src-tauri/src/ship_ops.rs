@@ -198,6 +198,120 @@ fn install_script(bin_dir: &PathBuf, name: &str, content: &str) -> Result<(), St
     Ok(())
 }
 
+// --- Script editor: list + restore Rally scripts ---
+
+#[derive(Debug, Clone, Serialize)]
+pub struct RallyScriptInfo {
+    pub name: String,
+    pub path: String,
+    pub category: String, // "script" or "command"
+    pub is_modified: bool,
+    pub description: String,
+}
+
+/// Known scripts: (filename, embedded_content, description)
+fn known_scripts() -> Vec<(&'static str, &'static str, &'static str)> {
+    vec![
+        ("gship", GSHIP_SCRIPT, "Launch Claude Code to run /ship"),
+        ("gpr", GPR_SCRIPT, "Push and create PR into main"),
+        ("gmerge", GMERGE_SCRIPT, "Squash merge PR + sync local branch"),
+        ("gfinish", GFINISH_SCRIPT, "Commit + push + merge after review"),
+        ("gsync", GSYNC_SCRIPT, "Hard reset + rebase onto main"),
+        ("grb", GRB_SCRIPT, "Safe rebase onto main with stash/pop"),
+    ]
+}
+
+/// Known commands: (filename, embedded_content, description)
+fn known_commands() -> Vec<(&'static str, &'static str, &'static str)> {
+    vec![
+        ("ship.md", SHIP_COMMAND_CONTENT, "Full automated shipping workflow"),
+        ("review-pr.md", REVIEW_COMMAND_CONTENT, "Thorough PR review process"),
+    ]
+}
+
+/// List all Rally-managed scripts and commands with metadata.
+#[tauri::command]
+pub fn list_rally_scripts() -> Result<Vec<RallyScriptInfo>, String> {
+    let home = std::env::var("HOME").map_err(|_| "HOME not set".to_string())?;
+    let bin_dir = PathBuf::from(&home).join(".rally").join("bin");
+    let cmd_dir = PathBuf::from(&home).join(".rally").join("commands");
+
+    let mut results = Vec::new();
+
+    for (name, default_content, desc) in known_scripts() {
+        let path = bin_dir.join(name);
+        let is_modified = if path.exists() {
+            fs::read_to_string(&path)
+                .map(|c| c != default_content)
+                .unwrap_or(true)
+        } else {
+            false // Not installed yet — not "modified"
+        };
+        results.push(RallyScriptInfo {
+            name: name.to_string(),
+            path: path.to_string_lossy().to_string(),
+            category: "script".to_string(),
+            is_modified,
+            description: desc.to_string(),
+        });
+    }
+
+    for (name, default_content, desc) in known_commands() {
+        let path = cmd_dir.join(name);
+        let is_modified = if path.exists() {
+            fs::read_to_string(&path)
+                .map(|c| c != default_content)
+                .unwrap_or(true)
+        } else {
+            false
+        };
+        results.push(RallyScriptInfo {
+            name: name.to_string(),
+            path: path.to_string_lossy().to_string(),
+            category: "command".to_string(),
+            is_modified,
+            description: desc.to_string(),
+        });
+    }
+
+    Ok(results)
+}
+
+/// Restore a Rally script or command to its embedded default.
+#[tauri::command]
+pub fn restore_rally_script(name: String) -> Result<(), String> {
+    let home = std::env::var("HOME").map_err(|_| "HOME not set".to_string())?;
+
+    // Check scripts first
+    for (sname, content, _) in known_scripts() {
+        if sname == name {
+            let path = PathBuf::from(&home).join(".rally").join("bin").join(sname);
+            fs::write(&path, content)
+                .map_err(|e| format!("Failed to write {}: {}", sname, e))?;
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                let perms = std::fs::Permissions::from_mode(0o755);
+                fs::set_permissions(&path, perms)
+                    .map_err(|e| format!("Failed to chmod {}: {}", sname, e))?;
+            }
+            return Ok(());
+        }
+    }
+
+    // Check commands
+    for (cname, content, _) in known_commands() {
+        if cname == name {
+            let path = PathBuf::from(&home).join(".rally").join("commands").join(cname);
+            fs::write(&path, content)
+                .map_err(|e| format!("Failed to write {}: {}", cname, e))?;
+            return Ok(());
+        }
+    }
+
+    Err(format!("Unknown script: {}", name))
+}
+
 /// Check if a ship signal file exists for the given repo path.
 #[tauri::command]
 pub fn check_ship_signal(repo_path: String) -> Result<Option<ShipSignal>, String> {

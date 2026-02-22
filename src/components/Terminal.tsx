@@ -22,6 +22,27 @@ interface TerminalProps {
    *  so it survives React remounts (layout restructuring). When provided,
    *  the Terminal will NOT kill the PTY on unmount — the store manages it. */
   onPtySpawned?: (ptyId: string) => void;
+  /** Called when the shell reports its CWD via OSC 7 escape sequence */
+  onCwdChanged?: (cwd: string) => void;
+}
+
+// OSC 7 format: \x1b]7;file://hostname/path\x07  (or \x1b\\ as terminator)
+const OSC7_REGEX = /\x1b\]7;file:\/\/[^/]*(\/[^\x07\x1b]*?)(?:\x07|\x1b\\)/g;
+const OSC7_TAIL_MAX = 4096;
+
+function parseLatestOsc7Cwd(text: string): string | null {
+  OSC7_REGEX.lastIndex = 0;
+  let match: RegExpExecArray | null = null;
+  let latestPath: string | null = null;
+  while ((match = OSC7_REGEX.exec(text)) !== null) {
+    latestPath = match[1];
+  }
+  if (!latestPath) return null;
+  try {
+    return decodeURIComponent(latestPath);
+  } catch {
+    return latestPath;
+  }
 }
 
 const encoder = new TextEncoder();
@@ -58,13 +79,19 @@ function safeFit(term: XTerminal, fitAddon: FitAddon): boolean {
   return true;
 }
 
-export function Terminal({ cwd, command, initialInput, ptyId: existingPtyId, lockCols: lockColsProp, scriptBufferKey, onPtySpawned }: TerminalProps) {
+export function Terminal({ cwd, command, initialInput, ptyId: existingPtyId, lockCols: lockColsProp, scriptBufferKey, onPtySpawned, onCwdChanged }: TerminalProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const termRef = useRef<XTerminal | null>(null);
   const ptyIdRef = useRef<string | null>(null);
   const fitAddonRef = useRef<FitAddon | null>(null);
   const unlistenOutputRef = useRef<UnlistenFn | null>(null);
   const unlistenExitRef = useRef<UnlistenFn | null>(null);
+  const lastCwdRef = useRef<string>(cwd);
+  const osc7TailRef = useRef<string>("");
+
+  useEffect(() => {
+    lastCwdRef.current = cwd;
+  }, [cwd]);
 
   const handleContextMenu = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
@@ -245,11 +272,24 @@ export function Terminal({ cwd, command, initialInput, ptyId: existingPtyId, loc
 
     async function connectToPty(ptyId: string) {
       ptyIdRef.current = ptyId;
+      osc7TailRef.current = "";
 
       unlistenOutputRef.current = await listen<{ data: number[] }>(
         `pty-output-${ptyId}`,
         (event) => {
-          term.write(new Uint8Array(event.payload.data));
+          const chunk = new Uint8Array(event.payload.data);
+          // Parse OSC 7 to track shell CWD
+          if (onCwdChanged) {
+            const text = new TextDecoder().decode(chunk);
+            const combined = osc7TailRef.current + text;
+            osc7TailRef.current = combined.slice(-OSC7_TAIL_MAX);
+            const newCwd = parseLatestOsc7Cwd(combined);
+            if (newCwd && newCwd !== lastCwdRef.current) {
+              lastCwdRef.current = newCwd;
+              onCwdChanged(newCwd);
+            }
+          }
+          term.write(chunk);
         }
       );
 
@@ -414,12 +454,12 @@ export function Terminal({ cwd, command, initialInput, ptyId: existingPtyId, loc
       unlistenExitRef.current?.();
       term.dispose();
     };
-    // existingPtyId intentionally excluded — it's only used at mount time to
-    // decide spawn vs. attach. When onPtySpawned stores a new ptyId, we must
-    // NOT tear down the working terminal to re-attach (causes blank terminals
-    // because the resize sends same dimensions → zsh doesn't redraw).
+    // `existingPtyId` and `cwd` are intentionally excluded:
+    // - `existingPtyId` is only for initial spawn/attach decision at mount.
+    // - `cwd` changes as the user runs `cd`; remounting on every cwd update
+    //   tears down the live terminal and can leave a blank surface.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cwd, command, initialInput]);
+  }, [command, initialInput]);
 
   return (
     <div

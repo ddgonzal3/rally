@@ -17,4 +17,6 @@ if [ "$ahead" = "0" ] || [ -z "$ahead" ]; then
 fi
 
 echo "Shipping $branch ($ahead commit(s) ahead of $main_branch)..."
-claude --dangerously-skip-permissions -p "/ship"
+echo "Press Ctrl+C to cancel."
+echo ""
+exec claude --dangerously-skip-permissions -p "/ship"

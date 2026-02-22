@@ -27,6 +27,9 @@ git pull || { echo "Failed to pull $main_branch"; git checkout "$branch"; exit 1
 git checkout "$branch" || { echo "Failed to checkout $branch"; exit 1; }
 git rebase "$main_branch" || {
   echo "Rebase failed. Resolve conflicts or run 'git rebase --abort'"
+  if $did_stash; then
+    echo "Your changes are still in the stash. Run 'git stash pop' after resolving."
+  fi
   exit 1
 }
 

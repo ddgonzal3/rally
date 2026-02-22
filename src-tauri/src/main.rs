@@ -164,6 +164,8 @@ fn main() {
             ship_ops::clear_ship_signal,
             ship_ops::check_ship_trigger,
             ship_ops::post_merge_sync,
+            ship_ops::list_rally_scripts,
+            ship_ops::restore_rally_script,
         ])
         // Intercept window close button (red X):
         // - if more than one window exists: confirm closing only this window

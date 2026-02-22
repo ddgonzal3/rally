@@ -377,7 +377,9 @@ function restoreLayouts(layouts: Record<string, WorkspaceLayout>): Record<string
         ...sanitizedGroup,
         id: gId,
         panes: sanitizedGroup.panes.map((p) => {
-          // Strip stale ptyIds — PTYs don't survive app restart
+          // Strip stale ptyIds — PTYs don't survive app restart.
+          // CWD is preserved — OSC 7 tracking keeps it up to date with
+          // the shell's actual directory, so it's correct on restore.
           const { ptyId: _, ...rest } = p;
           return rest.type === "claude"
             ? { ...rest, type: "claude-launcher" as const, command: undefined }
@@ -666,24 +668,37 @@ export const useWorkspaceStore = create<WorkspaceState>()(
           continue;
         }
 
-        // If there's an active ship session for this repo, attach the signal to it
+        // If there's an active ship session for this repo, validate + update it
         const session = get().shipSession;
-        if (session && session.repoPath === repoPath && !session.signal) {
+        if (session && session.repoPath === repoPath) {
+          // Auto-dismiss headless sessions if the PR is no longer open
+          if (!session.ptyId && signal.verdict === "shipping" && signal.pr_number > 0) {
+            const livePr = get().prStatuses[repoPath];
+            if (livePr && livePr.state !== "OPEN") {
+              await api.clearShipSignal(repoPath).catch(() => {});
+              set({ shipSession: null });
+              continue;
+            }
+          }
           if (signal.verdict === "shipping") {
-            // In-progress signal — update phase from signal file for all session types.
-            // ship.md v6 writes phases to the signal file instead of echoing
+            // In-progress signal — update phase and attach signal when it has PR info.
+            // ship.md writes phases to the signal file instead of echoing
             // <<RALLY_PHASE>> markers, so this is the primary phase source.
             const newPhase = (signal as ShipSignal).phase;
-            if (newPhase && newPhase !== session.phase) {
+            const phaseChanged = newPhase && newPhase !== session.phase;
+            const signalHasNewPrInfo = signal.pr_number > 0 && !session.signal?.pr_number;
+            if (phaseChanged || signalHasNewPrInfo) {
               set((s) => ({
                 shipSession: s.shipSession ? {
                   ...s.shipSession,
-                  phase: newPhase,
+                  phase: newPhase ?? s.shipSession.phase,
+                  // Attach signal when it has PR info so the pill can show PR # and link
+                  signal: signal.pr_number > 0 ? signal : s.shipSession.signal,
                 } : null,
               }));
             }
-          } else {
-            // Final signal — attach to any session type
+          } else if (!session.signal) {
+            // Final signal — attach to any session type (only once)
             set((s) => ({
               shipSession: s.shipSession ? {
                 ...s.shipSession,
@@ -704,6 +719,19 @@ export const useWorkspaceStore = create<WorkspaceState>()(
               set({ shipSession: null });
             }
             continue;
+          }
+
+          // PR state validation: if signal references a PR that's no longer open,
+          // the shipping process is dead — clear the stale signal
+          if (signal.pr_number > 0) {
+            const livePr = get().prStatuses[repoPath];
+            if (livePr && livePr.state !== "OPEN") {
+              await api.clearShipSignal(repoPath).catch(() => {});
+              if (get().shipSession?.repoPath === repoPath && !get().shipSession?.ptyId) {
+                set({ shipSession: null });
+              }
+              continue;
+            }
           }
 
           // If no existing shipSession, create a headless one
@@ -984,6 +1012,8 @@ export const useWorkspaceStore = create<WorkspaceState>()(
     if (session.ptyId && !session.exited) {
       api.killPty(session.ptyId).catch(() => {});
     }
+    // Clear the signal file so the next poll doesn't recreate the session
+    api.clearShipSignal(session.repoPath).catch(() => {});
     shipOutputBuffer.length = 0;
     set({ shipSession: null });
   },
@@ -1678,6 +1708,7 @@ export const useWorkspaceStore = create<WorkspaceState>()(
         return {
           ...current,
           activeWorkspaceId: p?.activeWorkspaceId ?? current.activeWorkspaceId,
+          activePathIndex: p?.activePathIndex ?? current.activePathIndex,
           layouts: restoreLayouts(p?.layouts ?? {}),
           activeGroupIds: p?.activeGroupIds ?? current.activeGroupIds,
         };

@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import type { Workspace, GitStatus, PrStatus, ChangesSummary, ScriptEntry, ShipSignal } from "./types";
+import type { Workspace, GitStatus, PrStatus, ChangesSummary, ScriptEntry, ShipSignal, RallyScriptInfo } from "./types";
 
 export const api = {
   listWorkspaces: () => invoke<Workspace[]>("list_workspaces"),
@@ -96,4 +96,11 @@ export const api = {
 
   killPty: (ptyId: string) =>
     invoke<void>("kill_pty", { ptyId }),
+
+  // Rally script editor
+  listRallyScripts: () =>
+    invoke<RallyScriptInfo[]>("list_rally_scripts"),
+
+  restoreRallyScript: (name: string) =>
+    invoke<void>("restore_rally_script", { name }),
 };

@@ -20,4 +20,4 @@ git push 2>/dev/null || git push --set-upstream origin "$branch"
 
 # Merge + sync
 echo "Merging..."
-exec gmerge
+exec "$(dirname "$0")/gmerge"

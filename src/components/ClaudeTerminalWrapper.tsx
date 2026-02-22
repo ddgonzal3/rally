@@ -7,12 +7,13 @@ interface ClaudeTerminalWrapperProps {
   initialInput?: string;
   ptyId?: string;
   onPtySpawned?: (ptyId: string) => void;
+  onCwdChanged?: (cwd: string) => void;
 }
 
 const MIN_OVERLAY_MS = 1500;
 const MAX_OVERLAY_MS = 5000;
 
-export function ClaudeTerminalWrapper({ cwd, command, initialInput, ptyId, onPtySpawned }: ClaudeTerminalWrapperProps) {
+export function ClaudeTerminalWrapper({ cwd, command, initialInput, ptyId, onPtySpawned, onCwdChanged }: ClaudeTerminalWrapperProps) {
   const [ready, setReady] = useState(!!ptyId);
   const containerRef = useRef<HTMLDivElement>(null);
   const ptyArrivedRef = useRef(!!ptyId);
@@ -59,7 +60,7 @@ export function ClaudeTerminalWrapper({ cwd, command, initialInput, ptyId, onPty
 
   return (
     <div ref={containerRef} style={styles.container}>
-      <Terminal cwd={cwd} command={cleanCommand} initialInput={initialInput} ptyId={ptyId} onPtySpawned={onPtySpawned} />
+      <Terminal cwd={cwd} command={cleanCommand} initialInput={initialInput} ptyId={ptyId} onPtySpawned={onPtySpawned} onCwdChanged={onCwdChanged} />
       {!ready && (
         <div style={styles.overlay}>
           <div style={styles.content}>

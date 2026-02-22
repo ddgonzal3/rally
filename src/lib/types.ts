@@ -24,11 +24,6 @@ export interface GitStatus {
   untracked_files: string[];
 }
 
-export interface PushResult {
-  output: string;
-  method: "push" | "force-with-lease" | "set-upstream";
-}
-
 export interface PrStatus {
   number: number;
   title: string;
@@ -91,9 +86,9 @@ export interface ShipSignal {
 export type ShipPhase = "idle" | "shipping" | "awaiting_review" | "merging" | "syncing";
 
 export type ShipDetailPhase =
-  | "detecting" | "committing" | "pushing" | "creating_pr"
+  | "detecting" | "syncing" | "pushing" | "creating_pr"
   | "checking" | "reviewing" | "writing_verdict"
-  | "finishing" | "complete";
+  | "merging" | "finishing" | "complete";
 
 export interface ShipSession {
   ptyId?: string;
@@ -110,6 +105,16 @@ export interface ShipStatus {
   phase: ShipPhase;
   signal?: ShipSignal;
   pr_number?: number;
+}
+
+// --- Rally Script Editor Types ---
+
+export interface RallyScriptInfo {
+  name: string;
+  path: string;
+  category: "script" | "command";
+  is_modified: boolean;
+  description: string;
 }
 
 // --- Script Runner Types ---
