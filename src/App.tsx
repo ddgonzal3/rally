@@ -634,6 +634,14 @@ export function App() {
         .syn-keyword { color: #ff7b72; }
         .syn-literal { color: #79c0ff; }
         .syn-number { color: #d2a8ff; }
+        .git-diff-overlay { scrollbar-gutter: stable; }
+        .git-diff-overlay ::-webkit-scrollbar { width: 6px; height: 0; }
+        .git-diff-overlay ::-webkit-scrollbar-track { background: transparent; }
+        .git-diff-overlay ::-webkit-scrollbar-thumb { background: transparent; border-radius: 3px; transition: background 0.2s; }
+        .git-diff-overlay :hover > ::-webkit-scrollbar-thumb,
+        .git-diff-overlay *:hover::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.15); }
+        .git-diff-overlay *:hover::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.25); }
+        .git-diff-overlay ::-webkit-scrollbar-corner { background: transparent; }
       `}</style>
       <ShipStatusPill />
       <ToastContainer />

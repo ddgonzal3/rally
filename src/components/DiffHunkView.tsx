@@ -78,7 +78,7 @@ const styles: Record<string, React.CSSProperties> = {
   },
   line: {
     display: "flex",
-    alignItems: "stretch",
+    alignItems: "flex-start",
     minHeight: 20,
   },
   lineNum: {
@@ -100,9 +100,10 @@ const styles: Record<string, React.CSSProperties> = {
   },
   lineContent: {
     flex: 1,
+    minWidth: 0,
     paddingRight: 12,
-    whiteSpace: "pre",
-    overflow: "hidden",
+    whiteSpace: "pre-wrap",
+    wordBreak: "break-all",
     color: "#e6edf3",
   },
 };

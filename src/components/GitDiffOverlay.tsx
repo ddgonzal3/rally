@@ -24,7 +24,6 @@ export function GitDiffOverlay() {
   const [commitMsg, setCommitMsg] = useState("");
   const [committing, setCommitting] = useState(false);
   const [justCommitted, setJustCommitted] = useState(false);
-  const [visible, setVisible] = useState(false);
   const [mounted, setMounted] = useState(false);
   const [scrollTarget, setScrollTarget] = useState<string | null>(null);
   // expandKey changes to signal DiffFileSection to reset to expanded/collapsed
@@ -33,7 +32,8 @@ export function GitDiffOverlay() {
   const commitInputRef = useRef<HTMLInputElement>(null);
   const fileListRef = useRef<HTMLDivElement>(null);
 
-  // Mount/unmount with animation delay
+  const [visible, setVisible] = useState(false);
+
   useEffect(() => {
     if (open) {
       setMounted(true);
@@ -42,8 +42,7 @@ export function GitDiffOverlay() {
       });
     } else {
       setVisible(false);
-      // Keep mounted during slide-out animation, then unmount
-      const timer = setTimeout(() => setMounted(false), 400);
+      const timer = setTimeout(() => setMounted(false), 80);
       return () => clearTimeout(timer);
     }
   }, [open]);
@@ -206,9 +205,10 @@ export function GitDiffOverlay() {
 
   return (
     <div
+      className="git-diff-overlay"
       style={{
         ...s.backdrop,
-        transform: visible ? "translateX(0)" : "translateX(100%)",
+        opacity: visible ? 1 : 0,
       }}
     >
       {/* Header */}
@@ -352,7 +352,7 @@ const s: Record<string, React.CSSProperties> = {
     background: "#1a1a1a",
     display: "flex",
     flexDirection: "column",
-    transition: "transform 350ms cubic-bezier(0.4, 0, 0.2, 1)",
+    transition: "opacity 75ms ease",
   },
   header: {
     display: "flex",
