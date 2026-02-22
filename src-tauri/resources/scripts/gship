@@ -19,4 +19,4 @@ fi
 echo "Shipping $branch ($ahead commit(s) ahead of $main_branch)..."
 echo "Press Ctrl+C to cancel."
 echo ""
-exec claude --dangerously-skip-permissions -p "/ship"
+exec claude --dangerously-skip-permissions "/ship"
