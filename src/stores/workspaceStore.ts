@@ -8,7 +8,6 @@ import type {
   Workspace,
   GitStatus,
   PrStatus,
-  PushResult,
   Pane,
   WorkspaceLayout,
   LayoutNode,
@@ -167,15 +166,6 @@ interface WorkspaceState {
   refreshAllGitStatuses: () => Promise<void>;
   refreshPrStatusForPath: (path: string) => Promise<void>;
   refreshAllPrStatuses: () => Promise<void>;
-  syncPath: (path: string, branch: string, mainBranch: string) => Promise<string>;
-  /** Full sync: rebase onto main + smart push to remote. Clears syncNeeded. */
-  syncAndPushPath: (path: string, branch: string, mainBranch: string) => Promise<string>;
-  rebasePath: (path: string, branch: string, mainBranch: string) => Promise<string>;
-  commitPath: (path: string, message: string) => Promise<string>;
-  pushPath: (path: string) => Promise<PushResult>;
-  createPrForPath: (path: string, title?: string, body?: string) => Promise<string>;
-  mergePrForPath: (path: string, method?: string) => Promise<string>;
-
   // Layout actions
   getOrCreateLayout: (workspaceId: string) => WorkspaceLayout;
   splitGroup: (
@@ -387,7 +377,9 @@ function restoreLayouts(layouts: Record<string, WorkspaceLayout>): Record<string
         ...sanitizedGroup,
         id: gId,
         panes: sanitizedGroup.panes.map((p) => {
-          // Strip stale ptyIds — PTYs don't survive app restart
+          // Strip stale ptyIds — PTYs don't survive app restart.
+          // CWD is preserved — OSC 7 tracking keeps it up to date with
+          // the shell's actual directory, so it's correct on restore.
           const { ptyId: _, ...rest } = p;
           return rest.type === "claude"
             ? { ...rest, type: "claude-launcher" as const, command: undefined }
@@ -634,68 +626,6 @@ export const useWorkspaceStore = create<WorkspaceState>()(
     });
   },
 
-  syncPath: async (path, branch, mainBranch) => {
-    const result = await api.gitSync(path, branch, mainBranch);
-    await get().refreshGitStatusForPath(path, mainBranch);
-    return result;
-  },
-
-  syncAndPushPath: async (path, branch, mainBranch) => {
-    await api.gitSync(path, branch, mainBranch);
-    await api.gitPush(path);
-    set((s) => ({ syncNeeded: { ...s.syncNeeded, [path]: false } }));
-    await get().refreshGitStatusForPath(path, mainBranch);
-    await get().refreshPrStatusForPath(path);
-    return "Synced and pushed";
-  },
-
-  rebasePath: async (path, branch, mainBranch) => {
-    const result = await api.gitRebase(path, branch, mainBranch);
-    await get().refreshGitStatusForPath(path, mainBranch);
-    return result;
-  },
-
-  commitPath: async (path, message) => {
-    const result = await api.gitCommit(path, message);
-    // Find main_branch for this path
-    const ws = get().workspaces.find((w) => w.paths.includes(path));
-    if (ws) await get().refreshGitStatusForPath(path, ws.main_branch);
-    return result;
-  },
-
-  pushPath: async (path) => {
-    const result = await api.gitPush(path);
-    const ws = get().workspaces.find((w) => w.paths.includes(path));
-    if (ws) await get().refreshGitStatusForPath(path, ws.main_branch);
-    return result;
-  },
-
-  createPrForPath: async (path, title, body) => {
-    const result = await api.gitCreatePr(path, title, body);
-    await get().refreshPrStatusForPath(path);
-    return result;
-  },
-
-  mergePrForPath: async (path, method) => {
-    const result = await api.gitMergePr(path, method ?? "squash");
-    // Mark all paths with same repo URL as needing sync
-    // Skip if repo_url is empty — repos without a remote aren't related
-    const ws = get().workspaces.find((w) => w.paths.includes(path));
-    if (ws && ws.repo_url) {
-      const allPaths = get().workspaces
-        .filter((w) => w.repo_url === ws.repo_url)
-        .flatMap((w) => w.paths);
-      set((s) => {
-        const newSyncNeeded = { ...s.syncNeeded };
-        for (const p of allPaths) newSyncNeeded[p] = true;
-        return { syncNeeded: newSyncNeeded };
-      });
-      await get().refreshGitStatusForPath(path, ws.main_branch);
-    }
-    await get().refreshPrStatusForPath(path);
-    return result;
-  },
-
   // --- Layout actions ---
 
 
@@ -738,24 +668,37 @@ export const useWorkspaceStore = create<WorkspaceState>()(
           continue;
         }
 
-        // If there's an active ship session for this repo, attach the signal to it
+        // If there's an active ship session for this repo, validate + update it
         const session = get().shipSession;
-        if (session && session.repoPath === repoPath && !session.signal) {
+        if (session && session.repoPath === repoPath) {
+          // Auto-dismiss headless sessions if the PR is no longer open
+          if (!session.ptyId && signal.verdict === "shipping" && signal.pr_number > 0) {
+            const livePr = get().prStatuses[repoPath];
+            if (livePr && livePr.state !== "OPEN") {
+              await api.clearShipSignal(repoPath).catch(() => {});
+              set({ shipSession: null });
+              continue;
+            }
+          }
           if (signal.verdict === "shipping") {
-            // In-progress signal — update phase from signal file for all session types.
-            // ship.md v6 writes phases to the signal file instead of echoing
+            // In-progress signal — update phase and attach signal when it has PR info.
+            // ship.md writes phases to the signal file instead of echoing
             // <<RALLY_PHASE>> markers, so this is the primary phase source.
             const newPhase = (signal as ShipSignal).phase;
-            if (newPhase && newPhase !== session.phase) {
+            const phaseChanged = newPhase && newPhase !== session.phase;
+            const signalHasNewPrInfo = signal.pr_number > 0 && !session.signal?.pr_number;
+            if (phaseChanged || signalHasNewPrInfo) {
               set((s) => ({
                 shipSession: s.shipSession ? {
                   ...s.shipSession,
-                  phase: newPhase,
+                  phase: newPhase ?? s.shipSession.phase,
+                  // Attach signal when it has PR info so the pill can show PR # and link
+                  signal: signal.pr_number > 0 ? signal : s.shipSession.signal,
                 } : null,
               }));
             }
-          } else {
-            // Final signal — attach to any session type
+          } else if (!session.signal) {
+            // Final signal — attach to any session type (only once)
             set((s) => ({
               shipSession: s.shipSession ? {
                 ...s.shipSession,
@@ -776,6 +719,19 @@ export const useWorkspaceStore = create<WorkspaceState>()(
               set({ shipSession: null });
             }
             continue;
+          }
+
+          // PR state validation: if signal references a PR that's no longer open,
+          // the shipping process is dead — clear the stale signal
+          if (signal.pr_number > 0) {
+            const livePr = get().prStatuses[repoPath];
+            if (livePr && livePr.state !== "OPEN") {
+              await api.clearShipSignal(repoPath).catch(() => {});
+              if (get().shipSession?.repoPath === repoPath && !get().shipSession?.ptyId) {
+                set({ shipSession: null });
+              }
+              continue;
+            }
           }
 
           // If no existing shipSession, create a headless one
@@ -1053,9 +1009,16 @@ export const useWorkspaceStore = create<WorkspaceState>()(
   dismissShipSession: () => {
     const session = get().shipSession;
     if (!session) return;
-    if (session.ptyId && !session.exited) {
-      api.killPty(session.ptyId).catch(() => {});
+    if (session.ptyId) {
+      // PTY-backed: we own the process — kill it and clear the signal
+      if (!session.exited) {
+        api.killPty(session.ptyId).catch(() => {});
+      }
+      api.clearShipSignal(session.repoPath).catch(() => {});
     }
+    // Headless: external process still running — don't clear the signal,
+    // just dismiss the UI. The signal will be cleaned up when the external
+    // process finishes or goes stale (30 min timeout).
     shipOutputBuffer.length = 0;
     set({ shipSession: null });
   },
@@ -1750,6 +1713,7 @@ export const useWorkspaceStore = create<WorkspaceState>()(
         return {
           ...current,
           activeWorkspaceId: p?.activeWorkspaceId ?? current.activeWorkspaceId,
+          activePathIndex: p?.activePathIndex ?? current.activePathIndex,
           layouts: restoreLayouts(p?.layouts ?? {}),
           activeGroupIds: p?.activeGroupIds ?? current.activeGroupIds,
         };

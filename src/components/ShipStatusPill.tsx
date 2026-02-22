@@ -4,18 +4,19 @@ import { FitAddon } from "@xterm/addon-fit";
 import { invoke } from "@tauri-apps/api/core";
 import { useWorkspaceStore, shipOutputBuffer } from "../stores/workspaceStore";
 import { api } from "../lib/tauri";
-import type { ShipDetailPhase, ShipSession } from "../lib/types";
+import type { ShipSession } from "../lib/types";
 
 const encoder = new TextEncoder();
 
-const PHASE_LABELS: Record<ShipDetailPhase, string> = {
+const PHASE_LABELS: Record<string, string> = {
   detecting: "Detecting state...",
-  committing: "Committing changes...",
+  syncing: "Syncing with main...",
   pushing: "Pushing to remote...",
   creating_pr: "Creating PR...",
   checking: "Checking PR status...",
   reviewing: "Reviewing code...",
   writing_verdict: "Writing verdict...",
+  merging: "Merging & syncing...",
   finishing: "Finishing up...",
   complete: "Ship complete",
 };
@@ -67,6 +68,7 @@ function getDisplayState(session: ShipSession, livePrUrl: string | null) {
     };
   }
   if (isFinishing) {
+    // No signal yet (exited cleanly, waiting for signal file to appear)
     return {
       title: "Shipping",
       subtitle: PHASE_LABELS.finishing,
@@ -76,14 +78,17 @@ function getDisplayState(session: ShipSession, livePrUrl: string | null) {
       prUrl: livePrUrl,
     };
   }
-  // In progress
+  // In progress — derive PR URL from signal too (signal gets attached during shipping)
+  const signalPrUrl = session.signal?.pr_url || null;
+  const prUrl = signalPrUrl || livePrUrl;
+  const prNum = session.signal?.pr_number;
   return {
-    title: "Shipping",
-    subtitle: PHASE_LABELS[session.phase],
+    title: prNum ? `Shipping PR #${prNum}` : "Shipping",
+    subtitle: PHASE_LABELS[session.phase] ?? session.phase,
     extra: null,
     accentColor: "#3b82f6",
     titleColor: "#7db8df",
-    prUrl: livePrUrl,
+    prUrl,
   };
 }
 
@@ -168,16 +173,30 @@ export function ShipStatusPill() {
             <span style={{ ...styles.title, color: display.titleColor }}>
               {display.title}
             </span>
-            <button
-              style={styles.dismiss}
-              onClick={(e) => {
-                e.stopPropagation();
-                dismissShipSession();
-              }}
-              title="Dismiss"
-            >
-              ×
-            </button>
+            <div style={{ display: "flex", gap: 2, alignItems: "center", flexShrink: 0 }}>
+              {session.ptyId && !session.exited && (
+                <button
+                  style={styles.stopBtn}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    api.writePty(session.ptyId!, Array.from(new Uint8Array([3])));
+                  }}
+                  title="Stop (Ctrl+C)"
+                >
+                  ■
+                </button>
+              )}
+              <button
+                style={styles.dismiss}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  dismissShipSession();
+                }}
+                title="Dismiss"
+              >
+                ×
+              </button>
+            </div>
           </div>
           <div style={styles.subtitle}>{display.subtitle}</div>
           {display.extra && <div style={styles.extra}>{display.extra}</div>}
@@ -298,6 +317,16 @@ const styles: Record<string, React.CSSProperties> = {
     padding: "3px 10px",
     borderRadius: 4,
     cursor: "pointer",
+  },
+  stopBtn: {
+    background: "none",
+    border: "none",
+    color: "#e06c75",
+    cursor: "pointer",
+    fontSize: 10,
+    padding: "0 4px",
+    lineHeight: "1",
+    flexShrink: 0,
   },
   dismiss: {
     background: "none",

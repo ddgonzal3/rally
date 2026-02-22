@@ -1,0 +1,41 @@
+#!/bin/bash
+# grb — Safe rebase onto main with stash/pop
+# Installed to ~/.rally/bin/ by Rally on startup
+
+branch=$(git symbolic-ref --short HEAD 2>/dev/null)
+main_branch="main"
+
+if [ -z "$branch" ]; then echo "Not in a git repo"; exit 1; fi
+if [ "$branch" = "$main_branch" ]; then echo "Already on $main_branch"; exit 1; fi
+
+echo "Rebasing $branch onto $main_branch..."
+
+git checkout "$branch" || { echo "Failed to checkout $branch"; exit 1; }
+
+# Stash if dirty
+stash_count=$(git stash list | wc -l | tr -d ' ')
+git stash
+new_stash_count=$(git stash list | wc -l | tr -d ' ')
+did_stash=false
+[ "$new_stash_count" -gt "$stash_count" ] && did_stash=true
+
+# Update main
+git checkout "$main_branch" || { echo "Failed to checkout $main_branch"; exit 1; }
+git pull || { echo "Failed to pull $main_branch"; git checkout "$branch"; exit 1; }
+
+# Rebase
+git checkout "$branch" || { echo "Failed to checkout $branch"; exit 1; }
+git rebase "$main_branch" || {
+  echo "Rebase failed. Resolve conflicts or run 'git rebase --abort'"
+  if $did_stash; then
+    echo "Your changes are still in the stash. Run 'git stash pop' after resolving."
+  fi
+  exit 1
+}
+
+# Restore stash
+if $did_stash; then
+  git stash pop || echo "Stash pop had conflicts — resolve manually"
+fi
+
+echo "$branch rebased onto $main_branch."

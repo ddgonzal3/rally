@@ -24,11 +24,6 @@ export interface GitStatus {
   untracked_files: string[];
 }
 
-export interface PushResult {
-  output: string;
-  method: "push" | "force-with-lease" | "set-upstream";
-}
-
 export interface PrStatus {
   number: number;
   title: string;
@@ -49,21 +44,6 @@ export interface ChangesSummary {
   staged: ChangedFile[];
   unstaged: ChangedFile[];
   untracked: string[];
-}
-
-export interface CreatePrResult {
-  pr_number: number;
-  pr_url: string;
-  title: string;
-  branch: string;
-  committed: boolean;
-  branch_created: boolean;
-}
-
-export interface MergePrResult {
-  pr_number: number;
-  branch: string;
-  synced: boolean;
 }
 
 // --- Ship Signal Types ---
@@ -91,9 +71,9 @@ export interface ShipSignal {
 export type ShipPhase = "idle" | "shipping" | "awaiting_review" | "merging" | "syncing";
 
 export type ShipDetailPhase =
-  | "detecting" | "committing" | "pushing" | "creating_pr"
+  | "detecting" | "syncing" | "pushing" | "creating_pr"
   | "checking" | "reviewing" | "writing_verdict"
-  | "finishing" | "complete";
+  | "merging" | "finishing" | "complete";
 
 export interface ShipSession {
   ptyId?: string;
@@ -110,6 +90,16 @@ export interface ShipStatus {
   phase: ShipPhase;
   signal?: ShipSignal;
   pr_number?: number;
+}
+
+// --- Rally Script Editor Types ---
+
+export interface RallyScriptInfo {
+  name: string;
+  path: string;
+  category: "script" | "command";
+  is_modified: boolean;
+  description: string;
 }
 
 // --- Script Runner Types ---

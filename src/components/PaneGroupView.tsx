@@ -499,11 +499,13 @@ function PaneContent({
                 />
               ) : pane.type === "claude" ? (
                 <ClaudeTerminalWrapper cwd={paneCwd} command={pane.command} initialInput={pane.initialInput} ptyId={pane.ptyId}
-                  onPtySpawned={(id) => transformPane(workspaceId, groupId, pane.id, { ptyId: id })} />
+                  onPtySpawned={(id) => transformPane(workspaceId, groupId, pane.id, { ptyId: id })}
+                  onCwdChanged={(newCwd) => transformPane(workspaceId, groupId, pane.id, { cwd: newCwd })} />
               ) : (
                 <Terminal cwd={paneCwd} command={pane.command} initialInput={pane.initialInput} ptyId={pane.ptyId}
                   scriptBufferKey={pane.scriptBufferKey}
-                  onPtySpawned={(id) => transformPane(workspaceId, groupId, pane.id, { ptyId: id })} />
+                  onPtySpawned={(id) => transformPane(workspaceId, groupId, pane.id, { ptyId: id })}
+                  onCwdChanged={(newCwd) => transformPane(workspaceId, groupId, pane.id, { cwd: newCwd })} />
               )}
             </div>
           );

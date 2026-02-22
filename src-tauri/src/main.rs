@@ -135,15 +135,8 @@ fn main() {
             commands::add_workspace_path,
             commands::remove_workspace_path,
             commands::git_status,
-            commands::git_sync,
-            commands::git_rebase,
-            commands::git_commit,
-            commands::git_push,
-            commands::git_create_pr,
             commands::git_pr_status,
             commands::git_merge_pr,
-            commands::git_create_pr_smart,
-            commands::git_merge_pr_smart,
             commands::git_changes,
             commands::git_file_at_head,
             commands::git_stage_file,
@@ -171,6 +164,8 @@ fn main() {
             ship_ops::clear_ship_signal,
             ship_ops::check_ship_trigger,
             ship_ops::post_merge_sync,
+            ship_ops::list_rally_scripts,
+            ship_ops::restore_rally_script,
         ])
         // Intercept window close button (red X):
         // - if more than one window exists: confirm closing only this window

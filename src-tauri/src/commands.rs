@@ -6,7 +6,7 @@ use tauri::Emitter;
 
 use crate::git_ops;
 use crate::git_watch::GitWatchState;
-use crate::workspace::{self, ChangesSummary, GitStatus, PrStatus, PushResult, Workspace};
+use crate::workspace::{self, ChangesSummary, GitStatus, PrStatus, Workspace};
 
 fn emit_workspaces_updated(app: &tauri::AppHandle) {
     if let Err(e) = app.emit("rally-workspaces-updated", ()) {
@@ -188,39 +188,6 @@ pub async fn git_status(workspace_path: String, main_branch: String) -> Result<G
 }
 
 #[tauri::command]
-pub async fn git_sync(workspace_path: String, branch: String, main_branch: String) -> Result<String, String> {
-    git_ops::sync(&workspace_path, &branch, &main_branch).await
-}
-
-#[tauri::command]
-pub async fn git_rebase(workspace_path: String, branch: String, main_branch: String) -> Result<String, String> {
-    git_ops::rebase(&workspace_path, &branch, &main_branch).await
-}
-
-#[tauri::command]
-pub async fn git_commit(workspace_path: String, message: String) -> Result<String, String> {
-    git_ops::commit(&workspace_path, &message).await
-}
-
-#[tauri::command]
-pub async fn git_push(workspace_path: String) -> Result<PushResult, String> {
-    git_ops::push(&workspace_path).await
-}
-
-#[tauri::command]
-pub async fn git_create_pr(
-    workspace_path: String,
-    title: Option<String>,
-    body: Option<String>,
-) -> Result<String, String> {
-    git_ops::create_pr(
-        &workspace_path,
-        title.as_deref(),
-        body.as_deref(),
-    ).await
-}
-
-#[tauri::command]
 pub async fn git_pr_status(workspace_path: String) -> Result<PrStatus, String> {
     git_ops::pr_status(&workspace_path).await
 }
@@ -228,16 +195,6 @@ pub async fn git_pr_status(workspace_path: String) -> Result<PrStatus, String> {
 #[tauri::command]
 pub async fn git_merge_pr(workspace_path: String, method: String) -> Result<String, String> {
     git_ops::merge_pr(&workspace_path, &method).await
-}
-
-#[tauri::command]
-pub async fn git_create_pr_smart(workspace_path: String, main_branch: String) -> Result<git_ops::CreatePrResult, String> {
-    git_ops::create_pr_smart(&workspace_path, &main_branch).await
-}
-
-#[tauri::command]
-pub async fn git_merge_pr_smart(workspace_path: String, main_branch: String) -> Result<git_ops::MergePrResult, String> {
-    git_ops::merge_pr_smart(&workspace_path, &main_branch).await
 }
 
 #[tauri::command]

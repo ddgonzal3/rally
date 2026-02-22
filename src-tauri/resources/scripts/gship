@@ -1,0 +1,21 @@
+#!/bin/bash
+# gship — Launch Claude Code to run /ship
+# Installed to ~/.rally/bin/ by Rally on startup
+
+branch=$(git symbolic-ref --short HEAD 2>/dev/null)
+if [ -z "$branch" ]; then echo "Not in a git repo"; exit 1; fi
+if [ "$branch" = "main" ] || [ "$branch" = "master" ]; then
+  echo "Cannot ship from $branch. Switch to a feature branch first."
+  exit 1
+fi
+
+main_branch="main"
+ahead=$(git rev-list --count "$main_branch".."$branch" 2>/dev/null)
+if [ "$ahead" = "0" ] || [ -z "$ahead" ]; then
+  echo "No commits ahead of $main_branch. Nothing to ship."
+  exit 1
+fi
+
+echo "Shipping $branch ($ahead commit(s) ahead of $main_branch)..."
+echo ""
+exec claude --dangerously-skip-permissions "/ship"

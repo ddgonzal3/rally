@@ -1,0 +1,72 @@
+#!/bin/bash
+# gmerge — Squash merge PR + sync local branch with main
+# Installed to ~/.rally/bin/ by Rally on startup
+
+branch=$(git symbolic-ref --short HEAD 2>/dev/null)
+main_branch="main"
+
+if [ -z "$branch" ]; then echo "Not in a git repo"; exit 1; fi
+if [ "$branch" = "$main_branch" ] || [ "$branch" = "master" ]; then
+  echo "Cannot merge from $main_branch. Switch to a feature branch."
+  exit 1
+fi
+
+# Ensure local is up to date with remote
+echo "Fetching remote..."
+git fetch origin
+
+remote_head=$(git rev-parse "origin/$branch" 2>/dev/null)
+
+if [ -n "$remote_head" ]; then
+  local_head=$(git rev-parse HEAD)
+  if [ "$local_head" != "$remote_head" ]; then
+    remote_count=$(git rev-list --count "$branch".."origin/$branch" 2>/dev/null || echo "0")
+    if [ "$remote_count" -gt 0 ]; then
+      echo "Local branch is behind remote by $remote_count commit(s). Pull first:"
+      echo "  git pull --rebase"
+      exit 1
+    fi
+  fi
+fi
+
+# Check PR exists and is mergeable (single API call)
+pr_json=$(gh pr view --json state,mergeable 2>/dev/null)
+if [ -z "$pr_json" ]; then
+  echo "No PR found for branch $branch."
+  exit 1
+fi
+state=$(echo "$pr_json" | grep -o '"state":"[^"]*"' | head -1 | cut -d'"' -f4)
+mergeable=$(echo "$pr_json" | grep -o '"mergeable":"[^"]*"' | head -1 | cut -d'"' -f4)
+
+if [ "$state" != "OPEN" ]; then
+  echo "PR is not open (state: $state)."
+  exit 1
+fi
+
+if [ "$mergeable" = "CONFLICTING" ]; then
+  echo "PR has merge conflicts. Resolve them first."
+  exit 1
+fi
+
+# Squash merge
+echo "Squash merging PR..."
+gh pr merge --squash || { echo "Merge failed."; exit 1; }
+
+# Sync local branch with main
+echo "Syncing $branch with $main_branch..."
+git checkout "$main_branch" || { echo "Failed to checkout $main_branch"; exit 1; }
+git pull || { echo "Failed to pull $main_branch"; exit 1; }
+
+git checkout "$branch" || { echo "Failed to checkout $branch"; exit 1; }
+ahead=$(git rev-list --count "$main_branch".."$branch" 2>/dev/null || echo "0")
+if [ "$ahead" -gt 0 ]; then
+  git reset --hard "$main_branch" || { echo "Failed to reset $branch"; exit 1; }
+  git rebase "$main_branch" || { echo "Failed to rebase onto $main_branch"; exit 1; }
+fi
+
+# Push if remote branch still exists (may have been auto-deleted on merge)
+if git ls-remote --exit-code origin "$branch" >/dev/null 2>&1; then
+  git push --force-with-lease
+fi
+
+echo "Merged and synced. $branch is now up to date with $main_branch."

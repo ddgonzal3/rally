@@ -1,4 +1,4 @@
-<\!-- rally-review-pr-v2 -->
+<\!-- rally-review-pr-v3 -->
 # PR Review (Edit, Fix Loop & Stage)
 
 You are a senior engineer orchestrating a thorough, iterative code review. Your goal is to leave the code **meaningfully better** than you found it.
@@ -203,13 +203,22 @@ Once all review agents return:
 - If a fix is risky (behavior might change), make the fix but flag it clearly in the report
 - If you're unsure, err on the side of making the change — the author can revert
 
-## Step 5: Stage Changes (Main Agent)
+## Step 5: Stage or Push Changes (Main Agent)
 
+Behavior depends on context:
+
+### When called from /ship (default):
+The /ship command handles committing and pushing after review. Just stage:
 ```bash
-git add -u  # or specific files
+git add -u
 ```
 
-**DO NOT COMMIT.** The user will commit when ready.
+### When called standalone (/review-pr):
+Stage changes only. The user decides what to do next:
+```bash
+git add -u
+```
+Print: "Changes staged. Review them, then commit and push when ready."
 
 ## Step 6: Report (Main Agent)
 

@@ -685,87 +685,6 @@ function GitStatusIcon({
   );
 }
 
-// --- Repo Action Icons ---
-
-function ShipIcon() {
-  return (
-    <svg width="18" height="18" viewBox="0 -960 960 960" fill="currentColor" style={{ flexShrink: 0 }}>
-      <path d="m240-198 79-32q-10-29-18.5-59T287-349l-47 32v119Zm160-42h160q18-40 29-97.5T600-455q0-99-33-187.5T480-779q-54 48-87 136.5T360-455q0 60 11 117.5t29 97.5Zm23.5-223.5Q400-487 400-520t23.5-56.5Q447-600 480-600t56.5 23.5Q560-553 560-520t-23.5 56.5Q513-440 480-440t-56.5-23.5ZM720-198v-119l-47-32q-5 30-13.5 60T641-230l79 32ZM480-881q99 72 149.5 183T680-440l84 56q17 11 26.5 29t9.5 38v237l-199-80H359L160-80v-237q0-20 9.5-38t26.5-29l84-56q0-147 50.5-258T480-881Z" />
-    </svg>
-  );
-}
-
-function ReviewIcon() {
-  return (
-    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" style={{ flexShrink: 0 }}>
-      <path d="M12 5c-7 0-11 7-11 7s4 7 11 7 11-7 11-7-4-7-11-7z" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
-      <circle cx="12" cy="12" r="3" stroke="currentColor" strokeWidth="1.7" />
-    </svg>
-  );
-}
-
-function CreatePrIcon() {
-  return (
-    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" style={{ flexShrink: 0 }}>
-      <circle cx="6" cy="6" r="2.5" stroke="currentColor" strokeWidth="1.7" />
-      <circle cx="18" cy="18" r="2.5" stroke="currentColor" strokeWidth="1.7" />
-      <path d="M6 8.5v7c0 1.4 1.1 2.5 2.5 2.5H15.5" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
-      <path d="M13 15l3 3-3 3" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-  );
-}
-
-function MergeIcon() {
-  return (
-    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" style={{ flexShrink: 0 }}>
-      <circle cx="6" cy="6" r="2.5" stroke="currentColor" strokeWidth="1.7" />
-      <circle cx="18" cy="6" r="2.5" stroke="currentColor" strokeWidth="1.7" />
-      <circle cx="12" cy="18" r="2.5" stroke="currentColor" strokeWidth="1.7" />
-      <path d="M6 8.5v2c0 3 2.5 5 6 5M18 8.5v2c0 3-2.5 5-6 5" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
-    </svg>
-  );
-}
-
-function RepoActionButton({
-  icon,
-  tooltip,
-  disabled,
-  onClick,
-}: {
-  icon: React.ReactNode;
-  tooltip: string;
-  disabled: boolean;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      className={disabled ? undefined : "repo-action-btn"}
-      onClick={(e) => {
-        e.stopPropagation();
-        if (!disabled) onClick();
-      }}
-      title={tooltip}
-      style={{
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        width: 22,
-        height: 22,
-        background: "none",
-        border: "none",
-        padding: "2px",
-        flexShrink: 0,
-        borderRadius: 4,
-        color: disabled ? "#555" : "#999",
-        cursor: disabled ? "default" : "pointer",
-        opacity: disabled ? 0.5 : 1,
-      }}
-    >
-      {icon}
-    </button>
-  );
-}
-
 // --- Root Section ---
 
 function RootSection({
@@ -812,9 +731,6 @@ function RootSection({
   const gitStatus = useWorkspaceStore((s) => s.gitStatuses[rootPath]);
   const prStatus = useWorkspaceStore((s) => s.prStatuses[rootPath]);
   const pathSyncNeeded = useWorkspaceStore((s) => s.syncNeeded[rootPath]);
-  const openClaudeCommand = useWorkspaceStore((s) => s.openClaudeCommand);
-  const startShipSession = useWorkspaceStore((s) => s.startShipSession);
-  const refreshAllPrStatuses = useWorkspaceStore((s) => s.refreshAllPrStatuses);
   const canRemove = useWorkspaceStore((s) => {
     const ws = s.workspaces.find((w) => w.id === s.activeWorkspaceId);
     return (ws?.paths.length ?? 0) > 1;
@@ -875,47 +791,6 @@ function RootSection({
     return () => document.removeEventListener("rally:dir-refresh", handler);
   }, [rootPath, refreshRootEntries]);
 
-  const handleCreatePr = async (path: string) => {
-    const ws = useWorkspaceStore.getState().workspaces.find((w) => w.paths.includes(path));
-    if (!ws) return;
-    const toastId = addToast({ type: "info", title: "Creating PR...", message: path.split("/").pop() ?? "", duration: 0 });
-    try {
-      const result = await api.gitCreatePrSmart(path, ws.main_branch);
-      useToastStore.getState().dismissToast(toastId);
-      addToast({
-        type: "success",
-        title: `PR #${result.pr_number} created`,
-        message: result.title || result.branch,
-        duration: 0,
-        actions: [{ label: "Open in Browser", onClick: () => { window.open(result.pr_url, "_blank"); } }],
-      });
-    } catch (e) {
-      useToastStore.getState().dismissToast(toastId);
-      addToast({ type: "warning", title: "Create PR failed", message: String(e), duration: 0 });
-    }
-    refreshAllPrStatuses();
-  };
-
-  const handleMergePr = async (path: string) => {
-    const ws = useWorkspaceStore.getState().workspaces.find((w) => w.paths.includes(path));
-    if (!ws) return;
-    const toastId = addToast({ type: "info", title: "Merging PR...", message: path.split("/").pop() ?? "", duration: 0 });
-    try {
-      const result = await api.gitMergePrSmart(path, ws.main_branch);
-      useToastStore.getState().dismissToast(toastId);
-      addToast({
-        type: "success",
-        title: `PR #${result.pr_number} merged`,
-        message: `Branch ${result.branch} ${result.synced ? "synced to main" : "(sync pending)"}`,
-        duration: 0,
-      });
-    } catch (e) {
-      useToastStore.getState().dismissToast(toastId);
-      addToast({ type: "warning", title: "Merge PR failed", message: String(e), duration: 0 });
-    }
-    refreshAllPrStatuses();
-  };
-
   function handleContextMenu(e: React.MouseEvent) {
     e.preventDefault();
     const actions: Parameters<typeof showContextMenu>[0] = [
@@ -953,25 +828,6 @@ function RootSection({
       },
       { label: "Reveal in Finder", action: () => api.revealInFinder(rootPath) },
     ];
-    if (isGitRepo && activeWorkspaceId) {
-      const hasOpenPr = prStatus?.state === "OPEN";
-      actions.push("separator");
-      actions.push({
-        label: hasOpenPr ? `Create PR (PR #${prStatus!.number} open)` : !(gitStatus?.dirty || (gitStatus?.ahead ?? 0) > 0) ? "Create PR (no changes)" : "Create PR",
-        action: () => handleCreatePr(rootPath),
-        disabled: hasOpenPr || !(gitStatus?.dirty || (gitStatus?.ahead ?? 0) > 0),
-      });
-      actions.push({
-        label: hasOpenPr ? "Review PR" : "Review PR (no open PR)",
-        action: () => openClaudeCommand(activeWorkspaceId, rootPath, "/review-pr", "Review PR"),
-        disabled: !hasOpenPr,
-      });
-      actions.push({
-        label: hasOpenPr ? "Merge PR" : "Merge PR (no open PR)",
-        action: () => handleMergePr(rootPath),
-        disabled: !hasOpenPr,
-      });
-    }
     if (canRemove) {
       actions.push("separator");
       actions.push({
@@ -1061,36 +917,6 @@ function RootSection({
           <div style={styles.rootActions}>
             {isGitRepo && (
               <>
-                <RepoActionButton
-                  icon={<CreatePrIcon />}
-                  tooltip={
-                    prStatus?.state === "OPEN"
-                      ? `Create PR — PR #${prStatus.number} already open`
-                      : !(gitStatus?.dirty || (gitStatus?.ahead ?? 0) > 0)
-                        ? "Create PR — no changes"
-                        : "Create PR"
-                  }
-                  disabled={prStatus?.state === "OPEN" || !(gitStatus?.dirty || (gitStatus?.ahead ?? 0) > 0)}
-                  onClick={() => handleCreatePr(rootPath)}
-                />
-                <RepoActionButton
-                  icon={<ReviewIcon />}
-                  tooltip={prStatus?.state === "OPEN" ? "Review PR" : "Review PR — no open PR"}
-                  disabled={prStatus?.state !== "OPEN"}
-                  onClick={() => activeWorkspaceId && openClaudeCommand(activeWorkspaceId, rootPath, "/review-pr", "Review PR")}
-                />
-                <RepoActionButton
-                  icon={<MergeIcon />}
-                  tooltip={prStatus?.state === "OPEN" ? "Merge PR" : "Merge PR — no open PR"}
-                  disabled={prStatus?.state !== "OPEN"}
-                  onClick={() => handleMergePr(rootPath)}
-                />
-                <RepoActionButton
-                  icon={<ShipIcon />}
-                  tooltip="Ship — commit, push, PR, review, merge"
-                  disabled={false}
-                  onClick={() => startShipSession(rootPath)}
-                />
                 <GitStatusIcon
                   status={gitStatus}
                   syncNeeded={pathSyncNeeded}
