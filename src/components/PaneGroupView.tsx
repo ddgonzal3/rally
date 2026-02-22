@@ -1,4 +1,4 @@
-import React, { useCallback, useRef } from "react";
+import React, { useCallback, useEffect, useRef } from "react";
 import { Terminal } from "./Terminal";
 import { ClaudeLauncher } from "./ClaudeLauncher";
 import { ClaudeTerminalWrapper } from "./ClaudeTerminalWrapper";
@@ -385,14 +385,79 @@ export function PaneGroupView({
         </div>
       </div>
 
-      {/* Pane content — all mounted, only active visible */}
-      <div style={styles.content}>
-        {group.panes.length === 0 && (
-          <div style={styles.emptyState}>
-            <span style={styles.emptyText}>No open tabs</span>
-          </div>
-        )}
-        {group.panes.map((pane) => {
+      {/* Pane content — LRU cache: only active + recently-used panes are mounted */}
+      <PaneContent
+        panes={group.panes}
+        activePaneId={activePaneId}
+        workspacePath={workspacePath}
+        paths={paths}
+        workspaceId={workspaceId}
+        groupId={groupId}
+        transformPane={transformPane}
+        handleLaunchClaude={handleLaunchClaude}
+        handleLaunchTerminal={handleLaunchTerminal}
+      />
+
+      {/* Drop zone target — always mounted, covers full container (incl. tab bar) for earlier activation */}
+      <DropZoneTarget groupId={groupId} paneCount={group.panes.length} onDrop={handleDrop} onFileDrop={handleFileDrop} />
+    </div>
+  );
+}
+
+// --- LRU pane mounting ---
+// Only mount the active pane + last N recently-used panes.
+// Unmounted panes detach their xterm, PTY listeners, and ResizeObservers.
+const MAX_CACHED_PANES = 3;
+
+function PaneContent({
+  panes,
+  activePaneId,
+  workspacePath,
+  paths,
+  workspaceId,
+  groupId,
+  transformPane,
+  handleLaunchClaude,
+  handleLaunchTerminal,
+}: {
+  panes: Pane[];
+  activePaneId: string;
+  workspacePath: string;
+  paths: string[];
+  workspaceId: string;
+  groupId: string;
+  transformPane: (wsId: string, gId: string, pId: string, updates: Partial<Pane>) => void;
+  handleLaunchClaude: (paneId: string, cwd?: string) => void;
+  handleLaunchTerminal: (paneId: string, cwd?: string) => void;
+}) {
+  const recentPaneIds = useRef<string[]>([]);
+
+  // Track LRU order — active pane is always most recent
+  useEffect(() => {
+    recentPaneIds.current = [
+      activePaneId,
+      ...recentPaneIds.current.filter((id) => id !== activePaneId),
+    ].slice(0, MAX_CACHED_PANES);
+  }, [activePaneId]);
+
+  // Determine which panes to mount: active + LRU cache, filtered to existing panes
+  const existingPaneIds = new Set(panes.map((p) => p.id));
+  const mountedPaneIds = new Set(
+    recentPaneIds.current.filter((id) => existingPaneIds.has(id))
+  );
+  // Always include active pane
+  mountedPaneIds.add(activePaneId);
+
+  return (
+    <div style={styles.content}>
+      {panes.length === 0 && (
+        <div style={styles.emptyState}>
+          <span style={styles.emptyText}>No open tabs</span>
+        </div>
+      )}
+      {panes
+        .filter((pane) => mountedPaneIds.has(pane.id))
+        .map((pane) => {
           const isActive = pane.id === activePaneId;
           const paneCwd = pane.cwd || workspacePath;
           return (
@@ -443,11 +508,6 @@ export function PaneGroupView({
             </div>
           );
         })}
-
-      </div>
-
-      {/* Drop zone target — always mounted, covers full container (incl. tab bar) for earlier activation */}
-      <DropZoneTarget groupId={groupId} paneCount={group.panes.length} onDrop={handleDrop} onFileDrop={handleFileDrop} />
     </div>
   );
 }

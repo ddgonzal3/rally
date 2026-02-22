@@ -1,7 +1,9 @@
 use std::collections::HashMap;
 use std::io::{Read, Write};
 use std::sync::{Arc, Mutex};
+use std::sync::mpsc;
 use std::thread;
+use std::time::{Duration, Instant};
 
 use portable_pty::{native_pty_system, CommandBuilder, PtySize};
 use serde::Serialize;
@@ -146,39 +148,86 @@ impl PtyManager {
             .try_clone_reader()
             .map_err(|e| format!("Failed to clone PTY reader: {}", e))?;
 
-        let app_handle_clone = app_handle.clone();
+        // Buffered PTY output: reader thread pushes raw data into a channel,
+        // flusher thread drains it every ~16ms and emits a single batched IPC event.
+        // This collapses thousands of tiny reads into ~60 events/second.
+        let (tx, rx) = mpsc::channel::<Vec<u8>>();
+
+        // Reader thread — pushes raw chunks into channel
         let child_clone = child.clone();
+        let reader_id_for_reader = reader_id.clone();
+        let tx_exit = tx.clone();
         thread::spawn(move || {
             let mut buf = [0u8; 4096];
             loop {
                 match reader.read(&mut buf) {
-                    Ok(0) => {
-                        // EOF — process exited. Get the real exit code.
+                    Ok(0) => break,
+                    Ok(n) => {
+                        if tx.send(buf[..n].to_vec()).is_err() {
+                            break;
+                        }
+                    }
+                    Err(e) => {
+                        eprintln!("PTY read error for {}: {}", reader_id_for_reader, e);
+                        break;
+                    }
+                }
+            }
+            // Signal EOF to flusher by dropping tx (receiver will get Disconnected)
+            drop(tx);
+            let _ = tx_exit; // ensure tx_exit is moved but unused — drop both senders
+        });
+
+        // Flusher thread — drains channel every ~16ms, emits batched events
+        let app_handle_clone = app_handle.clone();
+        thread::spawn(move || {
+            const FLUSH_INTERVAL: Duration = Duration::from_millis(16);
+            let mut pending = Vec::new();
+            let mut last_flush = Instant::now();
+            let output_event = format!("pty-output-{}", reader_id);
+            let exit_event = format!("pty-exit-{}", reader_id);
+
+            loop {
+                // Wait for data with a timeout so we can flush periodically
+                match rx.recv_timeout(FLUSH_INTERVAL) {
+                    Ok(chunk) => {
+                        pending.extend(chunk);
+                        // Drain any additional queued chunks without blocking
+                        while let Ok(more) = rx.try_recv() {
+                            pending.extend(more);
+                        }
+                        if last_flush.elapsed() >= FLUSH_INTERVAL {
+                            let _ = app_handle_clone.emit(
+                                &output_event,
+                                PtyOutputPayload { data: std::mem::take(&mut pending) },
+                            );
+                            last_flush = Instant::now();
+                        }
+                    }
+                    Err(mpsc::RecvTimeoutError::Timeout) => {
+                        // Timeout — flush whatever we have
+                        if !pending.is_empty() {
+                            let _ = app_handle_clone.emit(
+                                &output_event,
+                                PtyOutputPayload { data: std::mem::take(&mut pending) },
+                            );
+                            last_flush = Instant::now();
+                        }
+                    }
+                    Err(mpsc::RecvTimeoutError::Disconnected) => {
+                        // Reader is done — flush remaining data and emit exit
+                        if !pending.is_empty() {
+                            let _ = app_handle_clone.emit(
+                                &output_event,
+                                PtyOutputPayload { data: std::mem::take(&mut pending) },
+                            );
+                        }
                         let code = child_clone
                             .lock()
                             .ok()
                             .and_then(|mut c| c.wait().ok())
                             .map(|status| status.exit_code() as i32);
-                        let _ = app_handle_clone.emit(
-                            &format!("pty-exit-{}", reader_id),
-                            PtyExitPayload { code },
-                        );
-                        break;
-                    }
-                    Ok(n) => {
-                        let _ = app_handle_clone.emit(
-                            &format!("pty-output-{}", reader_id),
-                            PtyOutputPayload {
-                                data: buf[..n].to_vec(),
-                            },
-                        );
-                    }
-                    Err(e) => {
-                        eprintln!("PTY read error for {}: {}", reader_id, e);
-                        let _ = app_handle_clone.emit(
-                            &format!("pty-exit-{}", reader_id),
-                            PtyExitPayload { code: None },
-                        );
+                        let _ = app_handle_clone.emit(&exit_event, PtyExitPayload { code });
                         break;
                     }
                 }

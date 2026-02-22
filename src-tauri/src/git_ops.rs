@@ -1,13 +1,16 @@
-use std::process::Command;
+use std::time::Duration;
+
+use tokio::process::Command;
 
 use crate::workspace::{ChangedFile, ChangesSummary, GitStatus, PrStatus, PushResult};
 
-/// Run a git command in a given directory and return stdout
-pub fn git_cmd(cwd: &str, args: &[&str]) -> Result<String, String> {
+/// Run a git command in a given directory and return stdout (async)
+pub async fn git_cmd(cwd: &str, args: &[&str]) -> Result<String, String> {
     let output = Command::new("git")
         .args(args)
         .current_dir(cwd)
         .output()
+        .await
         .map_err(|e| format!("Failed to run git: {}", e))?;
 
     if output.status.success() {
@@ -18,13 +21,18 @@ pub fn git_cmd(cwd: &str, args: &[&str]) -> Result<String, String> {
     }
 }
 
-/// Run gh CLI command in a given directory
-fn gh(cwd: &str, args: &[&str]) -> Result<String, String> {
-    let output = Command::new("gh")
-        .args(args)
-        .current_dir(cwd)
-        .output()
-        .map_err(|e| format!("Failed to run gh: {}", e))?;
+/// Run gh CLI command in a given directory (async, with timeout for network ops)
+async fn gh(cwd: &str, args: &[&str]) -> Result<String, String> {
+    let output = tokio::time::timeout(
+        Duration::from_secs(30),
+        Command::new("gh")
+            .args(args)
+            .current_dir(cwd)
+            .output(),
+    )
+    .await
+    .map_err(|_| format!("gh {} timed out after 30s", args.join(" ")))?
+    .map_err(|e| format!("Failed to run gh: {}", e))?;
 
     if output.status.success() {
         Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
@@ -34,10 +42,10 @@ fn gh(cwd: &str, args: &[&str]) -> Result<String, String> {
     }
 }
 
-pub fn status(cwd: &str, main_branch: &str) -> Result<GitStatus, String> {
-    let branch = git_cmd(cwd, &["symbolic-ref", "--short", "HEAD"])?;
+pub async fn status(cwd: &str, main_branch: &str) -> Result<GitStatus, String> {
+    let branch = git_cmd(cwd, &["symbolic-ref", "--short", "HEAD"]).await?;
 
-    let status_output = git_cmd(cwd, &["status", "--porcelain"])?;
+    let status_output = git_cmd(cwd, &["status", "--porcelain"]).await?;
     let modified: Vec<String> = status_output
         .lines()
         .filter(|l| !l.starts_with("??"))
@@ -53,7 +61,7 @@ pub fn status(cwd: &str, main_branch: &str) -> Result<GitStatus, String> {
 
     // Count ahead/behind vs origin/<main_branch>
     let remote_ref = format!("HEAD...origin/{}", main_branch);
-    let (ahead, behind) = match git_cmd(cwd, &["rev-list", "--left-right", "--count", &remote_ref]) {
+    let (ahead, behind) = match git_cmd(cwd, &["rev-list", "--left-right", "--count", &remote_ref]).await {
         Ok(counts) => {
             let parts: Vec<&str> = counts.split_whitespace().collect();
             if parts.len() == 2 {
@@ -79,35 +87,35 @@ pub fn status(cwd: &str, main_branch: &str) -> Result<GitStatus, String> {
 }
 
 /// Sync: checkout main, pull, rebase branch on top
-pub fn sync(cwd: &str, branch: &str, main_branch: &str) -> Result<String, String> {
-    git_cmd(cwd, &["checkout", main_branch])?;
-    git_cmd(cwd, &["pull"])?;
-    git_cmd(cwd, &["rebase", main_branch, branch])?;
+pub async fn sync(cwd: &str, branch: &str, main_branch: &str) -> Result<String, String> {
+    git_cmd(cwd, &["checkout", main_branch]).await?;
+    git_cmd(cwd, &["pull"]).await?;
+    git_cmd(cwd, &["rebase", main_branch, branch]).await?;
     Ok(format!("Synced {} onto {}", branch, main_branch))
 }
 
 /// Rebase: stash, checkout main, pull, rebase, pop stash
-pub fn rebase(cwd: &str, branch: &str, main_branch: &str) -> Result<String, String> {
-    git_cmd(cwd, &["checkout", branch])?;
+pub async fn rebase(cwd: &str, branch: &str, main_branch: &str) -> Result<String, String> {
+    git_cmd(cwd, &["checkout", branch]).await?;
 
     // Check if there are changes to stash
-    let status = git_cmd(cwd, &["status", "--porcelain"])?;
+    let status = git_cmd(cwd, &["status", "--porcelain"]).await?;
     let has_changes = !status.is_empty();
 
     if has_changes {
-        git_cmd(cwd, &["stash"])?;
+        git_cmd(cwd, &["stash"]).await?;
     }
 
-    git_cmd(cwd, &["checkout", main_branch])?;
-    git_cmd(cwd, &["pull"])?;
-    git_cmd(cwd, &["checkout", branch])?;
+    git_cmd(cwd, &["checkout", main_branch]).await?;
+    git_cmd(cwd, &["pull"]).await?;
+    git_cmd(cwd, &["checkout", branch]).await?;
 
-    if let Err(e) = git_cmd(cwd, &["rebase", main_branch]) {
+    if let Err(e) = git_cmd(cwd, &["rebase", main_branch]).await {
         return Err(format!("Rebase failed (resolve conflicts manually): {}", e));
     }
 
     if has_changes {
-        if let Err(e) = git_cmd(cwd, &["stash", "pop"]) {
+        if let Err(e) = git_cmd(cwd, &["stash", "pop"]).await {
             return Err(format!("Rebased successfully but stash pop had conflicts: {}", e));
         }
     }
@@ -116,25 +124,28 @@ pub fn rebase(cwd: &str, branch: &str, main_branch: &str) -> Result<String, Stri
 }
 
 /// Commit staged changes
-pub fn commit(cwd: &str, message: &str) -> Result<String, String> {
-    git_cmd(cwd, &["add", "-u"])?;
-    git_cmd(cwd, &["commit", "-m", message])
+pub async fn commit(cwd: &str, message: &str) -> Result<String, String> {
+    git_cmd(cwd, &["add", "-u"]).await?;
+    git_cmd(cwd, &["commit", "-m", message]).await
 }
 
 /// Push current branch with smart fallback:
 /// 1. Try normal push
 /// 2. If rejected (diverged after rebase) → force-with-lease
 /// 3. If no upstream → set-upstream
-pub fn push(cwd: &str) -> Result<PushResult, String> {
-    let branch = git_cmd(cwd, &["symbolic-ref", "--short", "HEAD"])?;
+pub async fn push(cwd: &str) -> Result<PushResult, String> {
+    let branch = git_cmd(cwd, &["symbolic-ref", "--short", "HEAD"]).await?;
 
-    // Try normal push first
-    match git_cmd(cwd, &["push"]) {
-        Ok(out) => return Ok(PushResult {
+    // Try normal push first (with timeout for network ops)
+    match tokio::time::timeout(
+        Duration::from_secs(30),
+        git_cmd(cwd, &["push"]),
+    ).await {
+        Ok(Ok(out)) => return Ok(PushResult {
             output: if out.is_empty() { format!("Pushed {} to origin", branch) } else { out },
             method: "push".to_string(),
         }),
-        Err(e) => {
+        Ok(Err(e)) => {
             // Check if it's a diverged/rejected error (common after rebase)
             let err_lower = e.to_lowercase();
             if err_lower.contains("rejected")
@@ -143,7 +154,7 @@ pub fn push(cwd: &str) -> Result<PushResult, String> {
                 || err_lower.contains("failed to push")
             {
                 // Try force-with-lease (safe force push)
-                match git_cmd(cwd, &["push", "--force-with-lease"]) {
+                match git_cmd(cwd, &["push", "--force-with-lease"]).await {
                     Ok(out) => return Ok(PushResult {
                         output: if out.is_empty() {
                             format!("Force-pushed {} (with lease)", branch)
@@ -161,7 +172,7 @@ pub fn push(cwd: &str) -> Result<PushResult, String> {
                 || err_lower.contains("has no upstream")
                 || err_lower.contains("set-upstream")
             {
-                match git_cmd(cwd, &["push", "--set-upstream", "origin", &branch]) {
+                match git_cmd(cwd, &["push", "--set-upstream", "origin", &branch]).await {
                     Ok(out) => return Ok(PushResult {
                         output: if out.is_empty() {
                             format!("Pushed {} and set upstream", branch)
@@ -177,11 +188,12 @@ pub fn push(cwd: &str) -> Result<PushResult, String> {
             // Unknown push error
             Err(e)
         }
+        Err(_) => Err("git push timed out after 30s".to_string()),
     }
 }
 
 /// Create a PR using gh CLI
-pub fn create_pr(cwd: &str, title: Option<&str>, body: Option<&str>) -> Result<String, String> {
+pub async fn create_pr(cwd: &str, title: Option<&str>, body: Option<&str>) -> Result<String, String> {
     let mut args = vec!["pr", "create"];
 
     if let Some(t) = title {
@@ -196,18 +208,18 @@ pub fn create_pr(cwd: &str, title: Option<&str>, body: Option<&str>) -> Result<S
         args.push("--fill");
     }
 
-    gh(cwd, &args)
+    gh(cwd, &args).await
 }
 
 /// Get PR status for the current branch. Returns None-equivalent error if no PR exists.
-pub fn pr_status(cwd: &str) -> Result<PrStatus, String> {
+pub async fn pr_status(cwd: &str) -> Result<PrStatus, String> {
     let json_str = gh(
         cwd,
         &[
             "pr", "view", "--json",
             "number,title,url,state,isDraft,mergeable,reviewDecision,statusCheckRollup",
         ],
-    )?;
+    ).await?;
 
     let v: serde_json::Value =
         serde_json::from_str(&json_str).map_err(|e| format!("Failed to parse PR JSON: {}", e))?;
@@ -246,20 +258,20 @@ pub fn pr_status(cwd: &str) -> Result<PrStatus, String> {
 }
 
 /// Merge a PR using gh CLI
-pub fn merge_pr(cwd: &str, method: &str) -> Result<String, String> {
+pub async fn merge_pr(cwd: &str, method: &str) -> Result<String, String> {
     let method_flag = match method {
         "rebase" => "--rebase",
         "merge" => "--merge",
         _ => "--squash", // default to squash
     };
 
-    gh(cwd, &["pr", "merge", method_flag])
+    gh(cwd, &["pr", "merge", method_flag]).await
 }
 
 /// Get detailed changes: staged, unstaged, and untracked files.
 /// Parses `git status --porcelain` two-column format.
-pub fn changes(cwd: &str) -> Result<ChangesSummary, String> {
-    let output = git_cmd(cwd, &["status", "--porcelain"])?;
+pub async fn changes(cwd: &str) -> Result<ChangesSummary, String> {
+    let output = git_cmd(cwd, &["status", "--porcelain"]).await?;
     let mut staged = Vec::new();
     let mut unstaged = Vec::new();
     let mut untracked = Vec::new();
@@ -296,9 +308,9 @@ pub fn changes(cwd: &str) -> Result<ChangesSummary, String> {
 }
 
 /// Get file content at HEAD revision.
-pub fn file_at_head(cwd: &str, file_path: &str) -> Result<String, String> {
+pub async fn file_at_head(cwd: &str, file_path: &str) -> Result<String, String> {
     // Get relative path from repo root
-    let repo_root = git_cmd(cwd, &["rev-parse", "--show-toplevel"])?;
+    let repo_root = git_cmd(cwd, &["rev-parse", "--show-toplevel"]).await?;
     let full_path = if file_path.starts_with('/') {
         file_path.to_string()
     } else {
@@ -309,20 +321,20 @@ pub fn file_at_head(cwd: &str, file_path: &str) -> Result<String, String> {
         .unwrap_or(&full_path)
         .trim_start_matches('/');
     let spec = format!("HEAD:{}", rel);
-    git_cmd(cwd, &["show", &spec])
+    git_cmd(cwd, &["show", &spec]).await
 }
 
 /// Stage a file.
-pub fn stage_file(cwd: &str, file_path: &str) -> Result<(), String> {
-    git_cmd(cwd, &["add", "--", file_path])?;
+pub async fn stage_file(cwd: &str, file_path: &str) -> Result<(), String> {
+    git_cmd(cwd, &["add", "--", file_path]).await?;
     Ok(())
 }
 
 /// Unstage a file.
-pub fn unstage_file(cwd: &str, file_path: &str) -> Result<(), String> {
-    if git_cmd(cwd, &["restore", "--staged", "--", file_path]).is_err() {
+pub async fn unstage_file(cwd: &str, file_path: &str) -> Result<(), String> {
+    if git_cmd(cwd, &["restore", "--staged", "--", file_path]).await.is_err() {
         // Fallback for older git versions without `restore`.
-        git_cmd(cwd, &["reset", "HEAD", "--", file_path])?;
+        git_cmd(cwd, &["reset", "HEAD", "--", file_path]).await?;
     }
     Ok(())
 }
@@ -330,15 +342,15 @@ pub fn unstage_file(cwd: &str, file_path: &str) -> Result<(), String> {
 /// Discard local changes for a file.
 /// - Tracked file: restore working tree from index/HEAD
 /// - Untracked file: remove from working tree
-pub fn discard_file(cwd: &str, file_path: &str, is_untracked: bool) -> Result<(), String> {
+pub async fn discard_file(cwd: &str, file_path: &str, is_untracked: bool) -> Result<(), String> {
     if is_untracked {
-        git_cmd(cwd, &["clean", "-f", "--", file_path])?;
+        git_cmd(cwd, &["clean", "-f", "--", file_path]).await?;
         return Ok(());
     }
 
-    if git_cmd(cwd, &["restore", "--", file_path]).is_err() {
+    if git_cmd(cwd, &["restore", "--", file_path]).await.is_err() {
         // Fallback for older git versions without `restore`.
-        git_cmd(cwd, &["checkout", "--", file_path])?;
+        git_cmd(cwd, &["checkout", "--", file_path]).await?;
     }
     Ok(())
 }
@@ -358,36 +370,36 @@ pub struct CreatePrResult {
 }
 
 /// Smart PR creation: handles branch creation, committing, pushing, and PR creation.
-pub fn create_pr_smart(cwd: &str, main_branch: &str) -> Result<CreatePrResult, String> {
-    let mut branch = git_cmd(cwd, &["symbolic-ref", "--short", "HEAD"])?;
+pub async fn create_pr_smart(cwd: &str, main_branch: &str) -> Result<CreatePrResult, String> {
+    let mut branch = git_cmd(cwd, &["symbolic-ref", "--short", "HEAD"]).await?;
     let mut committed = false;
     let mut branch_created = false;
 
     // If on main, create a feature branch
     if branch == main_branch {
-        let diff_stat = git_cmd(cwd, &["diff", "--stat", "HEAD"])
+        let diff_stat = git_cmd(cwd, &["diff", "--stat", "HEAD"]).await
             .unwrap_or_default();
         let branch_name = generate_branch_name(&diff_stat);
-        git_cmd(cwd, &["checkout", "-b", &branch_name])?;
+        git_cmd(cwd, &["checkout", "-b", &branch_name]).await?;
         branch = branch_name;
         branch_created = true;
     }
 
     // If dirty, commit all changes
-    let status_output = git_cmd(cwd, &["status", "--porcelain"])?;
+    let status_output = git_cmd(cwd, &["status", "--porcelain"]).await?;
     if !status_output.is_empty() {
-        git_cmd(cwd, &["add", "-A"])?;
-        let diff_stat = git_cmd(cwd, &["diff", "--cached", "--stat"])?;
+        git_cmd(cwd, &["add", "-A"]).await?;
+        let diff_stat = git_cmd(cwd, &["diff", "--cached", "--stat"]).await?;
         let msg = generate_commit_message(&diff_stat);
-        git_cmd(cwd, &["commit", "-m", &msg])?;
+        git_cmd(cwd, &["commit", "-m", &msg]).await?;
         committed = true;
     }
 
     // Push
-    push(cwd)?;
+    push(cwd).await?;
 
     // Create PR
-    let pr_url = create_pr(cwd, None, None)?;
+    let pr_url = create_pr(cwd, None, None).await?;
 
     // Parse PR number from URL (e.g., "https://github.com/org/repo/pull/42")
     let pr_number = pr_url
@@ -397,7 +409,7 @@ pub fn create_pr_smart(cwd: &str, main_branch: &str) -> Result<CreatePrResult, S
         .unwrap_or(0);
 
     // Get PR title
-    let title = match pr_status(cwd) {
+    let title = match pr_status(cwd).await {
         Ok(status) => status.title,
         Err(_) => String::new(),
     };
@@ -451,24 +463,24 @@ pub struct MergePrResult {
 }
 
 /// Smart PR merge: squash-merge via gh, then sync feature branch to main.
-pub fn merge_pr_smart(cwd: &str, main_branch: &str) -> Result<MergePrResult, String> {
-    let branch = git_cmd(cwd, &["symbolic-ref", "--short", "HEAD"])?;
+pub async fn merge_pr_smart(cwd: &str, main_branch: &str) -> Result<MergePrResult, String> {
+    let branch = git_cmd(cwd, &["symbolic-ref", "--short", "HEAD"]).await?;
 
     if branch == main_branch {
         return Err("Cannot merge: currently on main branch".to_string());
     }
 
     // Get PR info before merging
-    let pr = pr_status(cwd)?;
+    let pr = pr_status(cwd).await?;
     if pr.state != "OPEN" {
         return Err(format!("PR #{} is not open (state: {})", pr.number, pr.state));
     }
 
     // Squash merge
-    merge_pr(cwd, "squash")?;
+    merge_pr(cwd, "squash").await?;
 
     // Sync: checkout main, pull, switch back, rebase, force-push
-    let synced = match sync_branch_after_merge(cwd, &branch, main_branch) {
+    let synced = match sync_branch_after_merge(cwd, &branch, main_branch).await {
         Ok(_) => true,
         Err(e) => {
             eprintln!("Post-merge sync failed (PR was merged successfully): {}", e);
@@ -483,21 +495,21 @@ pub fn merge_pr_smart(cwd: &str, main_branch: &str) -> Result<MergePrResult, Str
     })
 }
 
-fn sync_branch_after_merge(cwd: &str, branch: &str, main_branch: &str) -> Result<(), String> {
-    git_cmd(cwd, &["checkout", main_branch])?;
-    git_cmd(cwd, &["pull"])?;
-    git_cmd(cwd, &["checkout", branch])?;
+async fn sync_branch_after_merge(cwd: &str, branch: &str, main_branch: &str) -> Result<(), String> {
+    git_cmd(cwd, &["checkout", main_branch]).await?;
+    git_cmd(cwd, &["pull"]).await?;
+    git_cmd(cwd, &["checkout", branch]).await?;
 
-    let count_str = git_cmd(cwd, &["rev-list", "--count", &format!("{}..HEAD", main_branch)])?;
+    let count_str = git_cmd(cwd, &["rev-list", "--count", &format!("{}..HEAD", main_branch)]).await?;
     let ahead: u32 = count_str.trim().parse().unwrap_or(0);
 
     if ahead > 0 {
-        git_cmd(cwd, &["reset", &format!("HEAD~{}", ahead)])?;
-        git_cmd(cwd, &["checkout", "."])?;
-        git_cmd(cwd, &["rebase", main_branch])?;
+        git_cmd(cwd, &["reset", &format!("HEAD~{}", ahead)]).await?;
+        git_cmd(cwd, &["checkout", "."]).await?;
+        git_cmd(cwd, &["rebase", main_branch]).await?;
     }
 
-    git_cmd(cwd, &["push", "--force-with-lease"])?;
+    git_cmd(cwd, &["push", "--force-with-lease"]).await?;
 
     Ok(())
 }

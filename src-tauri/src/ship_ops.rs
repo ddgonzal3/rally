@@ -213,35 +213,35 @@ pub fn check_ship_trigger() -> Result<Option<String>, String> {
 /// by resetting the now-merged commits and rebasing onto main.
 /// Leaves the repo on the feature branch, synced with main.
 #[tauri::command]
-pub fn post_merge_sync(
+pub async fn post_merge_sync(
     cwd: String,
     main_branch: String,
     merged_branch: String,
 ) -> Result<String, String> {
     // 1. Update main with the merged changes
-    git_ops::git_cmd(&cwd, &["checkout", &main_branch])?;
-    git_ops::git_cmd(&cwd, &["pull"])?;
+    git_ops::git_cmd(&cwd, &["checkout", &main_branch]).await?;
+    git_ops::git_cmd(&cwd, &["pull"]).await?;
 
     // 2. Go back to the feature branch
-    git_ops::git_cmd(&cwd, &["checkout", &merged_branch])?;
+    git_ops::git_cmd(&cwd, &["checkout", &merged_branch]).await?;
 
     // 3. Count how many commits the feature branch is ahead of main
     //    (these are the commits that were squash-merged and are now redundant)
     let count_output = git_ops::git_cmd(
         &cwd,
         &["rev-list", "--count", &format!("{}..{}", main_branch, merged_branch)],
-    )?;
+    ).await?;
     let count: usize = count_output.trim().parse().unwrap_or(0);
 
     // 4. Reset those commits and rebase onto main (gsync)
     if count > 0 {
-        git_ops::git_cmd(&cwd, &["reset", "--hard", &format!("HEAD~{}", count)])?;
+        git_ops::git_cmd(&cwd, &["reset", "--hard", &format!("HEAD~{}", count)]).await?;
     }
-    git_ops::git_cmd(&cwd, &["rebase", &main_branch])?;
+    git_ops::git_cmd(&cwd, &["rebase", &main_branch]).await?;
 
     // 5. Push the synced branch to remote so local and remote stay in sync
     //    (force-with-lease because the history was rewritten by reset+rebase)
-    git_ops::git_cmd(&cwd, &["push", "--force-with-lease"])?;
+    git_ops::git_cmd(&cwd, &["push", "--force-with-lease"]).await?;
 
     Ok(format!(
         "Synced {} with {} (reset {} commits, rebased, pushed)",

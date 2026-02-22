@@ -54,13 +54,30 @@ function PrStatusBar({ pr }: { pr?: PrStatus | null }) {
 }
 
 export function GitActions() {
-  // Individual selectors — avoids re-rendering on unrelated store changes
+  // Narrow selectors — only re-render when THIS workspace's data changes
   const activeWorkspaceId = useWorkspaceStore((s) => s.activeWorkspaceId);
-  const workspaces = useWorkspaceStore((s) => s.workspaces);
-  const gitStatuses = useWorkspaceStore((s) => s.gitStatuses);
-  const prStatuses = useWorkspaceStore((s) => s.prStatuses);
-  const syncNeeded = useWorkspaceStore((s) => s.syncNeeded);
-  const getActivePath = useWorkspaceStore((s) => s.getActivePath);
+  const ws = useWorkspaceStore((s) =>
+    s.workspaces.find((w) => w.id === s.activeWorkspaceId)
+  );
+  const activePath = useWorkspaceStore((s) => {
+    const wsId = s.activeWorkspaceId;
+    return wsId ? s.getActivePath(wsId) : null;
+  });
+  const status = useWorkspaceStore((s) => {
+    const wsId = s.activeWorkspaceId;
+    const path = wsId ? s.getActivePath(wsId) : null;
+    return path ? s.gitStatuses[path] : null;
+  });
+  const pr = useWorkspaceStore((s) => {
+    const wsId = s.activeWorkspaceId;
+    const path = wsId ? s.getActivePath(wsId) : null;
+    return path ? s.prStatuses[path] : null;
+  });
+  const needsSync = useWorkspaceStore((s) => {
+    const wsId = s.activeWorkspaceId;
+    const path = wsId ? s.getActivePath(wsId) : null;
+    return path ? s.syncNeeded[path] ?? false : false;
+  });
   const syncPath = useWorkspaceStore((s) => s.syncPath);
   const syncAndPushPath = useWorkspaceStore((s) => s.syncAndPushPath);
   const rebasePath = useWorkspaceStore((s) => s.rebasePath);
@@ -75,12 +92,6 @@ export function GitActions() {
   const [error, setError] = useState<string | null>(null);
   const [commitMsg, setCommitMsg] = useState("");
   const [showCommitInput, setShowCommitInput] = useState(false);
-
-  const ws = workspaces.find((w) => w.id === activeWorkspaceId);
-  const activePath = activeWorkspaceId ? getActivePath(activeWorkspaceId) : null;
-  const status = activePath ? gitStatuses[activePath] : null;
-  const pr = activePath ? prStatuses[activePath] : null;
-  const needsSync = activePath ? syncNeeded[activePath] : false;
 
   const branch = status?.branch ?? ws?.branch ?? "";
   const mainBranch = ws?.main_branch ?? "main";

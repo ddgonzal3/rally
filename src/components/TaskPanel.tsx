@@ -22,15 +22,23 @@ export function TaskPanel({ rootPath, workspaceId }: TaskPanelProps) {
   const openFile = useWorkspaceStore((s) => s.openFile);
   const openScriptTerminal = useWorkspaceStore((s) => s.openScriptTerminal);
 
-  // Poll to pick up build status changes from module-level buffers
+  // Event-driven re-render: only update when watcher output actually changes
   const [, setTick] = useState(0);
   const hasRunningWatchers = Object.entries(scriptRuns).some(
     ([k, r]) => k.startsWith(rootPath + ":") && r.status === "running" && isWatcherScript(r.scriptName)
   );
   useEffect(() => {
     if (!hasRunningWatchers) return;
-    const id = setInterval(() => setTick((t) => t + 1), 1500);
-    return () => clearInterval(id);
+    let debounceTimer: ReturnType<typeof setTimeout> | null = null;
+    const handler = () => {
+      if (debounceTimer) clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(() => setTick((t) => t + 1), 300);
+    };
+    document.addEventListener("rally:watcher-output", handler);
+    return () => {
+      document.removeEventListener("rally:watcher-output", handler);
+      if (debounceTimer) clearTimeout(debounceTimer);
+    };
   }, [hasRunningWatchers]);
 
   useEffect(() => {

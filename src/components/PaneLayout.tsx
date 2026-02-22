@@ -4,7 +4,10 @@ import { useWorkspaceStore } from "../stores/workspaceStore";
 
 export function PaneLayout() {
   const activeWorkspaceId = useWorkspaceStore((s) => s.activeWorkspaceId);
-  const workspaces = useWorkspaceStore((s) => s.workspaces);
+  // Narrow selector: only re-render when the active workspace itself changes
+  const ws = useWorkspaceStore((s) =>
+    s.workspaces.find((w) => w.id === s.activeWorkspaceId)
+  );
   const getOrCreateLayout = useWorkspaceStore((s) => s.getOrCreateLayout);
   const getActivePath = useWorkspaceStore((s) => s.getActivePath);
   // Only subscribe to the tree structure (root), not group content.
@@ -14,7 +17,6 @@ export function PaneLayout() {
   const layoutRoot = useWorkspaceStore(
     (s) => activeWorkspaceId ? s.layouts[activeWorkspaceId]?.root : undefined
   );
-  const ws = workspaces.find((w) => w.id === activeWorkspaceId);
 
   if (!ws) {
     return (

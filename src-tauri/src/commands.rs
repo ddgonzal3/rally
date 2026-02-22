@@ -67,10 +67,10 @@ pub struct GitRepoInfo {
 
 /// Detect git info from an existing repo directory
 #[tauri::command]
-pub fn detect_git_info(path: String) -> Result<GitRepoInfo, String> {
-    let repo_url = git_ops::git_cmd(&path, &["remote", "get-url", "origin"])
+pub async fn detect_git_info(path: String) -> Result<GitRepoInfo, String> {
+    let repo_url = git_ops::git_cmd(&path, &["remote", "get-url", "origin"]).await
         .unwrap_or_default();
-    let branch = git_ops::git_cmd(&path, &["symbolic-ref", "--short", "HEAD"])
+    let branch = git_ops::git_cmd(&path, &["symbolic-ref", "--short", "HEAD"]).await
         .unwrap_or_else(|_| "main".to_string());
     let name = Path::new(&path)
         .file_name()
@@ -95,7 +95,7 @@ pub fn update_git_watch_roots(
 }
 
 #[tauri::command]
-pub fn create_workspace(
+pub async fn create_workspace(
     app: tauri::AppHandle,
     name: String,
     paths: Vec<String>,
@@ -107,9 +107,9 @@ pub fn create_workspace(
 
     // Auto-detect git info from the primary path
     let primary = &paths[0];
-    let repo_url = git_ops::git_cmd(primary, &["remote", "get-url", "origin"])
+    let repo_url = git_ops::git_cmd(primary, &["remote", "get-url", "origin"]).await
         .unwrap_or_default();
-    let branch = git_ops::git_cmd(primary, &["rev-parse", "--abbrev-ref", "HEAD"])
+    let branch = git_ops::git_cmd(primary, &["rev-parse", "--abbrev-ref", "HEAD"]).await
         .unwrap_or_else(|_| "main".to_string());
 
     let ws = Workspace {
@@ -183,32 +183,32 @@ pub fn remove_workspace_path(
 }
 
 #[tauri::command]
-pub fn git_status(workspace_path: String, main_branch: String) -> Result<GitStatus, String> {
-    git_ops::status(&workspace_path, &main_branch)
+pub async fn git_status(workspace_path: String, main_branch: String) -> Result<GitStatus, String> {
+    git_ops::status(&workspace_path, &main_branch).await
 }
 
 #[tauri::command]
-pub fn git_sync(workspace_path: String, branch: String, main_branch: String) -> Result<String, String> {
-    git_ops::sync(&workspace_path, &branch, &main_branch)
+pub async fn git_sync(workspace_path: String, branch: String, main_branch: String) -> Result<String, String> {
+    git_ops::sync(&workspace_path, &branch, &main_branch).await
 }
 
 #[tauri::command]
-pub fn git_rebase(workspace_path: String, branch: String, main_branch: String) -> Result<String, String> {
-    git_ops::rebase(&workspace_path, &branch, &main_branch)
+pub async fn git_rebase(workspace_path: String, branch: String, main_branch: String) -> Result<String, String> {
+    git_ops::rebase(&workspace_path, &branch, &main_branch).await
 }
 
 #[tauri::command]
-pub fn git_commit(workspace_path: String, message: String) -> Result<String, String> {
-    git_ops::commit(&workspace_path, &message)
+pub async fn git_commit(workspace_path: String, message: String) -> Result<String, String> {
+    git_ops::commit(&workspace_path, &message).await
 }
 
 #[tauri::command]
-pub fn git_push(workspace_path: String) -> Result<PushResult, String> {
-    git_ops::push(&workspace_path)
+pub async fn git_push(workspace_path: String) -> Result<PushResult, String> {
+    git_ops::push(&workspace_path).await
 }
 
 #[tauri::command]
-pub fn git_create_pr(
+pub async fn git_create_pr(
     workspace_path: String,
     title: Option<String>,
     body: Option<String>,
@@ -217,56 +217,56 @@ pub fn git_create_pr(
         &workspace_path,
         title.as_deref(),
         body.as_deref(),
-    )
+    ).await
 }
 
 #[tauri::command]
-pub fn git_pr_status(workspace_path: String) -> Result<PrStatus, String> {
-    git_ops::pr_status(&workspace_path)
+pub async fn git_pr_status(workspace_path: String) -> Result<PrStatus, String> {
+    git_ops::pr_status(&workspace_path).await
 }
 
 #[tauri::command]
-pub fn git_merge_pr(workspace_path: String, method: String) -> Result<String, String> {
-    git_ops::merge_pr(&workspace_path, &method)
+pub async fn git_merge_pr(workspace_path: String, method: String) -> Result<String, String> {
+    git_ops::merge_pr(&workspace_path, &method).await
 }
 
 #[tauri::command]
-pub fn git_create_pr_smart(workspace_path: String, main_branch: String) -> Result<git_ops::CreatePrResult, String> {
-    git_ops::create_pr_smart(&workspace_path, &main_branch)
+pub async fn git_create_pr_smart(workspace_path: String, main_branch: String) -> Result<git_ops::CreatePrResult, String> {
+    git_ops::create_pr_smart(&workspace_path, &main_branch).await
 }
 
 #[tauri::command]
-pub fn git_merge_pr_smart(workspace_path: String, main_branch: String) -> Result<git_ops::MergePrResult, String> {
-    git_ops::merge_pr_smart(&workspace_path, &main_branch)
+pub async fn git_merge_pr_smart(workspace_path: String, main_branch: String) -> Result<git_ops::MergePrResult, String> {
+    git_ops::merge_pr_smart(&workspace_path, &main_branch).await
 }
 
 #[tauri::command]
-pub fn git_changes(workspace_path: String) -> Result<ChangesSummary, String> {
-    git_ops::changes(&workspace_path)
+pub async fn git_changes(workspace_path: String) -> Result<ChangesSummary, String> {
+    git_ops::changes(&workspace_path).await
 }
 
 #[tauri::command]
-pub fn git_file_at_head(workspace_path: String, file_path: String) -> Result<String, String> {
-    git_ops::file_at_head(&workspace_path, &file_path)
+pub async fn git_file_at_head(workspace_path: String, file_path: String) -> Result<String, String> {
+    git_ops::file_at_head(&workspace_path, &file_path).await
 }
 
 #[tauri::command]
-pub fn git_stage_file(workspace_path: String, file_path: String) -> Result<(), String> {
-    git_ops::stage_file(&workspace_path, &file_path)
+pub async fn git_stage_file(workspace_path: String, file_path: String) -> Result<(), String> {
+    git_ops::stage_file(&workspace_path, &file_path).await
 }
 
 #[tauri::command]
-pub fn git_unstage_file(workspace_path: String, file_path: String) -> Result<(), String> {
-    git_ops::unstage_file(&workspace_path, &file_path)
+pub async fn git_unstage_file(workspace_path: String, file_path: String) -> Result<(), String> {
+    git_ops::unstage_file(&workspace_path, &file_path).await
 }
 
 #[tauri::command]
-pub fn git_discard_file(
+pub async fn git_discard_file(
     workspace_path: String,
     file_path: String,
     is_untracked: bool,
 ) -> Result<(), String> {
-    git_ops::discard_file(&workspace_path, &file_path, is_untracked)
+    git_ops::discard_file(&workspace_path, &file_path, is_untracked).await
 }
 
 #[tauri::command]

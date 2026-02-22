@@ -1132,7 +1132,11 @@ export const useWorkspaceStore = create<WorkspaceState>()(
       `pty-output-${ptyId}`,
       (event) => {
         const buf = scriptOutputBuffers.get(key);
-        if (buf) buf.push(new Uint8Array(event.payload.data));
+        if (buf) {
+          buf.push(new Uint8Array(event.payload.data));
+          // Notify TaskPanel that watcher output changed (event-driven, not polling)
+          document.dispatchEvent(new CustomEvent("rally:watcher-output", { detail: { key } }));
+        }
       }
     );
 
