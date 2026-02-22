@@ -341,6 +341,13 @@ fn builtin_commands() -> Vec<ScriptEntry> {
             builtin: true,
             file_path: Some(cmd_dir.join("merge-pr.md").to_string_lossy().to_string()),
         },
+        ScriptEntry {
+            name: "create-pr".to_string(),
+            label: "/create-pr".to_string(),
+            command: "claude:/create-pr".to_string(),
+            builtin: true,
+            file_path: Some(cmd_dir.join("create-pr.md").to_string_lossy().to_string()),
+        },
     ]
 }
 

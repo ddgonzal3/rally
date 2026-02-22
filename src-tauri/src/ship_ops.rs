@@ -5,12 +5,14 @@ use std::path::PathBuf;
 
 use crate::git_ops;
 
-const SHIP_COMMAND_VERSION: &str = "<!-- rally-ship-v5 -->";
+const SHIP_COMMAND_VERSION: &str = "<!-- rally-ship-v7 -->";
 const SHIP_COMMAND_CONTENT: &str = include_str!("../resources/commands/ship.md");
 const REVIEW_COMMAND_VERSION: &str = "<!-- rally-review-pr-v1 -->";
 const REVIEW_COMMAND_CONTENT: &str = include_str!("../resources/commands/review-pr.md");
 const MERGE_COMMAND_VERSION: &str = "<!-- rally-merge-pr-v1 -->";
 const MERGE_COMMAND_CONTENT: &str = include_str!("../resources/commands/merge-pr.md");
+const CREATE_PR_COMMAND_VERSION: &str = "<!-- rally-create-pr-v1 -->";
+const CREATE_PR_COMMAND_CONTENT: &str = include_str!("../resources/commands/create-pr.md");
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FlaggedItem {
@@ -26,7 +28,9 @@ pub struct ShipSignal {
     pub timestamp: String,
     pub repo_path: String,
     pub branch: String,
-    pub verdict: String, // "auto_merge" | "manual_review"
+    pub verdict: String, // "auto_merge" | "manual_review" | "shipping"
+    #[serde(default)]
+    pub phase: Option<String>,
     pub pr_number: u32,
     pub pr_url: String,
     pub summary: String,
@@ -110,13 +114,14 @@ pub fn ensure_default_commands() -> Result<(), String> {
     install_command(&app_dir, "ship.md", SHIP_COMMAND_VERSION, SHIP_COMMAND_CONTENT)?;
     install_command(&app_dir, "review-pr.md", REVIEW_COMMAND_VERSION, REVIEW_COMMAND_CONTENT)?;
     install_command(&app_dir, "merge-pr.md", MERGE_COMMAND_VERSION, MERGE_COMMAND_CONTENT)?;
+    install_command(&app_dir, "create-pr.md", CREATE_PR_COMMAND_VERSION, CREATE_PR_COMMAND_CONTENT)?;
 
     // Symlink from ~/.claude/commands/ → ~/.rally/commands/
     let claude_dir = PathBuf::from(&home).join(".claude").join("commands");
     fs::create_dir_all(&claude_dir)
         .map_err(|e| format!("Failed to create ~/.claude/commands: {}", e))?;
 
-    for filename in &["ship.md", "review-pr.md", "merge-pr.md"] {
+    for filename in &["ship.md", "review-pr.md", "merge-pr.md", "create-pr.md"] {
         symlink_command(&app_dir.join(filename), &claude_dir.join(filename))?;
     }
 

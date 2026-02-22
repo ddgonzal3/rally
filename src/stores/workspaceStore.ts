@@ -17,6 +17,7 @@ import type {
   ScriptRun,
   ShipStatus,
   ShipSession,
+  ShipSignal,
   ShipDetailPhase,
 } from "../lib/types";
 import {
@@ -474,19 +475,67 @@ export const useWorkspaceStore = create<WorkspaceState>()(
               shipStatuses: { ...s.shipStatuses, [repoPath]: { phase: "idle" } },
             }));
           }
+          // Also clear headless ship sessions for this repo if signal disappears
+          const session = get().shipSession;
+          if (session && !session.ptyId && session.repoPath === repoPath && !session.signal) {
+            set({ shipSession: null });
+          }
           continue;
         }
 
         // If there's an active ship session for this repo, attach the signal to it
         const session = get().shipSession;
         if (session && session.repoPath === repoPath && !session.signal) {
-          set((s) => ({
-            shipSession: s.shipSession ? {
-              ...s.shipSession,
-              signal,
-              phase: signal.verdict === "manual_review" ? "complete" : s.shipSession.phase,
-            } : null,
-          }));
+          if (signal.verdict === "shipping") {
+            // In-progress signal — update phase from signal file for all session types.
+            // ship.md v6 writes phases to the signal file instead of echoing
+            // <<RALLY_PHASE>> markers, so this is the primary phase source.
+            const newPhase = (signal as ShipSignal).phase;
+            if (newPhase && newPhase !== session.phase) {
+              set((s) => ({
+                shipSession: s.shipSession ? {
+                  ...s.shipSession,
+                  phase: newPhase,
+                } : null,
+              }));
+            }
+          } else {
+            // Final signal — attach to any session type
+            set((s) => ({
+              shipSession: s.shipSession ? {
+                ...s.shipSession,
+                signal,
+                phase: signal.verdict === "manual_review" ? "complete" : s.shipSession.phase,
+              } : null,
+            }));
+          }
+        }
+
+        // Handle "shipping" verdict — in-progress signal from external /ship
+        if (signal.verdict === "shipping") {
+          // Staleness check: if timestamp > 30 min old, clear it
+          const signalAge = Date.now() - new Date(signal.timestamp).getTime();
+          if (signalAge > 30 * 60 * 1000) {
+            await api.clearShipSignal(repoPath).catch(() => {});
+            if (get().shipSession?.repoPath === repoPath && !get().shipSession?.ptyId) {
+              set({ shipSession: null });
+            }
+            continue;
+          }
+
+          // If no existing shipSession, create a headless one
+          if (!get().shipSession) {
+            set({
+              shipSession: {
+                repoPath,
+                phase: (signal as ShipSignal).phase ?? "detecting",
+                exited: false,
+                exitCode: null,
+                docked: false,
+              },
+            });
+          }
+          continue;
         }
 
         if (signal.verdict === "auto_merge") {
@@ -716,7 +765,7 @@ export const useWorkspaceStore = create<WorkspaceState>()(
 
   dockShipSession: (workspaceId) => {
     const session = get().shipSession;
-    if (!session) return;
+    if (!session || !session.ptyId) return;
 
     const layout = get().getOrCreateLayout(workspaceId);
 
@@ -749,7 +798,7 @@ export const useWorkspaceStore = create<WorkspaceState>()(
   dismissShipSession: () => {
     const session = get().shipSession;
     if (!session) return;
-    if (!session.exited) {
+    if (session.ptyId && !session.exited) {
       api.killPty(session.ptyId).catch(() => {});
     }
     shipOutputBuffer.length = 0;

@@ -65,7 +65,8 @@ export interface ShipSignal {
   timestamp: string;
   repo_path: string;
   branch: string;
-  verdict: "auto_merge" | "manual_review";
+  verdict: "auto_merge" | "manual_review" | "shipping";
+  phase?: ShipDetailPhase;
   pr_number: number;
   pr_url: string;
   summary: string;
@@ -80,7 +81,7 @@ export type ShipDetailPhase =
   | "finishing" | "complete";
 
 export interface ShipSession {
-  ptyId: string;
+  ptyId?: string;
   repoPath: string;
   phase: ShipDetailPhase;
   exited: boolean;

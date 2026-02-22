@@ -685,6 +685,89 @@ function GitStatusIcon({
   );
 }
 
+// --- Repo Action Icons ---
+
+function ShipIcon() {
+  return (
+    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" style={{ flexShrink: 0 }}>
+      <path d="M3 17l1.5 2.5h15L21 17" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M5 17l1-6h12l1 6" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M12 4v7M9 7l3-3 3 3" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+function ReviewIcon() {
+  return (
+    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" style={{ flexShrink: 0 }}>
+      <path d="M12 5c-7 0-11 7-11 7s4 7 11 7 11-7 11-7-4-7-11-7z" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
+      <circle cx="12" cy="12" r="3" stroke="currentColor" strokeWidth="1.7" />
+    </svg>
+  );
+}
+
+function CreatePrIcon() {
+  return (
+    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" style={{ flexShrink: 0 }}>
+      <circle cx="6" cy="6" r="2.5" stroke="currentColor" strokeWidth="1.7" />
+      <circle cx="18" cy="18" r="2.5" stroke="currentColor" strokeWidth="1.7" />
+      <path d="M6 8.5v7c0 1.4 1.1 2.5 2.5 2.5H15.5" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
+      <path d="M13 15l3 3-3 3" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+function MergeIcon() {
+  return (
+    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" style={{ flexShrink: 0 }}>
+      <circle cx="6" cy="6" r="2.5" stroke="currentColor" strokeWidth="1.7" />
+      <circle cx="18" cy="6" r="2.5" stroke="currentColor" strokeWidth="1.7" />
+      <circle cx="12" cy="18" r="2.5" stroke="currentColor" strokeWidth="1.7" />
+      <path d="M6 8.5v2c0 3 2.5 5 6 5M18 8.5v2c0 3-2.5 5-6 5" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function RepoActionButton({
+  icon,
+  tooltip,
+  disabled,
+  onClick,
+}: {
+  icon: React.ReactNode;
+  tooltip: string;
+  disabled: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      className={disabled ? undefined : "repo-action-btn"}
+      onClick={(e) => {
+        e.stopPropagation();
+        if (!disabled) onClick();
+      }}
+      title={tooltip}
+      style={{
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        width: 22,
+        height: 22,
+        background: "none",
+        border: "none",
+        padding: "2px",
+        flexShrink: 0,
+        borderRadius: 4,
+        color: disabled ? "#555" : "#999",
+        cursor: disabled ? "default" : "pointer",
+        opacity: disabled ? 0.5 : 1,
+      }}
+    >
+      {icon}
+    </button>
+  );
+}
+
 // --- Root Section ---
 
 function RootSection({
@@ -731,6 +814,8 @@ function RootSection({
   const gitStatus = useWorkspaceStore((s) => s.gitStatuses[rootPath]);
   const prStatus = useWorkspaceStore((s) => s.prStatuses[rootPath]);
   const pathSyncNeeded = useWorkspaceStore((s) => s.syncNeeded[rootPath]);
+  const openClaudeCommand = useWorkspaceStore((s) => s.openClaudeCommand);
+  const startShipSession = useWorkspaceStore((s) => s.startShipSession);
   const canRemove = useWorkspaceStore((s) => {
     const ws = s.workspaces.find((w) => w.id === s.activeWorkspaceId);
     return (ws?.paths.length ?? 0) > 1;
@@ -916,11 +1001,37 @@ function RootSection({
           </div>
           <div style={styles.rootActions}>
             {isGitRepo && (
-              <GitStatusIcon
-                status={gitStatus}
-                syncNeeded={pathSyncNeeded}
-                onClick={handleToggleChanges}
-              />
+              <>
+                <GitStatusIcon
+                  status={gitStatus}
+                  syncNeeded={pathSyncNeeded}
+                  onClick={handleToggleChanges}
+                />
+                <RepoActionButton
+                  icon={<CreatePrIcon />}
+                  tooltip={prStatus?.state === "OPEN" ? `Create PR — PR #${prStatus.number} already open` : "Create PR"}
+                  disabled={prStatus?.state === "OPEN"}
+                  onClick={() => activeWorkspaceId && openClaudeCommand(activeWorkspaceId, rootPath, "/create-pr", "Create PR")}
+                />
+                <RepoActionButton
+                  icon={<ReviewIcon />}
+                  tooltip={prStatus?.state === "OPEN" ? "Review PR" : "Review PR — no open PR"}
+                  disabled={prStatus?.state !== "OPEN"}
+                  onClick={() => activeWorkspaceId && openClaudeCommand(activeWorkspaceId, rootPath, "/review-pr", "Review PR")}
+                />
+                <RepoActionButton
+                  icon={<MergeIcon />}
+                  tooltip={prStatus?.state === "OPEN" ? "Merge PR" : "Merge PR — no open PR"}
+                  disabled={prStatus?.state !== "OPEN"}
+                  onClick={() => activeWorkspaceId && openClaudeCommand(activeWorkspaceId, rootPath, "/merge-pr", "Merge PR")}
+                />
+                <RepoActionButton
+                  icon={<ShipIcon />}
+                  tooltip="Ship — commit, push, PR, review, merge"
+                  disabled={false}
+                  onClick={() => startShipSession(rootPath)}
+                />
+              </>
             )}
           </div>
         </div>

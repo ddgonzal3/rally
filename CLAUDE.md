@@ -105,6 +105,7 @@ Rust Backend (src-tauri/src/)
 | `src/components/TaskPanel.tsx` | Auto-discovered scripts + built-in commands (Ship, Review PR) |
 | `src/components/AddWorkspaceModal.tsx` | New workspace form with folder picker + git auto-detect |
 | `src/components/SettingsPanel.tsx` | Monaco editor for CLAUDE.md/skills files |
+| `src/components/ShipStatusPill.tsx` | Floating ship progress pill — PTY-backed (expandable terminal) or headless (status only) |
 | `src/stores/workspaceStore.ts` | Zustand store: workspaces, git statuses, panes, all actions |
 | `src/lib/tauri.ts` | Typed wrappers for all Tauri invoke() calls |
 | `src/lib/types.ts` | Workspace, GitStatus, Pane, ProcessConfig types |
@@ -160,10 +161,47 @@ The `/ship` command (commit → push → PR → review → merge) communicates w
 ~/.rally/ship-signals/<sanitized-repo-path>.json
 ```
 
-| Verdict | App Behavior |
-|---------|-------------|
-| `auto_merge` | Merges PR → syncs shipping branch to main → marks related repos as needing sync → deletes signal |
-| `manual_review` | Shows amber "Review Needed" badge in GitActions bar — no auto-open, no focus steal |
+`ship.md` writes/updates the signal file **at every phase change** (not just at the end). This allows Rally to track progress regardless of where `/ship` is running — from Rally's Ship button, an external Claude Code terminal, or any other context.
+
+#### Signal File Format
+
+```json
+{
+  "version": 1,
+  "timestamp": "2025-01-01T00:00:00Z",
+  "repo_path": "/Users/you/project",
+  "branch": "feature-branch",
+  "verdict": "shipping | auto_merge | manual_review",
+  "phase": "detecting | committing | pushing | creating_pr | checking | reviewing | writing_verdict | complete",
+  "pr_number": 123,
+  "pr_url": "https://github.com/org/repo/pull/123",
+  "summary": "...",
+  "flagged_items": []
+}
+```
+
+#### Verdict Types
+
+| Verdict | Meaning | App Behavior |
+|---------|---------|-------------|
+| `shipping` | In-progress — `/ship` is running | Creates a "headless" `ShipSession` (no PTY). Shows status pill with phase updates. |
+| `auto_merge` | Review passed — ready to merge | Merges PR → syncs shipping branch to main → marks related repos as needing sync → deletes signal |
+| `manual_review` | Flagged items need attention | Shows amber "Review Needed" badge — no auto-open, no focus steal |
+
+#### Two Session Types
+
+1. **PTY-backed session** (Rally Ship button): Rally owns the PTY, parses output for phase markers as a fast path (~instant updates). Also gets signal-file updates as a fallback.
+2. **Headless session** (external `/ship`): No PTY. `pollShipSignals` detects `verdict: "shipping"` and creates a lightweight session. Phase updates come from signal file polling (~5s intervals). No terminal view, no dock button.
+
+#### Staleness Handling
+
+If a `verdict: "shipping"` signal has a timestamp older than 30 minutes, `pollShipSignals` treats it as stale — clears the signal file and dismisses any headless session for that repo. This handles the case where an external `/ship` process crashes without writing a final signal.
+
+#### Edge Cases
+
+- **External `/ship` while Rally session running**: Existing PTY session takes precedence — headless session is not created.
+- **Rally Ship button while headless session exists**: `startShipSession` returns early — user must dismiss the headless pill first.
+- **User dismisses headless pill**: Clears `shipSession` (no PTY to kill). If `/ship` is still running, the next poll recreates the session.
 
 ### Adding New Built-in Commands
 

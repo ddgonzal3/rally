@@ -30,6 +30,14 @@ The ship terminal uses a persistent hidden xterm (offscreen via `position: fixed
 
 In Tauri v2, calling `window.emit()` requires `use tauri::Emitter;` in scope. The compiler error is not obvious — it says "no method named `emit` found" rather than mentioning the missing trait import.
 
+## Ship Signal: `phase` Field Uses `#[serde(default)]`
+
+The `ShipSignal` struct in `ship_ops.rs` has `phase: Option<String>` with `#[serde(default)]`. This means older signal files (from ship.md v5 and earlier) that don't include a `phase` field will deserialize successfully with `phase: None`. If you add new required fields to the signal file format, always use `#[serde(default)]` for backward compatibility with in-flight ship runs.
+
+## Ship Sessions: Always Guard `ptyId` Before PTY Operations
+
+`ShipSession.ptyId` is optional — headless sessions (created from external `/ship` runs) have no PTY. Always check `session.ptyId` before calling `killPty`, `resizePty`, `writePty`, or docking the session. The `dismissShipSession` and `dockShipSession` store actions already guard this.
+
 ## Context Menu: Always `stopPropagation()` in Nested Handlers
 
 When a component tree has `onContextMenu` handlers at multiple levels (e.g. a tree node AND its container), the child handler **must** call `e.stopPropagation()` in addition to `e.preventDefault()`. Without it, the event bubbles to the parent, which fires a second `showContextMenu()` call. That second call clears the ghost-event suppression flag, so when the user clicks elsewhere to dismiss, macOS dispatches a ghost `contextmenu` event that opens yet another menu. Symptom: dismissing a right-click menu by clicking elsewhere opens a new menu at the click location.

@@ -124,10 +124,10 @@ export function ShipStatusPill() {
   return (
     <div ref={panelRef} style={{
       ...styles.container,
-      ...(expanded ? { width: 720, maxWidth: 720 } : {}),
+      ...(expanded && session.ptyId ? { width: 720, maxWidth: 720 } : {}),
     }}>
-      {/* Toolbar — only when expanded */}
-      {expanded && (
+      {/* Toolbar — only when expanded and session owns a PTY */}
+      {expanded && session.ptyId && (
         <div style={styles.toolbar}>
           <span style={styles.toolbarTitle}>Ship: {repoName}</span>
           <div style={{ flex: 1 }} />
@@ -147,17 +147,20 @@ export function ShipStatusPill() {
         </div>
       )}
 
-      {/* Terminal — always mounted, visibility toggled. This avoids buffer
-          replay garble by keeping the xterm live from session start. */}
-      <ShipTerminalView session={session} visible={expanded} />
+      {/* Terminal — only rendered for PTY-backed sessions. Headless sessions
+          (external /ship) have no terminal to show. */}
+      {session.ptyId && (
+        <ShipTerminalView session={session as ShipSession & { ptyId: string }} visible={expanded} />
+      )}
 
       {/* Status footer — always visible */}
       <div
         style={{
           ...styles.footer,
           borderTop: expanded ? "1px solid #333" : "none",
+          cursor: session.ptyId ? "pointer" : "default",
         }}
-        onClick={() => setExpanded(!expanded)}
+        onClick={() => session.ptyId && setExpanded(!expanded)}
       >
         <div style={{ ...styles.accent, background: display.accentColor }} />
         <div style={styles.footerContent}>
@@ -249,7 +252,6 @@ const styles: Record<string, React.CSSProperties> = {
   // --- Status footer (always visible) ---
   footer: {
     display: "flex",
-    cursor: "pointer",
     userSelect: "none" as const,
     flexShrink: 0,
   },
@@ -311,11 +313,12 @@ const styles: Record<string, React.CSSProperties> = {
 
 // --- Terminal View (rendered inside the expanded container) ---
 
+/** Only rendered when session.ptyId is defined — caller guards this. */
 function ShipTerminalView({
   session,
   visible,
 }: {
-  session: NonNullable<ReturnType<typeof useWorkspaceStore.getState>["shipSession"]>;
+  session: NonNullable<ReturnType<typeof useWorkspaceStore.getState>["shipSession"]> & { ptyId: string };
   visible: boolean;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -378,7 +381,7 @@ function ShipTerminalView({
       if (rows !== term.rows) {
         term.resize(PTY_COLS, rows);
         const cur = useWorkspaceStore.getState().shipSession;
-        if (cur && !cur.exited) {
+        if (cur?.ptyId && !cur.exited) {
           api.resizePty(cur.ptyId, PTY_COLS, rows);
         }
       }
@@ -422,7 +425,7 @@ function ShipTerminalView({
     // Forward keystrokes to the PTY
     term.onData((data) => {
       const current = useWorkspaceStore.getState().shipSession;
-      if (current && !current.exited) {
+      if (current?.ptyId && !current.exited) {
         api.writePty(current.ptyId, Array.from(encoder.encode(data)));
       }
     });

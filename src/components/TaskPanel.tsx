@@ -4,7 +4,7 @@ import { FitAddon } from "@xterm/addon-fit";
 import { useWorkspaceStore, scriptOutputBuffers } from "../stores/workspaceStore";
 import { api } from "../lib/tauri";
 import type { ScriptEntry, ScriptRun } from "../lib/types";
-import { CLAUDE_PATH, TerminalPromptIcon } from "./FileIcons";
+import { TerminalPromptIcon } from "./FileIcons";
 import { showContextMenu } from "../lib/contextMenu";
 
 interface TaskPanelProps {
@@ -19,9 +19,7 @@ export function TaskPanel({ rootPath, workspaceId }: TaskPanelProps) {
   const scriptRuns = useWorkspaceStore((s) => s.scriptRuns);
   const runScript = useWorkspaceStore((s) => s.runScript);
   const stopScript = useWorkspaceStore((s) => s.stopScript);
-  const openClaudeCommand = useWorkspaceStore((s) => s.openClaudeCommand);
   const openFile = useWorkspaceStore((s) => s.openFile);
-  const startShipSession = useWorkspaceStore((s) => s.startShipSession);
   const openScriptTerminal = useWorkspaceStore((s) => s.openScriptTerminal);
 
   // Poll to pick up build status changes from module-level buffers
@@ -39,7 +37,6 @@ export function TaskPanel({ rootPath, workspaceId }: TaskPanelProps) {
     api.listScripts(rootPath).then(setEntries).catch(() => setEntries([]));
   }, [rootPath]);
 
-  const commands = entries.filter((e) => e.command.startsWith("claude:"));
   const scripts = entries.filter((e) => !e.command.startsWith("claude:"));
 
   const [renamingEntry, setRenamingEntry] = useState<string | null>(null);
@@ -49,7 +46,7 @@ export function TaskPanel({ rootPath, workspaceId }: TaskPanelProps) {
     api.listScripts(rootPath).then(setEntries).catch(() => setEntries([]));
   }, [rootPath]);
 
-  if (entries.length === 0) return null;
+  if (scripts.length === 0) return null;
 
   function openScriptFile(entry: ScriptEntry) {
     if (!workspaceId || !entry.file_path) return;
@@ -82,8 +79,7 @@ export function TaskPanel({ rootPath, workspaceId }: TaskPanelProps) {
     const run = scriptRuns[key];
     const isRunning = run?.status === "running";
     const status = run?.status ?? null;
-    const isClaudeCommand = entry.command.startsWith("claude:");
-    const isWatcher = !isClaudeCommand && isWatcherScript(entry.name);
+    const isWatcher = isWatcherScript(entry.name);
 
     const isRenaming = renamingEntry === entry.name;
     const isEntrySelected = selectedEntry === entry.name;
@@ -179,7 +175,7 @@ export function TaskPanel({ rootPath, workspaceId }: TaskPanelProps) {
         }}
         onContextMenu={(e) => handleEntryContextMenu(e, entry)}
       >
-        {isClaudeCommand ? <CommandIcon /> : <TerminalPromptIcon size={14} color="#5b9e6f" />}
+        <TerminalPromptIcon size={14} color="#5b9e6f" />
         {isRenaming ? (
           <RenameInput
             defaultValue={entry.name}
@@ -202,21 +198,14 @@ export function TaskPanel({ rootPath, workspaceId }: TaskPanelProps) {
             }}
             title={entry.file_path ?? entry.command}
           >
-            {isClaudeCommand ? entry.label.replace(/^\//, "") : entry.label}
+            {entry.label}
           </span>
         )}
         <button
           className={!status ? "script-play-btn" : undefined}
           onClick={(e) => {
             e.stopPropagation();
-            if (isClaudeCommand) {
-              const slashCommand = entry.command.replace("claude:", "");
-              if (slashCommand === "/ship") {
-                startShipSession(rootPath);
-              } else {
-                openClaudeCommand(workspaceId, rootPath, slashCommand, entry.label);
-              }
-            } else if (isRunning) {
+            if (isRunning) {
               stopScript(rootPath, entry.name);
             } else {
               runScript(rootPath, entry.name, entry.command);
@@ -240,10 +229,9 @@ export function TaskPanel({ rootPath, workspaceId }: TaskPanelProps) {
 
   return (
     <>
-      {entries.length > 0 && (
+      {scripts.length > 0 && (
         <>
           <div style={styles.divider} />
-          {commands.map(renderRow)}
           {scripts.map(renderRow)}
         </>
       )}
@@ -420,14 +408,6 @@ function RenameInput({
         boxShadow: "0 0 0 1px rgba(0,122,204,0.3)",
       }}
     />
-  );
-}
-
-function CommandIcon() {
-  return (
-    <svg width="14" height="14" viewBox="-2 -1 28 26" style={{ flexShrink: 0 }}>
-      <path d={CLAUDE_PATH} fill="#D97757" fillRule="nonzero" />
-    </svg>
   );
 }
 
