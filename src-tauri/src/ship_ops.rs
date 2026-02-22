@@ -7,7 +7,7 @@ use crate::git_ops;
 
 const SHIP_COMMAND_VERSION: &str = "<!-- rally-ship-v7 -->";
 const SHIP_COMMAND_CONTENT: &str = include_str!("../resources/commands/ship.md");
-const REVIEW_COMMAND_VERSION: &str = "<!-- rally-review-pr-v1 -->";
+const REVIEW_COMMAND_VERSION: &str = "<!-- rally-review-pr-v2 -->";
 const REVIEW_COMMAND_CONTENT: &str = include_str!("../resources/commands/review-pr.md");
 const MERGE_COMMAND_VERSION: &str = "<!-- rally-merge-pr-v1 -->";
 const MERGE_COMMAND_CONTENT: &str = include_str!("../resources/commands/merge-pr.md");

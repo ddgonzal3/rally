@@ -87,11 +87,11 @@ Only if `IS_DIRTY=true`:
 
 2. Write a concise, descriptive commit message based on the diff, then:
    ```bash
-   git add -u
+   git add -A
    git commit -m "<your descriptive message>"
    ```
 
-This is the ONE non-deterministic part — use your judgment on the commit message.
+   `git add -A` stages everything including new files, respecting `.gitignore`. This is the ONE non-deterministic part — use your judgment on the commit message.
 
 ## Step 3: Push
 

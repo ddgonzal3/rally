@@ -5,6 +5,7 @@ export interface MenuAction {
   label: string;
   action: () => void;
   accelerator?: string;
+  disabled?: boolean;
 }
 
 // macOS quirk: dismissing a native popup menu by clicking elsewhere can
@@ -37,7 +38,7 @@ export async function showContextMenu(
     actions.map((a) =>
       a === "separator"
         ? PredefinedMenuItem.new({ item: "Separator" })
-        : MenuItem.new({ text: a.label, action: a.action, accelerator: a.accelerator ?? undefined })
+        : MenuItem.new({ text: a.label, action: a.action, accelerator: a.accelerator ?? undefined, enabled: !a.disabled })
     )
   );
   const menu = await Menu.new({ items });

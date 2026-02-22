@@ -45,7 +45,7 @@ Only if `IS_DIRTY=true`:
 
 2. Write a concise, descriptive commit message based on the diff:
    ```bash
-   git add -u
+   git add -A
    git commit -m "<your descriptive message>"
    ```
 

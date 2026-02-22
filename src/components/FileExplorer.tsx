@@ -689,10 +689,8 @@ function GitStatusIcon({
 
 function ShipIcon() {
   return (
-    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" style={{ flexShrink: 0 }}>
-      <path d="M3 17l1.5 2.5h15L21 17" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
-      <path d="M5 17l1-6h12l1 6" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
-      <path d="M12 4v7M9 7l3-3 3 3" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
+    <svg width="18" height="18" viewBox="0 -960 960 960" fill="currentColor" style={{ flexShrink: 0 }}>
+      <path d="m240-198 79-32q-10-29-18.5-59T287-349l-47 32v119Zm160-42h160q18-40 29-97.5T600-455q0-99-33-187.5T480-779q-54 48-87 136.5T360-455q0 60 11 117.5t29 97.5Zm23.5-223.5Q400-487 400-520t23.5-56.5Q447-600 480-600t56.5 23.5Q560-553 560-520t-23.5 56.5Q513-440 480-440t-56.5-23.5ZM720-198v-119l-47-32q-5 30-13.5 60T641-230l79 32ZM480-881q99 72 149.5 183T680-440l84 56q17 11 26.5 29t9.5 38v237l-199-80H359L160-80v-237q0-20 9.5-38t26.5-29l84-56q0-147 50.5-258T480-881Z" />
     </svg>
   );
 }
@@ -913,6 +911,25 @@ function RootSection({
       },
       { label: "Reveal in Finder", action: () => api.revealInFinder(rootPath) },
     ];
+    if (isGitRepo && activeWorkspaceId) {
+      const hasOpenPr = prStatus?.state === "OPEN";
+      actions.push("separator");
+      actions.push({
+        label: hasOpenPr ? `Create PR (PR #${prStatus!.number} open)` : "Create PR",
+        action: () => openClaudeCommand(activeWorkspaceId, rootPath, "/create-pr", "Create PR"),
+        disabled: hasOpenPr,
+      });
+      actions.push({
+        label: hasOpenPr ? "Review PR" : "Review PR (no open PR)",
+        action: () => openClaudeCommand(activeWorkspaceId, rootPath, "/review-pr", "Review PR"),
+        disabled: !hasOpenPr,
+      });
+      actions.push({
+        label: hasOpenPr ? "Merge PR" : "Merge PR (no open PR)",
+        action: () => openClaudeCommand(activeWorkspaceId, rootPath, "/merge-pr", "Merge PR"),
+        disabled: !hasOpenPr,
+      });
+    }
     if (canRemove) {
       actions.push("separator");
       actions.push({
@@ -1002,34 +1019,16 @@ function RootSection({
           <div style={styles.rootActions}>
             {isGitRepo && (
               <>
-                <GitStatusIcon
-                  status={gitStatus}
-                  syncNeeded={pathSyncNeeded}
-                  onClick={handleToggleChanges}
-                />
-                <RepoActionButton
-                  icon={<CreatePrIcon />}
-                  tooltip={prStatus?.state === "OPEN" ? `Create PR — PR #${prStatus.number} already open` : "Create PR"}
-                  disabled={prStatus?.state === "OPEN"}
-                  onClick={() => activeWorkspaceId && openClaudeCommand(activeWorkspaceId, rootPath, "/create-pr", "Create PR")}
-                />
-                <RepoActionButton
-                  icon={<ReviewIcon />}
-                  tooltip={prStatus?.state === "OPEN" ? "Review PR" : "Review PR — no open PR"}
-                  disabled={prStatus?.state !== "OPEN"}
-                  onClick={() => activeWorkspaceId && openClaudeCommand(activeWorkspaceId, rootPath, "/review-pr", "Review PR")}
-                />
-                <RepoActionButton
-                  icon={<MergeIcon />}
-                  tooltip={prStatus?.state === "OPEN" ? "Merge PR" : "Merge PR — no open PR"}
-                  disabled={prStatus?.state !== "OPEN"}
-                  onClick={() => activeWorkspaceId && openClaudeCommand(activeWorkspaceId, rootPath, "/merge-pr", "Merge PR")}
-                />
                 <RepoActionButton
                   icon={<ShipIcon />}
                   tooltip="Ship — commit, push, PR, review, merge"
                   disabled={false}
                   onClick={() => startShipSession(rootPath)}
+                />
+                <GitStatusIcon
+                  status={gitStatus}
+                  syncNeeded={pathSyncNeeded}
+                  onClick={handleToggleChanges}
                 />
               </>
             )}

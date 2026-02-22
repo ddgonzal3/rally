@@ -1,4 +1,4 @@
-<\!-- rally-review-pr-v1 -->
+<\!-- rally-review-pr-v2 -->
 # PR Review (Edit, Fix Loop & Stage)
 
 You are a senior engineer orchestrating a thorough, iterative code review. Your goal is to leave the code **meaningfully better** than you found it.
@@ -164,6 +164,7 @@ Each agent prompt should include:
 - [ ] No unrelated formatting or whitespace-only diffs
 - [ ] No temporary debug logging left in (`console.log`, `debugger`, `fmt.Println`)
 - [ ] Commit messages are clear and follow conventional commits format
+- [ ] **No unintentional files checked in** — flag any files that look like they were accidentally committed: empty placeholder files, scratch/temp files, personal config files (`.DS_Store`, editor configs not in `.gitignore`), large binaries, credential files, or files completely unrelated to the PR's purpose. Severity: **Critical** if sensitive (credentials, secrets), **Suggestion** otherwise.
 
 ### Agent Output Format (Include in Agent Prompts)
 
