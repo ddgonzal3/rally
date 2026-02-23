@@ -1049,11 +1049,13 @@ export const useWorkspaceStore = create<WorkspaceState>()(
       if (!session.exited) {
         api.killPty(session.ptyId).catch(() => {});
       }
-      api.clearShipSignal(session.repoPath).catch(() => {});
     }
-    // Headless: external process still running — don't clear the signal,
-    // just dismiss the UI. The signal will be cleaned up when the external
-    // process finishes or goes stale (30 min timeout).
+    // Always clear the signal file on dismiss. For headless sessions where
+    // an external /ship is still running, it will write a new signal on
+    // its next phase change (within seconds). For early-exit cases (guard
+    // rails, errors), clearing prevents the poll loop from recreating the
+    // session indefinitely.
+    api.clearShipSignal(session.repoPath).catch(() => {});
     shipOutputBuffer.length = 0;
     set({ shipSession: null });
   },

@@ -1,13 +1,37 @@
+use std::sync::OnceLock;
 use std::time::Duration;
 
 use tokio::process::Command;
 
 use crate::workspace::{ChangedFile, ChangesSummary, GitStatus, PrStatus, PushResult};
 
+/// Get the full login shell PATH, cached for the process lifetime.
+/// When launched as a .app bundle, macOS gives a minimal PATH (/usr/bin:/bin:/usr/sbin:/sbin).
+/// Tools like `gh` installed via Homebrew (/opt/homebrew/bin) won't be found.
+/// This resolves the full PATH from a login shell, just like pty_manager does for PTY sessions.
+fn full_path() -> &'static str {
+    static PATH: OnceLock<String> = OnceLock::new();
+    PATH.get_or_init(|| {
+        let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/zsh".to_string());
+        if let Ok(output) = std::process::Command::new(&shell)
+            .args(["-lc", "echo $PATH"])
+            .output()
+        {
+            let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
+            if !path.is_empty() {
+                return path;
+            }
+        }
+        // Fallback: current PATH (works when launched from terminal)
+        std::env::var("PATH").unwrap_or_default()
+    })
+}
+
 /// Run a git command in a given directory and return stdout (async)
 pub async fn git_cmd(cwd: &str, args: &[&str]) -> Result<String, String> {
     let output = Command::new("git")
         .args(args)
+        .env("PATH", full_path())
         .current_dir(cwd)
         .output()
         .await
@@ -27,6 +51,7 @@ async fn gh(cwd: &str, args: &[&str]) -> Result<String, String> {
         Duration::from_secs(30),
         Command::new("gh")
             .args(args)
+            .env("PATH", full_path())
             .current_dir(cwd)
             .output(),
     )
