@@ -194,6 +194,8 @@ export function PrReviewOverlay({
   const refreshGitStatusForPath = useWorkspaceStore((s) => s.refreshGitStatusForPath);
   const refreshPrStatusForPath = useWorkspaceStore((s) => s.refreshPrStatusForPath);
   const fetchAllRepos = useWorkspaceStore((s) => s.fetchAllRepos);
+  const openClaudeCommand = useWorkspaceStore((s) => s.openClaudeCommand);
+  const activeWorkspaceId = useWorkspaceStore((s) => s.activeWorkspaceId);
   const mainBranch = useWorkspaceStore((s) => {
     const ws = s.workspaces.find((w) => w.paths.includes(rootPath));
     return ws?.main_branch ?? "main";
@@ -275,6 +277,12 @@ export function PrReviewOverlay({
   const cancelEditTitle = useCallback(() => {
     setEditingTitle(false);
   }, []);
+
+  const handleShip = useCallback(() => {
+    if (!activeWorkspaceId) return;
+    onClose();
+    openClaudeCommand(activeWorkspaceId, rootPath, "/ship", "Ship");
+  }, [activeWorkspaceId, rootPath, onClose, openClaudeCommand]);
 
   const mergeDisabled = useMemo(() => {
     if (merging) return true;
@@ -473,20 +481,33 @@ export function PrReviewOverlay({
           </div>
         )}
 
-        {/* Merge button */}
+        {/* Ship + Merge buttons */}
         {prState === "OPEN" && prNumber != null && (
-          <button
-            data-merge-btn
-            onClick={handleMerge}
-            disabled={mergeDisabled}
-            style={{
-              ...st.mergeBtn,
-              ...(mergeArmed ? st.mergeBtnArmed : {}),
-              opacity: mergeDisabled ? 0.4 : 1,
-            }}
-          >
-            {merging ? "Merging..." : mergeArmed ? "Confirm merge?" : "Squash & merge"}
-          </button>
+          <>
+            <button
+              onClick={handleShip}
+              disabled={!activeWorkspaceId}
+              style={{
+                ...st.shipBtn,
+                opacity: activeWorkspaceId ? 1 : 0.4,
+              }}
+              title="Run /ship — review and merge via Claude"
+            >
+              Ship
+            </button>
+            <button
+              data-merge-btn
+              onClick={handleMerge}
+              disabled={mergeDisabled}
+              style={{
+                ...st.mergeBtn,
+                ...(mergeArmed ? st.mergeBtnArmed : {}),
+                opacity: mergeDisabled ? 0.4 : 1,
+              }}
+            >
+              {merging ? "Merging..." : mergeArmed ? "Confirm merge?" : "Squash & merge"}
+            </button>
+          </>
         )}
       </div>
 
@@ -871,6 +892,20 @@ const st: Record<string, React.CSSProperties> = {
     fontWeight: 600,
     color: "#7ddf7d",
     letterSpacing: "-0.01em",
+  },
+  shipBtn: {
+    padding: "5px 16px",
+    borderRadius: 8,
+    border: "1px solid #238636",
+    background: "transparent",
+    color: "#7ddf7d",
+    fontSize: 12,
+    fontWeight: 600,
+    cursor: "pointer",
+    flexShrink: 0,
+    letterSpacing: "-0.01em",
+    transition: "opacity 150ms, background 150ms",
+    lineHeight: "16px",
   },
   mergeBtn: {
     padding: "5px 16px",
