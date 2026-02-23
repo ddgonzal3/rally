@@ -47,6 +47,9 @@ export const api = {
   gitDiff: (workspacePath: string, staged: boolean) =>
     invoke<string>("git_diff", { workspacePath, staged }),
 
+  gitApplyPatch: (workspacePath: string, patch: string, reverse: boolean, cached: boolean) =>
+    invoke<string>("git_apply_patch", { workspacePath, patch, reverse, cached }),
+
   gitCommitStaged: (workspacePath: string, message: string) =>
     invoke<string>("git_commit_staged", { workspacePath, message }),
 

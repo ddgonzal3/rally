@@ -232,6 +232,11 @@ pub async fn git_diff(workspace_path: String, staged: bool) -> Result<String, St
 }
 
 #[tauri::command]
+pub async fn git_apply_patch(workspace_path: String, patch: String, reverse: bool, cached: bool) -> Result<String, String> {
+    git_ops::apply_patch(&workspace_path, &patch, reverse, cached).await
+}
+
+#[tauri::command]
 pub async fn git_commit_staged(workspace_path: String, message: String) -> Result<String, String> {
     git_ops::commit_staged(&workspace_path, &message).await
 }

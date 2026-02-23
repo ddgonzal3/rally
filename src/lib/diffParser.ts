@@ -103,3 +103,41 @@ export function parseUnifiedDiff(raw: string): DiffFile[] {
 
   return files;
 }
+
+/**
+ * Reconstruct a valid unified diff patch string for a single hunk.
+ * This can be fed to `git apply` (with --reverse for revert, --cached for stage).
+ */
+export function generateHunkPatch(file: DiffFile, hunk: DiffHunk): string {
+  const oldPath = file.isNew ? "/dev/null" : `a/${file.oldPath}`;
+  const newPath = file.isDeleted ? "/dev/null" : `b/${file.newPath}`;
+
+  let oldCount = 0;
+  let newCount = 0;
+  const patchLines: string[] = [];
+
+  for (const line of hunk.lines) {
+    if (line.type === "context") {
+      patchLines.push(` ${line.content}`);
+      oldCount++;
+      newCount++;
+    } else if (line.type === "delete") {
+      patchLines.push(`-${line.content}`);
+      oldCount++;
+    } else if (line.type === "add") {
+      patchLines.push(`+${line.content}`);
+      newCount++;
+    }
+  }
+
+  const header = `@@ -${hunk.oldStart},${oldCount} +${hunk.newStart},${newCount} @@`;
+
+  return [
+    `diff --git a/${file.oldPath || file.newPath} b/${file.newPath || file.oldPath}`,
+    `--- ${oldPath}`,
+    `+++ ${newPath}`,
+    header,
+    ...patchLines,
+    "", // trailing newline
+  ].join("\n");
+}

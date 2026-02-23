@@ -1,6 +1,6 @@
 import React, { useState, useCallback, useEffect } from "react";
 import type { DiffFile } from "../lib/diffParser";
-import { DiffHunkView } from "./DiffHunkView";
+import { DiffFileView } from "./DiffHunkView";
 
 export function DiffFileSection({
   file,
@@ -10,6 +10,8 @@ export function DiffFileSection({
   onStage,
   onUnstage,
   onDiscard,
+  onHunkRevert,
+  onHunkStage,
 }: {
   file: DiffFile;
   defaultExpanded: boolean;
@@ -18,6 +20,8 @@ export function DiffFileSection({
   onStage?: (filePath: string) => void;
   onUnstage?: (filePath: string) => void;
   onDiscard?: (filePath: string) => void;
+  onHunkRevert?: (filePath: string, hunkIndex: number) => void;
+  onHunkStage?: (filePath: string, hunkIndex: number) => void;
 }) {
   const [expanded, setExpanded] = useState(defaultExpanded);
 
@@ -61,6 +65,7 @@ export function DiffFileSection({
           {tab === "unstaged" && (
             <>
               <button
+                className="hunk-action-btn"
                 onClick={handleDiscard}
                 style={confirming ? styles.iconBtnDanger : styles.iconBtn}
                 title={confirming ? "Click again to confirm" : "Discard changes"}
@@ -74,6 +79,7 @@ export function DiffFileSection({
                 )}
               </button>
               <button
+                className="hunk-action-btn"
                 onClick={() => onStage?.(filePath)}
                 style={styles.iconBtn}
                 title="Stage file"
@@ -86,6 +92,7 @@ export function DiffFileSection({
           )}
           {tab === "staged" && (
             <button
+              className="hunk-action-btn"
               onClick={() => onUnstage?.(filePath)}
               style={styles.iconBtn}
               title="Unstage file"
@@ -104,9 +111,13 @@ export function DiffFileSection({
               {file.isNew ? "New file" : file.isDeleted ? "File deleted" : "Binary file or no content"}
             </div>
           ) : (
-            file.hunks.map((hunk, i) => (
-              <DiffHunkView key={i} hunk={hunk} filePath={filePath} />
-            ))
+            <DiffFileView
+              hunks={file.hunks}
+              filePath={filePath}
+              tab={tab}
+              onHunkRevert={onHunkRevert ? (hi) => onHunkRevert(filePath, hi) : undefined}
+              onHunkStage={onHunkStage ? (hi) => onHunkStage(filePath, hi) : undefined}
+            />
           )}
         </div>
       )}
@@ -116,7 +127,11 @@ export function DiffFileSection({
 
 const styles: Record<string, React.CSSProperties> = {
   section: {
-    marginBottom: 4,
+    marginBottom: 8,
+    borderRadius: 10,
+    border: "1px solid #2a2a2a",
+    background: "#1e1e1e",
+    overflow: "hidden",
   },
   header: {
     display: "flex",
@@ -124,10 +139,9 @@ const styles: Record<string, React.CSSProperties> = {
     gap: 8,
     padding: "8px 14px",
     background: "#222",
-    borderRadius: 12,
     cursor: "pointer",
     userSelect: "none",
-    border: "1px solid #2a2a2a",
+    borderBottom: "1px solid #2a2a2a",
     transition: "background 150ms",
   },
   chevron: {
@@ -137,10 +151,10 @@ const styles: Record<string, React.CSSProperties> = {
     flexShrink: 0,
   },
   fileName: {
-    flex: 1,
     fontSize: 13,
     fontFamily: "'SF Mono', 'Menlo', monospace",
-    color: "#e6edf3",
+    fontWeight: 600,
+    color: "#fff",
     overflow: "hidden",
     textOverflow: "ellipsis",
     whiteSpace: "nowrap",
@@ -150,7 +164,9 @@ const styles: Record<string, React.CSSProperties> = {
     gap: 6,
     fontSize: 12,
     fontFamily: "'SF Mono', 'Menlo', monospace",
+    fontWeight: 600,
     flexShrink: 0,
+    marginRight: "auto",
   },
   additions: {
     color: "#3fb950",
@@ -187,8 +203,12 @@ const styles: Record<string, React.CSSProperties> = {
   },
   actions: {
     display: "flex",
-    gap: 2,
+    gap: 0,
     flexShrink: 0,
+    background: "#2a2a2a",
+    border: "1px solid #3a3a3a",
+    borderRadius: 20,
+    overflow: "hidden",
   },
   iconBtn: {
     display: "flex",
@@ -196,7 +216,7 @@ const styles: Record<string, React.CSSProperties> = {
     justifyContent: "center",
     width: 28,
     height: 28,
-    borderRadius: 6,
+    borderRadius: 0,
     border: "none",
     background: "transparent",
     color: "#bbb",
@@ -209,7 +229,7 @@ const styles: Record<string, React.CSSProperties> = {
     justifyContent: "center",
     minWidth: 28,
     height: 28,
-    borderRadius: 6,
+    borderRadius: 0,
     border: "none",
     background: "rgba(248, 81, 73, 0.15)",
     color: "#f85149",
@@ -218,7 +238,7 @@ const styles: Record<string, React.CSSProperties> = {
     transition: "color 150ms, background 150ms",
   },
   hunks: {
-    padding: "4px 14px 8px 14px",
+    padding: 0,
   },
   noContent: {
     padding: "12px 0",

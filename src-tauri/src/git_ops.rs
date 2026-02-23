@@ -367,6 +367,46 @@ pub async fn discard_file(cwd: &str, file_path: &str, is_untracked: bool) -> Res
     Ok(())
 }
 
+/// Apply a patch via stdin to `git apply`.
+/// `reverse` = true for reverting changes, `cached` = true for staging hunks.
+pub async fn apply_patch(cwd: &str, patch: &str, reverse: bool, cached: bool) -> Result<String, String> {
+    let mut args = vec!["apply"];
+    if reverse {
+        args.push("--reverse");
+    }
+    if cached {
+        args.push("--cached");
+    }
+    let mut child = tokio::process::Command::new("git")
+        .args(&args)
+        .current_dir(cwd)
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .map_err(|e| format!("Failed to spawn git apply: {}", e))?;
+
+    if let Some(mut stdin) = child.stdin.take() {
+        use tokio::io::AsyncWriteExt;
+        stdin
+            .write_all(patch.as_bytes())
+            .await
+            .map_err(|e| format!("Failed to write patch to stdin: {}", e))?;
+    }
+
+    let output = child
+        .wait_with_output()
+        .await
+        .map_err(|e| format!("Failed to wait for git apply: {}", e))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("git apply failed: {}", stderr));
+    }
+
+    Ok(String::from_utf8_lossy(&output.stdout).to_string())
+}
+
 /// Get unified diff output for staged or unstaged changes.
 pub async fn diff(cwd: &str, staged: bool) -> Result<String, String> {
     let mut args = vec!["diff", "--unified=3"];

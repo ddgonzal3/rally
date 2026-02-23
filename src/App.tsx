@@ -634,6 +634,7 @@ export function App() {
         .syn-keyword { color: #ff7b72; }
         .syn-literal { color: #79c0ff; }
         .syn-number { color: #d2a8ff; }
+        .hunk-action-btn:hover { background: rgba(255,255,255,0.1) !important; color: #eee !important; }
         .git-diff-overlay { scrollbar-gutter: stable; }
         .git-diff-overlay ::-webkit-scrollbar { width: 6px; height: 0; }
         .git-diff-overlay ::-webkit-scrollbar-track { background: transparent; }

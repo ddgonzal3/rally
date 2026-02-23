@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import { useWorkspaceStore } from "../stores/workspaceStore";
 import { api } from "../lib/tauri";
-import { parseUnifiedDiff, type DiffFile } from "../lib/diffParser";
+import { parseUnifiedDiff, generateHunkPatch, type DiffFile } from "../lib/diffParser";
 import { DiffFileSection } from "./DiffFileSection";
 import { CommitModal } from "./CommitModal";
 import type { ChangesSummary } from "../lib/types";
@@ -146,6 +146,38 @@ export function GitDiffOverlay() {
     [rootPath, changes, fetchDiffs],
   );
 
+  const handleHunkRevert = useCallback(
+    async (filePath: string, hunkIndex: number) => {
+      if (!rootPath) return;
+      const file = unstagedFiles.find((f) => (f.newPath || f.oldPath) === filePath);
+      if (!file || !file.hunks[hunkIndex]) return;
+      const patch = generateHunkPatch(file, file.hunks[hunkIndex]);
+      await api.gitApplyPatch(rootPath, patch, true, false);
+      fetchDiffs();
+    },
+    [rootPath, unstagedFiles, fetchDiffs],
+  );
+
+  const handleHunkStage = useCallback(
+    async (filePath: string, hunkIndex: number) => {
+      if (!rootPath) return;
+      if (activeTab === "unstaged") {
+        const file = unstagedFiles.find((f) => (f.newPath || f.oldPath) === filePath);
+        if (!file || !file.hunks[hunkIndex]) return;
+        const patch = generateHunkPatch(file, file.hunks[hunkIndex]);
+        await api.gitApplyPatch(rootPath, patch, false, true);
+      } else {
+        // Unstage a specific hunk from staged
+        const file = stagedFiles.find((f) => (f.newPath || f.oldPath) === filePath);
+        if (!file || !file.hunks[hunkIndex]) return;
+        const patch = generateHunkPatch(file, file.hunks[hunkIndex]);
+        await api.gitApplyPatch(rootPath, patch, true, true);
+      }
+      fetchDiffs();
+    },
+    [rootPath, activeTab, unstagedFiles, stagedFiles, fetchDiffs],
+  );
+
   const [revertConfirming, setRevertConfirming] = useState(false);
 
   const handleRevertAll = useCallback(async () => {
@@ -260,25 +292,6 @@ export function GitDiffOverlay() {
             Unstage all
           </button>
         )}
-        {/* Collapse/expand icon */}
-        {activeFiles.length > 0 && (
-          <button
-            onClick={() => {
-              setDefaultExpanded((v) => !v);
-              setExpandKey((k) => k + 1);
-            }}
-            style={s.expandCollapseBtn}
-            title={defaultExpanded ? "Collapse all" : "Expand all"}
-          >
-            <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
-              {defaultExpanded ? (
-                <path d="M4 10l4-4 4 4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-              ) : (
-                <path d="M4 6l4 4 4-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-              )}
-            </svg>
-          </button>
-        )}
         {/* Diff stats */}
         {(diffStatAdd > 0 || diffStatDel > 0) && (
           <span style={s.diffStats}>
@@ -319,6 +332,8 @@ export function GitDiffOverlay() {
                 onStage={handleStage}
                 onUnstage={handleUnstage}
                 onDiscard={handleDiscard}
+                onHunkRevert={handleHunkRevert}
+                onHunkStage={handleHunkStage}
               />
             </div>
           ))
@@ -381,18 +396,6 @@ const s: Record<string, React.CSSProperties> = {
     color: "#e6edf3",
     fontWeight: 600,
     pointerEvents: "none",
-  },
-  expandCollapseBtn: {
-    background: "none",
-    border: "none",
-    color: "#aaa",
-    cursor: "pointer",
-    padding: "4px 6px",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    transition: "color 150ms",
-    borderRadius: 4,
   },
   tab: {
     padding: "10px 12px",

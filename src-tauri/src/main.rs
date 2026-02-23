@@ -143,6 +143,7 @@ fn main() {
             commands::git_unstage_file,
             commands::git_discard_file,
             commands::git_diff,
+            commands::git_apply_patch,
             commands::git_commit_staged,
             commands::git_push,
             commands::git_create_pr,
