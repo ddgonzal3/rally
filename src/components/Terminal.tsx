@@ -158,9 +158,9 @@ export function Terminal({ cwd, command, initialInput, ptyId: existingPtyId, loc
       rows: 24,
       macOptionIsMeta: true,
       theme: {
-        background: "#1e1e1e",
-        foreground: "#e8e8e8",
-        cursor: "#a0a0a0",
+        background: "#1b1b1b",
+        foreground: "#d4d4d4",
+        cursor: "#aeafad",
         selectionBackground: "#44444488",
         black: "#1e1e1e",
         red: "#df7d7d",
@@ -172,8 +172,12 @@ export function Terminal({ cwd, command, initialInput, ptyId: existingPtyId, loc
         white: "#e0e0e0",
       },
       fontSize: 13,
-      fontFamily: "'SF Mono', 'Fira Code', 'Cascadia Code', monospace",
+      fontWeight: "normal",
+      fontFamily: "Menlo, Monaco, 'Courier New', monospace",
+      letterSpacing: 0,
       cursorBlink: true,
+      cursorStyle: "bar",
+      cursorWidth: 2,
       allowProposedApi: true,
     });
 
@@ -479,7 +483,7 @@ const styles: Record<string, React.CSSProperties> = {
     flex: 1,
     minWidth: 0,
     minHeight: 0,
-    background: "#1e1e1e",
+    background: "#1b1b1b",
     overflow: "hidden",
   },
   terminal: {

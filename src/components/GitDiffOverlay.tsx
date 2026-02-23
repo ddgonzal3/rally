@@ -234,16 +234,11 @@ export function GitDiffOverlay() {
     >
       {/* Header */}
       <div style={s.header}>
-        <button onClick={closeOverlay} style={s.backBtn}>
-          ← Back
+        <button onClick={closeOverlay} style={s.backBtn} title="Back">
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
+            <path d="M10 3L5 8l5 5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
         </button>
-        <span style={s.title}>
-          Changes — {folderName}
-        </span>
-      </div>
-
-      {/* Tabs */}
-      <div style={s.tabs}>
         <button
           onClick={() => setActiveTab("unstaged")}
           style={activeTab === "unstaged" ? s.tabActive : s.tab}
@@ -256,6 +251,7 @@ export function GitDiffOverlay() {
         >
           Staged · {stagedCount}
         </button>
+        <span style={s.repoName}>{folderName}</span>
         <div style={{ flex: 1 }} />
         {activeFiles.length > 0 && (
           <button
@@ -391,41 +387,31 @@ const s: Record<string, React.CSSProperties> = {
   header: {
     display: "flex",
     alignItems: "center",
-    gap: 12,
-    padding: "12px 20px",
+    gap: 4,
+    padding: "0 16px",
     borderBottom: "1px solid #2a2a2a",
     flexShrink: 0,
+    position: "relative",
   },
   backBtn: {
-    background: "#2a2a2a",
+    background: "none",
     border: "none",
-    borderRadius: 20,
-    color: "#aaa",
-    padding: "5px 14px",
-    fontSize: 12,
-    fontWeight: 500,
+    color: "#999",
     cursor: "pointer",
-    letterSpacing: "0.01em",
-    lineHeight: "16px",
-    display: "inline-flex",
-    alignItems: "center",
-    justifyContent: "center",
-    transition: "background 150ms, color 150ms",
-  },
-  title: {
-    fontSize: 14,
-    fontWeight: 600,
-    color: "#e6edf3",
-    flex: 1,
-    letterSpacing: "-0.01em",
-  },
-  tabs: {
+    padding: "8px 6px 8px 2px",
     display: "flex",
     alignItems: "center",
-    gap: 0,
-    padding: "0 20px",
-    borderBottom: "1px solid #2a2a2a",
-    flexShrink: 0,
+    justifyContent: "center",
+    transition: "color 150ms",
+  },
+  repoName: {
+    position: "absolute",
+    left: "50%",
+    transform: "translateX(-50%)",
+    fontSize: 13,
+    color: "#e6edf3",
+    fontWeight: 600,
+    pointerEvents: "none",
   },
   expandCollapseBtn: {
     background: "none",
@@ -438,7 +424,7 @@ const s: Record<string, React.CSSProperties> = {
     transition: "color 150ms",
   },
   tab: {
-    padding: "10px 18px",
+    padding: "10px 12px",
     background: "none",
     border: "none",
     borderBottom: "2px solid transparent",
@@ -446,11 +432,10 @@ const s: Record<string, React.CSSProperties> = {
     fontSize: 13,
     cursor: "pointer",
     fontWeight: 500,
-    letterSpacing: "0.01em",
     transition: "color 150ms",
   },
   tabActive: {
-    padding: "10px 18px",
+    padding: "10px 12px",
     background: "none",
     border: "none",
     borderBottom: "2px solid #e6edf3",
@@ -458,7 +443,6 @@ const s: Record<string, React.CSSProperties> = {
     fontSize: 13,
     cursor: "pointer",
     fontWeight: 600,
-    letterSpacing: "0.01em",
   },
   fileList: {
     flex: 1,
@@ -504,9 +488,9 @@ const s: Record<string, React.CSSProperties> = {
     alignItems: "center",
     background: "#2a2a2a",
     border: "none",
-    color: "#aaa",
+    color: "#ccc",
     fontSize: 12,
-    fontWeight: 500,
+    fontWeight: 600,
     cursor: "pointer",
     padding: "5px 14px",
     borderRadius: 20,
@@ -520,7 +504,7 @@ const s: Record<string, React.CSSProperties> = {
     border: "none",
     color: "#f85149",
     fontSize: 12,
-    fontWeight: 500,
+    fontWeight: 600,
     cursor: "pointer",
     padding: "5px 14px",
     borderRadius: 20,

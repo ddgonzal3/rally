@@ -546,7 +546,7 @@ const styles: Record<string, React.CSSProperties> = {
   },
   tabActive: {
     color: "#ddd",
-    background: "#1e1e1e",
+    background: "#1b1b1b",
     boxShadow: "inset 0 1px 0 #4191e0",
     marginBottom: -1,
     paddingBottom: 1,

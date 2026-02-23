@@ -663,16 +663,16 @@ function GitStatusIcon({
             position: "absolute" as const,
             bottom: -2,
             right: changeCount < 10 ? -2 : -4,
-            fontSize: 9,
+            fontSize: 10,
             fontWeight: 700,
             fontFamily: "-apple-system, BlinkMacSystemFont, 'SF Pro Text', system-ui, sans-serif",
-            lineHeight: "12px",
+            lineHeight: "14px",
             color: "#fff",
             background: "#3478e0",
-            borderRadius: 6,
-            padding: "0 3px",
-            minWidth: 12,
-            height: 12,
+            borderRadius: 7,
+            padding: "0 4px",
+            minWidth: 14,
+            height: 14,
             textAlign: "center" as const,
             boxSizing: "border-box" as const,
             WebkitFontSmoothing: "antialiased" as const,
@@ -913,13 +913,13 @@ function RootSection({
                     <span style={styles.aheadCount}>+{gitStatus.ahead}</span>
                   )}
                 </span>
-                <PrBadge pr={prStatus} />
               </div>
             )}
           </div>
           <div style={styles.rootActions}>
             {isGitRepo && (
               <>
+                <PrBadge pr={prStatus} />
                 <GitStatusIcon
                   status={gitStatus}
                   syncNeeded={pathSyncNeeded}
@@ -1656,14 +1656,18 @@ const styles: Record<string, React.CSSProperties> = {
     borderRadius: 4,
   },
   prBadge: {
-    display: "inline-block",
-    padding: "0 4px",
-    borderRadius: 3,
-    fontSize: 9,
+    display: "inline-flex",
+    alignItems: "center",
+    gap: 4,
+    padding: "2px 8px",
+    borderRadius: 10,
+    fontSize: 11,
     fontWeight: 600,
-    color: "#ccc",
+    color: "#ddd",
     background: "#333",
     lineHeight: "16px",
+    flexShrink: 0,
+    marginRight: 4,
   },
   rootRowSticky: {
     position: "sticky" as const,
@@ -1714,7 +1718,7 @@ const styles: Record<string, React.CSSProperties> = {
     overflow: "hidden",
     textOverflow: "ellipsis",
     whiteSpace: "nowrap" as const,
-    fontSize: 13,
+    fontSize: 14,
     fontWeight: 600,
     color: "#eee",
   },
@@ -1724,14 +1728,14 @@ const styles: Record<string, React.CSSProperties> = {
     gap: 6,
   },
   rootBranch: {
-    fontSize: 10,
-    color: "#ccc",
+    fontSize: 11,
+    color: "#bbb",
     fontWeight: 600,
   },
   aheadCount: {
     color: "#e5a63a",
     marginLeft: 4,
-    fontSize: 9,
+    fontSize: 11,
     fontWeight: 600,
   },
   node: {
