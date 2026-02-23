@@ -519,11 +519,24 @@ export const useWorkspaceStore = create<WorkspaceState>()(
   addWorkspace: async (params) => {
     await api.createWorkspace(params);
     await get().loadWorkspaces();
+    // Immediately fetch git status for the new workspace's paths
+    // so the branch name appears right away instead of waiting for the next poll
+    const ws = get().workspaces.find((w) => w.name === params.name);
+    if (ws) {
+      await Promise.all(
+        ws.paths.map((p) => get().refreshGitStatusForPath(p, ws.main_branch)),
+      );
+    }
   },
 
   addPathToWorkspace: async (id, path) => {
     await api.addWorkspacePath(id, path);
     await get().loadWorkspaces();
+    // Immediately fetch git status for the newly added path
+    const ws = get().workspaces.find((w) => w.id === id);
+    if (ws) {
+      await get().refreshGitStatusForPath(path, ws.main_branch);
+    }
   },
 
   removePathFromWorkspace: async (id, path) => {
