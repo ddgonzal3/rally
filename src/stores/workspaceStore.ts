@@ -142,8 +142,6 @@ interface WorkspaceState {
   gitStatuses: Record<string, GitStatus>;
   /** PR status keyed by repo path */
   prStatuses: Record<string, PrStatus | null>;
-  /** Repo paths that need sync after a merge */
-  syncNeeded: Record<string, boolean>;
   /** Which repo path is active per workspace (index into ws.paths) */
   activePathIndex: Record<string, number>;
   layouts: Record<string, WorkspaceLayout>;
@@ -162,7 +160,17 @@ interface WorkspaceState {
   gitDiffOverlayPath: string | null;
   gitDiffActiveTab: "unstaged" | "staged";
   gitDiffScrollToFile: string | null;
+  /** PR review overlay state */
+  prReviewOverlayOpen: boolean;
+  prReviewOverlayPath: string | null;
+  prReviewScrollToFile: string | null;
   loading: boolean;
+  /** Set of pane IDs with unsaved editor changes */
+  dirtyPanes: Set<string>;
+
+  // Dirty pane tracking
+  markPaneDirty: (paneId: string) => void;
+  markPaneClean: (paneId: string) => void;
 
   // Workspace actions
   loadWorkspaces: (options?: { keepNullActive?: boolean }) => Promise<void>;
@@ -184,6 +192,10 @@ interface WorkspaceState {
   refreshAllGitStatuses: () => Promise<void>;
   refreshPrStatusForPath: (path: string) => Promise<void>;
   refreshAllPrStatuses: () => Promise<void>;
+  /** Fetch all repos in parallel (silent failures per-path) */
+  fetchAllRepos: () => Promise<void>;
+  /** Rebase a repo path onto origin/<mainBranch>, then refresh git status */
+  rebaseOnMain: (path: string, mainBranch: string) => Promise<void>;
   // Layout actions
   getOrCreateLayout: (workspaceId: string) => WorkspaceLayout;
   splitGroup: (
@@ -237,6 +249,10 @@ interface WorkspaceState {
   closeGitDiffOverlay: () => void;
   /** Set the active tab in the git diff overlay */
   setGitDiffActiveTab: (tab: "unstaged" | "staged") => void;
+  /** Open the PR review overlay for a repo path, optionally scrolling to a file */
+  openPrReviewOverlay: (rootPath: string, scrollToFile?: string) => void;
+  /** Close the PR review overlay */
+  closePrReviewOverlay: () => void;
   /** Open a diff view for a repo path */
   openDiff: (workspaceId: string, rootPath: string) => void;
   // Ship actions
@@ -470,7 +486,6 @@ export const useWorkspaceStore = create<WorkspaceState>()(
   activeWorkspaceId: null,
   gitStatuses: {},
   prStatuses: {},
-  syncNeeded: {},
   activePathIndex: {},
   layouts: {},
   activeGroupIds: {},
@@ -482,7 +497,27 @@ export const useWorkspaceStore = create<WorkspaceState>()(
   gitDiffOverlayPath: null,
   gitDiffActiveTab: "unstaged" as const,
   gitDiffScrollToFile: null,
+  prReviewOverlayOpen: false,
+  prReviewOverlayPath: null,
+  prReviewScrollToFile: null,
   loading: false,
+  dirtyPanes: new Set(),
+
+  markPaneDirty: (paneId) => {
+    const s = get();
+    if (s.dirtyPanes.has(paneId)) return;
+    const next = new Set(s.dirtyPanes);
+    next.add(paneId);
+    set({ dirtyPanes: next });
+  },
+
+  markPaneClean: (paneId) => {
+    const s = get();
+    if (!s.dirtyPanes.has(paneId)) return;
+    const next = new Set(s.dirtyPanes);
+    next.delete(paneId);
+    set({ dirtyPanes: next });
+  },
 
   // --- Workspace actions ---
 
@@ -674,6 +709,32 @@ export const useWorkspaceStore = create<WorkspaceState>()(
       }
       return changed ? { prStatuses: next } : s;
     });
+  },
+
+  fetchAllRepos: async () => {
+    const workspaces = get().workspaces;
+    const paths = workspaces.flatMap((ws) => ws.paths);
+    await Promise.allSettled(paths.map((p) => api.gitFetch(p)));
+    // Refresh git statuses after fetch so behind counts update
+    await get().refreshAllGitStatuses();
+  },
+
+  rebaseOnMain: async (path, mainBranch) => {
+    try {
+      await api.gitRebaseOnMain(path, mainBranch);
+      await get().refreshGitStatusForPath(path, mainBranch);
+    } catch (e) {
+      // Refresh status even on failure (abort restores clean state)
+      get().refreshGitStatusForPath(path, mainBranch).catch(() => {});
+      const msg = String(e);
+      if (msg.includes("uncommitted changes") || msg.includes("dirty")) {
+        throw new Error("Commit or stash changes first");
+      }
+      if (msg.includes("CONFLICT") || msg.includes("conflict")) {
+        throw new Error("Rebase had conflicts — aborted automatically. Resolve conflicts manually or merge via PR.");
+      }
+      throw e;
+    }
   },
 
   // --- Layout actions ---
@@ -885,29 +946,15 @@ export const useWorkspaceStore = create<WorkspaceState>()(
       // Auto-sync the shipping branch back to main
       await api.postMergeSync(repoPath, mainBranch, signal.branch);
 
-      // Mark related repos (same remote, different paths) as needing sync
-      // Skip if repo_url is empty — repos without a remote aren't related
-      if (ws && ws.repo_url) {
-        const relatedPaths = get().workspaces
-          .filter((w) => w.repo_url === ws.repo_url)
-          .flatMap((w) => w.paths)
-          .filter((p) => p !== repoPath);
-
-        if (relatedPaths.length > 0) {
-          set((s) => {
-            const newSyncNeeded = { ...s.syncNeeded };
-            for (const p of relatedPaths) newSyncNeeded[p] = true;
-            return { syncNeeded: newSyncNeeded };
-          });
-        }
-      }
-
       // Clear signal file
       await api.clearShipSignal(repoPath);
 
-      // Refresh git status
+      // Refresh git status (must complete before fetchAllRepos to avoid git lock races)
       await get().refreshGitStatusForPath(repoPath, mainBranch);
       await get().refreshPrStatusForPath(repoPath);
+
+      // Fetch all repos so other checkouts see the behind count
+      get().fetchAllRepos().catch(() => {});
 
       // Notify that merge + sync completed
       addToast({
@@ -1313,6 +1360,9 @@ export const useWorkspaceStore = create<WorkspaceState>()(
       api.killPty(closingPane.ptyId).catch(() => {});
     }
 
+    // Clean up dirty state
+    get().markPaneClean(paneId);
+
     if (group.panes.length <= 1) {
       // Last pane in group — collapse it if there are sibling panels,
       // otherwise keep empty state (can't remove the only panel)
@@ -1602,6 +1652,10 @@ export const useWorkspaceStore = create<WorkspaceState>()(
       // Only reset tab when opening without a specific file
       // (file-specific opens pre-set the tab via setGitDiffActiveTab)
       ...(scrollToFile ? {} : { gitDiffActiveTab: "unstaged" as const }),
+      // Close PR overlay if open
+      prReviewOverlayOpen: false,
+      prReviewOverlayPath: null,
+      prReviewScrollToFile: null,
     });
   },
 
@@ -1615,6 +1669,30 @@ export const useWorkspaceStore = create<WorkspaceState>()(
 
   setGitDiffActiveTab: (tab) => {
     set({ gitDiffActiveTab: tab });
+  },
+
+  openPrReviewOverlay: (rootPath, scrollToFile) => {
+    const s = get();
+    // Toggle if same path and no specific file requested
+    if (s.prReviewOverlayOpen && s.prReviewOverlayPath === rootPath && !scrollToFile) {
+      set({ prReviewOverlayOpen: false, prReviewOverlayPath: null, prReviewScrollToFile: null });
+      return;
+    }
+    set({
+      prReviewOverlayOpen: true,
+      prReviewOverlayPath: rootPath,
+      prReviewScrollToFile: scrollToFile ?? null,
+      // Close git diff overlay if open
+      gitDiffOverlayOpen: false,
+      gitDiffOverlayPath: null,
+      gitDiffScrollToFile: null,
+    });
+    // Eagerly refresh PR status so the overlay always shows fresh data
+    get().refreshPrStatusForPath(rootPath).catch(() => {});
+  },
+
+  closePrReviewOverlay: () => {
+    set({ prReviewOverlayOpen: false, prReviewOverlayPath: null, prReviewScrollToFile: null });
   },
 
   openDiff: (workspaceId, rootPath) => {

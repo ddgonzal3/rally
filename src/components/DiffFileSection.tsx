@@ -16,7 +16,7 @@ export function DiffFileSection({
   file: DiffFile;
   defaultExpanded: boolean;
   expandKey?: number;
-  tab: "unstaged" | "staged";
+  tab: "unstaged" | "staged" | "pr";
   onStage?: (filePath: string) => void;
   onUnstage?: (filePath: string) => void;
   onDiscard?: (filePath: string) => void;
@@ -58,9 +58,9 @@ export function DiffFileSection({
             <span style={styles.deletions}>-{file.deletions}</span>
           )}
         </span>
-        {file.isNew && <span style={styles.badge}>NEW</span>}
-        {file.isDeleted && <span style={styles.badgeDelete}>DEL</span>}
-        {file.isRenamed && <span style={styles.badgeRename}>REN</span>}
+        {file.isNew && <span style={styles.badge}>New</span>}
+        {file.isDeleted && <span style={styles.badgeDelete}>Del</span>}
+        {file.isRenamed && <span style={styles.badgeRename}>Ren</span>}
         <div style={styles.actions} onClick={(e) => e.stopPropagation()}>
           {tab === "unstaged" && (
             <>
@@ -161,8 +161,9 @@ const styles: Record<string, React.CSSProperties> = {
   },
   stats: {
     display: "flex",
+    alignItems: "baseline",
     gap: 6,
-    fontSize: 12,
+    fontSize: 13,
     fontFamily: "'SF Mono', 'Menlo', monospace",
     fontWeight: 600,
     flexShrink: 0,
@@ -175,30 +176,36 @@ const styles: Record<string, React.CSSProperties> = {
     color: "#f85149",
   },
   badge: {
-    fontSize: 10,
+    fontSize: 11,
     fontWeight: 600,
-    padding: "2px 7px",
-    borderRadius: 10,
+    padding: "2px 8px",
+    borderRadius: 8,
     background: "rgba(63, 185, 80, 0.12)",
     color: "#3fb950",
+    letterSpacing: "-0.01em",
+    lineHeight: "16px",
     flexShrink: 0,
   },
   badgeDelete: {
-    fontSize: 10,
+    fontSize: 11,
     fontWeight: 600,
-    padding: "2px 7px",
-    borderRadius: 10,
+    padding: "2px 8px",
+    borderRadius: 8,
     background: "rgba(248, 81, 73, 0.12)",
     color: "#f85149",
+    letterSpacing: "-0.01em",
+    lineHeight: "16px",
     flexShrink: 0,
   },
   badgeRename: {
-    fontSize: 10,
+    fontSize: 11,
     fontWeight: 600,
-    padding: "2px 7px",
-    borderRadius: 10,
+    padding: "2px 8px",
+    borderRadius: 8,
     background: "rgba(210, 153, 34, 0.12)",
     color: "#d29922",
+    letterSpacing: "-0.01em",
+    lineHeight: "16px",
     flexShrink: 0,
   },
   actions: {

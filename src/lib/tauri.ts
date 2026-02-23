@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import type { Workspace, GitStatus, PrStatus, PushResult, ChangesSummary, ScriptEntry, ShipSignal, RallyScriptInfo } from "./types";
+import type { Workspace, GitStatus, PrStatus, PrDetails, PushResult, ChangesSummary, CommitEntry, ScriptEntry, ShipSignal, RallyScriptInfo } from "./types";
 
 export const api = {
   listWorkspaces: () => invoke<Workspace[]>("list_workspaces"),
@@ -28,6 +28,15 @@ export const api = {
 
   gitPrStatus: (workspacePath: string) =>
     invoke<PrStatus>("git_pr_status", { workspacePath }),
+
+  gitPrDetails: (workspacePath: string) =>
+    invoke<PrDetails>("git_pr_details", { workspacePath }),
+
+  gitPrDiff: (workspacePath: string) =>
+    invoke<string>("git_pr_diff", { workspacePath }),
+
+  gitEditPrTitle: (workspacePath: string, title: string) =>
+    invoke<void>("git_edit_pr_title", { workspacePath, title }),
 
   gitMergePr: (workspacePath: string, method: string) =>
     invoke<string>("git_merge_pr", { workspacePath, method }),
@@ -62,8 +71,17 @@ export const api = {
   gitCreatePr: (workspacePath: string) =>
     invoke<string>("git_create_pr", { workspacePath }),
 
+  gitCommitLog: (workspacePath: string, mainBranch: string, limit: number = 50) =>
+    invoke<CommitEntry[]>("git_commit_log", { workspacePath, mainBranch, limit }),
+
   gitDiffStat: (workspacePath: string) =>
     invoke<[number, number]>("git_diff_stat", { workspacePath }),
+
+  gitFetch: (workspacePath: string) =>
+    invoke<void>("git_fetch", { workspacePath }),
+
+  gitRebaseOnMain: (workspacePath: string, mainBranch: string) =>
+    invoke<string>("git_rebase_on_main", { workspacePath, mainBranch }),
 
   detectGitInfo: (path: string) =>
     invoke<{ repo_url: string; branch: string; name: string }>("detect_git_info", { path }),

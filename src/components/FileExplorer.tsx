@@ -10,6 +10,7 @@ import { ChevronIcon, FileIcon } from "./FileIcons";
 import { TaskPanel } from "./TaskPanel";
 import { ScrollArea } from "./ScrollArea";
 import { addToast, useToastStore } from "./ToastContainer";
+import { parseUnifiedDiff, type DiffFile } from "../lib/diffParser";
 import type { GitStatus, PrStatus, ChangesSummary } from "../lib/types";
 
 const FILE_DRAG_THRESHOLD = 8;
@@ -621,48 +622,47 @@ const FileTreeNode = React.memo(
 
 // --- Git status components ---
 
-function PrBadge({ pr }: { pr?: PrStatus | null }) {
+function PrBadge({ pr, onClick }: { pr?: PrStatus | null; onClick?: () => void }) {
   if (!pr || pr.state !== "OPEN") return null;
-  const detail = pr.is_draft
-    ? "draft"
-    : pr.review_decision === "APPROVED"
-      ? "approved"
-      : pr.mergeable === "CONFLICTING"
-        ? "conflicts"
-        : pr.review_decision === "CHANGES_REQUESTED"
-          ? "changes req"
-          : "open";
-  let bg = "#3a3a2d";
-  if (
-    pr.mergeable === "CONFLICTING" ||
-    pr.review_decision === "CHANGES_REQUESTED"
-  )
-    bg = "#5a2d2d";
-  else if (pr.review_decision === "APPROVED" && pr.mergeable === "MERGEABLE")
-    bg = "#2d5a2d";
+  const color = pr.is_draft ? "#e8b930" : "#999";
   return (
-    <span style={{ ...styles.prBadge, background: bg }}>
-      PR #{pr.number} {detail}
-    </span>
+    <button
+      onClick={(e) => {
+        e.stopPropagation();
+        onClick?.();
+      }}
+      className="pr-badge-btn"
+      title={pr.is_draft ? `Draft PR #${pr.number}` : `PR #${pr.number}`}
+      style={{
+        ...styles.prBadge,
+        cursor: onClick ? "pointer" : "default",
+      }}
+    >
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" style={{ flexShrink: 0 }}>
+        <path d="M9 6C9 7.65685 7.65685 9 6 9C4.34315 9 3 7.65685 3 6C3 4.34315 4.34315 3 6 3C7.65685 3 9 4.34315 9 6Z" stroke={color} strokeWidth="2"/>
+        <path d="M9 18C9 19.6569 7.65685 21 6 21C4.34315 21 3 19.6569 3 18C3 16.3431 4.34315 15 6 15C7.65685 15 9 16.3431 9 18Z" stroke={color} strokeWidth="2"/>
+        <path d="M21 18C21 19.6569 19.6569 21 18 21C16.3431 21 15 19.6569 15 18C15 16.3431 16.3431 15 18 15C19.6569 15 21 16.3431 21 18Z" stroke={color} strokeWidth="2"/>
+        <path d="M12 6C14.8284 6 16.2426 6 17.1213 6.87868C18 7.75736 18 9.17157 18 12V15" stroke={color} strokeWidth="2"/>
+        <path d="M15 3L12.0605 5.93945C12.0271 5.97289 12.0271 6.02711 12.0605 6.06055L15 9" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+        <path d="M6 15V9" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+      </svg>
+    </button>
   );
 }
 
 // --- Icons ---
 
-/** Git branch icon with blue change count badge. Icon turns amber when sync needed. */
+/** Git branch icon with blue change count badge. */
 function GitStatusIcon({
   status,
-  syncNeeded,
   onClick,
 }: {
   status?: GitStatus;
-  syncNeeded?: boolean;
   onClick?: () => void;
 }) {
   const changeCount =
     (status?.modified_files.length ?? 0) +
     (status?.untracked_files.length ?? 0);
-  const iconColor = syncNeeded ? "#e8b930" : "#ddd";
 
   return (
     <button
@@ -670,13 +670,11 @@ function GitStatusIcon({
         e.stopPropagation();
         if (onClick) onClick();
       }}
-      className={`git-status-btn${syncNeeded ? " pulse-dot" : ""}`}
+      className="git-status-btn"
       title={
-        syncNeeded
-          ? "Sync needed — behind main"
-          : changeCount > 0
-            ? `${changeCount} changes — view diff`
-            : "Clean"
+        changeCount > 0
+          ? `${changeCount} changes — view diff`
+          : "Clean"
       }
       style={{
         display: "flex",
@@ -694,7 +692,7 @@ function GitStatusIcon({
         width="18"
         height="18"
         viewBox="0 0 24 24"
-        fill={iconColor}
+        fill="#ddd"
         shapeRendering="geometricPrecision"
         style={{ flexShrink: 0 }}
       >
@@ -735,12 +733,15 @@ function RootSection({
   rootPath,
   isGitRepo,
   showChanges,
+  showPrFiles,
   onToggleChanges,
   onSelectChangeFile,
+  onSelectPrFile,
 }: {
   rootPath: string;
   isGitRepo: boolean;
   showChanges: boolean;
+  showPrFiles: boolean;
   onToggleChanges?: () => void;
   onSelectChangeFile: (
     rootPath: string,
@@ -748,6 +749,7 @@ function RootSection({
     isUntracked: boolean,
     section?: "staged" | "unstaged" | "untracked",
   ) => void;
+  onSelectPrFile: (rootPath: string, filePath: string) => void;
 }) {
   const [filesExpanded, _setFilesExpanded] = useState(() => {
     const saved = localStorage.getItem(`rally:rootExpanded:${rootPath}`);
@@ -777,12 +779,17 @@ function RootSection({
   const activeWorkspaceId = useWorkspaceStore((s) => s.activeWorkspaceId);
   const openFile = useWorkspaceStore((s) => s.openFile);
   const openGitDiffOverlay = useWorkspaceStore((s) => s.openGitDiffOverlay);
+  const openPrReviewOverlay = useWorkspaceStore((s) => s.openPrReviewOverlay);
   const removePathFromWorkspace = useWorkspaceStore(
     (s) => s.removePathFromWorkspace,
   );
   const gitStatus = useWorkspaceStore((s) => s.gitStatuses[rootPath]);
   const prStatus = useWorkspaceStore((s) => s.prStatuses[rootPath]);
-  const pathSyncNeeded = useWorkspaceStore((s) => s.syncNeeded[rootPath]);
+  const rebaseOnMain = useWorkspaceStore((s) => s.rebaseOnMain);
+  const mainBranch = useWorkspaceStore((s) => {
+    const ws = s.workspaces.find((w) => w.paths.includes(rootPath));
+    return ws?.main_branch ?? "main";
+  });
   const canRemove = useWorkspaceStore((s) => {
     const ws = s.workspaces.find((w) => w.id === s.activeWorkspaceId);
     return (ws?.paths.length ?? 0) > 1;
@@ -930,6 +937,36 @@ function RootSection({
     openGitDiffOverlay(rootPath);
   }, [repoCollapsed, setRepoCollapsed, openGitDiffOverlay, rootPath]);
 
+  const [creatingPr, setCreatingPr] = useState(false);
+  const refreshPrStatusForPath = useWorkspaceStore((s) => s.refreshPrStatusForPath);
+  const handleCreatePr = useCallback(async () => {
+    if (creatingPr) return;
+    setCreatingPr(true);
+    try {
+      const url = await api.gitCreatePr(rootPath);
+      addToast({ type: "success", title: "PR Created", message: url });
+      refreshPrStatusForPath(rootPath);
+    } catch (e) {
+      addToast({ type: "warning", title: "Create PR failed", message: String(e instanceof Error ? e.message : e) });
+    } finally {
+      setCreatingPr(false);
+    }
+  }, [creatingPr, rootPath, refreshPrStatusForPath]);
+
+  const [rebasingOnMain, setRebasingOnMain] = useState(false);
+  const handleRebaseOnMain = useCallback(async () => {
+    if (rebasingOnMain) return;
+    setRebasingOnMain(true);
+    try {
+      await rebaseOnMain(rootPath, mainBranch);
+      addToast({ type: "success", title: "Rebased", message: `Rebased onto ${mainBranch}` });
+    } catch (e) {
+      addToast({ type: "warning", title: "Rebase failed", message: String(e instanceof Error ? e.message : e) });
+    } finally {
+      setRebasingOnMain(false);
+    }
+  }, [rebasingOnMain, rebaseOnMain, rootPath, mainBranch]);
+
   return (
     <div>
       <div
@@ -971,6 +1008,14 @@ function RootSection({
                   {gitStatus && gitStatus.ahead > 0 && (
                     <span style={styles.aheadCount}>+{gitStatus.ahead}</span>
                   )}
+                  {gitStatus && gitStatus.behind > 0 && (
+                    <span
+                      style={styles.behindCount}
+                      title={`${gitStatus.behind} commit${gitStatus.behind !== 1 ? "s" : ""} behind ${mainBranch}`}
+                    >
+                      {`\u2212${gitStatus.behind}`}
+                    </span>
+                  )}
                 </span>
               </div>
             )}
@@ -978,10 +1023,54 @@ function RootSection({
           <div style={styles.rootActions}>
             {isGitRepo && (
               <>
-                <PrBadge pr={prStatus} />
+                {gitStatus && gitStatus.behind > 0 && (
+                  <button
+                    onClick={(e) => { e.stopPropagation(); handleRebaseOnMain(); }}
+                    disabled={rebasingOnMain}
+                    style={{
+                      ...styles.rebaseBtn,
+                      opacity: rebasingOnMain ? 0.5 : 1,
+                    }}
+                    title={rebasingOnMain
+                      ? "Rebasing..."
+                      : `Rebase onto ${mainBranch}`}
+                  >
+                    <svg
+                      width="18"
+                      height="18"
+                      viewBox="60 -880 860 860"
+                      fill="#999"
+                      style={rebasingOnMain ? { animation: "spin 1s linear infinite" } : undefined}
+                    >
+                      <path d="m430-30-56-57 73-73H313q-13 35-43.5 57.5T200-80q-50 0-85-35t-35-85q0-39 22.5-69.5T160-313v-334q-35-13-57.5-43.5T80-760q0-50 35-85t85-35q39 0 69.5 22.5T313-800h134l-73-73 56-57 170 170-170 170-56-57 73-73H313q-9 26-28 45t-45 28v334q26 9 45 28t28 45h134l-73-73 56-57 170 170L430-30Zm245-85q-35-35-35-85 0-40 22.5-70.5T720-313v-334q-35-12-57.5-42.5T640-760q0-50 35-85t85-35q50 0 85 35t35 85q0 40-22.5 70.5T800-647v334q35 13 57.5 43.5T880-200q0 50-35 85t-85 35q-50 0-85-35Zm-475-45q17 0 28.5-11.5T240-200q0-17-11.5-28.5T200-240q-17 0-28.5 11.5T160-200q0 17 11.5 28.5T200-160Zm560 0q17 0 28.5-11.5T800-200q0-17-11.5-28.5T760-240q-17 0-28.5 11.5T720-200q0 17 11.5 28.5T760-160ZM200-720q17 0 28.5-11.5T240-760q0-17-11.5-28.5T200-800q-17 0-28.5 11.5T160-760q0 17 11.5 28.5T200-720Zm560 0q17 0 28.5-11.5T800-760q0-17-11.5-28.5T760-800q-17 0-28.5 11.5T720-760q0 17 11.5 28.5T760-720ZM200-200Zm560 0ZM200-760Zm560 0Z" />
+                    </svg>
+                  </button>
+                )}
+                {gitStatus && gitStatus.ahead > 0 && gitStatus.branch !== mainBranch && (!prStatus || prStatus.state !== "OPEN") && (
+                  <button
+                    onClick={(e) => { e.stopPropagation(); handleCreatePr(); }}
+                    disabled={creatingPr}
+                    className="pr-badge-btn"
+                    title={creatingPr ? "Creating PR..." : "Create PR"}
+                    style={{
+                      ...styles.prBadge,
+                      cursor: "pointer",
+                      opacity: creatingPr ? 0.5 : 1,
+                    }}
+                  >
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" style={{ flexShrink: 0 }}>
+                      <path d="M9 6C9 7.65685 7.65685 9 6 9C4.34315 9 3 7.65685 3 6C3 4.34315 4.34315 3 6 3C7.65685 3 9 4.34315 9 6Z" stroke="#999" strokeWidth="2"/>
+                      <path d="M9 18C9 19.6569 7.65685 21 6 21C4.34315 21 3 19.6569 3 18C3 16.3431 4.34315 15 6 15C7.65685 15 9 16.3431 9 18Z" stroke="#999" strokeWidth="2"/>
+                      <path d="M21 18C21 19.6569 19.6569 21 18 21C16.3431 21 15 19.6569 15 18C15 16.3431 16.3431 15 18 15C19.6569 15 21 16.3431 21 18Z" stroke="#999" strokeWidth="2"/>
+                      <path d="M12 6C14.8284 6 16.2426 6 17.1213 6.87868C18 7.75736 18 9.17157 18 12V15" stroke="#999" strokeWidth="2"/>
+                      <path d="M15 3L12.0605 5.93945C12.0271 5.97289 12.0271 6.02711 12.0605 6.06055L15 9" stroke="#999" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                      <path d="M6 15V9" stroke="#999" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                    </svg>
+                  </button>
+                )}
+                <PrBadge pr={prStatus} onClick={() => openPrReviewOverlay(rootPath)} />
                 <GitStatusIcon
                   status={gitStatus}
-                  syncNeeded={pathSyncNeeded}
                   onClick={handleToggleChanges}
                 />
               </>
@@ -991,7 +1080,12 @@ function RootSection({
       </div>
 
       {!repoCollapsed &&
-        (showChanges ? (
+        (showPrFiles ? (
+          <PrFilesPanel
+            rootPath={rootPath}
+            onSelectFile={(filePath) => onSelectPrFile(rootPath, filePath)}
+          />
+        ) : showChanges ? (
           <ChangesPanel
             rootPath={rootPath}
             onSelectFile={(filePath, isUntracked, section) =>
@@ -1468,6 +1562,91 @@ function ChangesPanel({
   );
 }
 
+// --- PR Files Panel (replaces file tree when PR overlay is open) ---
+
+function derivePrFileStatus(file: DiffFile): string {
+  if (file.isNew) return "A";
+  if (file.isDeleted) return "D";
+  if (file.isRenamed) return "R";
+  return "M";
+}
+
+function PrFilesPanel({
+  rootPath,
+  onSelectFile,
+}: {
+  rootPath: string;
+  onSelectFile: (filePath: string) => void;
+}) {
+  const [files, setFiles] = useState<{ path: string; status: string }[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    api.gitPrDiff(rootPath)
+      .then((rawDiff) => {
+        if (cancelled) return;
+        const parsed = parseUnifiedDiff(rawDiff);
+        setFiles(
+          parsed.map((f) => ({
+            path: f.newPath || f.oldPath,
+            status: derivePrFileStatus(f),
+          })),
+        );
+        setLoading(false);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setLoading(false);
+      });
+    return () => { cancelled = true; };
+  }, [rootPath]);
+
+  return (
+    <ScrollArea style={{ flex: 1, padding: "0 4px", paddingBottom: 12 }}>
+      {loading ? (
+        <div style={styles.emptyMsg}>Loading PR files...</div>
+      ) : files.length === 0 ? (
+        <div style={styles.emptyMsg}>No changed files</div>
+      ) : (
+        <>
+          <div style={styles.sectionHeaderButton as React.CSSProperties}>
+            <span style={styles.sectionTitle}>PR Files</span>
+            <span style={{ flex: 1 }} />
+            <span style={styles.sectionCountBadge}>{files.length}</span>
+          </div>
+          {files.map((f) => {
+            const fileName = f.path.split("/").pop() ?? f.path;
+            const dir = f.path.includes("/")
+              ? f.path.slice(0, f.path.lastIndexOf("/"))
+              : "";
+            return (
+              <div
+                key={f.path}
+                className="change-item"
+                style={styles.changeItem}
+                onClick={() => onSelectFile(f.path)}
+              >
+                <span style={styles.changeFileIcon}>
+                  <FileIcon name={fileName} isDir={false} isOpen={false} />
+                </span>
+                <span style={styles.changeFileInfo}>
+                  <span style={styles.changeFileName}>{fileName}</span>
+                  {dir && <span style={styles.changeFileDir}>{dir}</span>}
+                </span>
+                <span style={styles.statusGlyphWrap}>
+                  <ChangeStatusGlyph status={f.status} />
+                </span>
+              </div>
+            );
+          })}
+        </>
+      )}
+    </ScrollArea>
+  );
+}
+
 // --- Main FileExplorer ---
 
 interface FileExplorerProps {
@@ -1484,6 +1663,9 @@ export function FileExplorer({ onCollapse, flushLeft }: FileExplorerProps) {
   const openGitDiffOverlay = useWorkspaceStore((s) => s.openGitDiffOverlay);
   const gitDiffOverlayOpen = useWorkspaceStore((s) => s.gitDiffOverlayOpen);
   const gitDiffOverlayPath = useWorkspaceStore((s) => s.gitDiffOverlayPath);
+  const prReviewOverlayOpen = useWorkspaceStore((s) => s.prReviewOverlayOpen);
+  const prReviewOverlayPath = useWorkspaceStore((s) => s.prReviewOverlayPath);
+  const openPrReviewOverlay = useWorkspaceStore((s) => s.openPrReviewOverlay);
   const setActivePathIndex = useWorkspaceStore((s) => s.setActivePathIndex);
   const ws = workspaces.find((w) => w.id === activeWorkspaceId);
   const [gitRoots, setGitRoots] = useState<Set<string>>(new Set());
@@ -1651,6 +1833,11 @@ export function FileExplorer({ onCollapse, flushLeft }: FileExplorerProps) {
     openGitDiffOverlay(rootPath, filePath);
   }
 
+  function handleSelectPrFile(rootPath: string, filePath: string) {
+    // Open/scroll the PR review overlay to this file
+    openPrReviewOverlay(rootPath, filePath);
+  }
+
   return (
     <div className="no-select" style={styles.container}>
       <div style={styles.explorerHeader}>
@@ -1696,8 +1883,10 @@ export function FileExplorer({ onCollapse, flushLeft }: FileExplorerProps) {
               rootPath={p}
               isGitRepo={gitRoots.has(p)}
               showChanges={gitDiffOverlayOpen && gitDiffOverlayPath === p}
+              showPrFiles={prReviewOverlayOpen && prReviewOverlayPath === p}
               onToggleChanges={() => handleGitIconClick(p)}
               onSelectChangeFile={handleSelectFile}
+              onSelectPrFile={handleSelectPrFile}
             />
           </div>
         ))}
@@ -1762,16 +1951,16 @@ const styles: Record<string, React.CSSProperties> = {
   prBadge: {
     display: "inline-flex",
     alignItems: "center",
-    gap: 4,
-    padding: "2px 8px",
-    borderRadius: 10,
+    gap: 3,
+    padding: "2px 4px",
+    background: "none",
+    border: "none",
     fontSize: 11,
-    fontWeight: 600,
-    color: "#ddd",
-    background: "#333",
+    fontWeight: 700,
+    fontFamily: "'SF Mono', 'Menlo', monospace",
     lineHeight: "16px",
     flexShrink: 0,
-    marginRight: 4,
+    borderRadius: 4,
   },
   rootRowSticky: {
     position: "sticky" as const,
@@ -1841,6 +2030,23 @@ const styles: Record<string, React.CSSProperties> = {
     marginLeft: 4,
     fontSize: 11,
     fontWeight: 600,
+  },
+  behindCount: {
+    color: "#e8b930",
+    marginLeft: 4,
+    fontSize: 11,
+    fontWeight: 600,
+  },
+  rebaseBtn: {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    background: "none",
+    border: "none",
+    padding: "2px",
+    flexShrink: 0,
+    borderRadius: 4,
+    cursor: "pointer",
   },
   node: {
     display: "flex",

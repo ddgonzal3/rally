@@ -65,6 +65,62 @@ pub struct ChangesSummary {
     pub untracked: Vec<String>,
 }
 
+#[derive(Debug, Clone, Serialize)]
+pub struct CommitEntry {
+    pub sha: String,
+    pub message: String,
+    pub author: String,
+    pub date: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PrCommit {
+    pub sha: String,
+    pub message_headline: String,
+    pub author: String,
+    pub committed_date: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PrDetails {
+    pub number: u32,
+    pub title: String,
+    pub url: String,
+    pub state: String,
+    pub is_draft: bool,
+    pub mergeable: String,
+    pub review_decision: Option<String>,
+    pub checks_status: Option<String>,
+    pub body: String,
+    pub author: String,
+    pub base_branch: String,
+    pub head_branch: String,
+    pub additions: u32,
+    pub deletions: u32,
+    pub changed_files: u32,
+    pub created_at: String,
+    pub updated_at: String,
+    pub commits: Vec<PrCommit>,
+    pub labels: Vec<String>,
+    pub comments: Vec<PrComment>,
+    pub reviews: Vec<PrReview>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PrComment {
+    pub author: String,
+    pub body: String,
+    pub created_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PrReview {
+    pub author: String,
+    pub body: String,
+    pub state: String, // "APPROVED" | "CHANGES_REQUESTED" | "COMMENTED" | "DISMISSED" | "PENDING"
+    pub created_at: String,
+}
+
 fn config_dir() -> PathBuf {
     dirs_next().unwrap_or_else(|| PathBuf::from("."))
 }

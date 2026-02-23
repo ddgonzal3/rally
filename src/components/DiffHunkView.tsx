@@ -90,7 +90,7 @@ function computeHunkOldEnd(hunk: DiffHunk): number {
 interface DiffFileViewProps {
   hunks: DiffHunk[];
   filePath: string;
-  tab: "unstaged" | "staged";
+  tab: "unstaged" | "staged" | "pr";
   onHunkRevert?: (hunkIndex: number) => void;
   onHunkStage?: (hunkIndex: number) => void;
 }
@@ -178,7 +178,7 @@ function ChangeGroup({
   lines: DiffLine[];
   lang: string | null;
   hunkIndex: number;
-  tab: "unstaged" | "staged";
+  tab: "unstaged" | "staged" | "pr";
   onRevert?: (hunkIndex: number) => void;
   onStage?: (hunkIndex: number) => void;
 }) {

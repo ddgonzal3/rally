@@ -5,7 +5,7 @@ import { parseUnifiedDiff, generateHunkPatch, createUntrackedDiffFile, type Diff
 import { DiffFileSection } from "./DiffFileSection";
 import { CommitModal } from "./CommitModal";
 import { addToast } from "./ToastContainer";
-import type { ChangesSummary } from "../lib/types";
+import type { ChangesSummary, CommitEntry } from "../lib/types";
 
 export function GitDiffOverlay() {
   const open = useWorkspaceStore((s) => s.gitDiffOverlayOpen);
@@ -18,8 +18,14 @@ export function GitDiffOverlay() {
   const gitStatus = useWorkspaceStore((s) =>
     rootPath ? s.gitStatuses[rootPath] : undefined,
   );
+  const mainBranch = useWorkspaceStore((s) => {
+    const ws = s.workspaces.find((w) => rootPath && w.paths.includes(rootPath));
+    return ws?.main_branch ?? "main";
+  });
 
   const [unstagedFiles, setUnstagedFiles] = useState<DiffFile[]>([]);
+  const [commits, setCommits] = useState<CommitEntry[]>([]);
+  const [commitsExpanded, setCommitsExpanded] = useState(true);
   const [stagedFiles, setStagedFiles] = useState<DiffFile[]>([]);
   const [changes, setChanges] = useState<ChangesSummary | null>(null);
   const [diffStatAdd, setDiffStatAdd] = useState(0);
@@ -51,11 +57,12 @@ export function GitDiffOverlay() {
   const fetchDiffs = useCallback(async () => {
     if (!rootPath) return;
     try {
-      const [unstagedRaw, stagedRaw, changesData, stat] = await Promise.all([
+      const [unstagedRaw, stagedRaw, changesData, stat, commitLog] = await Promise.all([
         api.gitDiff(rootPath, false),
         api.gitDiff(rootPath, true),
         api.gitChanges(rootPath),
         api.gitDiffStat(rootPath),
+        api.gitCommitLog(rootPath, mainBranch).catch(() => [] as CommitEntry[]),
       ]);
       const parsedUnstaged = parseUnifiedDiff(unstagedRaw);
 
@@ -81,10 +88,11 @@ export function GitDiffOverlay() {
       setChanges(changesData);
       setDiffStatAdd(stat[0]);
       setDiffStatDel(stat[1]);
+      setCommits(commitLog);
     } catch (e) {
       console.error("Failed to fetch diffs:", e);
     }
-  }, [rootPath]);
+  }, [rootPath, mainBranch]);
 
   // Fetch on open + handle single-file mode
   useEffect(() => {
@@ -271,6 +279,20 @@ export function GitDiffOverlay() {
     closeOverlay();
   }, [rootPath, startShipSession, closeOverlay]);
 
+  const relativeTime = useCallback((dateStr: string) => {
+    const now = Date.now();
+    const then = new Date(dateStr).getTime();
+    const diffSec = Math.floor((now - then) / 1000);
+    if (diffSec < 60) return "just now";
+    const diffMin = Math.floor(diffSec / 60);
+    if (diffMin < 60) return `${diffMin}m ago`;
+    const diffHr = Math.floor(diffMin / 60);
+    if (diffHr < 24) return `${diffHr}h ago`;
+    const diffDay = Math.floor(diffHr / 24);
+    if (diffDay < 30) return `${diffDay}d ago`;
+    return `${Math.floor(diffDay / 30)}mo ago`;
+  }, []);
+
   if (!mounted) return null;
 
   const activeFiles = activeTab === "unstaged" ? unstagedFiles : stagedFiles;
@@ -355,6 +377,40 @@ export function GitDiffOverlay() {
 
       {/* File list */}
       <div ref={fileListRef} style={s.fileList}>
+        {/* Commits section */}
+        {commits.length > 0 && (
+          <div style={s.commitsSection}>
+            <button
+              onClick={() => setCommitsExpanded((v) => !v)}
+              style={s.commitsSectionHeader}
+              className="changes-section-btn"
+            >
+              <svg
+                width="12"
+                height="12"
+                viewBox="0 0 12 12"
+                fill="none"
+                style={{ transform: commitsExpanded ? "rotate(90deg)" : "none", flexShrink: 0 }}
+              >
+                <path d="M4 2.4L8 6L4 9.6" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+              <span style={s.commitsSectionTitle}>Commits</span>
+              <span style={s.commitsBadge}>{commits.length}</span>
+            </button>
+            {commitsExpanded && (
+              <div style={s.commitsBody}>
+                {commits.map((c) => (
+                  <div key={c.sha} style={s.commitRow}>
+                    <span style={s.commitSha}>{c.sha.slice(0, 7)}</span>
+                    <span style={s.commitMsg}>{c.message}</span>
+                    <span style={s.commitDate}>{relativeTime(c.date)}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
         {activeFiles.length === 0 ? (
           <div style={s.empty}>
             {activeTab === "unstaged"
@@ -531,5 +587,74 @@ const s: Record<string, React.CSSProperties> = {
     letterSpacing: "-0.01em",
     transition: "opacity 150ms",
     lineHeight: "16px",
+  },
+  commitsSection: {
+    marginBottom: 16,
+    borderRadius: 8,
+    border: "1px solid #2a2a2a",
+    overflow: "hidden",
+  },
+  commitsSectionHeader: {
+    width: "100%",
+    display: "flex",
+    alignItems: "center",
+    gap: 6,
+    padding: "8px 12px",
+    border: "none",
+    background: "#222",
+    cursor: "pointer",
+    textAlign: "left" as const,
+    fontSize: 12,
+    fontWeight: 600,
+    color: "#e6edf3",
+  },
+  commitsSectionTitle: {
+    flex: 1,
+  },
+  commitsBadge: {
+    minWidth: 18,
+    height: 16,
+    padding: "0 5px",
+    borderRadius: 8,
+    background: "#404040",
+    color: "#fff",
+    fontSize: 11,
+    fontWeight: 600,
+    lineHeight: "16px",
+    textAlign: "center" as const,
+    boxSizing: "border-box" as const,
+  },
+  commitsBody: {
+    borderTop: "1px solid #2a2a2a",
+  },
+  commitRow: {
+    display: "flex",
+    alignItems: "center",
+    gap: 8,
+    padding: "6px 12px",
+    fontSize: 12,
+    borderBottom: "1px solid #222",
+  },
+  commitSha: {
+    fontFamily: "'SF Mono', 'Menlo', monospace",
+    fontSize: 11,
+    color: "#7aa2f7",
+    flexShrink: 0,
+    fontWeight: 500,
+  },
+  commitMsg: {
+    flex: 1,
+    minWidth: 0,
+    overflow: "hidden",
+    textOverflow: "ellipsis",
+    whiteSpace: "nowrap" as const,
+    color: "#e6edf3",
+    fontWeight: 500,
+  },
+  commitDate: {
+    fontSize: 11,
+    color: "#666",
+    flexShrink: 0,
+    fontWeight: 500,
   },
 };
