@@ -34,7 +34,7 @@ export function DiffHunkView({
             ? "#3fb950"
             : line.type === "delete"
               ? "#f85149"
-              : "#666";
+              : "#888";
 
         return (
           <div key={i} style={{ ...styles.line, background: bg }}>
@@ -69,7 +69,7 @@ const styles: Record<string, React.CSSProperties> = {
   hunkHeader: {
     padding: "4px 12px",
     background: "#1e2a3a",
-    color: "#6e7681",
+    color: "#8b949e",
     fontSize: 11,
     borderBottom: "1px solid #2a2a2a",
     overflow: "hidden",
@@ -86,7 +86,7 @@ const styles: Record<string, React.CSSProperties> = {
     minWidth: 44,
     textAlign: "right",
     paddingRight: 8,
-    color: "#484f58",
+    color: "#6e7681",
     userSelect: "none",
     flexShrink: 0,
   },

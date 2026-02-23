@@ -629,7 +629,7 @@ export function App() {
         </div>
       </div>
       <style>{`
-        .syn-comment { color: #6a737d; font-style: italic; }
+        .syn-comment { color: #8b949e; font-style: italic; }
         .syn-string { color: #a5d6ff; }
         .syn-keyword { color: #ff7b72; }
         .syn-literal { color: #79c0ff; }

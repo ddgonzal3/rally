@@ -132,7 +132,7 @@ const styles: Record<string, React.CSSProperties> = {
   },
   chevron: {
     fontSize: 10,
-    color: "#666",
+    color: "#aaa",
     width: 14,
     flexShrink: 0,
   },
@@ -199,7 +199,7 @@ const styles: Record<string, React.CSSProperties> = {
     borderRadius: 6,
     border: "none",
     background: "transparent",
-    color: "#888",
+    color: "#bbb",
     cursor: "pointer",
     transition: "color 150ms, background 150ms",
   },
@@ -222,7 +222,7 @@ const styles: Record<string, React.CSSProperties> = {
   },
   noContent: {
     padding: "12px 0",
-    color: "#484f58",
+    color: "#888",
     fontSize: 12,
     fontStyle: "italic",
     textAlign: "center",
