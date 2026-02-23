@@ -1,4 +1,4 @@
-<\!-- rally-review-pr-v3 -->
+<\!-- rally-review-pr-v4 -->
 # PR Review (Edit, Fix Loop & Stage)
 
 You are a senior engineer orchestrating a thorough, iterative code review. Your goal is to leave the code **meaningfully better** than you found it.
@@ -73,19 +73,45 @@ Changed files: <file list>
 
 ### Large PRs (5+ files or multiple layers)
 
-Launch **three** Task agents in parallel (subagent_type: `general-purpose`), each with a focused perspective. Give each agent the same base context (branch, file list, instructions to read the diff and files) but different checklist sections:
+**PARALLEL EXECUTION REQUIRED**: You MUST launch all 3 Task agents below in a SINGLE response message (3 Task tool calls in one message). Do NOT launch them sequentially — do NOT wait for one agent to finish before launching the next. All 3 must appear in the same tool-call batch.
 
-| Agent      | Focus Areas                                                | Checklist Sections |
-| ---------- | ---------------------------------------------------------- | ------------------ |
-| Reviewer A | Architecture, patterns, DRY compliance, service boundaries | 3, 4               |
-| Reviewer B | Correctness, security, edge cases, resource cleanup        | 1, 2, 6            |
-| Reviewer C | Readability, type safety, PR hygiene, dead code            | 5, 7, 8            |
+Launch three Task agents (subagent_type: `general-purpose`). Each agent gets a SHORT prompt that tells it to read the full checklist from the review-pr.md file itself. This keeps prompts compact so you can emit all 3 at once.
 
-Each agent prompt should include:
-- The base branch and file list
-- Instructions to run `git diff` and read all changed files
-- Only their assigned checklist sections
-- The severity levels and output format
+**Agent A** — Architecture & Code Cleanliness (fill in {BASE} and {FILES}):
+
+```
+You are reviewing a PR for architecture and code cleanliness.
+BASE_BRANCH: {BASE} | Changed files: {FILES}
+
+1. Run: git diff $(git merge-base HEAD {BASE})...HEAD
+2. Read each changed file completely
+3. Read ~/.rally/commands/review-pr.md — review against checklist sections 3 (Architecture) and 4 (Code Cleanliness) ONLY
+4. Return findings using the Output Format in that file. Include severity levels.
+```
+
+**Agent B** — Correctness, Security & Performance (fill in {BASE} and {FILES}):
+
+```
+You are reviewing a PR for correctness, security, and performance.
+BASE_BRANCH: {BASE} | Changed files: {FILES}
+
+1. Run: git diff $(git merge-base HEAD {BASE})...HEAD
+2. Read each changed file completely
+3. Read ~/.rally/commands/review-pr.md — review against checklist sections 1 (Correctness), 2 (Security), and 6 (Performance) ONLY
+4. Return findings using the Output Format in that file. Include severity levels.
+```
+
+**Agent C** — Readability, Type Safety & PR Hygiene (fill in {BASE} and {FILES}):
+
+```
+You are reviewing a PR for readability, type safety, and PR hygiene.
+BASE_BRANCH: {BASE} | Changed files: {FILES}
+
+1. Run: git diff $(git merge-base HEAD {BASE})...HEAD
+2. Read each changed file completely
+3. Read ~/.rally/commands/review-pr.md — review against checklist sections 5 (Readability), 7 (Type Safety), and 8 (PR Hygiene) ONLY
+4. Return findings using the Output Format in that file. Include severity levels.
+```
 
 ### Review Checklist (Include in Agent Prompts)
 
