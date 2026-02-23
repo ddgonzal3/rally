@@ -1,13 +1,37 @@
+use std::sync::OnceLock;
 use std::time::Duration;
 
 use tokio::process::Command;
 
 use crate::workspace::{ChangedFile, ChangesSummary, GitStatus, PrStatus, PushResult};
 
+/// Get the full login shell PATH, cached for the process lifetime.
+/// When launched as a .app bundle, macOS gives a minimal PATH (/usr/bin:/bin:/usr/sbin:/sbin).
+/// Tools like `gh` installed via Homebrew (/opt/homebrew/bin) won't be found.
+/// This resolves the full PATH from a login shell, just like pty_manager does for PTY sessions.
+fn full_path() -> &'static str {
+    static PATH: OnceLock<String> = OnceLock::new();
+    PATH.get_or_init(|| {
+        let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/zsh".to_string());
+        if let Ok(output) = std::process::Command::new(&shell)
+            .args(["-lc", "echo $PATH"])
+            .output()
+        {
+            let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
+            if !path.is_empty() {
+                return path;
+            }
+        }
+        // Fallback: current PATH (works when launched from terminal)
+        std::env::var("PATH").unwrap_or_default()
+    })
+}
+
 /// Run a git command in a given directory and return stdout (async)
 pub async fn git_cmd(cwd: &str, args: &[&str]) -> Result<String, String> {
     let output = Command::new("git")
         .args(args)
+        .env("PATH", full_path())
         .current_dir(cwd)
         .output()
         .await
@@ -27,6 +51,7 @@ async fn gh(cwd: &str, args: &[&str]) -> Result<String, String> {
         Duration::from_secs(30),
         Command::new("gh")
             .args(args)
+            .env("PATH", full_path())
             .current_dir(cwd)
             .output(),
     )
@@ -270,8 +295,21 @@ pub async fn merge_pr(cwd: &str, method: &str) -> Result<String, String> {
 
 /// Get detailed changes: staged, unstaged, and untracked files.
 /// Parses `git status --porcelain` two-column format.
+/// NOTE: Cannot use git_cmd() here because it trims output, which strips
+/// the leading space that distinguishes unstaged-only files (e.g. " M file").
 pub async fn changes(cwd: &str) -> Result<ChangesSummary, String> {
-    let output = git_cmd(cwd, &["status", "--porcelain"]).await?;
+    let raw = Command::new("git")
+        .args(&["status", "--porcelain"])
+        .env("PATH", full_path())
+        .current_dir(cwd)
+        .output()
+        .await
+        .map_err(|e| format!("Failed to run git status: {}", e))?;
+    if !raw.status.success() {
+        let stderr = String::from_utf8_lossy(&raw.stderr).trim().to_string();
+        return Err(format!("git status --porcelain failed: {}", stderr));
+    }
+    let output = String::from_utf8_lossy(&raw.stdout).to_string();
     let mut staged = Vec::new();
     let mut unstaged = Vec::new();
     let mut untracked = Vec::new();
@@ -353,6 +391,100 @@ pub async fn discard_file(cwd: &str, file_path: &str, is_untracked: bool) -> Res
         git_cmd(cwd, &["checkout", "--", file_path]).await?;
     }
     Ok(())
+}
+
+/// Apply a patch via stdin to `git apply`.
+/// `reverse` = true for reverting changes, `cached` = true for staging hunks.
+pub async fn apply_patch(cwd: &str, patch: &str, reverse: bool, cached: bool) -> Result<String, String> {
+    let mut args = vec!["apply"];
+    if reverse {
+        args.push("--reverse");
+    }
+    if cached {
+        args.push("--cached");
+    }
+    let mut child = tokio::process::Command::new("git")
+        .args(&args)
+        .env("PATH", full_path())
+        .current_dir(cwd)
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .map_err(|e| format!("Failed to spawn git apply: {}", e))?;
+
+    if let Some(mut stdin) = child.stdin.take() {
+        use tokio::io::AsyncWriteExt;
+        stdin
+            .write_all(patch.as_bytes())
+            .await
+            .map_err(|e| format!("Failed to write patch to stdin: {}", e))?;
+    }
+
+    let output = child
+        .wait_with_output()
+        .await
+        .map_err(|e| format!("Failed to wait for git apply: {}", e))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("git apply failed: {}", stderr));
+    }
+
+    Ok(String::from_utf8_lossy(&output.stdout).to_string())
+}
+
+/// Get unified diff output for staged or unstaged changes.
+pub async fn diff(cwd: &str, staged: bool) -> Result<String, String> {
+    let mut args = vec!["diff", "--unified=3"];
+    if staged {
+        args.push("--cached");
+    }
+    let output = tokio::process::Command::new("git")
+        .args(&args)
+        .env("PATH", full_path())
+        .current_dir(cwd)
+        .output()
+        .await
+        .map_err(|e| format!("Failed to run git diff: {}", e))?;
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        return Err(format!("git diff failed: {}", stderr));
+    }
+    Ok(String::from_utf8_lossy(&output.stdout).to_string())
+}
+
+/// Get total line additions and deletions across staged and unstaged changes.
+pub async fn diff_stat(cwd: &str) -> Result<(i64, i64), String> {
+    let mut total_add: i64 = 0;
+    let mut total_del: i64 = 0;
+
+    for args in [&["diff", "--numstat"][..], &["diff", "--cached", "--numstat"][..]] {
+        let output = Command::new("git")
+            .args(args)
+            .env("PATH", full_path())
+            .current_dir(cwd)
+            .output()
+            .await
+            .map_err(|e| format!("Failed to run git diff --numstat: {}", e))?;
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        for line in stdout.lines() {
+            let parts: Vec<&str> = line.split('\t').collect();
+            if parts.len() >= 2 {
+                if let (Ok(a), Ok(d)) = (parts[0].parse::<i64>(), parts[1].parse::<i64>()) {
+                    total_add += a;
+                    total_del += d;
+                }
+            }
+        }
+    }
+
+    Ok((total_add, total_del))
+}
+
+/// Commit only what's currently staged (no auto-add).
+pub async fn commit_staged(cwd: &str, message: &str) -> Result<String, String> {
+    git_cmd(cwd, &["commit", "-m", message]).await
 }
 
 // ---------------------------------------------------------------------------

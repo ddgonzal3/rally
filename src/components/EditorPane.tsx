@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
-import Editor, { type OnMount } from "@monaco-editor/react";
+import Editor, { type OnMount, type BeforeMount } from "@monaco-editor/react";
 import { invoke } from "@tauri-apps/api/core";
 import { showContextMenu } from "../lib/contextMenu";
 
@@ -185,6 +185,17 @@ function TextEditor({ filePath }: { filePath: string }) {
     }
   }, [filePath]);
 
+  const handleBeforeMount: BeforeMount = useCallback((monaco) => {
+    monaco.editor.defineTheme("rally-dark", {
+      base: "vs-dark",
+      inherit: true,
+      rules: [],
+      colors: {
+        "editor.background": "#1b1b1b",
+      },
+    });
+  }, []);
+
   const handleMount: OnMount = useCallback(
     (editor, monaco) => {
       editorRef.current = editor;
@@ -256,12 +267,13 @@ function TextEditor({ filePath }: { filePath: string }) {
         height="100%"
         path={filePath}
         language={language}
-        theme="vs-dark"
+        theme="rally-dark"
         defaultValue={content}
         onChange={(value) => {
           contentRef.current = value ?? "";
           setDirty((prev) => (prev ? prev : true));
         }}
+        beforeMount={handleBeforeMount}
         onMount={handleMount}
         loading={<div style={styles.center} />}
         options={{
@@ -303,7 +315,7 @@ const styles: Record<string, React.CSSProperties> = {
     flex: 1,
     alignItems: "center",
     justifyContent: "center",
-    background: "#1e1e1e",
+    background: "#1b1b1b",
   },
   statusBar: {
     position: "absolute",
@@ -330,7 +342,7 @@ const styles: Record<string, React.CSSProperties> = {
     flex: 1,
     alignItems: "center",
     justifyContent: "center",
-    background: "#1e1e1e",
+    background: "#1b1b1b",
     overflow: "auto",
     padding: 24,
   },

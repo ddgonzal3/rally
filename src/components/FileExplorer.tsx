@@ -21,12 +21,17 @@ const expandedPaths = new Set<string>(
     try {
       const saved = localStorage.getItem("rally:expandedPaths");
       return saved ? JSON.parse(saved) : [];
-    } catch { return []; }
+    } catch {
+      return [];
+    }
   })(),
 );
 
 function saveExpandedPaths() {
-  localStorage.setItem("rally:expandedPaths", JSON.stringify([...expandedPaths]));
+  localStorage.setItem(
+    "rally:expandedPaths",
+    JSON.stringify([...expandedPaths]),
+  );
 }
 
 /** Module-level cache of directory listings — survives component unmount/remount */
@@ -45,7 +50,8 @@ function useSelectedFilePath() {
   useEffect(() => {
     const handler = () => setTick((t) => t + 1);
     document.addEventListener("rally:selection-change", handler);
-    return () => document.removeEventListener("rally:selection-change", handler);
+    return () =>
+      document.removeEventListener("rally:selection-change", handler);
   }, []);
   return selectedFilePath;
 }
@@ -59,15 +65,18 @@ interface FileEntry {
 
 // --- Inline edit state (module-level, shared across tree nodes) ---
 
-type InlineEditState = {
-  type: "rename";
-  path: string;
-} | {
-  type: "create";
-  parentPath: string;
-  isDir: boolean;
-  template?: string;
-} | null;
+type InlineEditState =
+  | {
+      type: "rename";
+      path: string;
+    }
+  | {
+      type: "create";
+      parentPath: string;
+      isDir: boolean;
+      template?: string;
+    }
+  | null;
 
 let inlineEdit: InlineEditState = null;
 let inlineEditVersion = 0;
@@ -81,7 +90,9 @@ function setInlineEdit(state: InlineEditState) {
   // from immediately re-entering rename mode in the same event cycle
   if (state === null) {
     inlineEditCooldown = true;
-    setTimeout(() => { inlineEditCooldown = false; }, 50);
+    setTimeout(() => {
+      inlineEditCooldown = false;
+    }, 50);
   }
   document.dispatchEvent(new Event("rally:inline-edit"));
 }
@@ -136,16 +147,19 @@ function InlineInput({
     });
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const commit = useCallback((value: string) => {
-    if (committed.current) return;
-    committed.current = true;
-    const trimmed = value.trim();
-    if (trimmed && trimmed !== defaultValue) {
-      onCommit(trimmed);
-    } else {
-      onCancel();
-    }
-  }, [defaultValue, onCommit, onCancel]);
+  const commit = useCallback(
+    (value: string) => {
+      if (committed.current) return;
+      committed.current = true;
+      const trimmed = value.trim();
+      if (trimmed && trimmed !== defaultValue) {
+        onCommit(trimmed);
+      } else {
+        onCancel();
+      }
+    },
+    [defaultValue, onCommit, onCancel],
+  );
 
   return (
     <div
@@ -157,7 +171,10 @@ function InlineInput({
       }}
     >
       {isDir ? <ChevronIcon open={false} /> : <span style={styles.spacer} />}
-      <FileIcon name={defaultValue || (isDir ? "folder" : "file")} isDir={!!isDir} />
+      <FileIcon
+        name={defaultValue || (isDir ? "folder" : "file")}
+        isDir={!!isDir}
+      />
       <input
         ref={inputRef}
         defaultValue={defaultValue}
@@ -173,24 +190,26 @@ function InlineInput({
           }
         }}
         onBlur={(e) => commit(e.currentTarget.value)}
-        style={{
-          flex: 1,
-          minWidth: 0,
-          background: "transparent",
-          border: "1px solid #007acc",
-          borderRadius: 2,
-          color: "#e0e0e0",
-          fontSize: 12,
-          fontWeight: 600,
-          fontFamily: "inherit",
-          padding: "1px 4px",
-          marginLeft: 2,
-          outline: "none",
-          lineHeight: "normal",
-          boxShadow: "0 0 0 1px rgba(0,122,204,0.3)",
-          WebkitUserSelect: "text",
-          userSelect: "text",
-        } as React.CSSProperties}
+        style={
+          {
+            flex: 1,
+            minWidth: 0,
+            background: "transparent",
+            border: "1px solid #007acc",
+            borderRadius: 2,
+            color: "#e0e0e0",
+            fontSize: 12,
+            fontWeight: 600,
+            fontFamily: "inherit",
+            padding: "1px 4px",
+            marginLeft: 2,
+            outline: "none",
+            lineHeight: "normal",
+            boxShadow: "0 0 0 1px rgba(0,122,204,0.3)",
+            WebkitUserSelect: "text",
+            userSelect: "text",
+          } as React.CSSProperties
+        }
       />
     </div>
   );
@@ -295,8 +314,10 @@ const FileTreeNode = React.memo(
     const btnRef = useRef<HTMLButtonElement>(null);
 
     const editState = useInlineEdit();
-    const isRenaming = editState?.type === "rename" && editState.path === entry.path;
-    const isCreatingHere = editState?.type === "create" && editState.parentPath === entry.path;
+    const isRenaming =
+      editState?.type === "rename" && editState.path === entry.path;
+    const isCreatingHere =
+      editState?.type === "create" && editState.parentPath === entry.path;
     const selected = useSelectedFilePath();
     const isSelected = entry.path === selected;
 
@@ -378,7 +399,6 @@ const FileTreeNode = React.memo(
         onOpenFile(activeWorkspaceId, entry.path);
       }
     }, [entry, loaded, activeWorkspaceId, onOpenFile]);
-
 
     const handleRemoveChild = useCallback(
       (path: string) => {
@@ -473,10 +493,16 @@ const FileTreeNode = React.memo(
                 // Notify parent to refresh
                 removeChild?.(entry.path);
                 // Re-list parent to get the renamed entry
-                const entries = await invoke<FileEntry[]>("list_directory", { path: parent });
+                const entries = await invoke<FileEntry[]>("list_directory", {
+                  path: parent,
+                });
                 directoryCache.set(parent, entries);
                 // Force re-render via a DOM event
-                document.dispatchEvent(new CustomEvent("rally:dir-refresh", { detail: { path: parent } }));
+                document.dispatchEvent(
+                  new CustomEvent("rally:dir-refresh", {
+                    detail: { path: parent },
+                  }),
+                );
               } catch (e) {
                 console.error("Rename failed:", e);
               }
@@ -495,10 +521,23 @@ const FileTreeNode = React.memo(
               setSelectedFilePath(entry.path);
               showContextMenu(
                 fileContextMenu(entry.path, rootPath, entry.is_dir, {
-                  onTrash: removeChild ? () => removeChild(entry.path) : undefined,
-                  onRename: () => setInlineEdit({ type: "rename", path: entry.path }),
-                  onNewFile: (p) => setInlineEdit({ type: "create", parentPath: p, isDir: false }),
-                  onNewFolder: (p) => setInlineEdit({ type: "create", parentPath: p, isDir: true }),
+                  onTrash: removeChild
+                    ? () => removeChild(entry.path)
+                    : undefined,
+                  onRename: () =>
+                    setInlineEdit({ type: "rename", path: entry.path }),
+                  onNewFile: (p) =>
+                    setInlineEdit({
+                      type: "create",
+                      parentPath: p,
+                      isDir: false,
+                    }),
+                  onNewFolder: (p) =>
+                    setInlineEdit({
+                      type: "create",
+                      parentPath: p,
+                      isDir: true,
+                    }),
                 }),
               );
             }}
@@ -509,7 +548,11 @@ const FileTreeNode = React.memo(
             ) : (
               <span style={styles.spacer} />
             )}
-            <FileIcon name={entry.name} isDir={entry.is_dir} isOpen={expanded} />
+            <FileIcon
+              name={entry.name}
+              isDir={entry.is_dir}
+              isOpen={expanded}
+            />
             <span style={styles.name}>{entry.name}</span>
           </button>
         )}
@@ -663,16 +706,17 @@ function GitStatusIcon({
             position: "absolute" as const,
             bottom: -2,
             right: changeCount < 10 ? -2 : -4,
-            fontSize: 9,
+            fontSize: 10,
             fontWeight: 700,
-            fontFamily: "-apple-system, BlinkMacSystemFont, 'SF Pro Text', system-ui, sans-serif",
-            lineHeight: "12px",
+            fontFamily:
+              "-apple-system, BlinkMacSystemFont, 'SF Pro Text', system-ui, sans-serif",
+            lineHeight: "14px",
             color: "#fff",
             background: "#3478e0",
-            borderRadius: 6,
-            padding: "0 3px",
-            minWidth: 12,
-            height: 12,
+            borderRadius: 7,
+            padding: "0 4px",
+            minWidth: 14,
+            height: 14,
             textAlign: "center" as const,
             boxSizing: "border-box" as const,
             WebkitFontSmoothing: "antialiased" as const,
@@ -702,29 +746,37 @@ function RootSection({
     rootPath: string,
     filePath: string,
     isUntracked: boolean,
+    section?: "staged" | "unstaged" | "untracked",
   ) => void;
 }) {
   const [filesExpanded, _setFilesExpanded] = useState(() => {
     const saved = localStorage.getItem(`rally:rootExpanded:${rootPath}`);
     return saved !== null ? saved === "true" : false;
   });
-  const setFilesExpanded = useCallback((v: boolean) => {
-    _setFilesExpanded(v);
-    localStorage.setItem(`rally:rootExpanded:${rootPath}`, String(v));
-  }, [rootPath]);
+  const setFilesExpanded = useCallback(
+    (v: boolean) => {
+      _setFilesExpanded(v);
+      localStorage.setItem(`rally:rootExpanded:${rootPath}`, String(v));
+    },
+    [rootPath],
+  );
   const [repoCollapsed, _setRepoCollapsed] = useState(() => {
     const saved = localStorage.getItem(`rally:repoCollapsed:${rootPath}`);
     return saved === "true";
   });
-  const setRepoCollapsed = useCallback((v: boolean) => {
-    _setRepoCollapsed(v);
-    localStorage.setItem(`rally:repoCollapsed:${rootPath}`, String(v));
-  }, [rootPath]);
+  const setRepoCollapsed = useCallback(
+    (v: boolean) => {
+      _setRepoCollapsed(v);
+      localStorage.setItem(`rally:repoCollapsed:${rootPath}`, String(v));
+    },
+    [rootPath],
+  );
   const [fsEntries, setFsEntries] = useState<FileEntry[]>([]);
   const [fsLoaded, setFsLoaded] = useState(false);
 
   const activeWorkspaceId = useWorkspaceStore((s) => s.activeWorkspaceId);
   const openFile = useWorkspaceStore((s) => s.openFile);
+  const openGitDiffOverlay = useWorkspaceStore((s) => s.openGitDiffOverlay);
   const removePathFromWorkspace = useWorkspaceStore(
     (s) => s.removePathFromWorkspace,
   );
@@ -762,10 +814,10 @@ function RootSection({
   }, [rootPath]);
 
   const editState = useInlineEdit();
-  const isCreatingAtRoot = editState?.type === "create" && (
-    editState.parentPath === rootPath ||
-    editState.parentPath.startsWith(rootPath + "/")
-  );
+  const isCreatingAtRoot =
+    editState?.type === "create" &&
+    (editState.parentPath === rootPath ||
+      editState.parentPath.startsWith(rootPath + "/"));
 
   const handleRemoveRootChild = useCallback((path: string) => {
     setFsEntries((prev) => prev.filter((e) => e.path !== path));
@@ -796,30 +848,34 @@ function RootSection({
     const actions: Parameters<typeof showContextMenu>[0] = [
       {
         label: "New File",
-        action: () => setInlineEdit({ type: "create", parentPath: rootPath, isDir: false }),
+        action: () =>
+          setInlineEdit({ type: "create", parentPath: rootPath, isDir: false }),
       },
       {
         label: "New Folder",
-        action: () => setInlineEdit({ type: "create", parentPath: rootPath, isDir: true }),
+        action: () =>
+          setInlineEdit({ type: "create", parentPath: rootPath, isDir: true }),
       },
       "separator",
       {
         label: "New Script",
-        action: () => setInlineEdit({
-          type: "create",
-          parentPath: rootPath + "/scripts",
-          isDir: false,
-          template: "#!/bin/bash\n\n",
-        }),
+        action: () =>
+          setInlineEdit({
+            type: "create",
+            parentPath: rootPath + "/scripts",
+            isDir: false,
+            template: "#!/bin/bash\n\n",
+          }),
       },
       {
         label: "New Command",
-        action: () => setInlineEdit({
-          type: "create",
-          parentPath: rootPath + "/.claude/commands",
-          isDir: false,
-          template: "# Command Name\n\nDescribe what this command does.\n",
-        }),
+        action: () =>
+          setInlineEdit({
+            type: "create",
+            parentPath: rootPath + "/.claude/commands",
+            isDir: false,
+            template: "# Command Name\n\nDescribe what this command does.\n",
+          }),
       },
       "separator",
       {
@@ -870,18 +926,24 @@ function RootSection({
 
   const handleToggleChanges = useCallback(() => {
     if (repoCollapsed) setRepoCollapsed(false);
-    onToggleChanges?.();
-  }, [repoCollapsed, setRepoCollapsed, onToggleChanges]);
+    // Only toggle the overlay — the inline ChangesPanel derives from overlay state
+    openGitDiffOverlay(rootPath);
+  }, [repoCollapsed, setRepoCollapsed, openGitDiffOverlay, rootPath]);
 
   return (
     <div>
-      <div style={{
-        ...styles.rootRowSticky,
-        ...(repoCollapsed ? {
-          borderRadius: 6,
-          border: "1px solid #2e2e2e",
-        } : {}),
-      }} onContextMenu={handleContextMenu}>
+      <div
+        style={{
+          ...styles.rootRowSticky,
+          ...(repoCollapsed
+            ? {
+                borderRadius: 6,
+                border: "1px solid #2e2e2e",
+              }
+            : {}),
+        }}
+        onContextMenu={handleContextMenu}
+      >
         <div style={styles.rootRow}>
           <button
             onClick={(e) => {
@@ -910,13 +972,13 @@ function RootSection({
                     <span style={styles.aheadCount}>+{gitStatus.ahead}</span>
                   )}
                 </span>
-                <PrBadge pr={prStatus} />
               </div>
             )}
           </div>
           <div style={styles.rootActions}>
             {isGitRepo && (
               <>
+                <PrBadge pr={prStatus} />
                 <GitStatusIcon
                   status={gitStatus}
                   syncNeeded={pathSyncNeeded}
@@ -932,41 +994,46 @@ function RootSection({
         (showChanges ? (
           <ChangesPanel
             rootPath={rootPath}
-            onSelectFile={(filePath, isUntracked) =>
-              onSelectChangeFile(rootPath, filePath, isUntracked)
+            onSelectFile={(filePath, isUntracked, section) =>
+              onSelectChangeFile(rootPath, filePath, isUntracked, section)
             }
           />
         ) : (
           <>
-            {filesExpanded && isCreatingAtRoot && editState.type === "create" && (
-              <InlineInput
-                defaultValue={editState.template ? "" : ""}
-                depth={1}
-                isDir={editState.isDir}
-                onCommit={async (name) => {
-                  const targetDir = editState.parentPath;
-                  const newPath = targetDir + "/" + name;
-                  try {
-                    // Ensure target directory exists (for scripts/, .claude/commands/)
-                    await api.createDirectory(targetDir);
-                    if (editState.isDir) {
-                      await api.createDirectory(newPath);
-                    } else {
-                      await api.writeFileContent(newPath, editState.template ?? "");
+            {filesExpanded &&
+              isCreatingAtRoot &&
+              editState.type === "create" && (
+                <InlineInput
+                  defaultValue={editState.template ? "" : ""}
+                  depth={1}
+                  isDir={editState.isDir}
+                  onCommit={async (name) => {
+                    const targetDir = editState.parentPath;
+                    const newPath = targetDir + "/" + name;
+                    try {
+                      // Ensure target directory exists (for scripts/, .claude/commands/)
+                      await api.createDirectory(targetDir);
+                      if (editState.isDir) {
+                        await api.createDirectory(newPath);
+                      } else {
+                        await api.writeFileContent(
+                          newPath,
+                          editState.template ?? "",
+                        );
+                      }
+                      refreshRootEntries();
+                      // Open the file in editor if it's not a directory
+                      if (!editState.isDir && activeWorkspaceId) {
+                        openFile(activeWorkspaceId, newPath);
+                      }
+                    } catch (e) {
+                      console.error("Create failed:", e);
                     }
-                    refreshRootEntries();
-                    // Open the file in editor if it's not a directory
-                    if (!editState.isDir && activeWorkspaceId) {
-                      openFile(activeWorkspaceId, newPath);
-                    }
-                  } catch (e) {
-                    console.error("Create failed:", e);
-                  }
-                  setInlineEdit(null);
-                }}
-                onCancel={() => setInlineEdit(null)}
-              />
-            )}
+                    setInlineEdit(null);
+                  }}
+                  onCancel={() => setInlineEdit(null)}
+                />
+              )}
             {filesExpanded &&
               fsLoaded &&
               fsEntries.map((e) => (
@@ -1214,7 +1281,11 @@ function ChangesPanel({
   onSelectFile,
 }: {
   rootPath: string;
-  onSelectFile: (filePath: string, isUntracked: boolean) => void;
+  onSelectFile: (
+    filePath: string,
+    isUntracked: boolean,
+    section?: "staged" | "unstaged" | "untracked",
+  ) => void;
 }) {
   const [changes, setChanges] = useState<ChangesSummary | null>(null);
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
@@ -1310,9 +1381,13 @@ function ChangesPanel({
     }
   }
 
-  function handleSelect(path: string, isUntracked: boolean) {
+  function handleSelect(
+    path: string,
+    isUntracked: boolean,
+    section?: "staged" | "unstaged" | "untracked",
+  ) {
     setSelectedFile(path);
-    onSelectFile(path, isUntracked);
+    onSelectFile(path, isUntracked, section);
   }
 
   const total = changes
@@ -1340,7 +1415,7 @@ function ChangesPanel({
                   path={f.path}
                   status={f.status}
                   isSelected={selectedFile === f.path}
-                  onClick={() => handleSelect(f.path, false)}
+                  onClick={() => handleSelect(f.path, false, "staged")}
                   actionLabel="Unstage"
                   onAction={() => unstageFile(f.path)}
                 />
@@ -1358,7 +1433,7 @@ function ChangesPanel({
                   path={f.path}
                   status={f.status}
                   isSelected={selectedFile === f.path}
-                  onClick={() => handleSelect(f.path, false)}
+                  onClick={() => handleSelect(f.path, false, "unstaged")}
                   actionLabel="Stage"
                   onAction={() => stageFile(f.path)}
                   secondaryActionLabel="Discard"
@@ -1378,7 +1453,7 @@ function ChangesPanel({
                   path={p}
                   status="?"
                   isSelected={selectedFile === p}
-                  onClick={() => handleSelect(p, true)}
+                  onClick={() => handleSelect(p, true, "untracked")}
                   actionLabel="Stage"
                   onAction={() => stageFile(p)}
                   secondaryActionLabel="Discard"
@@ -1406,16 +1481,22 @@ export function FileExplorer({ onCollapse, flushLeft }: FileExplorerProps) {
   const activeWorkspaceId = useWorkspaceStore((s) => s.activeWorkspaceId);
   const workspaces = useWorkspaceStore((s) => s.workspaces);
   const addPathToWorkspace = useWorkspaceStore((s) => s.addPathToWorkspace);
-  const openDiff = useWorkspaceStore((s) => s.openDiff);
+  const openGitDiffOverlay = useWorkspaceStore((s) => s.openGitDiffOverlay);
+  const gitDiffOverlayOpen = useWorkspaceStore((s) => s.gitDiffOverlayOpen);
+  const gitDiffOverlayPath = useWorkspaceStore((s) => s.gitDiffOverlayPath);
   const setActivePathIndex = useWorkspaceStore((s) => s.setActivePathIndex);
   const ws = workspaces.find((w) => w.id === activeWorkspaceId);
   const [gitRoots, setGitRoots] = useState<Set<string>>(new Set());
   const [changesOpen, setChangesOpen] = useState<Set<string>>(() => {
     if (!activeWorkspaceId) return new Set();
     try {
-      const saved = localStorage.getItem(`rally:changesOpen:${activeWorkspaceId}`);
+      const saved = localStorage.getItem(
+        `rally:changesOpen:${activeWorkspaceId}`,
+      );
       return saved ? new Set(JSON.parse(saved)) : new Set();
-    } catch { return new Set(); }
+    } catch {
+      return new Set();
+    }
   });
 
   // Global Enter-to-rename: when a file is selected in the tree, Enter triggers rename
@@ -1424,7 +1505,13 @@ export function FileExplorer({ onCollapse, flushLeft }: FileExplorerProps) {
       if (e.key !== "Enter" || e.metaKey || e.ctrlKey || e.altKey) return;
       // Don't trigger if focus is in an input, textarea, or contentEditable
       const active = document.activeElement;
-      if (active && (active.tagName === "INPUT" || active.tagName === "TEXTAREA" || (active as HTMLElement).isContentEditable)) return;
+      if (
+        active &&
+        (active.tagName === "INPUT" ||
+          active.tagName === "TEXTAREA" ||
+          (active as HTMLElement).isContentEditable)
+      )
+        return;
       if (!selectedFilePath || inlineEdit || inlineEditCooldown) return;
       e.preventDefault();
       setInlineEdit({ type: "rename", path: selectedFilePath });
@@ -1505,11 +1592,18 @@ export function FileExplorer({ onCollapse, flushLeft }: FileExplorerProps) {
 
   // Restore changes view when workspace changes
   useEffect(() => {
-    if (!activeWorkspaceId) { setChangesOpen(new Set()); return; }
+    if (!activeWorkspaceId) {
+      setChangesOpen(new Set());
+      return;
+    }
     try {
-      const saved = localStorage.getItem(`rally:changesOpen:${activeWorkspaceId}`);
+      const saved = localStorage.getItem(
+        `rally:changesOpen:${activeWorkspaceId}`,
+      );
       setChangesOpen(saved ? new Set(JSON.parse(saved)) : new Set());
-    } catch { setChangesOpen(new Set()); }
+    } catch {
+      setChangesOpen(new Set());
+    }
   }, [activeWorkspaceId]);
 
   if (!ws) {
@@ -1532,7 +1626,10 @@ export function FileExplorer({ onCollapse, flushLeft }: FileExplorerProps) {
       if (next.has(rootPath)) next.delete(rootPath);
       else next.add(rootPath);
       if (activeWorkspaceId) {
-        localStorage.setItem(`rally:changesOpen:${activeWorkspaceId}`, JSON.stringify([...next]));
+        localStorage.setItem(
+          `rally:changesOpen:${activeWorkspaceId}`,
+          JSON.stringify([...next]),
+        );
       }
       return next;
     });
@@ -1541,51 +1638,17 @@ export function FileExplorer({ onCollapse, flushLeft }: FileExplorerProps) {
   function handleSelectFile(
     rootPath: string,
     filePath: string,
-    isUntracked: boolean,
+    _isUntracked: boolean,
+    section?: "staged" | "unstaged" | "untracked",
   ) {
-    if (!activeWorkspaceId) return;
-    // Open diff in the first pane
-    const store = useWorkspaceStore.getState();
-    const layout = store.getOrCreateLayout(activeWorkspaceId);
-
-    // Find/reuse existing diff pane or open new
-    for (const [gid, group] of Object.entries(layout.groups)) {
-      const existing = group.panes.find((p) => p.type === "diff");
-      if (existing) {
-        // Update existing diff pane
-        store.transformPane(activeWorkspaceId, gid, existing.id, {
-          title: `Diff: ${filePath.split("/").pop() ?? filePath}`,
-          filePath,
-          cwd: rootPath,
-          command: isUntracked ? "untracked" : undefined,
-        });
-        store.setActivePane(activeWorkspaceId, gid, existing.id);
-        return;
-      }
+    // Open the git diff overlay for this repo, scrolled to the specific file
+    // If the file is staged, switch to the staged tab
+    if (section === "staged") {
+      useWorkspaceStore.getState().setGitDiffActiveTab("staged");
+    } else {
+      useWorkspaceStore.getState().setGitDiffActiveTab("unstaged");
     }
-
-    // No existing diff pane — open one
-    openDiff(activeWorkspaceId, rootPath);
-    // After opening, update it with the selected file
-    setTimeout(() => {
-      const updatedLayout = useWorkspaceStore
-        .getState()
-        .getOrCreateLayout(activeWorkspaceId);
-      for (const [gid, group] of Object.entries(updatedLayout.groups)) {
-        const pane = group.panes.find((p) => p.type === "diff");
-        if (pane) {
-          useWorkspaceStore
-            .getState()
-            .transformPane(activeWorkspaceId, gid, pane.id, {
-              title: `Diff: ${filePath.split("/").pop() ?? filePath}`,
-              filePath,
-              cwd: rootPath,
-              command: isUntracked ? "untracked" : undefined,
-            });
-          break;
-        }
-      }
-    }, 50);
+    openGitDiffOverlay(rootPath, filePath);
   }
 
   return (
@@ -1601,7 +1664,13 @@ export function FileExplorer({ onCollapse, flushLeft }: FileExplorerProps) {
           }}
           title="Add folder to workspace"
         >
-          <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+          <svg
+            width="12"
+            height="12"
+            viewBox="0 0 12 12"
+            fill="none"
+            aria-hidden="true"
+          >
             <path
               d="M6 2v8M2 6h8"
               stroke="currentColor"
@@ -1611,7 +1680,13 @@ export function FileExplorer({ onCollapse, flushLeft }: FileExplorerProps) {
           </svg>
         </button>
       </div>
-      <ScrollArea style={{ flex: 1, padding: "4px 3px", paddingLeft: flushLeft ? 7 : undefined }}>
+      <ScrollArea
+        style={{
+          flex: 1,
+          padding: "4px 3px",
+          paddingLeft: flushLeft ? 7 : undefined,
+        }}
+      >
         {ws.paths.map((p, index) => (
           <div
             key={p}
@@ -1620,7 +1695,7 @@ export function FileExplorer({ onCollapse, flushLeft }: FileExplorerProps) {
             <RootSection
               rootPath={p}
               isGitRepo={gitRoots.has(p)}
-              showChanges={changesOpen.has(p)}
+              showChanges={gitDiffOverlayOpen && gitDiffOverlayPath === p}
               onToggleChanges={() => handleGitIconClick(p)}
               onSelectChangeFile={handleSelectFile}
             />
@@ -1685,14 +1760,18 @@ const styles: Record<string, React.CSSProperties> = {
     borderRadius: 4,
   },
   prBadge: {
-    display: "inline-block",
-    padding: "0 4px",
-    borderRadius: 3,
-    fontSize: 9,
+    display: "inline-flex",
+    alignItems: "center",
+    gap: 4,
+    padding: "2px 8px",
+    borderRadius: 10,
+    fontSize: 11,
     fontWeight: 600,
-    color: "#ccc",
+    color: "#ddd",
     background: "#333",
     lineHeight: "16px",
+    flexShrink: 0,
+    marginRight: 4,
   },
   rootRowSticky: {
     position: "sticky" as const,
@@ -1743,7 +1822,7 @@ const styles: Record<string, React.CSSProperties> = {
     overflow: "hidden",
     textOverflow: "ellipsis",
     whiteSpace: "nowrap" as const,
-    fontSize: 13,
+    fontSize: 14,
     fontWeight: 600,
     color: "#eee",
   },
@@ -1753,14 +1832,14 @@ const styles: Record<string, React.CSSProperties> = {
     gap: 6,
   },
   rootBranch: {
-    fontSize: 10,
-    color: "#ccc",
+    fontSize: 12,
+    color: "#bbb",
     fontWeight: 600,
   },
   aheadCount: {
     color: "#e5a63a",
     marginLeft: 4,
-    fontSize: 9,
+    fontSize: 11,
     fontWeight: 600,
   },
   node: {

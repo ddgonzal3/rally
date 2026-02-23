@@ -6,7 +6,7 @@ use tauri::Emitter;
 
 use crate::git_ops;
 use crate::git_watch::GitWatchState;
-use crate::workspace::{self, ChangesSummary, GitStatus, PrStatus, Workspace};
+use crate::workspace::{self, ChangesSummary, GitStatus, PrStatus, PushResult, Workspace};
 
 fn emit_workspaces_updated(app: &tauri::AppHandle) {
     if let Err(e) = app.emit("rally-workspaces-updated", ()) {
@@ -224,6 +224,36 @@ pub async fn git_discard_file(
     is_untracked: bool,
 ) -> Result<(), String> {
     git_ops::discard_file(&workspace_path, &file_path, is_untracked).await
+}
+
+#[tauri::command]
+pub async fn git_diff(workspace_path: String, staged: bool) -> Result<String, String> {
+    git_ops::diff(&workspace_path, staged).await
+}
+
+#[tauri::command]
+pub async fn git_apply_patch(workspace_path: String, patch: String, reverse: bool, cached: bool) -> Result<String, String> {
+    git_ops::apply_patch(&workspace_path, &patch, reverse, cached).await
+}
+
+#[tauri::command]
+pub async fn git_commit_staged(workspace_path: String, message: String) -> Result<String, String> {
+    git_ops::commit_staged(&workspace_path, &message).await
+}
+
+#[tauri::command]
+pub async fn git_push(workspace_path: String) -> Result<PushResult, String> {
+    git_ops::push(&workspace_path).await
+}
+
+#[tauri::command]
+pub async fn git_create_pr(workspace_path: String) -> Result<String, String> {
+    git_ops::create_pr(&workspace_path, None, None).await
+}
+
+#[tauri::command]
+pub async fn git_diff_stat(workspace_path: String) -> Result<(i64, i64), String> {
+    git_ops::diff_stat(&workspace_path).await
 }
 
 #[tauri::command]
