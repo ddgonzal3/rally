@@ -143,6 +143,8 @@ const styles: Record<string, React.CSSProperties> = {
     paddingTop: 0,
     overflow: "hidden",
     height: "100%",
+    userSelect: "none",
+    cursor: "default",
   },
   header: {
     display: "flex",
@@ -187,6 +189,7 @@ const styles: Record<string, React.CSSProperties> = {
     color: "#ddd",
     textAlign: "left" as const,
     fontSize: 13,
+    cursor: "pointer",
   },
   itemActive: {
     background: "#2a2a2a",
