@@ -105,6 +105,44 @@ export function parseUnifiedDiff(raw: string): DiffFile[] {
 }
 
 /**
+ * Create a synthetic DiffFile for an untracked (new) file given its content.
+ * Every line appears as an addition.
+ */
+export function createUntrackedDiffFile(filePath: string, content: string): DiffFile {
+  const contentLines = content.split("\n");
+  // Remove trailing empty line from split (if file ends with newline)
+  if (contentLines.length > 0 && contentLines[contentLines.length - 1] === "") {
+    contentLines.pop();
+  }
+
+  const lines: DiffLine[] = contentLines.map((line, i) => ({
+    type: "add" as const,
+    content: line,
+    newLineNumber: i + 1,
+  }));
+
+  return {
+    oldPath: filePath,
+    newPath: filePath,
+    additions: lines.length,
+    deletions: 0,
+    hunks: lines.length > 0
+      ? [
+          {
+            header: `@@ -0,0 +1,${lines.length} @@`,
+            oldStart: 0,
+            newStart: 1,
+            lines,
+          },
+        ]
+      : [],
+    isNew: true,
+    isDeleted: false,
+    isRenamed: false,
+  };
+}
+
+/**
  * Reconstruct a valid unified diff patch string for a single hunk.
  * This can be fed to `git apply` (with --reverse for revert, --cached for stage).
  */

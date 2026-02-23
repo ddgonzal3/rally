@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import { useWorkspaceStore } from "../stores/workspaceStore";
 import { api } from "../lib/tauri";
-import { parseUnifiedDiff, generateHunkPatch, type DiffFile } from "../lib/diffParser";
+import { parseUnifiedDiff, generateHunkPatch, createUntrackedDiffFile, type DiffFile } from "../lib/diffParser";
 import { DiffFileSection } from "./DiffFileSection";
 import { CommitModal } from "./CommitModal";
 import { addToast } from "./ToastContainer";
@@ -57,7 +57,26 @@ export function GitDiffOverlay() {
         api.gitChanges(rootPath),
         api.gitDiffStat(rootPath),
       ]);
-      setUnstagedFiles(parseUnifiedDiff(unstagedRaw));
+      const parsedUnstaged = parseUnifiedDiff(unstagedRaw);
+
+      // Synthesize diff entries for untracked files (git diff doesn't include them)
+      if (changesData.untracked.length > 0) {
+        const untrackedDiffs = await Promise.all(
+          changesData.untracked.map(async (filePath) => {
+            try {
+              const fullPath = `${rootPath}/${filePath}`;
+              const content = await api.readFileContent(fullPath);
+              return createUntrackedDiffFile(filePath, content);
+            } catch {
+              // Binary or unreadable file — create empty diff entry
+              return createUntrackedDiffFile(filePath, "");
+            }
+          }),
+        );
+        parsedUnstaged.push(...untrackedDiffs);
+      }
+
+      setUnstagedFiles(parsedUnstaged);
       setStagedFiles(parseUnifiedDiff(stagedRaw));
       setChanges(changesData);
       setDiffStatAdd(stat[0]);
