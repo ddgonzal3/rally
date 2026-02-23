@@ -1,6 +1,14 @@
 import { invoke } from "@tauri-apps/api/core";
 import type { Workspace, GitStatus, PrStatus, PrDetails, PushResult, ChangesSummary, CommitEntry, ScriptEntry, ShipSignal, RallyScriptInfo } from "./types";
 
+/** Open a URL in the user's default browser via Tauri shell plugin. */
+export function openUrl(url: string) {
+  if (!/^https?:\/\//i.test(url)) return;
+  invoke("plugin:shell|open", { path: url }).catch(() => {
+    window.open(url, "_blank");
+  });
+}
+
 export const api = {
   listWorkspaces: () => invoke<Workspace[]>("list_workspaces"),
 

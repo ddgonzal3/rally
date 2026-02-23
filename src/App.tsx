@@ -167,7 +167,7 @@ export function App() {
     }, 5000);
     const fetchInterval = setInterval(() => {
       void runFetchAll();
-    }, 16000);
+    }, 60000);
 
     return () => {
       cancelled = true;

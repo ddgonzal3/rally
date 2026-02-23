@@ -4,6 +4,7 @@ import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { addToast } from "../components/ToastContainer";
+import { openUrl } from "../lib/tauri";
 import type {
   Workspace,
   GitStatus,
@@ -873,7 +874,7 @@ export const useWorkspaceStore = create<WorkspaceState>()(
             title: `Merging PR #${signal.pr_number}`,
             message: signal.summary || "Auto-merging approved PR",
             actions: signal.pr_url
-              ? [{ label: "View PR", onClick: () => invoke("plugin:shell|open", { path: signal.pr_url }) }]
+              ? [{ label: "View PR", onClick: () => openUrl(signal.pr_url) }]
               : undefined,
           });
           // Don't await — let it run async
@@ -890,7 +891,7 @@ export const useWorkspaceStore = create<WorkspaceState>()(
 
             const actions: { label: string; onClick: () => void }[] = [];
             if (signal.pr_url) {
-              actions.push({ label: "View PR", onClick: () => invoke("plugin:shell|open", { path: signal.pr_url }) });
+              actions.push({ label: "View PR", onClick: () => openUrl(signal.pr_url) });
             }
 
             addToast({
@@ -962,7 +963,7 @@ export const useWorkspaceStore = create<WorkspaceState>()(
         title: `PR #${signal.pr_number} Merged`,
         message: `Branch synced with ${mainBranch} and ready to work on`,
         actions: signal.pr_url
-          ? [{ label: "View PR", onClick: () => invoke("plugin:shell|open", { path: signal.pr_url }) }]
+          ? [{ label: "View PR", onClick: () => openUrl(signal.pr_url) }]
           : undefined,
       });
 

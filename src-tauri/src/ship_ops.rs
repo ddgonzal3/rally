@@ -361,30 +361,6 @@ pub async fn post_merge_sync(
     main_branch: String,
     merged_branch: String,
 ) -> Result<String, String> {
-    // 1. Switch to feature branch first and hard-reset far enough back
-    //    that no conflicts are possible after the squash merge.
-    git_ops::git_cmd(&cwd, &["checkout", &merged_branch]).await?;
-    git_ops::git_cmd(&cwd, &["reset", "--hard", &main_branch]).await?;
-
-    // 2. Update main with the merged changes
-    git_ops::git_cmd(&cwd, &["checkout", &main_branch]).await?;
-    git_ops::git_cmd(&cwd, &["pull"]).await?;
-
-    // 3. Rebase feature branch onto updated main
-    git_ops::git_cmd(&cwd, &["rebase", &main_branch, &merged_branch]).await?;
-
-    // 4. Push the synced branch to remote so local and remote stay in sync.
-    //    Try --force-with-lease first; fall back to --force if the remote branch
-    //    was deleted by GitHub after squash merge.
-    let push_result = git_ops::git_cmd(&cwd, &["push", "--force-with-lease"]).await;
-    match push_result {
-        Ok(_) => {},
-        Err(ref e) if e.contains("stale info") || e.contains("failed to push") || e.contains("rejected") => {
-            // Remote branch may have been deleted or diverged — force push to recreate
-            git_ops::git_cmd(&cwd, &["push", "--force"]).await?;
-        },
-        Err(e) => return Err(e),
-    }
-
+    git_ops::sync_branch_after_merge(&cwd, &merged_branch, &main_branch).await?;
     Ok(format!("Synced {} with {}", merged_branch, main_branch))
 }

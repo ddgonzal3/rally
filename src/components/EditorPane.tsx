@@ -3,6 +3,7 @@ import Editor, { type OnMount, type BeforeMount } from "@monaco-editor/react";
 import { invoke } from "@tauri-apps/api/core";
 import { showContextMenu } from "../lib/contextMenu";
 import { useWorkspaceStore } from "../stores/workspaceStore";
+import { addToast } from "./ToastContainer";
 
 interface EditorPaneProps {
   filePath: string;
@@ -180,8 +181,8 @@ function TextEditor({ filePath, paneId }: { filePath: string; paneId: string }) 
         content: contentRef.current,
       });
       markClean(paneId);
-    } catch (_e) {
-      // write_file_content errors are rare (permissions, disk full)
+    } catch (e) {
+      addToast({ type: "warning", title: "Save failed", message: String(e instanceof Error ? e.message : e) });
     }
   }, [filePath, paneId, markClean]);
 

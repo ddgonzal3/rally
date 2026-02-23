@@ -821,7 +821,7 @@ pub async fn commit_log(cwd: &str, main_branch: &str, limit: u32) -> Result<Vec<
     Ok(commits)
 }
 
-async fn sync_branch_after_merge(cwd: &str, branch: &str, main_branch: &str) -> Result<(), String> {
+pub async fn sync_branch_after_merge(cwd: &str, branch: &str, main_branch: &str) -> Result<(), String> {
     // Hard-reset feature branch to main first (clears all squash-merged commits)
     git_cmd(cwd, &["checkout", branch]).await?;
     git_cmd(cwd, &["reset", "--hard", main_branch]).await?;

@@ -6,6 +6,7 @@ import { DiffFileSection } from "./DiffFileSection";
 import { CommitModal } from "./CommitModal";
 import { addToast } from "./ToastContainer";
 import type { ChangesSummary, CommitEntry } from "../lib/types";
+import { relativeTime } from "../lib/time";
 
 export function GitDiffOverlay() {
   const open = useWorkspaceStore((s) => s.gitDiffOverlayOpen);
@@ -279,19 +280,7 @@ export function GitDiffOverlay() {
     closeOverlay();
   }, [rootPath, startShipSession, closeOverlay]);
 
-  const relativeTime = useCallback((dateStr: string) => {
-    const now = Date.now();
-    const then = new Date(dateStr).getTime();
-    const diffSec = Math.floor((now - then) / 1000);
-    if (diffSec < 60) return "just now";
-    const diffMin = Math.floor(diffSec / 60);
-    if (diffMin < 60) return `${diffMin}m ago`;
-    const diffHr = Math.floor(diffMin / 60);
-    if (diffHr < 24) return `${diffHr}h ago`;
-    const diffDay = Math.floor(diffHr / 24);
-    if (diffDay < 30) return `${diffDay}d ago`;
-    return `${Math.floor(diffDay / 30)}mo ago`;
-  }, []);
+  // relativeTime imported from lib/time.ts
 
   if (!mounted) return null;
 

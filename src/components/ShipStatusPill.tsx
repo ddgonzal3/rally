@@ -3,7 +3,7 @@ import { Terminal as XTerminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { invoke } from "@tauri-apps/api/core";
 import { useWorkspaceStore, shipOutputBuffer } from "../stores/workspaceStore";
-import { api } from "../lib/tauri";
+import { api, openUrl } from "../lib/tauri";
 import type { ShipSession } from "../lib/types";
 
 const encoder = new TextEncoder();
@@ -20,12 +20,6 @@ const PHASE_LABELS: Record<string, string> = {
   finishing: "Finishing up...",
   complete: "Ship complete",
 };
-
-function openUrl(url: string) {
-  invoke("plugin:shell|open", { path: url }).catch(() => {
-    window.open(url, "_blank");
-  });
-}
 
 /** Derive display state from the session + live PR status */
 function getDisplayState(session: ShipSession, livePrUrl: string | null) {

@@ -1,31 +1,12 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
-import { invoke } from "@tauri-apps/api/core";
 import { useWorkspaceStore } from "../stores/workspaceStore";
-import { api } from "../lib/tauri";
+import { api, openUrl } from "../lib/tauri";
 import { parseUnifiedDiff, type DiffFile } from "../lib/diffParser";
 import { DiffFileSection } from "./DiffFileSection";
 import { addToast } from "./ToastContainer";
 import { renderMarkdown, markdownStyles } from "../lib/markdown";
 import type { PrDetails, PrComment, PrReview } from "../lib/types";
-
-function openUrl(url: string) {
-  invoke("plugin:shell|open", { path: url }).catch(() => {
-    window.open(url, "_blank");
-  });
-}
-
-function relativeTime(isoDate: string): string {
-  if (!isoDate) return "";
-  const diff = Date.now() - new Date(isoDate).getTime();
-  const mins = Math.floor(diff / 60000);
-  if (mins < 1) return "just now";
-  if (mins < 60) return `${mins}m ago`;
-  const hrs = Math.floor(mins / 60);
-  if (hrs < 24) return `${hrs}h ago`;
-  const days = Math.floor(hrs / 24);
-  if (days < 30) return `${days}d ago`;
-  return new Date(isoDate).toLocaleDateString();
-}
+import { relativeTime } from "../lib/time";
 
 // Merge comments and reviews into a single chronological timeline
 type TimelineItem =
