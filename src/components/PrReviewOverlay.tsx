@@ -201,7 +201,6 @@ export function PrReviewContent({
     }
   }, [mergeArmed, rootPath, details, cachedPr, onClose, mainBranch, refreshGitStatusForPath, refreshPrStatusForPath, fetchAllRepos]);
 
-  const folderName = rootPath.split("/").pop() ?? "";
 
   // Use details when available, fall back to cached PrStatus for instant render
   const prNumber = details?.number ?? cachedPr?.number;
@@ -350,7 +349,6 @@ export function PrReviewContent({
           </>
         )}
 
-        <span style={st.repoName}>{folderName}</span>
         <div style={{ flex: 1 }} />
 
         {details && (
@@ -699,15 +697,6 @@ const st: Record<string, React.CSSProperties> = {
     borderRadius: 4,
     transition: "color 150ms",
     flexShrink: 0,
-  },
-  repoName: {
-    position: "absolute",
-    left: "50%",
-    transform: "translateX(-50%)",
-    fontSize: 13,
-    color: "#d0d0d0",
-    fontWeight: 700,
-    pointerEvents: "none",
   },
   authorPill: {
     fontSize: 12,
