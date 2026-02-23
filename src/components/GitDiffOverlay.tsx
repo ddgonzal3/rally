@@ -3,8 +3,8 @@ import { useWorkspaceStore } from "../stores/workspaceStore";
 import { api } from "../lib/tauri";
 import { parseUnifiedDiff, type DiffFile } from "../lib/diffParser";
 import { DiffFileSection } from "./DiffFileSection";
+import { CommitModal } from "./CommitModal";
 import type { ChangesSummary } from "../lib/types";
-import { addToast } from "./ToastContainer";
 
 export function GitDiffOverlay() {
   const open = useWorkspaceStore((s) => s.gitDiffOverlayOpen);
@@ -21,16 +21,16 @@ export function GitDiffOverlay() {
   const [unstagedFiles, setUnstagedFiles] = useState<DiffFile[]>([]);
   const [stagedFiles, setStagedFiles] = useState<DiffFile[]>([]);
   const [changes, setChanges] = useState<ChangesSummary | null>(null);
-  const [commitMsg, setCommitMsg] = useState("");
-  const [committing, setCommitting] = useState(false);
-  const [justCommitted, setJustCommitted] = useState(false);
+  const [diffStatAdd, setDiffStatAdd] = useState(0);
+  const [diffStatDel, setDiffStatDel] = useState(0);
+  const [commitModalOpen, setCommitModalOpen] = useState(false);
   const [mounted, setMounted] = useState(false);
   const [scrollTarget, setScrollTarget] = useState<string | null>(null);
   // expandKey changes to signal DiffFileSection to reset to expanded/collapsed
   const [expandKey, setExpandKey] = useState(0);
   const [defaultExpanded, setDefaultExpanded] = useState(true);
-  const commitInputRef = useRef<HTMLInputElement>(null);
   const fileListRef = useRef<HTMLDivElement>(null);
+  const commitBtnRef = useRef<HTMLButtonElement>(null);
 
   const [visible, setVisible] = useState(false);
 
@@ -50,14 +50,17 @@ export function GitDiffOverlay() {
   const fetchDiffs = useCallback(async () => {
     if (!rootPath) return;
     try {
-      const [unstagedRaw, stagedRaw, changesData] = await Promise.all([
+      const [unstagedRaw, stagedRaw, changesData, stat] = await Promise.all([
         api.gitDiff(rootPath, false),
         api.gitDiff(rootPath, true),
         api.gitChanges(rootPath),
+        api.gitDiffStat(rootPath),
       ]);
       setUnstagedFiles(parseUnifiedDiff(unstagedRaw));
       setStagedFiles(parseUnifiedDiff(stagedRaw));
       setChanges(changesData);
+      setDiffStatAdd(stat[0]);
+      setDiffStatDel(stat[1]);
     } catch (e) {
       console.error("Failed to fetch diffs:", e);
     }
@@ -66,8 +69,6 @@ export function GitDiffOverlay() {
   // Fetch on open + handle single-file mode
   useEffect(() => {
     if (open && rootPath) {
-      setJustCommitted(false);
-      setCommitMsg("");
       setScrollTarget(scrollToFile ?? null);
       fetchDiffs();
     }
@@ -192,22 +193,6 @@ export function GitDiffOverlay() {
     setExpandKey((k) => k + 1);
   }, [rootPath, changes, fetchDiffs, setActiveTab]);
 
-  const handleCommit = useCallback(async () => {
-    if (!rootPath || !commitMsg.trim()) return;
-    setCommitting(true);
-    try {
-      await api.gitCommitStaged(rootPath, commitMsg.trim());
-      setCommitMsg("");
-      setJustCommitted(true);
-      addToast({ type: "success", title: "Committed!", message: "" });
-      fetchDiffs();
-    } catch (e) {
-      addToast({ type: "warning", title: "Commit failed", message: String(e) });
-    } finally {
-      setCommitting(false);
-    }
-  }, [rootPath, commitMsg, fetchDiffs]);
-
   const handleShip = useCallback(() => {
     if (!rootPath) return;
     startShipSession(rootPath);
@@ -253,6 +238,29 @@ export function GitDiffOverlay() {
         </button>
         <span style={s.repoName}>{folderName}</span>
         <div style={{ flex: 1 }} />
+        {/* Branch pill + bulk actions (moved from footer) */}
+        <span style={s.branchPill}>
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="#ccc" style={{ flexShrink: 0 }}>
+            <path d="M21.007 8.222A3.738 3.738 0 0 0 15.045 5.2a3.737 3.737 0 0 0 1.156 6.583 2.988 2.988 0 0 1-2.668 1.67h-2.99a4.456 4.456 0 0 0-2.989 1.165V7.4a3.737 3.737 0 1 0-1.494 0v9.117a3.776 3.776 0 1 0 1.816.099 2.99 2.99 0 0 1 2.668-1.667h2.99a4.484 4.484 0 0 0 4.223-3.039 3.736 3.736 0 0 0 3.25-3.687zM4.565 3.738a2.242 2.242 0 1 1 4.484 0 2.242 2.242 0 0 1-4.484 0zm4.484 16.441a2.242 2.242 0 1 1-4.484 0 2.242 2.242 0 0 1 4.484 0zm8.221-9.715a2.242 2.242 0 1 1 0-4.485 2.242 2.242 0 0 1 0 4.485z" />
+          </svg>
+          {gitStatus?.branch ?? ""}
+        </span>
+        {activeTab === "unstaged" && unstagedCount > 0 && (
+          <>
+            <button onClick={handleRevertAll} style={revertConfirming ? s.bulkActionBtnDanger : s.bulkActionBtn}>
+              {revertConfirming ? "Confirm?" : "Revert all"}
+            </button>
+            <button onClick={handleStageAll} style={s.bulkActionBtn}>
+              Stage all
+            </button>
+          </>
+        )}
+        {activeTab === "staged" && stagedCount > 0 && (
+          <button onClick={handleUnstageAll} style={s.bulkActionBtn}>
+            Unstage all
+          </button>
+        )}
+        {/* Collapse/expand icon */}
         {activeFiles.length > 0 && (
           <button
             onClick={() => {
@@ -262,9 +270,34 @@ export function GitDiffOverlay() {
             style={s.expandCollapseBtn}
             title={defaultExpanded ? "Collapse all" : "Expand all"}
           >
-            {defaultExpanded ? "Collapse all" : "Expand all"}
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
+              {defaultExpanded ? (
+                <path d="M4 10l4-4 4 4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+              ) : (
+                <path d="M4 6l4 4 4-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+              )}
+            </svg>
           </button>
         )}
+        {/* Diff stats */}
+        {(diffStatAdd > 0 || diffStatDel > 0) && (
+          <span style={s.diffStats}>
+            {diffStatAdd > 0 && <span style={{ color: "#3fb950" }}>+{diffStatAdd}</span>}
+            {diffStatAdd > 0 && diffStatDel > 0 && " "}
+            {diffStatDel > 0 && <span style={{ color: "#f85149" }}>-{diffStatDel}</span>}
+          </span>
+        )}
+        <button
+          ref={commitBtnRef}
+          onClick={() => setCommitModalOpen(true)}
+          disabled={!hasStaged && unstagedCount === 0}
+          style={{
+            ...s.headerCommitBtn,
+            opacity: hasStaged || unstagedCount > 0 ? 1 : 0.4,
+          }}
+        >
+          Commit
+        </button>
       </div>
 
       {/* File list */}
@@ -292,84 +325,20 @@ export function GitDiffOverlay() {
         )}
       </div>
 
-      {/* Action bar */}
-      <div style={s.actionBar}>
-        {/* Row 1: Branch + bulk action */}
-        <div style={s.branchRow}>
-          <span style={s.branchPill}>
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="#ccc" style={{ flexShrink: 0 }}>
-              <path d="M21.007 8.222A3.738 3.738 0 0 0 15.045 5.2a3.737 3.737 0 0 0 1.156 6.583 2.988 2.988 0 0 1-2.668 1.67h-2.99a4.456 4.456 0 0 0-2.989 1.165V7.4a3.737 3.737 0 1 0-1.494 0v9.117a3.776 3.776 0 1 0 1.816.099 2.99 2.99 0 0 1 2.668-1.667h2.99a4.484 4.484 0 0 0 4.223-3.039 3.736 3.736 0 0 0 3.25-3.687zM4.565 3.738a2.242 2.242 0 1 1 4.484 0 2.242 2.242 0 0 1-4.484 0zm4.484 16.441a2.242 2.242 0 1 1-4.484 0 2.242 2.242 0 0 1 4.484 0zm8.221-9.715a2.242 2.242 0 1 1 0-4.485 2.242 2.242 0 0 1 0 4.485z" />
-            </svg>
-            {gitStatus?.branch ?? ""}
-          </span>
-          {activeTab === "unstaged" && unstagedCount > 0 && (
-            <>
-              <button onClick={handleRevertAll} style={revertConfirming ? s.bulkActionBtnDanger : s.bulkActionBtn}>
-                <svg width="13" height="13" viewBox="0 0 13 13" fill="none" style={{ marginRight: 4 }}>
-                  <path d="M4 3.2V6h2.8M4 6c0-2.2 1.8-4 4-4a4 4 0 1 1-3.1 6.5" stroke="currentColor" strokeWidth="1.35" strokeLinecap="round" strokeLinejoin="round" />
-                </svg>
-                {revertConfirming ? "Confirm?" : "Revert all"}
-              </button>
-              <button onClick={handleStageAll} style={s.bulkActionBtn}>
-                <svg width="13" height="13" viewBox="0 0 14 14" fill="none" style={{ marginRight: 4 }}>
-                  <path d="M7 3v8M3 7h8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-                </svg>
-                Stage all
-              </button>
-            </>
-          )}
-          {activeTab === "staged" && stagedCount > 0 && (
-            <button onClick={handleUnstageAll} style={s.bulkActionBtn}>
-              <svg width="13" height="13" viewBox="0 0 14 14" fill="none" style={{ marginRight: 4 }}>
-                <path d="M3 7h8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-              </svg>
-              Unstage all
-            </button>
-          )}
-        </div>
-        {/* Row 2: Commit */}
-        <div style={s.commitRow}>
-          <input
-            ref={commitInputRef}
-            type="text"
-            value={commitMsg}
-            onChange={(e) => setCommitMsg(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && !e.shiftKey) {
-                e.preventDefault();
-                handleCommit();
-              }
-            }}
-            placeholder="Commit message..."
-            style={s.commitInput}
-            disabled={committing}
-          />
-          <button
-            onClick={handleCommit}
-            disabled={!hasStaged || !commitMsg.trim() || committing}
-            style={{
-              ...s.commitBtn,
-              opacity: hasStaged && commitMsg.trim() ? 1 : 0.4,
-            }}
-          >
-            {committing ? "Committing..." : "Commit"}
-          </button>
-        </div>
-        {/* Row 3: Post-commit */}
-        {justCommitted && (
-          <div style={s.postCommitRow}>
-            <span style={s.committedLabel}>Committed ✓</span>
-            <div style={{ flex: 1 }} />
-            <button
-              onClick={handleShip}
-              style={s.shipBtn}
-              title="Push, create PR & review"
-            >
-              Ship
-            </button>
-          </div>
-        )}
-      </div>
+      {/* Commit Modal */}
+      <CommitModal
+        open={commitModalOpen}
+        onClose={() => setCommitModalOpen(false)}
+        rootPath={rootPath ?? ""}
+        branch={gitStatus?.branch ?? ""}
+        stagedCount={stagedCount}
+        unstagedCount={unstagedCount}
+        additions={diffStatAdd}
+        deletions={diffStatDel}
+        onCommitted={fetchDiffs}
+        onShip={handleShip}
+        anchorRef={commitBtnRef}
+      />
     </div>
   );
 }
@@ -416,12 +385,14 @@ const s: Record<string, React.CSSProperties> = {
   expandCollapseBtn: {
     background: "none",
     border: "none",
-    color: "#999",
-    fontSize: 12,
-    fontWeight: 500,
+    color: "#666",
     cursor: "pointer",
-    padding: "4px 8px",
+    padding: "4px 6px",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
     transition: "color 150ms",
+    borderRadius: 4,
   },
   tab: {
     padding: "10px 12px",
@@ -457,31 +428,18 @@ const s: Record<string, React.CSSProperties> = {
     padding: 48,
     fontWeight: 500,
   },
-  actionBar: {
-    borderTop: "1px solid #2a2a2a",
-    padding: "12px 20px",
-    flexShrink: 0,
-    display: "flex",
-    flexDirection: "column",
-    gap: 10,
-  },
-  branchRow: {
-    display: "flex",
-    alignItems: "center",
-    gap: 8,
-  },
   branchPill: {
     display: "inline-flex",
     alignItems: "center",
-    gap: 6,
-    fontSize: 12,
-    color: "#ccc",
+    gap: 5,
+    fontSize: 11,
+    color: "#999",
     fontFamily: "'SF Mono', 'Menlo', monospace",
     fontWeight: 600,
     background: "#2a2a2a",
-    padding: "5px 14px",
+    padding: "4px 10px",
     borderRadius: 20,
-    lineHeight: "16px",
+    lineHeight: "14px",
   },
   bulkActionBtn: {
     display: "inline-flex",
@@ -489,12 +447,12 @@ const s: Record<string, React.CSSProperties> = {
     background: "#2a2a2a",
     border: "none",
     color: "#ccc",
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: 600,
     cursor: "pointer",
-    padding: "5px 14px",
+    padding: "4px 10px",
     borderRadius: 20,
-    lineHeight: "16px",
+    lineHeight: "14px",
     transition: "background 150ms, color 150ms",
   },
   bulkActionBtnDanger: {
@@ -503,70 +461,32 @@ const s: Record<string, React.CSSProperties> = {
     background: "rgba(248, 81, 73, 0.15)",
     border: "none",
     color: "#f85149",
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: 600,
     cursor: "pointer",
-    padding: "5px 14px",
+    padding: "4px 10px",
     borderRadius: 20,
-    lineHeight: "16px",
+    lineHeight: "14px",
     transition: "background 150ms, color 150ms",
   },
-  postCommitRow: {
-    display: "flex",
-    alignItems: "center",
-    gap: 8,
+  diffStats: {
+    fontSize: 12,
+    fontWeight: 600,
+    fontFamily: "'SF Mono', 'Menlo', monospace",
+    padding: "0 8px",
   },
-  committedLabel: {
-    fontSize: 13,
-    fontWeight: 500,
-    color: "#3fb950",
-    opacity: 0.8,
-  },
-  commitRow: {
-    display: "flex",
-    gap: 8,
-    alignItems: "center",
-  },
-  commitInput: {
-    flex: 1,
-    padding: "8px 14px",
-    borderRadius: 10,
-    border: "1px solid #333",
-    background: "#222",
-    color: "#e6edf3",
-    fontSize: 13,
-    outline: "none",
-    fontFamily: "-apple-system, BlinkMacSystemFont, 'SF Pro Text', system-ui, sans-serif",
-    transition: "border-color 150ms",
-  },
-  commitBtn: {
-    padding: "8px 20px",
-    borderRadius: 10,
+  headerCommitBtn: {
+    padding: "5px 16px",
+    borderRadius: 8,
     border: "none",
     background: "#e6edf3",
     color: "#1a1a1a",
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: 600,
     cursor: "pointer",
     flexShrink: 0,
     letterSpacing: "-0.01em",
     transition: "opacity 150ms",
-  },
-  shipBtn: {
-    padding: "8px 20px",
-    borderRadius: 10,
-    border: "none",
-    background: "#e6edf3",
-    color: "#1a1a1a",
-    fontSize: 13,
     lineHeight: "16px",
-    display: "inline-flex",
-    alignItems: "center",
-    justifyContent: "center",
-    fontWeight: 600,
-    cursor: "pointer",
-    flexShrink: 0,
-    letterSpacing: "0.01em",
-    transition: "background 150ms",
   },
 };

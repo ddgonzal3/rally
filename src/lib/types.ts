@@ -35,6 +35,11 @@ export interface PrStatus {
   checks_status: "pass" | "fail" | "pending" | null;
 }
 
+export interface PushResult {
+  output: string;
+  method: string;
+}
+
 export interface ChangedFile {
   path: string;
   status: string; // "M" modified, "A" added, "D" deleted, "R" renamed

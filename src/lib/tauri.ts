@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import type { Workspace, GitStatus, PrStatus, ChangesSummary, ScriptEntry, ShipSignal, RallyScriptInfo } from "./types";
+import type { Workspace, GitStatus, PrStatus, PushResult, ChangesSummary, ScriptEntry, ShipSignal, RallyScriptInfo } from "./types";
 
 export const api = {
   listWorkspaces: () => invoke<Workspace[]>("list_workspaces"),
@@ -49,6 +49,15 @@ export const api = {
 
   gitCommitStaged: (workspacePath: string, message: string) =>
     invoke<string>("git_commit_staged", { workspacePath, message }),
+
+  gitPush: (workspacePath: string) =>
+    invoke<PushResult>("git_push", { workspacePath }),
+
+  gitCreatePr: (workspacePath: string) =>
+    invoke<string>("git_create_pr", { workspacePath }),
+
+  gitDiffStat: (workspacePath: string) =>
+    invoke<[number, number]>("git_diff_stat", { workspacePath }),
 
   detectGitInfo: (path: string) =>
     invoke<{ repo_url: string; branch: string; name: string }>("detect_git_info", { path }),

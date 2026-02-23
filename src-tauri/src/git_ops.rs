@@ -382,6 +382,33 @@ pub async fn diff(cwd: &str, staged: bool) -> Result<String, String> {
     Ok(String::from_utf8_lossy(&output.stdout).to_string())
 }
 
+/// Get total line additions and deletions across staged and unstaged changes.
+pub async fn diff_stat(cwd: &str) -> Result<(i64, i64), String> {
+    let mut total_add: i64 = 0;
+    let mut total_del: i64 = 0;
+
+    for args in [&["diff", "--numstat"][..], &["diff", "--cached", "--numstat"][..]] {
+        let output = Command::new("git")
+            .args(args)
+            .current_dir(cwd)
+            .output()
+            .await
+            .map_err(|e| format!("Failed to run git diff --numstat: {}", e))?;
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        for line in stdout.lines() {
+            let parts: Vec<&str> = line.split('\t').collect();
+            if parts.len() >= 2 {
+                if let (Ok(a), Ok(d)) = (parts[0].parse::<i64>(), parts[1].parse::<i64>()) {
+                    total_add += a;
+                    total_del += d;
+                }
+            }
+        }
+    }
+
+    Ok((total_add, total_del))
+}
+
 /// Commit only what's currently staged (no auto-add).
 pub async fn commit_staged(cwd: &str, message: &str) -> Result<String, String> {
     git_cmd(cwd, &["commit", "-m", message]).await
