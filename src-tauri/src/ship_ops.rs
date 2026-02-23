@@ -352,41 +352,15 @@ pub fn check_ship_trigger() -> Result<Option<String>, String> {
     Ok(None)
 }
 
-/// Post-merge sync: checkout main, pull, then sync the feature branch
-/// by resetting the now-merged commits and rebasing onto main.
-/// Leaves the repo on the feature branch, synced with main.
+/// Post-merge sync: after a squash merge, sync the feature branch to match main.
+/// Hard-resets the feature branch to main (since the squash commit contains all changes),
+/// then rebases and pushes. Leaves the repo on the feature branch, synced with main.
 #[tauri::command]
 pub async fn post_merge_sync(
     cwd: String,
     main_branch: String,
     merged_branch: String,
 ) -> Result<String, String> {
-    // 1. Update main with the merged changes
-    git_ops::git_cmd(&cwd, &["checkout", &main_branch]).await?;
-    git_ops::git_cmd(&cwd, &["pull"]).await?;
-
-    // 2. Go back to the feature branch
-    git_ops::git_cmd(&cwd, &["checkout", &merged_branch]).await?;
-
-    // 3. Count how many commits the feature branch is ahead of main (for logging)
-    let count_output = git_ops::git_cmd(
-        &cwd,
-        &["rev-list", "--count", &format!("{}..{}", main_branch, merged_branch)],
-    ).await?;
-    let count: usize = count_output.trim().parse().unwrap_or(0);
-
-    // 4. Reset branch to main and rebase (idempotent — always correct regardless of count)
-    if count > 0 {
-        git_ops::git_cmd(&cwd, &["reset", "--hard", &main_branch]).await?;
-    }
-    git_ops::git_cmd(&cwd, &["rebase", &main_branch]).await?;
-
-    // 5. Push the synced branch to remote so local and remote stay in sync
-    //    (force-with-lease because the history was rewritten by reset+rebase)
-    git_ops::git_cmd(&cwd, &["push", "--force-with-lease"]).await?;
-
-    Ok(format!(
-        "Synced {} with {} (reset {} commits, rebased, pushed)",
-        merged_branch, main_branch, count
-    ))
+    git_ops::sync_branch_after_merge(&cwd, &merged_branch, &main_branch).await?;
+    Ok(format!("Synced {} with {}", merged_branch, main_branch))
 }

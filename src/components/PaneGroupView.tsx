@@ -20,9 +20,9 @@ interface PaneGroupViewProps {
   workspacePath: string;
 }
 
-function paneLabel(pane: Pane): string {
+function paneLabel(pane: Pane, isDirty: boolean): string {
   if (pane.type === "claude" || pane.type === "claude-launcher") return pane.title || "claude";
-  if (pane.type === "editor" || pane.type === "diff") return pane.title;
+  if (pane.type === "editor" || pane.type === "diff") return isDirty ? `${pane.title} *` : pane.title;
   return "zsh";
 }
 
@@ -63,6 +63,7 @@ export function PaneGroupView({
   const reorderPanes = useWorkspaceStore((s) => s.reorderPanes);
   const closeGroup = useWorkspaceStore((s) => s.closeGroup);
   const revealFileInExplorer = useWorkspaceStore((s) => s.revealFileInExplorer);
+  const dirtyPanes = useWorkspaceStore((s) => s.dirtyPanes);
 
   const ws = workspaces.find((w) => w.id === workspaceId);
   const paths = ws?.paths ?? [workspacePath];
@@ -321,7 +322,7 @@ export function PaneGroupView({
                   type={pane.type}
                   fileName={pane.title || pane.filePath?.split("/").pop()}
                 />
-                <span style={styles.tabLabel}>{paneLabel(pane)}</span>
+                <span style={styles.tabLabel}>{paneLabel(pane, dirtyPanes.has(pane.id))}</span>
                 <button
                   data-close
                   className={`tab-close${isActive ? " tab-close-active" : ""}`}
@@ -476,7 +477,7 @@ function PaneContent({
               }}
             >
               {pane.type === "editor" && pane.filePath ? (
-                <EditorPane filePath={pane.filePath} />
+                <EditorPane filePath={pane.filePath} paneId={pane.id} />
               ) : pane.type === "claude-launcher" ? (
                 <ClaudeLauncher
                   workspacePath={paneCwd}
@@ -598,7 +599,6 @@ const styles: Record<string, React.CSSProperties> = {
     position: "relative",
     minHeight: 0,
     minWidth: 0,
-    overflow: "hidden",
   },
   emptyState: {
     position: "absolute",

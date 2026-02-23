@@ -1,13 +1,7 @@
 import React from "react";
-import { invoke } from "@tauri-apps/api/core";
 import { useWorkspaceStore } from "../stores/workspaceStore";
+import { openUrl } from "../lib/tauri";
 import type { PrStatus } from "../lib/types";
-
-function openUrl(url: string) {
-  invoke("plugin:shell|open", { path: url }).catch(() => {
-    window.open(url, "_blank");
-  });
-}
 
 function PrStatusBar({ pr }: { pr?: PrStatus | null }) {
   if (!pr || pr.state !== "OPEN") return null;

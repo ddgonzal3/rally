@@ -2,9 +2,12 @@ import React, { useState, useEffect, useCallback, useRef } from "react";
 import Editor, { type OnMount, type BeforeMount } from "@monaco-editor/react";
 import { invoke } from "@tauri-apps/api/core";
 import { showContextMenu } from "../lib/contextMenu";
+import { useWorkspaceStore } from "../stores/workspaceStore";
+import { addToast } from "./ToastContainer";
 
 interface EditorPaneProps {
   filePath: string;
+  paneId: string;
 }
 
 const IMAGE_EXTENSIONS = new Set([
@@ -85,11 +88,11 @@ function getLanguageFromPath(path: string): string {
   return map[ext] ?? "plaintext";
 }
 
-export const EditorPane = React.memo(function EditorPane({ filePath }: EditorPaneProps) {
+export const EditorPane = React.memo(function EditorPane({ filePath, paneId }: EditorPaneProps) {
   if (isImageFile(filePath)) {
     return <ImageViewer filePath={filePath} />;
   }
-  return <TextEditor filePath={filePath} />;
+  return <TextEditor filePath={filePath} paneId={paneId} />;
 });
 
 /** Image viewer — loads file as base64 and renders an <img> */
@@ -150,18 +153,18 @@ function ImageViewer({ filePath }: { filePath: string }) {
 }
 
 /** Text editor — Monaco with syntax highlighting */
-function TextEditor({ filePath }: { filePath: string }) {
+function TextEditor({ filePath, paneId }: { filePath: string; paneId: string }) {
   const [content, setContent] = useState<string | null>(null);
-  const [dirty, setDirty] = useState(false);
-  const [saveMsg, setSaveMsg] = useState("");
   const [error, setError] = useState<string | null>(null);
   const contentRef = useRef("");
   const editorRef = useRef<any>(null);
   const language = getLanguageFromPath(filePath);
+  const markDirty = useWorkspaceStore((s) => s.markPaneDirty);
+  const markClean = useWorkspaceStore((s) => s.markPaneClean);
 
   useEffect(() => {
     setContent(null);
-    setDirty(false);
+    markClean(paneId);
     setError(null);
     invoke<string>("read_file_content", { path: filePath })
       .then((c) => {
@@ -169,7 +172,7 @@ function TextEditor({ filePath }: { filePath: string }) {
         contentRef.current = c;
       })
       .catch((e) => setError(String(e)));
-  }, [filePath]);
+  }, [filePath, paneId, markClean]);
 
   const handleSave = useCallback(async () => {
     try {
@@ -177,13 +180,11 @@ function TextEditor({ filePath }: { filePath: string }) {
         path: filePath,
         content: contentRef.current,
       });
-      setDirty(false);
-      setSaveMsg("Saved");
-      setTimeout(() => setSaveMsg(""), 2000);
-    } catch (e: any) {
-      setSaveMsg(`Error: ${e}`);
+      markClean(paneId);
+    } catch (e) {
+      addToast({ type: "warning", title: "Save failed", message: String(e instanceof Error ? e.message : e) });
     }
-  }, [filePath]);
+  }, [filePath, paneId, markClean]);
 
   const handleBeforeMount: BeforeMount = useCallback((monaco) => {
     monaco.editor.defineTheme("rally-dark", {
@@ -257,12 +258,6 @@ function TextEditor({ filePath }: { filePath: string }) {
 
   return (
     <div style={styles.container} onContextMenu={handleContextMenu}>
-      {(dirty || saveMsg) && (
-        <div style={styles.statusBar}>
-          {dirty && <span style={styles.dirtyDot} />}
-          {saveMsg && <span style={styles.saveMsg}>{saveMsg}</span>}
-        </div>
-      )}
       <Editor
         height="100%"
         path={filePath}
@@ -271,7 +266,7 @@ function TextEditor({ filePath }: { filePath: string }) {
         defaultValue={content}
         onChange={(value) => {
           contentRef.current = value ?? "";
-          setDirty((prev) => (prev ? prev : true));
+          markDirty(paneId);
         }}
         beforeMount={handleBeforeMount}
         onMount={handleMount}
@@ -316,26 +311,6 @@ const styles: Record<string, React.CSSProperties> = {
     alignItems: "center",
     justifyContent: "center",
     background: "#1b1b1b",
-  },
-  statusBar: {
-    position: "absolute",
-    top: 6,
-    right: 20,
-    zIndex: 10,
-    display: "flex",
-    alignItems: "center",
-    gap: 6,
-    pointerEvents: "none",
-  },
-  dirtyDot: {
-    width: 6,
-    height: 6,
-    borderRadius: "50%",
-    background: "#e0e0e0",
-  },
-  saveMsg: {
-    fontSize: 11,
-    color: "#7ddf7d",
   },
   imageContainer: {
     display: "flex",

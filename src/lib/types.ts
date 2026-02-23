@@ -51,6 +51,61 @@ export interface ChangesSummary {
   untracked: string[];
 }
 
+// --- PR Details Types ---
+
+export interface PrCommit {
+  sha: string;
+  message_headline: string;
+  author: string;
+  committed_date: string;
+}
+
+export interface PrDetails {
+  number: number;
+  title: string;
+  url: string;
+  state: "OPEN" | "CLOSED" | "MERGED";
+  is_draft: boolean;
+  mergeable: "MERGEABLE" | "CONFLICTING" | "UNKNOWN";
+  review_decision: "APPROVED" | "CHANGES_REQUESTED" | "REVIEW_REQUIRED" | null;
+  checks_status: "pass" | "fail" | "pending" | null;
+  body: string;
+  author: string;
+  base_branch: string;
+  head_branch: string;
+  additions: number;
+  deletions: number;
+  changed_files: number;
+  created_at: string;
+  updated_at: string;
+  commits: PrCommit[];
+  labels: string[];
+  comments: PrComment[];
+  reviews: PrReview[];
+}
+
+export interface PrComment {
+  author: string;
+  body: string;
+  created_at: string;
+}
+
+export interface PrReview {
+  author: string;
+  body: string;
+  state: "APPROVED" | "CHANGES_REQUESTED" | "COMMENTED" | "DISMISSED" | "PENDING";
+  created_at: string;
+}
+
+// --- Commit Log Types ---
+
+export interface CommitEntry {
+  sha: string;
+  message: string;
+  author: string;
+  date: string;
+}
+
 // --- Ship Signal Types ---
 
 export interface ShipSignalFlaggedItem {

@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { api } from "../lib/tauri";
 import { addToast } from "./ToastContainer";
+import { useWorkspaceStore } from "../stores/workspaceStore";
 
 type NextStep = "commit" | "commit-push" | "commit-pr" | "commit-ship";
 
@@ -117,6 +118,11 @@ export function CommitModal({
         } catch (e) {
           addToast({ type: "warning", title: "PR creation failed", message: String(e) });
         }
+      }
+
+      // Eagerly refresh PR status after push/PR creation so the badge appears immediately
+      if (nextStep === "commit-push" || nextStep === "commit-pr") {
+        useWorkspaceStore.getState().refreshPrStatusForPath(rootPath).catch(() => {});
       }
 
       if (nextStep === "commit-ship") {

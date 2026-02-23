@@ -3,7 +3,7 @@ use std::time::Duration;
 
 use tokio::process::Command;
 
-use crate::workspace::{ChangedFile, ChangesSummary, GitStatus, PrStatus, PushResult};
+use crate::workspace::{ChangedFile, ChangesSummary, CommitEntry, GitStatus, PrComment, PrCommit, PrDetails, PrReview, PrStatus, PushResult};
 
 /// Get the full login shell PATH, cached for the process lifetime.
 /// When launched as a .app bundle, macOS gives a minimal PATH (/usr/bin:/bin:/usr/sbin:/sbin).
@@ -64,6 +64,35 @@ async fn gh(cwd: &str, args: &[&str]) -> Result<String, String> {
     } else {
         let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
         Err(format!("gh {} failed: {}", args.join(" "), stderr))
+    }
+}
+
+/// Fetch from origin (quiet, with timeout to avoid hanging on auth prompts).
+pub async fn fetch(cwd: &str) -> Result<(), String> {
+    match tokio::time::timeout(
+        Duration::from_secs(10),
+        git_cmd(cwd, &["fetch", "--quiet"]),
+    )
+    .await
+    {
+        Ok(Ok(_)) => Ok(()),
+        Ok(Err(e)) => Err(e),
+        Err(_) => Err("git fetch timed out".to_string()),
+    }
+}
+
+/// Fetch then rebase onto origin/<main_branch>.
+/// If the rebase fails (e.g. conflicts), auto-aborts so the repo isn't left
+/// in a broken mid-rebase state.
+pub async fn rebase_on_main(cwd: &str, main_branch: &str) -> Result<String, String> {
+    fetch(cwd).await?;
+    match git_cmd(cwd, &["rebase", &format!("origin/{}", main_branch)]).await {
+        Ok(output) => Ok(output),
+        Err(e) => {
+            // Abort the failed rebase so the repo is back to a clean state
+            let _ = git_cmd(cwd, &["rebase", "--abort"]).await;
+            Err(e)
+        }
     }
 }
 
@@ -280,6 +309,141 @@ pub async fn pr_status(cwd: &str) -> Result<PrStatus, String> {
         review_decision: v["reviewDecision"].as_str().map(|s| s.to_string()),
         checks_status,
     })
+}
+
+/// Get detailed PR info for the current branch (extended version of pr_status).
+pub async fn pr_details(cwd: &str) -> Result<PrDetails, String> {
+    let json_str = gh(
+        cwd,
+        &[
+            "pr", "view", "--json",
+            "number,title,url,state,isDraft,mergeable,reviewDecision,statusCheckRollup,body,author,baseRefName,headRefName,additions,deletions,changedFiles,createdAt,updatedAt,commits,labels,comments,reviews",
+        ],
+    ).await?;
+
+    let v: serde_json::Value =
+        serde_json::from_str(&json_str).map_err(|e| format!("Failed to parse PR JSON: {}", e))?;
+
+    // Reuse statusCheckRollup parsing logic
+    let checks_status = match v.get("statusCheckRollup") {
+        Some(serde_json::Value::Array(checks)) if !checks.is_empty() => {
+            let all_pass = checks
+                .iter()
+                .all(|c| c.get("conclusion").and_then(|v| v.as_str()) == Some("SUCCESS"));
+            let any_fail = checks.iter().any(|c| {
+                let conclusion = c.get("conclusion").and_then(|v| v.as_str()).unwrap_or("");
+                conclusion == "FAILURE" || conclusion == "ERROR"
+            });
+            if any_fail {
+                Some("fail".to_string())
+            } else if all_pass {
+                Some("pass".to_string())
+            } else {
+                Some("pending".to_string())
+            }
+        }
+        _ => None,
+    };
+
+    let commits = match v.get("commits") {
+        Some(serde_json::Value::Array(arr)) => arr
+            .iter()
+            .map(|c| PrCommit {
+                sha: c["oid"].as_str().unwrap_or_default().to_string(),
+                message_headline: c["messageHeadline"].as_str().unwrap_or_default().to_string(),
+                author: c.get("authors")
+                    .and_then(|a| a.as_array())
+                    .and_then(|a| a.first())
+                    .and_then(|a| a["name"].as_str())
+                    .unwrap_or_default()
+                    .to_string(),
+                committed_date: c["committedDate"].as_str().unwrap_or_default().to_string(),
+            })
+            .collect(),
+        _ => Vec::new(),
+    };
+
+    let labels = match v.get("labels") {
+        Some(serde_json::Value::Array(arr)) => arr
+            .iter()
+            .filter_map(|l| l["name"].as_str().map(|s| s.to_string()))
+            .collect(),
+        _ => Vec::new(),
+    };
+
+    let comments = match v.get("comments") {
+        Some(serde_json::Value::Array(arr)) => arr
+            .iter()
+            .map(|c| PrComment {
+                author: c.get("author")
+                    .and_then(|a| a["login"].as_str())
+                    .unwrap_or_default()
+                    .to_string(),
+                body: c["body"].as_str().unwrap_or_default().to_string(),
+                created_at: c["createdAt"].as_str().unwrap_or_default().to_string(),
+            })
+            .collect(),
+        _ => Vec::new(),
+    };
+
+    let reviews = match v.get("reviews") {
+        Some(serde_json::Value::Array(arr)) => arr
+            .iter()
+            .map(|r| PrReview {
+                author: r.get("author")
+                    .and_then(|a| a["login"].as_str())
+                    .unwrap_or_default()
+                    .to_string(),
+                body: r["body"].as_str().unwrap_or_default().to_string(),
+                state: r["state"].as_str().unwrap_or_default().to_string(),
+                created_at: r["submittedAt"].as_str()
+                    .or_else(|| r["createdAt"].as_str())
+                    .unwrap_or_default()
+                    .to_string(),
+            })
+            .collect(),
+        _ => Vec::new(),
+    };
+
+    let author = v.get("author")
+        .and_then(|a| a["login"].as_str())
+        .unwrap_or_default()
+        .to_string();
+
+    Ok(PrDetails {
+        number: v["number"].as_u64().unwrap_or(0) as u32,
+        title: v["title"].as_str().unwrap_or("").to_string(),
+        url: v["url"].as_str().unwrap_or("").to_string(),
+        state: v["state"].as_str().unwrap_or("OPEN").to_string(),
+        is_draft: v["isDraft"].as_bool().unwrap_or(false),
+        mergeable: v["mergeable"].as_str().unwrap_or("UNKNOWN").to_string(),
+        review_decision: v["reviewDecision"].as_str().map(|s| s.to_string()),
+        checks_status,
+        body: v["body"].as_str().unwrap_or("").to_string(),
+        author,
+        base_branch: v["baseRefName"].as_str().unwrap_or("").to_string(),
+        head_branch: v["headRefName"].as_str().unwrap_or("").to_string(),
+        additions: v["additions"].as_u64().unwrap_or(0) as u32,
+        deletions: v["deletions"].as_u64().unwrap_or(0) as u32,
+        changed_files: v["changedFiles"].as_u64().unwrap_or(0) as u32,
+        created_at: v["createdAt"].as_str().unwrap_or("").to_string(),
+        updated_at: v["updatedAt"].as_str().unwrap_or("").to_string(),
+        commits,
+        labels,
+        comments,
+        reviews,
+    })
+}
+
+/// Get raw unified diff for the current branch's PR.
+pub async fn pr_diff(cwd: &str) -> Result<String, String> {
+    gh(cwd, &["pr", "diff"]).await
+}
+
+/// Edit the title of the current branch's PR.
+pub async fn edit_pr_title(cwd: &str, title: &str) -> Result<(), String> {
+    gh(cwd, &["pr", "edit", "--title", title]).await?;
+    Ok(())
 }
 
 /// Merge a PR using gh CLI
@@ -627,21 +791,58 @@ pub async fn merge_pr_smart(cwd: &str, main_branch: &str) -> Result<MergePrResul
     })
 }
 
-async fn sync_branch_after_merge(cwd: &str, branch: &str, main_branch: &str) -> Result<(), String> {
-    git_cmd(cwd, &["checkout", main_branch]).await?;
-    git_cmd(cwd, &["pull"]).await?;
-    git_cmd(cwd, &["checkout", branch]).await?;
+/// Get commit log for commits ahead of origin/<main_branch>.
+pub async fn commit_log(cwd: &str, main_branch: &str, limit: u32) -> Result<Vec<CommitEntry>, String> {
+    let range = format!("origin/{}..HEAD", main_branch);
+    let format_str = "%H%n%s%n%an%n%aI";
+    let limit_str = format!("-{}", limit);
+    let output = git_cmd(
+        cwd,
+        &["log", &range, &format!("--pretty=format:{}", format_str), "--no-merges", &limit_str],
+    ).await?;
 
-    let count_str = git_cmd(cwd, &["rev-list", "--count", &format!("{}..HEAD", main_branch)]).await?;
-    let ahead: u32 = count_str.trim().parse().unwrap_or(0);
-
-    if ahead > 0 {
-        git_cmd(cwd, &["reset", &format!("HEAD~{}", ahead)]).await?;
-        git_cmd(cwd, &["checkout", "."]).await?;
-        git_cmd(cwd, &["rebase", main_branch]).await?;
+    if output.is_empty() {
+        return Ok(Vec::new());
     }
 
-    git_cmd(cwd, &["push", "--force-with-lease"]).await?;
+    let lines: Vec<&str> = output.lines().collect();
+    let mut commits = Vec::new();
+    // Each commit is 4 lines: sha, message, author, date
+    for chunk in lines.chunks(4) {
+        if chunk.len() == 4 {
+            commits.push(CommitEntry {
+                sha: chunk[0].to_string(),
+                message: chunk[1].to_string(),
+                author: chunk[2].to_string(),
+                date: chunk[3].to_string(),
+            });
+        }
+    }
+    Ok(commits)
+}
+
+pub async fn sync_branch_after_merge(cwd: &str, branch: &str, main_branch: &str) -> Result<(), String> {
+    // Hard-reset feature branch to main first (clears all squash-merged commits)
+    git_cmd(cwd, &["checkout", branch]).await?;
+    git_cmd(cwd, &["reset", "--hard", main_branch]).await?;
+
+    // Pull latest main
+    git_cmd(cwd, &["checkout", main_branch]).await?;
+    git_cmd(cwd, &["pull"]).await?;
+
+    // Rebase feature branch onto updated main
+    git_cmd(cwd, &["rebase", main_branch, branch]).await?;
+
+    // Push — fall back to --force if --force-with-lease fails
+    // (remote branch may have been deleted by GitHub after squash merge)
+    let push_result = git_cmd(cwd, &["push", "--force-with-lease"]).await;
+    match push_result {
+        Ok(_) => {},
+        Err(ref e) if e.contains("stale info") || e.contains("failed to push") || e.contains("rejected") => {
+            git_cmd(cwd, &["push", "--force"]).await?;
+        },
+        Err(e) => return Err(e),
+    }
 
     Ok(())
 }

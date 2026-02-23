@@ -15,6 +15,7 @@ import { FILE_DROP_COMMIT_EVENT } from "./components/DropZoneOverlay";
 import { ToastContainer, addToast } from "./components/ToastContainer";
 import { ShipStatusPill } from "./components/ShipStatusPill";
 import { GitDiffOverlay } from "./components/GitDiffOverlay";
+import { PrReviewOverlay } from "./components/PrReviewOverlay";
 
 export function App() {
   const windowLabel = getCurrentWindow().label;
@@ -36,6 +37,11 @@ export function App() {
   const refreshGitStatusForPath = useWorkspaceStore((s) => s.refreshGitStatusForPath);
   const refreshAllPrStatuses = useWorkspaceStore((s) => s.refreshAllPrStatuses);
   const pollShipSignals = useWorkspaceStore((s) => s.pollShipSignals);
+  const fetchAllRepos = useWorkspaceStore((s) => s.fetchAllRepos);
+  const activeWorkspaceName = useWorkspaceStore((s) => {
+    const ws = s.workspaces.find((w) => w.id === s.activeWorkspaceId);
+    return ws?.name ?? "Rally";
+  });
   const [panelCollapsed, setPanelCollapsed] = useState(() =>
     localStorage.getItem(panelCollapsedKey) === "true",
   );
@@ -62,6 +68,7 @@ export function App() {
   const gitRefreshInFlightRef = useRef(false);
   const prRefreshInFlightRef = useRef(false);
   const shipPollInFlightRef = useRef(false);
+  const fetchInFlightRef = useRef(false);
   const lastInteractionAtRef = useRef(Date.now());
   const sidebarRef = useRef<HTMLDivElement>(null);
   const explorerRef = useRef<HTMLDivElement>(null);
@@ -130,6 +137,17 @@ export function App() {
     }
   }, [pollShipSignals, shouldDeferBackgroundWork]);
 
+  const runFetchAll = useCallback(async () => {
+    if (fetchInFlightRef.current) return;
+    if (shouldDeferBackgroundWork()) return;
+    fetchInFlightRef.current = true;
+    try {
+      await fetchAllRepos();
+    } finally {
+      fetchInFlightRef.current = false;
+    }
+  }, [fetchAllRepos, shouldDeferBackgroundWork]);
+
   useEffect(() => {
     let cancelled = false;
 
@@ -147,18 +165,23 @@ export function App() {
     const shipInterval = setInterval(() => {
       void runShipPoll();
     }, 5000);
+    const fetchInterval = setInterval(() => {
+      void runFetchAll();
+    }, 60000);
 
     return () => {
       cancelled = true;
       clearInterval(gitInterval);
       clearInterval(prInterval);
       clearInterval(shipInterval);
+      clearInterval(fetchInterval);
     };
   }, [
     loadWorkspaces,
     runGitRefresh,
     runPrRefresh,
     runShipPoll,
+    runFetchAll,
     forceNoWorkspaceSelection,
   ]);
 
@@ -532,71 +555,82 @@ export function App() {
         style={styles.titlebar}
         onMouseDown={handleDrag}
       >
-        {/* Titlebar buttons — positioned right of traffic lights */}
-        <div style={styles.titlebarBtns}>
+        <button
+          className="activity-btn"
+          style={styles.titlebarToggle}
+          onClick={() => {
+            const allHidden = panelCollapsed && fileExplorerCollapsed;
+            if (allHidden) {
+              setPanelCollapsed(false);
+              setFileExplorerCollapsed(false);
+            } else {
+              setPanelCollapsed(true);
+              setFileExplorerCollapsed(true);
+            }
+          }}
+          title={panelCollapsed && fileExplorerCollapsed ? "Show panels" : "Hide all panels"}
+        >
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+            <rect x="1.5" y="1.5" width="13" height="13" rx="2" stroke={panelCollapsed && fileExplorerCollapsed ? "#777" : "#aaa"} strokeWidth="1.0" />
+            <line x1="5.5" y1="1.5" x2="5.5" y2="14.5" stroke={panelCollapsed && fileExplorerCollapsed ? "#777" : "#aaa"} strokeWidth="1.0" />
+          </svg>
+        </button>
+        <span style={styles.titleText}>{activeWorkspaceName}</span>
+      </div>
+      <div style={styles.body}>
+        <div style={styles.activityBar}>
+          {([
+            { view: "workspaces" as const, title: "Workspaces", icon: (active: boolean) => (
+              <svg width="18" height="18" viewBox="0 0 16 16" fill="none">
+                <rect x="1" y="1.5" width="6" height="6" rx="1.5" stroke={active ? "#ddd" : "#bbb"} strokeWidth="1.0" />
+                <rect x="9" y="1.5" width="6" height="6" rx="1.5" stroke={active ? "#ddd" : "#bbb"} strokeWidth="1.0" />
+                <rect x="1" y="9.5" width="6" height="6" rx="1.5" stroke={active ? "#ddd" : "#bbb"} strokeWidth="1.0" />
+                <rect x="9" y="9.5" width="6" height="6" rx="1.5" stroke={active ? "#ddd" : "#bbb"} strokeWidth="1.0" />
+              </svg>
+            )},
+            { view: "claude" as const, title: "Claude config", icon: (active: boolean) => (
+              <svg width="17" height="17" viewBox="0 0 24 24" fill={active ? "#ddd" : "#bbb"} style={{ opacity: active ? 1 : 0.85 }} aria-hidden="true">
+                <path d="M4.709 15.955l4.72-2.647.08-.23-.08-.128H9.2l-.79-.048-2.698-.073-2.339-.097-2.266-.122-.571-.121L0 11.784l.055-.352.48-.321.686.06 1.52.103 2.278.158 1.652.097 2.449.255h.389l.055-.157-.134-.098-.103-.097-2.358-1.596-2.552-1.688-1.336-.972-.724-.491-.364-.462-.158-1.008.656-.722.881.06.225.061.893.686 1.908 1.476 2.491 1.833.365.304.145-.103.019-.073-.164-.274-1.355-2.446-1.446-2.49-.644-1.032-.17-.619a2.97 2.97 0 01-.104-.729L6.283.134 6.696 0l.996.134.42.364.62 1.414 1.002 2.229 1.555 3.03.456.898.243.832.091.255h.158V9.01l.128-1.706.237-2.095.23-2.695.08-.76.376-.91.747-.492.584.28.48.685-.067.444-.286 1.851-.559 2.903-.364 1.942h.212l.243-.242.985-1.306 1.652-2.064.73-.82.85-.904.547-.431h1.033l.76 1.129-.34 1.166-1.064 1.347-.881 1.142-1.264 1.7-.79 1.36.073.11.188-.02 2.856-.606 1.543-.28 1.841-.315.833.388.091.395-.328.807-1.969.486-2.309.462-3.439.813-.042.03.049.061 1.549.146.662.036h1.622l3.02.225.79.522.474.638-.079.485-1.215.62-1.64-.389-3.829-.91-1.312-.329h-.182v.11l1.093 1.068 2.006 1.81 2.509 2.33.127.578-.322.455-.34-.049-2.205-1.657-.851-.747-1.926-1.62h-.128v.17l.444.649 2.345 3.521.122 1.08-.17.353-.608.213-.668-.122-1.374-1.925-1.415-2.167-1.143-1.943-.14.08-.674 7.254-.316.37-.729.28-.607-.461-.322-.747.322-1.476.389-1.924.315-1.53.286-1.9.17-.632-.012-.042-.14.018-1.434 1.967-2.18 2.945-1.726 1.845-.414.164-.717-.37.067-.662.401-.589 2.388-3.036 1.44-1.882.93-1.086-.006-.158h-.055L4.132 18.56l-1.13.146-.487-.456.061-.746.231-.243 1.908-1.312-.006.006z" />
+              </svg>
+            )},
+            { view: "scripts" as const, title: "Rally scripts", icon: (active: boolean) => (
+              <svg width="18" height="18" viewBox="2 1 12 12" fill="none" aria-hidden="true">
+                <path d="M3 2.5h10M3 5.5h7M3 8.5h9M3 11.5h6" stroke={active ? "#ddd" : "#bbb"} strokeWidth="1.0" strokeLinecap="round" />
+              </svg>
+            )},
+          ] as const).map(({ view, title, icon }) => {
+            const isActive = !panelCollapsed && sidebarView === view;
+            return (
+              <button
+                key={view}
+                className="activity-btn"
+                style={styles.activityBtn}
+                onClick={() => {
+                  if (isActive) {
+                    setPanelCollapsed(true);
+                  } else {
+                    setSidebarView(view);
+                    if (panelCollapsed) setPanelCollapsed(false);
+                  }
+                }}
+                title={isActive ? `Hide ${title.toLowerCase()}` : `Show ${title.toLowerCase()}`}
+              >
+                {icon(isActive)}
+              </button>
+            );
+          })}
           <button
-            style={styles.panelToggle}
-            onClick={() => setPanelCollapsed(!panelCollapsed)}
-            title={panelCollapsed ? "Show sidebar" : "Hide sidebar"}
-          >
-            <svg width="15" height="15" viewBox="0 0 16 16" fill="none">
-              <rect
-                x="1" y="2" width="14" height="12" rx="2"
-                stroke="#888" strokeWidth="1.2" fill="none"
-              />
-              <rect
-                x="1" y="2" width="5" height="12" rx="2"
-                fill={panelCollapsed ? "none" : "#888"}
-                stroke="#888" strokeWidth="1.2"
-              />
-            </svg>
-          </button>
-          <button
-            style={styles.panelToggle}
+            className="activity-btn"
+            style={styles.activityBtn}
             onClick={() => setFileExplorerCollapsed(!fileExplorerCollapsed)}
             title={fileExplorerCollapsed ? "Show files" : "Hide files"}
           >
-            <svg width="15" height="15" viewBox="0 0 16 16" fill="none">
-              <rect x="5" y="1.5" width="9" height="10" rx="1.2" stroke="#888" strokeWidth="1.2" />
-              <rect x="2" y="4.5" width="9" height="10" rx="1.2" stroke="#888" strokeWidth="1.2" fill="#1c1c1c" />
-            </svg>
-          </button>
-          <button
-            style={styles.panelToggle}
-            onClick={() => {
-              if (sidebarView === "claude") {
-                setSidebarView("workspaces");
-              } else {
-                setSidebarView("claude");
-                if (panelCollapsed) setPanelCollapsed(false);
-              }
-            }}
-            title={sidebarView === "claude" ? "Show workspaces" : "Show Claude config"}
-          >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill={sidebarView === "claude" ? "#aaa" : "#888"} aria-hidden="true">
-              <path d="M4.709 15.955l4.72-2.647.08-.23-.08-.128H9.2l-.79-.048-2.698-.073-2.339-.097-2.266-.122-.571-.121L0 11.784l.055-.352.48-.321.686.06 1.52.103 2.278.158 1.652.097 2.449.255h.389l.055-.157-.134-.098-.103-.097-2.358-1.596-2.552-1.688-1.336-.972-.724-.491-.364-.462-.158-1.008.656-.722.881.06.225.061.893.686 1.908 1.476 2.491 1.833.365.304.145-.103.019-.073-.164-.274-1.355-2.446-1.446-2.49-.644-1.032-.17-.619a2.97 2.97 0 01-.104-.729L6.283.134 6.696 0l.996.134.42.364.62 1.414 1.002 2.229 1.555 3.03.456.898.243.832.091.255h.158V9.01l.128-1.706.237-2.095.23-2.695.08-.76.376-.91.747-.492.584.28.48.685-.067.444-.286 1.851-.559 2.903-.364 1.942h.212l.243-.242.985-1.306 1.652-2.064.73-.82.85-.904.547-.431h1.033l.76 1.129-.34 1.166-1.064 1.347-.881 1.142-1.264 1.7-.79 1.36.073.11.188-.02 2.856-.606 1.543-.28 1.841-.315.833.388.091.395-.328.807-1.969.486-2.309.462-3.439.813-.042.03.049.061 1.549.146.662.036h1.622l3.02.225.79.522.474.638-.079.485-1.215.62-1.64-.389-3.829-.91-1.312-.329h-.182v.11l1.093 1.068 2.006 1.81 2.509 2.33.127.578-.322.455-.34-.049-2.205-1.657-.851-.747-1.926-1.62h-.128v.17l.444.649 2.345 3.521.122 1.08-.17.353-.608.213-.668-.122-1.374-1.925-1.415-2.167-1.143-1.943-.14.08-.674 7.254-.316.37-.729.28-.607-.461-.322-.747.322-1.476.389-1.924.315-1.53.286-1.9.17-.632-.012-.042-.14.018-1.434 1.967-2.18 2.945-1.726 1.845-.414.164-.717-.37.067-.662.401-.589 2.388-3.036 1.44-1.882.93-1.086-.006-.158h-.055L4.132 18.56l-1.13.146-.487-.456.061-.746.231-.243 1.908-1.312-.006.006z" />
-            </svg>
-          </button>
-          <button
-            style={styles.panelToggle}
-            onClick={() => {
-              if (sidebarView === "scripts") {
-                setSidebarView("workspaces");
-              } else {
-                setSidebarView("scripts");
-                if (panelCollapsed) setPanelCollapsed(false);
-              }
-            }}
-            title={sidebarView === "scripts" ? "Show workspaces" : "Show Rally scripts"}
-          >
-            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-              <path d="M3 2.5h10M3 5.5h7M3 8.5h9M3 11.5h6" stroke={sidebarView === "scripts" ? "#aaa" : "#888"} strokeWidth="1.3" strokeLinecap="round" />
+            <svg width="18" height="18" viewBox="0 0 16 16" fill="none">
+              <rect x="5" y="1.5" width="9" height="10" rx="1.2" stroke={fileExplorerCollapsed ? "#bbb" : "#ddd"} strokeWidth="1.0" />
+              <rect x="2" y="4.5" width="9" height="10" rx="1.2" stroke={fileExplorerCollapsed ? "#bbb" : "#ddd"} strokeWidth="1.0" fill="#1a1a1a" />
             </svg>
           </button>
         </div>
-        <span style={styles.titleText}>Rally</span>
-      </div>
-      <div style={styles.body}>
         {!panelCollapsed && (
           <>
             <div ref={sidebarRef} style={{ width: sidebarWidth, minWidth: sidebarWidth, flexShrink: 0, overflow: "hidden" }}>
@@ -626,6 +660,7 @@ export function App() {
         <div style={styles.main}>
           <PaneLayout />
           <GitDiffOverlay />
+          <PrReviewOverlayWrapper />
         </div>
       </div>
       <style>{`
@@ -650,6 +685,16 @@ export function App() {
   );
 }
 
+function PrReviewOverlayWrapper() {
+  const open = useWorkspaceStore((s) => s.prReviewOverlayOpen);
+  const rootPath = useWorkspaceStore((s) => s.prReviewOverlayPath);
+  const close = useWorkspaceStore((s) => s.closePrReviewOverlay);
+
+  if (!open || !rootPath) return null;
+
+  return <PrReviewOverlay rootPath={rootPath} onClose={close} />;
+}
+
 const styles: Record<string, React.CSSProperties> = {
   app: {
     display: "flex",
@@ -669,18 +714,13 @@ const styles: Record<string, React.CSSProperties> = {
     userSelect: "none",
     position: "relative",
     zIndex: 100,
-    paddingLeft: 80,
+    paddingLeft: 70,
   },
-  titlebarBtns: {
+  titlebarToggle: {
     position: "absolute",
-    left: 80,
+    left: 70,
     top: "50%",
     transform: "translateY(-50%)",
-    display: "flex",
-    alignItems: "center",
-    gap: 2,
-  },
-  panelToggle: {
     background: "none",
     border: "none",
     cursor: "pointer",
@@ -689,12 +729,11 @@ const styles: Record<string, React.CSSProperties> = {
     alignItems: "center",
     justifyContent: "center",
     borderRadius: 4,
-    opacity: 0.7,
   },
   titleText: {
     fontSize: 13,
-    fontWeight: 500,
-    color: "#555",
+    fontWeight: 700,
+    color: "#d0d0d0",
     letterSpacing: "0.01em",
     pointerEvents: "none" as const,
   },
@@ -702,6 +741,29 @@ const styles: Record<string, React.CSSProperties> = {
     flex: 1,
     display: "flex",
     minHeight: 0,
+  },
+  activityBar: {
+    width: 46,
+    minWidth: 46,
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "center",
+    background: "#1a1a1a",
+    borderRight: "1px solid #2a2a2a",
+    paddingTop: 0,
+    gap: 2,
+    flexShrink: 0,
+  },
+  activityBtn: {
+    background: "none",
+    border: "none",
+    cursor: "pointer",
+    width: 32,
+    height: 32,
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: 4,
   },
   main: {
     flex: 1,

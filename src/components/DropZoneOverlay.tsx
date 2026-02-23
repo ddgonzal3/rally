@@ -151,18 +151,20 @@ export function DropZoneTarget({
         <div style={{ ...styles.preview, ...previewStyle(hovered) }} />
       )}
       {visible && hovered === "center" && (
-        <div style={{ ...styles.preview, inset: 2 }} />
+        <div style={{ ...styles.preview, top: TAB_BAR_HEIGHT, left: 2, right: 2, bottom: 2 }} />
       )}
     </div>
   );
 }
 
+const TAB_BAR_HEIGHT = 31; // 29px tab bar + 2px inset
+
 function previewStyle(pos: DropPosition): React.CSSProperties {
   switch (pos) {
-    case "top": return { top: 2, left: 2, right: 2, height: "45%" };
+    case "top": return { top: TAB_BAR_HEIGHT, left: 2, right: 2, height: "45%" };
     case "bottom": return { bottom: 2, left: 2, right: 2, height: "45%" };
-    case "left": return { top: 2, left: 2, bottom: 2, width: "45%" };
-    case "right": return { top: 2, right: 2, bottom: 2, width: "45%" };
+    case "left": return { top: TAB_BAR_HEIGHT, left: 2, bottom: 2, width: "45%" };
+    case "right": return { top: TAB_BAR_HEIGHT, right: 2, bottom: 2, width: "45%" };
     default: return {};
   }
 }
@@ -176,8 +178,8 @@ const styles: Record<string, React.CSSProperties> = {
   },
   preview: {
     position: "absolute",
-    background: "rgba(100, 160, 255, 0.12)",
-    border: "1px solid rgba(100, 160, 255, 0.25)",
+    background: "rgba(255, 255, 255, 0.06)",
+    border: "1px solid rgba(255, 255, 255, 0.12)",
     borderRadius: 4,
     transition: "all 0.1s ease",
     pointerEvents: "none",

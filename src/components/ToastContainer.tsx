@@ -54,11 +54,12 @@ function ToastCard({ toast, onDismiss }: { toast: Toast; onDismiss: () => void }
   }, [onDismiss]);
 
   useEffect(() => {
-    const duration = toast.duration ?? 8000;
+    // Warning toasts persist until dismissed by default
+    const duration = toast.duration ?? (toast.type === "warning" ? 0 : 8000);
     if (duration === 0) return; // persistent
     const timer = setTimeout(dismiss, duration);
     return () => clearTimeout(timer);
-  }, [toast.duration, dismiss]);
+  }, [toast.duration, toast.type, dismiss]);
 
   const accentColor = TYPE_COLORS[toast.type];
 

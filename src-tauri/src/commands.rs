@@ -6,7 +6,7 @@ use tauri::Emitter;
 
 use crate::git_ops;
 use crate::git_watch::GitWatchState;
-use crate::workspace::{self, ChangesSummary, GitStatus, PrStatus, PushResult, Workspace};
+use crate::workspace::{self, ChangesSummary, CommitEntry, GitStatus, PrDetails, PrStatus, PushResult, Workspace};
 
 fn emit_workspaces_updated(app: &tauri::AppHandle) {
     if let Err(e) = app.emit("rally-workspaces-updated", ()) {
@@ -210,6 +210,21 @@ pub async fn git_pr_status(workspace_path: String) -> Result<PrStatus, String> {
 }
 
 #[tauri::command]
+pub async fn git_pr_details(workspace_path: String) -> Result<PrDetails, String> {
+    git_ops::pr_details(&workspace_path).await
+}
+
+#[tauri::command]
+pub async fn git_pr_diff(workspace_path: String) -> Result<String, String> {
+    git_ops::pr_diff(&workspace_path).await
+}
+
+#[tauri::command]
+pub async fn git_edit_pr_title(workspace_path: String, title: String) -> Result<(), String> {
+    git_ops::edit_pr_title(&workspace_path, &title).await
+}
+
+#[tauri::command]
 pub async fn git_merge_pr(workspace_path: String, method: String) -> Result<String, String> {
     git_ops::merge_pr(&workspace_path, &method).await
 }
@@ -269,8 +284,23 @@ pub async fn git_create_pr(workspace_path: String) -> Result<String, String> {
 }
 
 #[tauri::command]
+pub async fn git_commit_log(workspace_path: String, main_branch: String, limit: u32) -> Result<Vec<CommitEntry>, String> {
+    git_ops::commit_log(&workspace_path, &main_branch, limit).await
+}
+
+#[tauri::command]
 pub async fn git_diff_stat(workspace_path: String) -> Result<(i64, i64), String> {
     git_ops::diff_stat(&workspace_path).await
+}
+
+#[tauri::command]
+pub async fn git_fetch(workspace_path: String) -> Result<(), String> {
+    git_ops::fetch(&workspace_path).await
+}
+
+#[tauri::command]
+pub async fn git_rebase_on_main(workspace_path: String, main_branch: String) -> Result<String, String> {
+    git_ops::rebase_on_main(&workspace_path, &main_branch).await
 }
 
 #[tauri::command]

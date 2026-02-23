@@ -219,6 +219,16 @@ If a `verdict: "shipping"` signal has a timestamp older than 30 minutes, `pollSh
 | `src/components/TaskPanel.tsx` | Renders script + command list, routes built-in clicks to Claude panes |
 | `src/stores/workspaceStore.ts` | `pollShipSignals()`, `handleAutoMerge()`, `openClaudeCommand()` |
 
+## UI Design Rules
+
+These rules are non-negotiable. Follow them for every UI change.
+
+- **No colored buttons or icons** unless explicitly requested. SVGs use the same neutral color as their neighbors (typically `#999` or `#ddd` depending on context). Never introduce green, blue, red, or any accent color on a new element without being asked.
+- **SVG sizing must match neighbors.** Before adding an SVG, check the `width`/`height` of adjacent icons and use the same values.
+- **SVG alignment.** Icons must be vertically centered with neighboring text and icons.
+- **Font consistency.** Never use a font size, family, weight, or style that differs from the surrounding context. Study the existing neighbors and match exactly.
+- **Cohesive design.** When adding any new UI element, study its immediate neighbors (buttons, badges, icons, text) and replicate their exact styling patterns — padding, gap, border-radius, colors, font properties, everything.
+
 ## Known Pitfalls
 
 Read `PITFALLS.md` before starting any work. Add to it when you discover new pitfalls. These are hard-won lessons — ignoring them wastes time.
