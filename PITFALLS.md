@@ -38,6 +38,10 @@ The `ShipSignal` struct in `ship_ops.rs` has `phase: Option<String>` with `#[ser
 
 `ShipSession.ptyId` is optional — headless sessions (created from external `/ship` runs) have no PTY. Always check `session.ptyId` before calling `killPty`, `resizePty`, `writePty`, or docking the session. The `dismissShipSession` and `dockShipSession` store actions already guard this.
 
+## File Explorer Change Items: Use `display: none` Not `visibility: hidden` for Hover Actions
+
+The M/D/U action buttons (Stage, Unstage, Discard) on change file rows must use `display: none` / `display: inline-flex` toggled via CSS hover — NOT `visibility: hidden` / `visibility: visible`. `visibility: hidden` reserves layout space even when the buttons are invisible, which truncates the file path text unnecessarily. The path should extend fully to the status letter (M, D, U) when not hovered, and only abbreviate when hover reveals the action buttons. The CSS lives in `index.html` under `.change-item .change-action-btn`.
+
 ## Context Menu: Always `stopPropagation()` in Nested Handlers
 
 When a component tree has `onContextMenu` handlers at multiple levels (e.g. a tree node AND its container), the child handler **must** call `e.stopPropagation()` in addition to `e.preventDefault()`. Without it, the event bubbles to the parent, which fires a second `showContextMenu()` call. That second call clears the ghost-event suppression flag, so when the user clicks elsewhere to dismiss, macOS dispatches a ghost `contextmenu` event that opens yet another menu. Symptom: dismissing a right-click menu by clicking elsewhere opens a new menu at the click location.

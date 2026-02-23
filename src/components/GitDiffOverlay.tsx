@@ -8,19 +8,27 @@ import { addToast } from "./ToastContainer";
 import type { ChangesSummary, CommitEntry } from "../lib/types";
 import { relativeTime } from "../lib/time";
 
-export function GitDiffOverlay() {
-  const open = useWorkspaceStore((s) => s.gitDiffOverlayOpen);
-  const rootPath = useWorkspaceStore((s) => s.gitDiffOverlayPath);
+// ---------------------------------------------------------------------------
+// GitDiffContent — reusable inner content (used by both overlay and unified panel)
+// ---------------------------------------------------------------------------
+
+interface GitDiffContentProps {
+  rootPath: string;
+  /** When provided, shows a back button that calls this. Used in overlay mode. */
+  onClose?: () => void;
+  /** When true, shows the repo name centered in the header. Used in overlay mode. */
+  showRepoName?: boolean;
+}
+
+export function GitDiffContent({ rootPath, onClose, showRepoName }: GitDiffContentProps) {
   const activeTab = useWorkspaceStore((s) => s.gitDiffActiveTab);
   const setActiveTab = useWorkspaceStore((s) => s.setGitDiffActiveTab);
-  const closeOverlay = useWorkspaceStore((s) => s.closeGitDiffOverlay);
   const startShipSession = useWorkspaceStore((s) => s.startShipSession);
   const scrollToFile = useWorkspaceStore((s) => s.gitDiffScrollToFile);
-  const gitStatus = useWorkspaceStore((s) =>
-    rootPath ? s.gitStatuses[rootPath] : undefined,
-  );
+  const gitStatus = useWorkspaceStore((s) => s.gitStatuses[rootPath]);
+  const prStatus = useWorkspaceStore((s) => s.prStatuses[rootPath]);
   const mainBranch = useWorkspaceStore((s) => {
-    const ws = s.workspaces.find((w) => rootPath && w.paths.includes(rootPath));
+    const ws = s.workspaces.find((w) => w.paths.includes(rootPath));
     return ws?.main_branch ?? "main";
   });
 
@@ -32,28 +40,12 @@ export function GitDiffOverlay() {
   const [diffStatAdd, setDiffStatAdd] = useState(0);
   const [diffStatDel, setDiffStatDel] = useState(0);
   const [commitModalOpen, setCommitModalOpen] = useState(false);
-  const [mounted, setMounted] = useState(false);
   const [scrollTarget, setScrollTarget] = useState<string | null>(null);
-  // expandKey changes to signal DiffFileSection to reset to expanded/collapsed
   const [expandKey, setExpandKey] = useState(0);
   const [defaultExpanded, setDefaultExpanded] = useState(true);
+  const [loading, setLoading] = useState(true);
   const fileListRef = useRef<HTMLDivElement>(null);
   const commitBtnRef = useRef<HTMLButtonElement>(null);
-
-  const [visible, setVisible] = useState(false);
-
-  useEffect(() => {
-    if (open) {
-      setMounted(true);
-      requestAnimationFrame(() => {
-        requestAnimationFrame(() => setVisible(true));
-      });
-    } else {
-      setVisible(false);
-      const timer = setTimeout(() => setMounted(false), 80);
-      return () => clearTimeout(timer);
-    }
-  }, [open]);
 
   const fetchDiffs = useCallback(async () => {
     if (!rootPath) return;
@@ -76,7 +68,6 @@ export function GitDiffOverlay() {
               const content = await api.readFileContent(fullPath);
               return createUntrackedDiffFile(filePath, content);
             } catch {
-              // Binary or unreadable file — create empty diff entry
               return createUntrackedDiffFile(filePath, "");
             }
           }),
@@ -92,16 +83,16 @@ export function GitDiffOverlay() {
       setCommits(commitLog);
     } catch (e) {
       console.error("Failed to fetch diffs:", e);
+    } finally {
+      setLoading(false);
     }
   }, [rootPath, mainBranch]);
 
-  // Fetch on open + handle single-file mode
+  // Fetch on mount + handle scrollToFile from store
   useEffect(() => {
-    if (open && rootPath) {
-      setScrollTarget(scrollToFile ?? null);
-      fetchDiffs();
-    }
-  }, [open, rootPath, scrollToFile, fetchDiffs]);
+    setScrollTarget(scrollToFile ?? null);
+    fetchDiffs();
+  }, [rootPath, scrollToFile, fetchDiffs]);
 
   // Scroll to target file after diffs load
   useEffect(() => {
@@ -112,11 +103,9 @@ export function GitDiffOverlay() {
         `[data-filepath="${CSS.escape(scrollTarget)}"]`,
       ) as HTMLElement | null;
       if (el && container) {
-        // Calculate distance to decide scroll behavior
         const containerRect = container.getBoundingClientRect();
         const elRect = el.getBoundingClientRect();
         const distance = Math.abs(elRect.top - containerRect.top - container.scrollTop);
-        // Short distances get smooth scroll, long distances get instant
         const behavior = distance > container.clientHeight * 2 ? "instant" : "smooth";
         el.scrollIntoView({ behavior, block: "start" });
         setScrollTarget(null);
@@ -126,26 +115,11 @@ export function GitDiffOverlay() {
 
   // Auto-refresh on local git changes
   useEffect(() => {
-    if (!open) return;
     const handler = () => fetchDiffs();
     document.addEventListener("rally:git-changes-refresh", handler);
     return () =>
       document.removeEventListener("rally:git-changes-refresh", handler);
-  }, [open, fetchDiffs]);
-
-  // Escape key to close — keyed on mounted so it works during slide-out too
-  useEffect(() => {
-    if (!mounted || !open) return;
-    const handler = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
-        e.stopPropagation();
-        e.preventDefault();
-        closeOverlay();
-      }
-    };
-    document.addEventListener("keydown", handler, true);
-    return () => document.removeEventListener("keydown", handler, true);
-  }, [mounted, open, closeOverlay]);
+  }, [fetchDiffs]);
 
   const handleStage = useCallback(
     async (filePath: string) => {
@@ -213,7 +187,6 @@ export function GitDiffOverlay() {
           const patch = generateHunkPatch(file, file.hunks[hunkIndex]);
           await api.gitApplyPatch(rootPath, patch, false, true);
         } else {
-          // Unstage a specific hunk from staged
           const file = stagedFiles.find((f) => (f.newPath || f.oldPath) === filePath);
           if (!file || !file.hunks[hunkIndex]) return;
           const patch = generateHunkPatch(file, file.hunks[hunkIndex]);
@@ -277,75 +250,59 @@ export function GitDiffOverlay() {
   const handleShip = useCallback(() => {
     if (!rootPath) return;
     startShipSession(rootPath);
-    closeOverlay();
-  }, [rootPath, startShipSession, closeOverlay]);
-
-  // relativeTime imported from lib/time.ts
-
-  if (!mounted) return null;
+    onClose?.();
+  }, [rootPath, startShipSession, onClose]);
 
   const activeFiles = activeTab === "unstaged" ? unstagedFiles : stagedFiles;
-  // Use git status counts (source of truth) for tab badges,
-  // not diff-parsed file counts which may miss new/binary files
   const unstagedCount = (changes?.unstaged.length ?? 0) + (changes?.untracked.length ?? 0);
   const stagedCount = changes?.staged.length ?? 0;
   const hasStaged = stagedCount > 0;
   const folderName = rootPath?.split("/").pop() ?? "";
+  const hasPr = !!(prStatus && prStatus.state === "OPEN");
 
   return (
-    <div
-      className="git-diff-overlay"
-      style={{
-        ...s.backdrop,
-        opacity: visible ? 1 : 0,
-      }}
-    >
+    <>
       {/* Header */}
-      <div style={s.header}>
-        <button onClick={closeOverlay} style={s.backBtn} title="Back">
-          <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
-            <path d="M10 3L5 8l5 5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-          </svg>
-        </button>
+      <div style={cs.header}>
+        {onClose && (
+          <button onClick={onClose} style={cs.backBtn} title="Back">
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
+              <path d="M10 3L5 8l5 5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          </button>
+        )}
         <button
           onClick={() => setActiveTab("unstaged")}
-          style={activeTab === "unstaged" ? s.tabActive : s.tab}
+          style={activeTab === "unstaged" ? cs.tabActive : cs.tab}
         >
-          Unstaged · {unstagedCount}
+          Unstaged{changes ? ` · ${unstagedCount}` : ""}
         </button>
         <button
           onClick={() => setActiveTab("staged")}
-          style={activeTab === "staged" ? s.tabActive : s.tab}
+          style={activeTab === "staged" ? cs.tabActive : cs.tab}
         >
-          Staged · {stagedCount}
+          Staged{changes ? ` · ${stagedCount}` : ""}
         </button>
-        <span style={s.repoName}>{folderName}</span>
+        {showRepoName && <span style={cs.repoName}>{folderName}</span>}
         <div style={{ flex: 1 }} />
-        {/* Branch pill + bulk actions (moved from footer) */}
-        <span style={s.branchPill}>
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="#ddd" style={{ flexShrink: 0 }}>
-            <path d="M21.007 8.222A3.738 3.738 0 0 0 15.045 5.2a3.737 3.737 0 0 0 1.156 6.583 2.988 2.988 0 0 1-2.668 1.67h-2.99a4.456 4.456 0 0 0-2.989 1.165V7.4a3.737 3.737 0 1 0-1.494 0v9.117a3.776 3.776 0 1 0 1.816.099 2.99 2.99 0 0 1 2.668-1.667h2.99a4.484 4.484 0 0 0 4.223-3.039 3.736 3.736 0 0 0 3.25-3.687zM4.565 3.738a2.242 2.242 0 1 1 4.484 0 2.242 2.242 0 0 1-4.484 0zm4.484 16.441a2.242 2.242 0 1 1-4.484 0 2.242 2.242 0 0 1 4.484 0zm8.221-9.715a2.242 2.242 0 1 1 0-4.485 2.242 2.242 0 0 1 0 4.485z" />
-          </svg>
-          {gitStatus?.branch ?? ""}
-        </span>
         {activeTab === "unstaged" && unstagedCount > 0 && (
           <>
-            <button onClick={handleRevertAll} style={revertConfirming ? s.bulkActionBtnDanger : s.bulkActionBtn}>
+            <button onClick={handleRevertAll} style={revertConfirming ? cs.bulkActionBtnDanger : cs.bulkActionBtn}>
               {revertConfirming ? "Confirm?" : "Revert all"}
             </button>
-            <button onClick={handleStageAll} style={s.bulkActionBtn}>
+            <button onClick={handleStageAll} style={cs.bulkActionBtn}>
               Stage all
             </button>
           </>
         )}
         {activeTab === "staged" && stagedCount > 0 && (
-          <button onClick={handleUnstageAll} style={s.bulkActionBtn}>
+          <button onClick={handleUnstageAll} style={cs.bulkActionBtn}>
             Unstage all
           </button>
         )}
         {/* Diff stats */}
         {(diffStatAdd > 0 || diffStatDel > 0) && (
-          <span style={s.diffStats}>
+          <span style={cs.diffStats}>
             {diffStatAdd > 0 && <span style={{ color: "#3fb950" }}>+{diffStatAdd}</span>}
             {diffStatAdd > 0 && diffStatDel > 0 && " "}
             {diffStatDel > 0 && <span style={{ color: "#f85149" }}>-{diffStatDel}</span>}
@@ -356,7 +313,7 @@ export function GitDiffOverlay() {
           onClick={() => setCommitModalOpen(true)}
           disabled={!hasStaged && unstagedCount === 0}
           style={{
-            ...s.headerCommitBtn,
+            ...cs.headerCommitBtn,
             opacity: hasStaged || unstagedCount > 0 ? 1 : 0.4,
           }}
         >
@@ -365,13 +322,23 @@ export function GitDiffOverlay() {
       </div>
 
       {/* File list */}
-      <div ref={fileListRef} style={s.fileList}>
+      <div ref={fileListRef} style={cs.fileList}>
+        {loading && (
+          <div style={cs.loadingContainer}>
+            <div style={cs.loadingDots}>
+              <span style={{ ...cs.loadingDot, animationDelay: "0s" }} />
+              <span style={{ ...cs.loadingDot, animationDelay: "0.15s" }} />
+              <span style={{ ...cs.loadingDot, animationDelay: "0.3s" }} />
+            </div>
+          </div>
+        )}
+
         {/* Commits section */}
-        {commits.length > 0 && (
-          <div style={s.commitsSection}>
+        {!loading && commits.length > 0 && (
+          <div style={cs.commitsSection}>
             <button
               onClick={() => setCommitsExpanded((v) => !v)}
-              style={s.commitsSectionHeader}
+              style={cs.commitsSectionHeader}
               className="changes-section-btn"
             >
               <svg
@@ -383,16 +350,16 @@ export function GitDiffOverlay() {
               >
                 <path d="M4 2.4L8 6L4 9.6" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
               </svg>
-              <span style={s.commitsSectionTitle}>Commits</span>
-              <span style={s.commitsBadge}>{commits.length}</span>
+              <span style={cs.commitsSectionTitle}>Commits</span>
+              <span style={cs.commitsBadge}>{commits.length}</span>
             </button>
             {commitsExpanded && (
-              <div style={s.commitsBody}>
+              <div style={cs.commitsBody}>
                 {commits.map((c) => (
-                  <div key={c.sha} style={s.commitRow}>
-                    <span style={s.commitSha}>{c.sha.slice(0, 7)}</span>
-                    <span style={s.commitMsg}>{c.message}</span>
-                    <span style={s.commitDate}>{relativeTime(c.date)}</span>
+                  <div key={c.sha} style={cs.commitRow}>
+                    <span style={cs.commitSha}>{c.sha.slice(0, 7)}</span>
+                    <span style={cs.commitMsg}>{c.message}</span>
+                    <span style={cs.commitDate}>{relativeTime(c.date)}</span>
                   </div>
                 ))}
               </div>
@@ -400,13 +367,13 @@ export function GitDiffOverlay() {
           </div>
         )}
 
-        {activeFiles.length === 0 ? (
-          <div style={s.empty}>
+        {!loading && activeFiles.length === 0 ? (
+          <div style={cs.empty}>
             {activeTab === "unstaged"
               ? "No unstaged changes"
               : "No staged changes"}
           </div>
-        ) : (
+        ) : !loading ? (
           activeFiles.map((file) => (
             <div key={file.newPath || file.oldPath} data-filepath={file.newPath || file.oldPath}>
               <DiffFileSection
@@ -422,14 +389,14 @@ export function GitDiffOverlay() {
               />
             </div>
           ))
-        )}
+        ) : null}
       </div>
 
       {/* Commit Modal */}
       <CommitModal
         open={commitModalOpen}
         onClose={() => setCommitModalOpen(false)}
-        rootPath={rootPath ?? ""}
+        rootPath={rootPath}
         branch={gitStatus?.branch ?? ""}
         stagedCount={stagedCount}
         unstagedCount={unstagedCount}
@@ -438,21 +405,17 @@ export function GitDiffOverlay() {
         onCommitted={fetchDiffs}
         onShip={handleShip}
         anchorRef={commitBtnRef}
+        hasPr={hasPr}
       />
-    </div>
+    </>
   );
 }
 
-const s: Record<string, React.CSSProperties> = {
-  backdrop: {
-    position: "absolute",
-    inset: 0,
-    zIndex: 50,
-    background: "#1a1a1a",
-    display: "flex",
-    flexDirection: "column",
-    transition: "opacity 75ms ease",
-  },
+// ---------------------------------------------------------------------------
+// Styles (shared by GitDiffContent regardless of context)
+// ---------------------------------------------------------------------------
+
+const cs: Record<string, React.CSSProperties> = {
   header: {
     display: "flex",
     alignItems: "center",
@@ -515,19 +478,6 @@ const s: Record<string, React.CSSProperties> = {
     textAlign: "center",
     padding: 48,
     fontWeight: 500,
-  },
-  branchPill: {
-    display: "inline-flex",
-    alignItems: "center",
-    gap: 5,
-    fontSize: 11,
-    color: "#ddd",
-    fontFamily: "'SF Mono', 'Menlo', monospace",
-    fontWeight: 600,
-    background: "#2a2a2a",
-    padding: "4px 10px",
-    borderRadius: 20,
-    lineHeight: "14px",
   },
   bulkActionBtn: {
     display: "inline-flex",
@@ -645,5 +595,22 @@ const s: Record<string, React.CSSProperties> = {
     color: "#666",
     flexShrink: 0,
     fontWeight: 500,
+  },
+  loadingContainer: {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: "48px 0",
+  },
+  loadingDots: {
+    display: "flex",
+    gap: 6,
+  },
+  loadingDot: {
+    width: 6,
+    height: 6,
+    borderRadius: "50%",
+    background: "#555",
+    animation: "claude-dot 1.4s ease-in-out infinite",
   },
 };

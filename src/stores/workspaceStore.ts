@@ -67,9 +67,10 @@ type PersistedWorkspaceState = {
   activePathIndex: Record<string, number>;
   layouts: Record<string, WorkspaceLayout>;
   activeGroupIds: Record<string, string>;
-  gitDiffOverlayOpen: boolean;
-  gitDiffOverlayPath: string | null;
   gitDiffActiveTab: "unstaged" | "staged";
+  unifiedGitPanelOpen: boolean;
+  unifiedGitPanelPath: string | null;
+  unifiedGitPanelTab: "changes" | "pr";
 };
 
 const workspacePersistStorage = (() => {
@@ -78,9 +79,10 @@ const workspacePersistStorage = (() => {
     activePathIndex: PersistedWorkspaceState["activePathIndex"];
     layouts: PersistedWorkspaceState["layouts"];
     activeGroupIds: PersistedWorkspaceState["activeGroupIds"];
-    gitDiffOverlayOpen: boolean;
-    gitDiffOverlayPath: string | null;
     gitDiffActiveTab: string;
+    unifiedGitPanelOpen: boolean;
+    unifiedGitPanelPath: string | null;
+    unifiedGitPanelTab: string;
     version: number;
   } | null = null;
 
@@ -109,9 +111,10 @@ const workspacePersistStorage = (() => {
         lastRefs.activePathIndex === state.activePathIndex &&
         lastRefs.layouts === state.layouts &&
         lastRefs.activeGroupIds === state.activeGroupIds &&
-        lastRefs.gitDiffOverlayOpen === state.gitDiffOverlayOpen &&
-        lastRefs.gitDiffOverlayPath === state.gitDiffOverlayPath &&
-        lastRefs.gitDiffActiveTab === state.gitDiffActiveTab
+        lastRefs.gitDiffActiveTab === state.gitDiffActiveTab &&
+        lastRefs.unifiedGitPanelOpen === state.unifiedGitPanelOpen &&
+        lastRefs.unifiedGitPanelPath === state.unifiedGitPanelPath &&
+        lastRefs.unifiedGitPanelTab === state.unifiedGitPanelTab
       ) {
         return;
       }
@@ -122,9 +125,10 @@ const workspacePersistStorage = (() => {
         activePathIndex: state.activePathIndex,
         layouts: state.layouts,
         activeGroupIds: state.activeGroupIds,
-        gitDiffOverlayOpen: state.gitDiffOverlayOpen,
-        gitDiffOverlayPath: state.gitDiffOverlayPath,
         gitDiffActiveTab: state.gitDiffActiveTab,
+        unifiedGitPanelOpen: state.unifiedGitPanelOpen,
+        unifiedGitPanelPath: state.unifiedGitPanelPath,
+        unifiedGitPanelTab: state.unifiedGitPanelTab,
         version: resolvedVersion,
       };
     },
@@ -156,15 +160,18 @@ interface WorkspaceState {
   shipSession: ShipSession | null;
   /** File path to reveal in explorer (set on explicit reveal, auto-clears) */
   revealedFilePath: string | null;
-  /** Git diff overlay state */
-  gitDiffOverlayOpen: boolean;
-  gitDiffOverlayPath: string | null;
+  /** Git diff state (shared by GitDiffContent) */
   gitDiffActiveTab: "unstaged" | "staged";
   gitDiffScrollToFile: string | null;
-  /** PR review overlay state */
-  prReviewOverlayOpen: boolean;
-  prReviewOverlayPath: string | null;
+  /** PR review scroll state (shared by PrReviewContent) */
   prReviewScrollToFile: string | null;
+  /** Unified git panel state */
+  unifiedGitPanelOpen: boolean;
+  unifiedGitPanelPath: string | null;
+  unifiedGitPanelTab: "changes" | "pr";
+  openUnifiedGitPanel: (rootPath: string, tab?: "changes" | "pr") => void;
+  closeUnifiedGitPanel: () => void;
+  setUnifiedGitPanelTab: (tab: "changes" | "pr") => void;
   loading: boolean;
   /** Set of pane IDs with unsaved editor changes */
   dirtyPanes: Set<string>;
@@ -244,16 +251,8 @@ interface WorkspaceState {
   openFile: (workspaceId: string, filePath: string) => void;
   /** Reveal a file in the explorer (expand ancestors + highlight) */
   revealFileInExplorer: (filePath: string) => void;
-  /** Open the git diff overlay for a repo path, optionally scrolling to a file */
-  openGitDiffOverlay: (rootPath: string, scrollToFile?: string) => void;
-  /** Close the git diff overlay */
-  closeGitDiffOverlay: () => void;
-  /** Set the active tab in the git diff overlay */
+  /** Set the active tab in the git diff panel */
   setGitDiffActiveTab: (tab: "unstaged" | "staged") => void;
-  /** Open the PR review overlay for a repo path, optionally scrolling to a file */
-  openPrReviewOverlay: (rootPath: string, scrollToFile?: string) => void;
-  /** Close the PR review overlay */
-  closePrReviewOverlay: () => void;
   /** Open a diff view for a repo path */
   openDiff: (workspaceId: string, rootPath: string) => void;
   // Ship actions
@@ -494,13 +493,12 @@ export const useWorkspaceStore = create<WorkspaceState>()(
   shipStatuses: {},
   shipSession: null,
   revealedFilePath: null,
-  gitDiffOverlayOpen: false,
-  gitDiffOverlayPath: null,
   gitDiffActiveTab: "unstaged" as const,
   gitDiffScrollToFile: null,
-  prReviewOverlayOpen: false,
-  prReviewOverlayPath: null,
   prReviewScrollToFile: null,
+  unifiedGitPanelOpen: false,
+  unifiedGitPanelPath: null,
+  unifiedGitPanelTab: "changes" as const,
   loading: false,
   dirtyPanes: new Set(),
 
@@ -1639,62 +1637,21 @@ export const useWorkspaceStore = create<WorkspaceState>()(
     setTimeout(() => set({ revealedFilePath: null }), 1000);
   },
 
-  openGitDiffOverlay: (rootPath, scrollToFile) => {
-    // Toggle: if already open for this path with no specific file, close it
-    const s = get();
-    if (s.gitDiffOverlayOpen && s.gitDiffOverlayPath === rootPath && !scrollToFile) {
-      set({ gitDiffOverlayOpen: false, gitDiffOverlayPath: null, gitDiffScrollToFile: null });
-      return;
-    }
-    set({
-      gitDiffOverlayOpen: true,
-      gitDiffOverlayPath: rootPath,
-      gitDiffScrollToFile: scrollToFile ?? null,
-      // Only reset tab when opening without a specific file
-      // (file-specific opens pre-set the tab via setGitDiffActiveTab)
-      ...(scrollToFile ? {} : { gitDiffActiveTab: "unstaged" as const }),
-      // Close PR overlay if open
-      prReviewOverlayOpen: false,
-      prReviewOverlayPath: null,
-      prReviewScrollToFile: null,
-    });
-  },
-
-  closeGitDiffOverlay: () => {
-    set({
-      gitDiffOverlayOpen: false,
-      gitDiffOverlayPath: null,
-      gitDiffScrollToFile: null,
-    });
-  },
-
   setGitDiffActiveTab: (tab) => {
     set({ gitDiffActiveTab: tab });
   },
 
-  openPrReviewOverlay: (rootPath, scrollToFile) => {
-    const s = get();
-    // Toggle if same path and no specific file requested
-    if (s.prReviewOverlayOpen && s.prReviewOverlayPath === rootPath && !scrollToFile) {
-      set({ prReviewOverlayOpen: false, prReviewOverlayPath: null, prReviewScrollToFile: null });
-      return;
-    }
-    set({
-      prReviewOverlayOpen: true,
-      prReviewOverlayPath: rootPath,
-      prReviewScrollToFile: scrollToFile ?? null,
-      // Close git diff overlay if open
-      gitDiffOverlayOpen: false,
-      gitDiffOverlayPath: null,
-      gitDiffScrollToFile: null,
-    });
-    // Eagerly refresh PR status so the overlay always shows fresh data
-    get().refreshPrStatusForPath(rootPath).catch(() => {});
-  },
-
-  closePrReviewOverlay: () => {
-    set({ prReviewOverlayOpen: false, prReviewOverlayPath: null, prReviewScrollToFile: null });
-  },
+  openUnifiedGitPanel: (rootPath, tab) => set((prev) => ({
+    unifiedGitPanelOpen: true,
+    unifiedGitPanelPath: rootPath,
+    // Only change tab if explicitly provided; otherwise keep current tab
+    unifiedGitPanelTab: tab ?? prev.unifiedGitPanelTab,
+  })),
+  closeUnifiedGitPanel: () => set({
+    unifiedGitPanelOpen: false,
+    unifiedGitPanelPath: null,
+  }),
+  setUnifiedGitPanelTab: (tab) => set({ unifiedGitPanelTab: tab }),
 
   openDiff: (workspaceId, rootPath) => {
     const layout = get().getOrCreateLayout(workspaceId);
@@ -1875,9 +1832,10 @@ export const useWorkspaceStore = create<WorkspaceState>()(
         activePathIndex: state.activePathIndex,
         layouts: state.layouts,
         activeGroupIds: state.activeGroupIds,
-        gitDiffOverlayOpen: state.gitDiffOverlayOpen,
-        gitDiffOverlayPath: state.gitDiffOverlayPath,
         gitDiffActiveTab: state.gitDiffActiveTab,
+        unifiedGitPanelOpen: state.unifiedGitPanelOpen,
+        unifiedGitPanelPath: state.unifiedGitPanelPath,
+        unifiedGitPanelTab: state.unifiedGitPanelTab,
       }),
       merge: (persisted, current) => {
         const p = persisted as Partial<WorkspaceState> | undefined;
@@ -1887,9 +1845,10 @@ export const useWorkspaceStore = create<WorkspaceState>()(
           activePathIndex: p?.activePathIndex ?? current.activePathIndex,
           layouts: restoreLayouts(p?.layouts ?? {}),
           activeGroupIds: p?.activeGroupIds ?? current.activeGroupIds,
-          gitDiffOverlayOpen: p?.gitDiffOverlayOpen ?? false,
-          gitDiffOverlayPath: p?.gitDiffOverlayPath ?? null,
           gitDiffActiveTab: p?.gitDiffActiveTab ?? "unstaged",
+          unifiedGitPanelOpen: p?.unifiedGitPanelOpen ?? false,
+          unifiedGitPanelPath: p?.unifiedGitPanelPath ?? null,
+          unifiedGitPanelTab: (p?.unifiedGitPanelTab === "pr" ? "pr" : "changes") as "changes" | "pr",
         };
       },
     }

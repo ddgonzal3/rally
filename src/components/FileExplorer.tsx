@@ -784,8 +784,7 @@ function RootSection({
 
   const activeWorkspaceId = useWorkspaceStore((s) => s.activeWorkspaceId);
   const openFile = useWorkspaceStore((s) => s.openFile);
-  const openGitDiffOverlay = useWorkspaceStore((s) => s.openGitDiffOverlay);
-  const openPrReviewOverlay = useWorkspaceStore((s) => s.openPrReviewOverlay);
+  const openUnifiedGitPanel = useWorkspaceStore((s) => s.openUnifiedGitPanel);
   const removePathFromWorkspace = useWorkspaceStore(
     (s) => s.removePathFromWorkspace,
   );
@@ -937,11 +936,16 @@ function RootSection({
     onToggleChanges,
   ]);
 
+  const closeUnifiedGitPanel = useWorkspaceStore((s) => s.closeUnifiedGitPanel);
   const handleToggleChanges = useCallback(() => {
+    const state = useWorkspaceStore.getState();
+    if (state.unifiedGitPanelOpen && state.unifiedGitPanelPath === rootPath) {
+      closeUnifiedGitPanel();
+      return;
+    }
     if (repoCollapsed) setRepoCollapsed(false);
-    // Only toggle the overlay — the inline ChangesPanel derives from overlay state
-    openGitDiffOverlay(rootPath);
-  }, [repoCollapsed, setRepoCollapsed, openGitDiffOverlay, rootPath]);
+    openUnifiedGitPanel(rootPath, "changes");
+  }, [repoCollapsed, setRepoCollapsed, openUnifiedGitPanel, closeUnifiedGitPanel, rootPath]);
 
   const [creatingPr, setCreatingPr] = useState(false);
   const refreshPrStatusForPath = useWorkspaceStore((s) => s.refreshPrStatusForPath);
@@ -1067,7 +1071,7 @@ function RootSection({
                     <PrIcon />
                   </button>
                 )}
-                <PrBadge pr={prStatus} onClick={() => openPrReviewOverlay(rootPath)} />
+                <PrBadge pr={prStatus} onClick={() => openUnifiedGitPanel(rootPath, "pr")} />
                 <GitStatusIcon
                   status={gitStatus}
                   onClick={handleToggleChanges}
@@ -1078,21 +1082,10 @@ function RootSection({
         </div>
       </div>
 
-      {!repoCollapsed &&
-        (showPrFiles ? (
-          <PrFilesPanel
-            rootPath={rootPath}
-            onSelectFile={(filePath) => onSelectPrFile(rootPath, filePath)}
-          />
-        ) : showChanges ? (
-          <ChangesPanel
-            rootPath={rootPath}
-            onSelectFile={(filePath, isUntracked, section) =>
-              onSelectChangeFile(rootPath, filePath, isUntracked, section)
-            }
-          />
-        ) : (
-          <>
+      {!repoCollapsed && (
+        <div style={{ position: "relative" }}>
+          {/* File tree — invisible when panels active, stays in flow to hold card height */}
+          <div style={(showChanges || showPrFiles) ? styles.treeHidden : undefined}>
             {filesExpanded &&
               isCreatingAtRoot &&
               editState.type === "create" && (
@@ -1144,8 +1137,28 @@ function RootSection({
             {activeWorkspaceId && (
               <TaskPanel rootPath={rootPath} workspaceId={activeWorkspaceId} />
             )}
-          </>
-        ))}
+          </div>
+          {/* Changes/PR panels — absolutely positioned over hidden file tree */}
+          {showChanges && (
+            <div style={styles.panelOverlay}>
+              <ChangesPanel
+                rootPath={rootPath}
+                onSelectFile={(filePath, isUntracked, section) =>
+                  onSelectChangeFile(rootPath, filePath, isUntracked, section)
+                }
+              />
+            </div>
+          )}
+          {showPrFiles && (
+            <div style={styles.panelOverlay}>
+              <PrFilesPanel
+                rootPath={rootPath}
+                onSelectFile={(filePath) => onSelectPrFile(rootPath, filePath)}
+              />
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -1490,9 +1503,7 @@ function ChangesPanel({
   return (
     <>
       <ScrollArea style={{ flex: 1, padding: "0 4px", paddingBottom: 12 }}>
-        {!changes ? (
-          <div style={styles.emptyMsg}>Loading...</div>
-        ) : total === 0 ? (
+        {!changes ? null : total === 0 ? (
           <div style={styles.emptyMsg}>No changes</div>
         ) : (
           <>
@@ -1659,26 +1670,13 @@ export function FileExplorer({ onCollapse, flushLeft }: FileExplorerProps) {
   const activeWorkspaceId = useWorkspaceStore((s) => s.activeWorkspaceId);
   const workspaces = useWorkspaceStore((s) => s.workspaces);
   const addPathToWorkspace = useWorkspaceStore((s) => s.addPathToWorkspace);
-  const openGitDiffOverlay = useWorkspaceStore((s) => s.openGitDiffOverlay);
-  const gitDiffOverlayOpen = useWorkspaceStore((s) => s.gitDiffOverlayOpen);
-  const gitDiffOverlayPath = useWorkspaceStore((s) => s.gitDiffOverlayPath);
-  const prReviewOverlayOpen = useWorkspaceStore((s) => s.prReviewOverlayOpen);
-  const prReviewOverlayPath = useWorkspaceStore((s) => s.prReviewOverlayPath);
-  const openPrReviewOverlay = useWorkspaceStore((s) => s.openPrReviewOverlay);
+  const openUnifiedGitPanel = useWorkspaceStore((s) => s.openUnifiedGitPanel);
+  const unifiedGitPanelOpen = useWorkspaceStore((s) => s.unifiedGitPanelOpen);
+  const unifiedGitPanelPath = useWorkspaceStore((s) => s.unifiedGitPanelPath);
+  const unifiedGitPanelTab = useWorkspaceStore((s) => s.unifiedGitPanelTab);
   const setActivePathIndex = useWorkspaceStore((s) => s.setActivePathIndex);
   const ws = workspaces.find((w) => w.id === activeWorkspaceId);
   const [gitRoots, setGitRoots] = useState<Set<string>>(new Set());
-  const [changesOpen, setChangesOpen] = useState<Set<string>>(() => {
-    if (!activeWorkspaceId) return new Set();
-    try {
-      const saved = localStorage.getItem(
-        `rally:changesOpen:${activeWorkspaceId}`,
-      );
-      return saved ? new Set(JSON.parse(saved)) : new Set();
-    } catch {
-      return new Set();
-    }
-  });
 
   // Global Enter-to-rename: when a file is selected in the tree, Enter triggers rename
   useEffect(() => {
@@ -1771,21 +1769,6 @@ export function FileExplorer({ onCollapse, flushLeft }: FileExplorerProps) {
     };
   }, []);
 
-  // Restore changes view when workspace changes
-  useEffect(() => {
-    if (!activeWorkspaceId) {
-      setChangesOpen(new Set());
-      return;
-    }
-    try {
-      const saved = localStorage.getItem(
-        `rally:changesOpen:${activeWorkspaceId}`,
-      );
-      setChangesOpen(saved ? new Set(JSON.parse(saved)) : new Set());
-    } catch {
-      setChangesOpen(new Set());
-    }
-  }, [activeWorkspaceId]);
 
   if (!ws) {
     return (
@@ -1801,19 +1784,13 @@ export function FileExplorer({ onCollapse, flushLeft }: FileExplorerProps) {
       const idx = ws.paths.indexOf(rootPath);
       if (idx >= 0) setActivePathIndex(ws.id, idx);
     }
-    // Toggle this card between file tree and changes list
-    setChangesOpen((prev) => {
-      const next = new Set(prev);
-      if (next.has(rootPath)) next.delete(rootPath);
-      else next.add(rootPath);
-      if (activeWorkspaceId) {
-        localStorage.setItem(
-          `rally:changesOpen:${activeWorkspaceId}`,
-          JSON.stringify([...next]),
-        );
-      }
-      return next;
-    });
+    // Toggle the unified git panel's changes tab for this repo
+    const state = useWorkspaceStore.getState();
+    if (state.unifiedGitPanelOpen && state.unifiedGitPanelPath === rootPath && state.unifiedGitPanelTab === "changes") {
+      state.closeUnifiedGitPanel();
+    } else {
+      state.openUnifiedGitPanel(rootPath, "changes");
+    }
   }
 
   function handleSelectFile(
@@ -1822,19 +1799,22 @@ export function FileExplorer({ onCollapse, flushLeft }: FileExplorerProps) {
     _isUntracked: boolean,
     section?: "staged" | "unstaged" | "untracked",
   ) {
-    // Open the git diff overlay for this repo, scrolled to the specific file
-    // If the file is staged, switch to the staged tab
+    // Set the active tab (staged vs unstaged) and scroll-to-file before opening
+    const store = useWorkspaceStore.getState();
     if (section === "staged") {
-      useWorkspaceStore.getState().setGitDiffActiveTab("staged");
+      store.setGitDiffActiveTab("staged");
     } else {
-      useWorkspaceStore.getState().setGitDiffActiveTab("unstaged");
+      store.setGitDiffActiveTab("unstaged");
     }
-    openGitDiffOverlay(rootPath, filePath);
+    // Set scroll-to-file so GitDiffContent can pick it up
+    useWorkspaceStore.setState({ gitDiffScrollToFile: filePath });
+    openUnifiedGitPanel(rootPath, "changes");
   }
 
   function handleSelectPrFile(rootPath: string, filePath: string) {
-    // Open/scroll the PR review overlay to this file
-    openPrReviewOverlay(rootPath, filePath);
+    // Set scroll-to-file so PrReviewContent can pick it up, then open PR tab
+    useWorkspaceStore.setState({ prReviewScrollToFile: filePath });
+    openUnifiedGitPanel(rootPath, "pr");
   }
 
   return (
@@ -1881,8 +1861,8 @@ export function FileExplorer({ onCollapse, flushLeft }: FileExplorerProps) {
             <RootSection
               rootPath={p}
               isGitRepo={gitRoots.has(p)}
-              showChanges={gitDiffOverlayOpen && gitDiffOverlayPath === p}
-              showPrFiles={prReviewOverlayOpen && prReviewOverlayPath === p}
+              showChanges={unifiedGitPanelOpen && unifiedGitPanelPath === p && unifiedGitPanelTab === "changes"}
+              showPrFiles={unifiedGitPanelOpen && unifiedGitPanelPath === p && unifiedGitPanelTab === "pr"}
               onToggleChanges={() => handleGitIconClick(p)}
               onSelectChangeFile={handleSelectFile}
               onSelectPrFile={handleSelectPrFile}
@@ -2189,6 +2169,18 @@ const styles: Record<string, React.CSSProperties> = {
     width: 16,
     marginLeft: 2,
     flexShrink: 0,
+  },
+  treeHidden: {
+    visibility: "hidden" as const,
+    pointerEvents: "none" as const,
+  },
+  panelOverlay: {
+    position: "absolute" as const,
+    top: 0,
+    left: 0,
+    right: 0,
+    display: "flex",
+    flexDirection: "column" as const,
   },
   stageBtn: {
     background: "none",

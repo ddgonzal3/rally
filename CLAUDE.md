@@ -228,6 +228,7 @@ These rules are non-negotiable. Follow them for every UI change.
 - **SVG alignment.** Icons must be vertically centered with neighboring text and icons.
 - **Font consistency.** Never use a font size, family, weight, or style that differs from the surrounding context. Study the existing neighbors and match exactly.
 - **Cohesive design.** When adding any new UI element, study its immediate neighbors (buttons, badges, icons, text) and replicate their exact styling patterns — padding, gap, border-radius, colors, font properties, everything.
+- **Frosted blur for dropdowns/popovers.** Any custom dropdown, popover, or floating menu must use the macOS frosted glass style: `background: rgba(36, 36, 36, 0.78)`, `backdrop-filter: blur(20px) saturate(180%)`, `border: 1px solid rgba(255, 255, 255, 0.12)`. This matches the native context menu aesthetic.
 
 ## Known Pitfalls
 

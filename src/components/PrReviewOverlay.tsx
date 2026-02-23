@@ -41,16 +41,22 @@ function reviewStateBadge(state: string): { label: string; color: string; bg: st
   }
 }
 
-export function PrReviewOverlay({
+// ---------------------------------------------------------------------------
+// PrReviewContent — all PR review logic, usable both inside the overlay and
+// inside the unified git panel's PR tab.
+// ---------------------------------------------------------------------------
+
+export function PrReviewContent({
   rootPath,
   onClose,
+  scrollToFile,
 }: {
   rootPath: string;
-  onClose: () => void;
+  onClose?: () => void;
+  scrollToFile?: string | null;
 }) {
   // Use cached PrStatus for instant header rendering while details load
   const cachedPr = useWorkspaceStore((s) => s.prStatuses[rootPath]);
-  const scrollToFile = useWorkspaceStore((s) => s.prReviewScrollToFile);
 
   const [details, setDetails] = useState<PrDetails | null>(null);
   const [diffFiles, setDiffFiles] = useState<DiffFile[]>([]);
@@ -67,16 +73,6 @@ export function PrReviewOverlay({
   const titleInputRef = useRef<HTMLInputElement>(null);
 
   const fileListRef = useRef<HTMLDivElement>(null);
-
-  const [mounted, setMounted] = useState(false);
-  const [visible, setVisible] = useState(false);
-
-  useEffect(() => {
-    setMounted(true);
-    requestAnimationFrame(() => {
-      requestAnimationFrame(() => setVisible(true));
-    });
-  }, []);
 
   // When scrollToFile changes, switch to changes tab and set scroll target
   useEffect(() => {
@@ -104,20 +100,6 @@ export function PrReviewOverlay({
       }
     });
   }, [scrollTarget, diffFiles]);
-
-  // Escape key to close
-  useEffect(() => {
-    if (!mounted) return;
-    const handler = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
-        e.stopPropagation();
-        e.preventDefault();
-        onClose();
-      }
-    };
-    document.addEventListener("keydown", handler, true);
-    return () => document.removeEventListener("keydown", handler, true);
-  }, [mounted, onClose]);
 
   // Fetch details and diff
   const [refreshing, setRefreshing] = useState(false);
@@ -194,7 +176,7 @@ export function PrReviewOverlay({
       const prNum = details?.number ?? cachedPr?.number;
       const branch = details?.head_branch ?? "";
       addToast({ type: "success", title: "PR merged", message: `PR #${prNum} merged via squash` });
-      onClose();
+      onClose?.();
 
       // Post-merge sync: sync the feature branch back to main
       // Must complete BEFORE refreshing git status to avoid concurrent git lock conflicts
@@ -261,7 +243,7 @@ export function PrReviewOverlay({
 
   const handleShip = useCallback(() => {
     if (!activeWorkspaceId) return;
-    onClose();
+    onClose?.();
     openClaudeCommand(activeWorkspaceId, rootPath, "/ship", "Ship");
   }, [activeWorkspaceId, rootPath, onClose, openClaudeCommand]);
 
@@ -272,11 +254,6 @@ export function PrReviewOverlay({
     return false;
   }, [merging, prMergeable, prState]);
 
-  const mergeColor = prMergeable === "MERGEABLE" ? "#7ddf7d"
-    : prMergeable === "CONFLICTING" ? "#df7d7d" : "#aaa";
-  const reviewColor = prReviewDecision === "APPROVED" ? "#7ddf7d"
-    : prReviewDecision === "CHANGES_REQUESTED" ? "#df7d7d"
-    : "#dfc97d";
   const checksColor = prChecksStatus === "pass" ? "#7ddf7d"
     : prChecksStatus === "fail" ? "#df7d7d"
     : prChecksStatus === "pending" ? "#dfc97d" : "#666";
@@ -294,25 +271,19 @@ export function PrReviewOverlay({
   );
   const conversationCount = timeline.length + (details?.body?.trim() ? 1 : 0);
 
-  if (!mounted) return null;
-
   return (
-    <div
-      className="git-diff-overlay"
-      style={{
-        ...st.backdrop,
-        opacity: visible ? 1 : 0,
-      }}
-    >
+    <>
       <style>{markdownStyles}</style>
 
       {/* Header */}
       <div style={st.header}>
-        <button onClick={onClose} style={st.backBtn} title="Back">
-          <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
-            <path d="M10 3L5 8l5 5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-          </svg>
-        </button>
+        {onClose && (
+          <button onClick={onClose} style={st.backBtn} title="Back">
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
+              <path d="M10 3L5 8l5 5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          </button>
+        )}
 
         {prUrl && (
           <button
@@ -561,7 +532,7 @@ export function PrReviewOverlay({
           )
         )}
       </div>
-    </div>
+    </>
   );
 }
 
@@ -666,15 +637,6 @@ function ConversationTab({
 // --- Styles ---
 
 const st: Record<string, React.CSSProperties> = {
-  backdrop: {
-    position: "absolute",
-    inset: 0,
-    zIndex: 50,
-    background: "#1a1a1a",
-    display: "flex",
-    flexDirection: "column",
-    transition: "opacity 75ms ease",
-  },
   header: {
     display: "flex",
     alignItems: "center",

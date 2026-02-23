@@ -14,8 +14,7 @@ import { startExternalFileDrag, updateDragPosition, endDrag } from "./lib/dragCo
 import { FILE_DROP_COMMIT_EVENT } from "./components/DropZoneOverlay";
 import { ToastContainer, addToast } from "./components/ToastContainer";
 import { ShipStatusPill } from "./components/ShipStatusPill";
-import { GitDiffOverlay } from "./components/GitDiffOverlay";
-import { PrReviewOverlay } from "./components/PrReviewOverlay";
+import { UnifiedGitPanel } from "./components/UnifiedGitPanel";
 
 export function App() {
   const windowLabel = getCurrentWindow().label;
@@ -42,6 +41,7 @@ export function App() {
     const ws = s.workspaces.find((w) => w.id === s.activeWorkspaceId);
     return ws?.name ?? "Rally";
   });
+
   const [panelCollapsed, setPanelCollapsed] = useState(() =>
     localStorage.getItem(panelCollapsedKey) === "true",
   );
@@ -659,8 +659,7 @@ export function App() {
         )}
         <div style={styles.main}>
           <PaneLayout />
-          <GitDiffOverlay />
-          <PrReviewOverlayWrapper />
+          <UnifiedGitPanel />
         </div>
       </div>
       <style>{`
@@ -683,16 +682,6 @@ export function App() {
       <ToastContainer />
     </div>
   );
-}
-
-function PrReviewOverlayWrapper() {
-  const open = useWorkspaceStore((s) => s.prReviewOverlayOpen);
-  const rootPath = useWorkspaceStore((s) => s.prReviewOverlayPath);
-  const close = useWorkspaceStore((s) => s.closePrReviewOverlay);
-
-  if (!open || !rootPath) return null;
-
-  return <PrReviewOverlay rootPath={rootPath} onClose={close} />;
 }
 
 const styles: Record<string, React.CSSProperties> = {
