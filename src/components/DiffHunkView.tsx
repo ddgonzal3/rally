@@ -291,17 +291,6 @@ function DiffLineRow({
   );
 }
 
-// --- Keep old export for backwards compat during transition ---
-export function DiffHunkView({
-  hunk,
-  filePath,
-}: {
-  hunk: DiffHunk;
-  filePath: string;
-}) {
-  return <DiffFileView hunks={[hunk]} filePath={filePath} tab="unstaged" />;
-}
-
 const styles: Record<string, React.CSSProperties> = {
   container: {
     fontFamily: "'SF Mono', 'Menlo', 'Monaco', 'Courier New', monospace",

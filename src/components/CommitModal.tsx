@@ -89,11 +89,15 @@ export function CommitModal({
     if (!commitMsg.trim() || running) return;
     setRunning(true);
     try {
-      // Stage unstaged files if requested
+      // Stage unstaged + untracked files if requested
       if (includeUnstaged) {
         const changes = await api.gitChanges(rootPath);
-        for (const f of changes.unstaged) {
-          await api.gitStageFile(rootPath, f.path);
+        const filesToStage = [
+          ...changes.unstaged.map((f) => f.path),
+          ...changes.untracked,
+        ];
+        for (const f of filesToStage) {
+          await api.gitStageFile(rootPath, f);
         }
       }
 

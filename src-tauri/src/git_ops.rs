@@ -300,6 +300,7 @@ pub async fn merge_pr(cwd: &str, method: &str) -> Result<String, String> {
 pub async fn changes(cwd: &str) -> Result<ChangesSummary, String> {
     let raw = Command::new("git")
         .args(&["status", "--porcelain"])
+        .env("PATH", full_path())
         .current_dir(cwd)
         .output()
         .await
@@ -404,6 +405,7 @@ pub async fn apply_patch(cwd: &str, patch: &str, reverse: bool, cached: bool) ->
     }
     let mut child = tokio::process::Command::new("git")
         .args(&args)
+        .env("PATH", full_path())
         .current_dir(cwd)
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())
@@ -440,10 +442,15 @@ pub async fn diff(cwd: &str, staged: bool) -> Result<String, String> {
     }
     let output = tokio::process::Command::new("git")
         .args(&args)
+        .env("PATH", full_path())
         .current_dir(cwd)
         .output()
         .await
         .map_err(|e| format!("Failed to run git diff: {}", e))?;
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        return Err(format!("git diff failed: {}", stderr));
+    }
     Ok(String::from_utf8_lossy(&output.stdout).to_string())
 }
 
@@ -455,6 +462,7 @@ pub async fn diff_stat(cwd: &str) -> Result<(i64, i64), String> {
     for args in [&["diff", "--numstat"][..], &["diff", "--cached", "--numstat"][..]] {
         let output = Command::new("git")
             .args(args)
+            .env("PATH", full_path())
             .current_dir(cwd)
             .output()
             .await

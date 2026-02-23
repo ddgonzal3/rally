@@ -143,7 +143,7 @@ export function App() {
     }, 10000);
     const prInterval = setInterval(() => {
       void runPrRefresh();
-    }, 5000);
+    }, 20000);
     const shipInterval = setInterval(() => {
       void runShipPoll();
     }, 5000);

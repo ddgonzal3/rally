@@ -4,6 +4,7 @@ import { api } from "../lib/tauri";
 import { parseUnifiedDiff, generateHunkPatch, type DiffFile } from "../lib/diffParser";
 import { DiffFileSection } from "./DiffFileSection";
 import { CommitModal } from "./CommitModal";
+import { addToast } from "./ToastContainer";
 import type { ChangesSummary } from "../lib/types";
 
 export function GitDiffOverlay() {
@@ -121,7 +122,11 @@ export function GitDiffOverlay() {
   const handleStage = useCallback(
     async (filePath: string) => {
       if (!rootPath) return;
-      await api.gitStageFile(rootPath, filePath);
+      try {
+        await api.gitStageFile(rootPath, filePath);
+      } catch (e) {
+        addToast({ type: "warning", title: "Stage failed", message: String(e) });
+      }
       fetchDiffs();
     },
     [rootPath, fetchDiffs],
@@ -130,7 +135,11 @@ export function GitDiffOverlay() {
   const handleUnstage = useCallback(
     async (filePath: string) => {
       if (!rootPath) return;
-      await api.gitUnstageFile(rootPath, filePath);
+      try {
+        await api.gitUnstageFile(rootPath, filePath);
+      } catch (e) {
+        addToast({ type: "warning", title: "Unstage failed", message: String(e) });
+      }
       fetchDiffs();
     },
     [rootPath, fetchDiffs],
@@ -139,8 +148,12 @@ export function GitDiffOverlay() {
   const handleDiscard = useCallback(
     async (filePath: string) => {
       if (!rootPath || !changes) return;
-      const isUntracked = changes.untracked.includes(filePath);
-      await api.gitDiscardFile(rootPath, filePath, isUntracked);
+      try {
+        const isUntracked = changes.untracked.includes(filePath);
+        await api.gitDiscardFile(rootPath, filePath, isUntracked);
+      } catch (e) {
+        addToast({ type: "warning", title: "Discard failed", message: String(e) });
+      }
       fetchDiffs();
     },
     [rootPath, changes, fetchDiffs],
@@ -149,10 +162,14 @@ export function GitDiffOverlay() {
   const handleHunkRevert = useCallback(
     async (filePath: string, hunkIndex: number) => {
       if (!rootPath) return;
-      const file = unstagedFiles.find((f) => (f.newPath || f.oldPath) === filePath);
-      if (!file || !file.hunks[hunkIndex]) return;
-      const patch = generateHunkPatch(file, file.hunks[hunkIndex]);
-      await api.gitApplyPatch(rootPath, patch, true, false);
+      try {
+        const file = unstagedFiles.find((f) => (f.newPath || f.oldPath) === filePath);
+        if (!file || !file.hunks[hunkIndex]) return;
+        const patch = generateHunkPatch(file, file.hunks[hunkIndex]);
+        await api.gitApplyPatch(rootPath, patch, true, false);
+      } catch (e) {
+        addToast({ type: "warning", title: "Revert failed", message: String(e) });
+      }
       fetchDiffs();
     },
     [rootPath, unstagedFiles, fetchDiffs],
@@ -161,17 +178,21 @@ export function GitDiffOverlay() {
   const handleHunkStage = useCallback(
     async (filePath: string, hunkIndex: number) => {
       if (!rootPath) return;
-      if (activeTab === "unstaged") {
-        const file = unstagedFiles.find((f) => (f.newPath || f.oldPath) === filePath);
-        if (!file || !file.hunks[hunkIndex]) return;
-        const patch = generateHunkPatch(file, file.hunks[hunkIndex]);
-        await api.gitApplyPatch(rootPath, patch, false, true);
-      } else {
-        // Unstage a specific hunk from staged
-        const file = stagedFiles.find((f) => (f.newPath || f.oldPath) === filePath);
-        if (!file || !file.hunks[hunkIndex]) return;
-        const patch = generateHunkPatch(file, file.hunks[hunkIndex]);
-        await api.gitApplyPatch(rootPath, patch, true, true);
+      try {
+        if (activeTab === "unstaged") {
+          const file = unstagedFiles.find((f) => (f.newPath || f.oldPath) === filePath);
+          if (!file || !file.hunks[hunkIndex]) return;
+          const patch = generateHunkPatch(file, file.hunks[hunkIndex]);
+          await api.gitApplyPatch(rootPath, patch, false, true);
+        } else {
+          // Unstage a specific hunk from staged
+          const file = stagedFiles.find((f) => (f.newPath || f.oldPath) === filePath);
+          if (!file || !file.hunks[hunkIndex]) return;
+          const patch = generateHunkPatch(file, file.hunks[hunkIndex]);
+          await api.gitApplyPatch(rootPath, patch, true, true);
+        }
+      } catch (e) {
+        addToast({ type: "warning", title: "Hunk action failed", message: String(e) });
       }
       fetchDiffs();
     },
