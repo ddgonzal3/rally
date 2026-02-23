@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { useWorkspaceStore } from "../stores/workspaceStore";
 import { AddWorkspaceModal } from "./AddWorkspaceModal";
 import { api } from "../lib/tauri";
@@ -9,7 +9,11 @@ export function Sidebar() {
   const activeWorkspaceId = useWorkspaceStore((s) => s.activeWorkspaceId);
   const setActive = useWorkspaceStore((s) => s.setActive);
   const removeWorkspace = useWorkspaceStore((s) => s.removeWorkspace);
+  const renameWorkspace = useWorkspaceStore((s) => s.renameWorkspace);
   const [showAddModal, setShowAddModal] = useState(false);
+  const [renamingId, setRenamingId] = useState<string | null>(null);
+  const [renameValue, setRenameValue] = useState("");
+  const renameInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     const openAddWorkspace = () => {
@@ -19,6 +23,28 @@ export function Sidebar() {
     return () => {
       document.removeEventListener("rally-open-add-workspace", openAddWorkspace);
     };
+  }, []);
+
+  // Auto-focus and select text when entering rename mode
+  useEffect(() => {
+    if (renamingId && renameInputRef.current) {
+      renameInputRef.current.focus();
+      renameInputRef.current.select();
+    }
+  }, [renamingId]);
+
+  const commitRename = useCallback(() => {
+    if (!renamingId) return;
+    const trimmed = renameValue.trim();
+    if (trimmed && trimmed !== workspaces.find((w) => w.id === renamingId)?.name) {
+      renameWorkspace(renamingId, trimmed);
+    }
+    setRenamingId(null);
+  }, [renamingId, renameValue, workspaces, renameWorkspace]);
+
+  const startRename = useCallback((id: string, currentName: string) => {
+    setRenamingId(id);
+    setRenameValue(currentName);
   }, []);
 
   return (
@@ -46,6 +72,7 @@ export function Sidebar() {
         <div style={styles.list}>
           {workspaces.map((ws) => {
             const isActive = ws.id === activeWorkspaceId;
+            const isRenaming = renamingId === ws.id;
             return (
               <div
                 key={ws.id}
@@ -54,10 +81,16 @@ export function Sidebar() {
                   ...styles.item,
                   ...(isActive ? styles.itemActive : {}),
                 }}
-                onClick={() => setActive(ws.id)}
+                onClick={() => {
+                  if (!isRenaming) setActive(ws.id);
+                }}
                 onContextMenu={(e) => {
                   e.preventDefault();
                   showContextMenu([
+                    {
+                      label: "Rename",
+                      action: () => startRename(ws.id, ws.name),
+                    },
                     {
                       label: "Reveal in Finder",
                       action: () => api.revealInFinder(ws.paths[0]),
@@ -70,7 +103,25 @@ export function Sidebar() {
                   ]);
                 }}
               >
-                <div style={styles.itemName}>{ws.name}</div>
+                {isRenaming ? (
+                  <input
+                    ref={renameInputRef}
+                    style={styles.renameInput}
+                    value={renameValue}
+                    onChange={(e) => setRenameValue(e.target.value)}
+                    onBlur={commitRename}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        e.preventDefault();
+                        commitRename();
+                      } else if (e.key === "Escape") {
+                        setRenamingId(null);
+                      }
+                    }}
+                  />
+                ) : (
+                  <div style={styles.itemName}>{ws.name}</div>
+                )}
               </div>
             );
           })}
@@ -143,5 +194,18 @@ const styles: Record<string, React.CSSProperties> = {
   },
   itemName: {
     fontWeight: 600,
+  },
+  renameInput: {
+    width: "100%",
+    background: "#333",
+    border: "1px solid #555",
+    borderRadius: 3,
+    color: "#eee",
+    fontSize: 13,
+    fontWeight: 600,
+    fontFamily: "inherit",
+    padding: "1px 4px",
+    outline: "none",
+    boxSizing: "border-box" as const,
   },
 };

@@ -175,6 +175,7 @@ interface WorkspaceState {
     paths: string[];
   }) => Promise<void>;
   removeWorkspace: (id: string) => Promise<void>;
+  renameWorkspace: (id: string, name: string) => Promise<void>;
   addPathToWorkspace: (id: string, path: string) => Promise<void>;
   removePathFromWorkspace: (id: string, path: string) => Promise<void>;
 
@@ -559,6 +560,15 @@ export const useWorkspaceStore = create<WorkspaceState>()(
           ? remaining[0]?.id ?? null
           : get().activeWorkspaceId,
     });
+  },
+
+  renameWorkspace: async (id, name) => {
+    await api.renameWorkspace(id, name);
+    set((s) => ({
+      workspaces: s.workspaces.map((w) =>
+        w.id === id ? { ...w, name } : w
+      ),
+    }));
   },
 
   // --- Git actions (all keyed by repo path) ---

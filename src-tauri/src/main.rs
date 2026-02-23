@@ -132,6 +132,7 @@ fn main() {
             commands::update_git_watch_roots,
             commands::create_workspace,
             commands::remove_workspace,
+            commands::rename_workspace,
             commands::add_workspace_path,
             commands::remove_workspace_path,
             commands::git_status,

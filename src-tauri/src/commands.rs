@@ -138,6 +138,23 @@ pub fn remove_workspace(app: tauri::AppHandle, id: String) -> Result<(), String>
 }
 
 #[tauri::command]
+pub fn rename_workspace(app: tauri::AppHandle, id: String, name: String) -> Result<(), String> {
+    let trimmed = name.trim().to_string();
+    if trimmed.is_empty() {
+        return Err("Workspace name cannot be empty".to_string());
+    }
+    let mut workspaces = workspace::load_workspaces();
+    let ws = workspaces
+        .iter_mut()
+        .find(|w| w.id == id)
+        .ok_or_else(|| format!("Workspace not found: {}", id))?;
+    ws.name = trimmed;
+    workspace::save_workspaces(&workspaces)?;
+    emit_workspaces_updated(&app);
+    Ok(())
+}
+
+#[tauri::command]
 pub fn add_workspace_path(
     app: tauri::AppHandle,
     id: String,

@@ -227,12 +227,8 @@ export function Terminal({ cwd, command, initialInput, ptyId: existingPtyId, loc
         return true;
       }
       if (ev.key === "v") {
-        ev.preventDefault();
-        navigator.clipboard.readText().then((text) => {
-          if (text && ptyIdRef.current) {
-            api.writePty(ptyIdRef.current, Array.from(encoder.encode(text)));
-          }
-        });
+        // Don't preventDefault — let the browser fire the native paste event.
+        // xterm handles paste events natively via clipboardData (no permission popup).
         return false;
       }
       if (ev.key === "a") {

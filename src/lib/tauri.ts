@@ -14,6 +14,9 @@ export const api = {
 
   removeWorkspace: (id: string) => invoke<void>("remove_workspace", { id }),
 
+  renameWorkspace: (id: string, name: string) =>
+    invoke<void>("rename_workspace", { id, name }),
+
   addWorkspacePath: (id: string, path: string) =>
     invoke<Workspace>("add_workspace_path", { id, path }),
 
