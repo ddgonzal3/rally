@@ -1641,15 +1641,23 @@ export const useWorkspaceStore = create<WorkspaceState>()(
     set({ gitDiffActiveTab: tab });
   },
 
-  openUnifiedGitPanel: (rootPath, tab) => set((prev) => ({
-    unifiedGitPanelOpen: true,
-    unifiedGitPanelPath: rootPath,
-    // Only change tab if explicitly provided; otherwise keep current tab
-    unifiedGitPanelTab: tab ?? prev.unifiedGitPanelTab,
-  })),
+  openUnifiedGitPanel: (rootPath, tab) => {
+    set((prev) => ({
+      unifiedGitPanelOpen: true,
+      unifiedGitPanelPath: rootPath,
+      // Only change tab if explicitly provided; otherwise keep current tab
+      unifiedGitPanelTab: tab ?? prev.unifiedGitPanelTab,
+    }));
+    // Eagerly refresh PR status so the PR tab shows fresh data
+    if (tab === "pr") {
+      get().refreshPrStatusForPath(rootPath).catch(() => {});
+    }
+  },
   closeUnifiedGitPanel: () => set({
     unifiedGitPanelOpen: false,
     unifiedGitPanelPath: null,
+    gitDiffScrollToFile: null,
+    prReviewScrollToFile: null,
   }),
   setUnifiedGitPanelTab: (tab) => set({ unifiedGitPanelTab: tab }),
 

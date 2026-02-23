@@ -4,8 +4,6 @@ import { api, openUrl } from "../lib/tauri";
 import { addToast } from "./ToastContainer";
 import { GitDiffContent } from "./GitDiffOverlay";
 import { PrReviewContent } from "./PrReviewOverlay";
-import type { GitStatus, PrStatus } from "../lib/types";
-
 export function UnifiedGitPanel() {
   const open = useWorkspaceStore((s) => s.unifiedGitPanelOpen);
   const rootPath = useWorkspaceStore((s) => s.unifiedGitPanelPath);
@@ -29,6 +27,7 @@ export function UnifiedGitPanel() {
   const [exiting, setExiting] = useState(false);
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [loading, setLoading] = useState<Record<string, boolean>>({});
+  const loadingRef = useRef<Record<string, boolean>>({});
   const dropdownRef = useRef<HTMLDivElement>(null);
 
   // Mount/unmount with CSS animation (no rAF delay)
@@ -78,51 +77,53 @@ export function UnifiedGitPanel() {
 
   // --- Action handlers ---
 
-  const refreshAfterAction = useCallback(async () => {
-    if (!rootPath) return;
-    const st = store();
-    await Promise.all([
-      st.refreshGitStatusForPath(rootPath, mainBranch),
-      st.refreshPrStatusForPath(rootPath),
-    ]);
-  }, [rootPath, mainBranch, store]);
-
   const withLoading = useCallback(
-    (key: string, fn: () => Promise<unknown>) => async () => {
-      if (loading[key]) return;
+    (key: string, fn: (currentPath: string, currentMain: string) => Promise<unknown>) => async () => {
+      if (loadingRef.current[key]) return;
+      // Read current values from store to avoid stale closures
+      const st = store();
+      const currentPath = st.unifiedGitPanelPath;
+      const ws = st.workspaces.find((w) => currentPath && w.paths.includes(currentPath));
+      const currentMain = ws?.main_branch ?? "main";
+      if (!currentPath) return;
+      loadingRef.current = { ...loadingRef.current, [key]: true };
       setLoading((prev) => ({ ...prev, [key]: true }));
       try {
-        await fn();
-        await refreshAfterAction();
+        await fn(currentPath, currentMain);
+        await Promise.all([
+          st.refreshGitStatusForPath(currentPath, currentMain),
+          st.refreshPrStatusForPath(currentPath),
+        ]);
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         addToast({ type: "warning", title: "Error", message: msg });
       } finally {
+        loadingRef.current = { ...loadingRef.current, [key]: false };
         setLoading((prev) => ({ ...prev, [key]: false }));
       }
       setDropdownOpen(false);
     },
-    [loading, refreshAfterAction],
+    [store],
   );
 
-  const handlePush = withLoading("push", async () => {
-    const result = await api.gitPush(rootPath!);
+  const handlePush = withLoading("push", async (path) => {
+    const result = await api.gitPush(path);
     addToast({ type: "success", title: "Pushed", message: result.output || "Pushed successfully" });
   });
 
-  const handleCreatePr = withLoading("createPr", async () => {
-    const url = await api.gitCreatePr(rootPath!);
+  const handleCreatePr = withLoading("createPr", async (path) => {
+    const url = await api.gitCreatePr(path);
     addToast({ type: "success", title: "PR Created", message: url });
   });
 
-  const handleFetch = withLoading("fetch", async () => {
-    await api.gitFetch(rootPath!);
+  const handleFetch = withLoading("fetch", async (path) => {
+    await api.gitFetch(path);
     addToast({ type: "success", title: "Fetched", message: "Fetch complete" });
   });
 
-  const handleRebase = withLoading("rebase", async () => {
-    await store().rebaseOnMain(rootPath!, mainBranch);
-    addToast({ type: "success", title: "Rebased", message: `Rebased on ${mainBranch}` });
+  const handleRebase = withLoading("rebase", async (path, main) => {
+    await store().rebaseOnMain(path, main);
+    addToast({ type: "success", title: "Rebased", message: `Rebased on ${main}` });
   });
 
   const handleShip = useCallback(async () => {
@@ -141,8 +142,14 @@ export function UnifiedGitPanel() {
   const folderName = rootPath?.split("/").pop() ?? "";
   const ahead = gitStatus?.ahead ?? 0;
 
-  // When no PR, always show changes regardless of stored tab
+  // When no PR, always show changes regardless of stored tab.
+  // Sync back to store so we don't jump to a stale "pr" tab when a PR later opens.
   const effectiveTab = hasPr ? activeTab : "changes";
+  useEffect(() => {
+    if (!hasPr && activeTab === "pr") {
+      setActiveTab("changes");
+    }
+  }, [hasPr, activeTab, setActiveTab]);
 
   return (
     <div

@@ -14,13 +14,9 @@ import { relativeTime } from "../lib/time";
 
 interface GitDiffContentProps {
   rootPath: string;
-  /** When provided, shows a back button that calls this. Used in overlay mode. */
-  onClose?: () => void;
-  /** When true, shows the repo name centered in the header. Used in overlay mode. */
-  showRepoName?: boolean;
 }
 
-export function GitDiffContent({ rootPath, onClose, showRepoName }: GitDiffContentProps) {
+export function GitDiffContent({ rootPath }: GitDiffContentProps) {
   const activeTab = useWorkspaceStore((s) => s.gitDiffActiveTab);
   const setActiveTab = useWorkspaceStore((s) => s.setGitDiffActiveTab);
   const startShipSession = useWorkspaceStore((s) => s.startShipSession);
@@ -250,27 +246,18 @@ export function GitDiffContent({ rootPath, onClose, showRepoName }: GitDiffConte
   const handleShip = useCallback(() => {
     if (!rootPath) return;
     startShipSession(rootPath);
-    onClose?.();
-  }, [rootPath, startShipSession, onClose]);
+  }, [rootPath, startShipSession]);
 
   const activeFiles = activeTab === "unstaged" ? unstagedFiles : stagedFiles;
   const unstagedCount = (changes?.unstaged.length ?? 0) + (changes?.untracked.length ?? 0);
   const stagedCount = changes?.staged.length ?? 0;
   const hasStaged = stagedCount > 0;
-  const folderName = rootPath?.split("/").pop() ?? "";
   const hasPr = !!(prStatus && prStatus.state === "OPEN");
 
   return (
     <>
       {/* Header */}
       <div style={cs.header}>
-        {onClose && (
-          <button onClick={onClose} style={cs.backBtn} title="Back">
-            <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
-              <path d="M10 3L5 8l5 5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-            </svg>
-          </button>
-        )}
         <button
           onClick={() => setActiveTab("unstaged")}
           style={activeTab === "unstaged" ? cs.tabActive : cs.tab}
@@ -283,7 +270,6 @@ export function GitDiffContent({ rootPath, onClose, showRepoName }: GitDiffConte
         >
           Staged{changes ? ` · ${stagedCount}` : ""}
         </button>
-        {showRepoName && <span style={cs.repoName}>{folderName}</span>}
         <div style={{ flex: 1 }} />
         {activeTab === "unstaged" && unstagedCount > 0 && (
           <>
@@ -424,26 +410,6 @@ const cs: Record<string, React.CSSProperties> = {
     borderBottom: "1px solid #2a2a2a",
     flexShrink: 0,
     position: "relative",
-  },
-  backBtn: {
-    background: "none",
-    border: "none",
-    color: "#999",
-    cursor: "pointer",
-    padding: "8px 6px 8px 2px",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    transition: "color 150ms",
-  },
-  repoName: {
-    position: "absolute",
-    left: "50%",
-    transform: "translateX(-50%)",
-    fontSize: 13,
-    color: "#e6edf3",
-    fontWeight: 600,
-    pointerEvents: "none",
   },
   tab: {
     padding: "10px 12px",
