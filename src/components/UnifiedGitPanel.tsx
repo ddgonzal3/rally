@@ -154,18 +154,6 @@ export function UnifiedGitPanel() {
     >
       {/* Header */}
       <div style={s.header}>
-        <button onClick={closePanel} style={s.closeBtn} title="Close (Esc)">
-          <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
-            <path
-              d="M10 3L5 8l5 5"
-              stroke="currentColor"
-              strokeWidth="1.5"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            />
-          </svg>
-        </button>
-
         {hasPr ? (
           <>
             <button
@@ -378,17 +366,6 @@ const s: Record<string, React.CSSProperties> = {
     borderBottom: "1px solid #2a2a2a",
     flexShrink: 0,
     position: "relative",
-  },
-  closeBtn: {
-    background: "none",
-    border: "none",
-    color: "#999",
-    cursor: "pointer",
-    padding: "0 6px 0 2px",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    transition: "color 150ms",
   },
   tab: {
     padding: "5px 10px",
