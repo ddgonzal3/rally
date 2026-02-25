@@ -47,12 +47,15 @@ function getDropPosition(
 export function DropZoneTarget({
   groupId,
   paneCount,
+  activeIsTerminal,
   onDrop,
   onFileDrop,
 }: {
   groupId: string;
   /** Number of panes in THIS group — needed to allow same-group splits when ≥2 */
   paneCount: number;
+  /** When true and dragging files, force "center" overlay (no split zones). */
+  activeIsTerminal?: boolean;
   onDrop: (position: DropPosition) => void;
   onFileDrop?: (position: DropPosition, filePaths: string[]) => void;
 }) {
@@ -93,7 +96,9 @@ export function DropZoneTarget({
           // gets valid 0..1 relative coords even in the HIT_EXPAND zone
           const clampedX = Math.max(rect.left, Math.min(mx, rect.right));
           const clampedY = Math.max(rect.top, Math.min(my, rect.bottom));
-          const pos = getDropPosition(rect, clampedX, clampedY);
+          let pos = getDropPosition(rect, clampedX, clampedY);
+          // File drag onto terminal → always "center" (write path, no split)
+          if (isFileDrag && activeIsTerminal) pos = "center";
           // "center" on same group is a no-op (tab is already here)
           if (isSameGroup && pos === "center") {
             // keep visible=false, no overlay
@@ -124,10 +129,12 @@ export function DropZoneTarget({
 
       const clampedX = Math.max(rect.left, Math.min(d.mouseX, rect.right));
       const clampedY = Math.max(rect.top, Math.min(d.mouseY, rect.bottom));
-      const pos = getDropPosition(rect, clampedX, clampedY);
+      let pos = getDropPosition(rect, clampedX, clampedY);
       if (!pos) return;
 
       if (d.type === "file" && d.filePaths.length > 0) {
+        // File drag onto terminal → force "center" (write path, no split)
+        if (activeIsTerminal) pos = "center";
         onFileDrop?.(pos, d.filePaths);
       } else if (d.type === "pane") {
         const sameGroup = d.groupId === groupId;

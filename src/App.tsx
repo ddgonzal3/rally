@@ -510,6 +510,15 @@ export function App() {
     let unlisten: (() => void) | null = null;
     const dpr = window.devicePixelRatio || 1;
 
+    // Tauri's DragDropEvent position may be in physical or logical pixels
+    // depending on platform/version. We auto-detect on the first "enter"
+    // event by checking if raw coords exceed viewport logical dimensions.
+    let coordScale = dpr; // default: assume physical, will auto-detect
+
+    function toLogical(rawX: number, rawY: number): { x: number; y: number } {
+      return { x: rawX / coordScale, y: rawY / coordScale };
+    }
+
     appWin
       .onDragDropEvent((event) => {
         if (cancelled) return;
@@ -518,18 +527,58 @@ export function App() {
 
         const { type } = event.payload;
         if (type === "enter") {
-          // Tauri gives PhysicalPosition — convert to CSS pixels for getBoundingClientRect
-          const x = event.payload.position.x / dpr;
-          const y = event.payload.position.y / dpr;
+          // Auto-detect coordinate system: if raw position exceeds
+          // viewport logical dimensions, it's physical and needs DPR scaling.
+          const rawX = event.payload.position.x;
+          const rawY = event.payload.position.y;
+          const exceedsLogical = rawX > window.innerWidth * 1.15 || rawY > window.innerHeight * 1.15;
+          coordScale = exceedsLogical ? dpr : 1;
+          const { x, y } = toLogical(rawX, rawY);
           startExternalFileDrag(event.payload.paths, x, y);
         } else if (type === "over") {
-          const x = event.payload.position.x / dpr;
-          const y = event.payload.position.y / dpr;
+          const { x, y } = toLogical(event.payload.position.x, event.payload.position.y);
           updateDragPosition(x, y);
         } else if (type === "drop") {
-          const x = event.payload.position.x / dpr;
-          const y = event.payload.position.y / dpr;
+          const { x, y } = toLogical(event.payload.position.x, event.payload.position.y);
           updateDragPosition(x, y);
+
+          // Check if we're dropping onto a terminal — if so, write paths
+          // directly into the PTY and skip the DropZone system entirely.
+          // Use raw physical coords and compare against group rects in physical
+          // space to avoid DPR rounding issues with elementFromPoint.
+          const filePaths = event.payload.paths;
+          if (filePaths.length > 0) {
+            const groupEls = document.querySelectorAll<HTMLElement>("[data-group-id]");
+            let bestGroup: HTMLElement | null = null;
+            let bestArea = Infinity;
+            for (const el of groupEls) {
+              const rect = el.getBoundingClientRect();
+              if (x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom) {
+                // Pick the smallest matching group (most specific)
+                const area = rect.width * rect.height;
+                if (area < bestArea) {
+                  bestArea = area;
+                  bestGroup = el;
+                }
+              }
+            }
+            if (bestGroup) {
+              const gid = bestGroup.getAttribute("data-group-id")!;
+              const s = useWorkspaceStore.getState();
+              const wsId = s.activeWorkspaceId;
+              if (wsId) {
+                const grp = s.layouts[wsId]?.groups[gid];
+                const activePane = grp?.panes.find((p) => p.id === grp.activePaneId);
+                if (activePane?.ptyId && (activePane.type === "terminal" || activePane.type === "claude")) {
+                  const escaped = filePaths.map((p: string) => p.includes(" ") ? `'${p}'` : p).join(" ");
+                  api.writePty(activePane.ptyId, Array.from(new TextEncoder().encode(escaped)));
+                  endDrag();
+                  return;
+                }
+              }
+            }
+          }
+
           // Dispatch custom event so DropZoneTargets can commit the file drop
           document.dispatchEvent(new Event(FILE_DROP_COMMIT_EVENT));
           setTimeout(() => endDrag(), 0);

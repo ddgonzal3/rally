@@ -346,7 +346,7 @@ export function PaneGroupView({
   }, [workspaceId, groupId]);
 
   return (
-    <div style={styles.container} onMouseDown={focusGroup}>
+    <div style={styles.container} onMouseDown={focusGroup} data-group-id={groupId}>
       {/* Tab bar */}
       <div style={styles.tabBar}>
         <div style={styles.tabs}>
@@ -371,11 +371,21 @@ export function PaneGroupView({
                   e.preventDefault();
                   e.stopPropagation();
                   const items: Parameters<typeof showContextMenu>[0] = [];
+                  // Copy Path — available for any pane with a file path or cwd
+                  const copyablePath = pane.filePath || pane.cwd;
+                  if (copyablePath) {
+                    items.push({
+                      label: "Copy Path",
+                      action: () => navigator.clipboard.writeText(copyablePath),
+                    });
+                  }
                   if (pane.type === "editor" && pane.filePath) {
                     items.push({
                       label: "Reveal in Finder",
                       action: () => api.revealInFinder(pane.filePath!),
                     });
+                  }
+                  if (items.length > 0 && (pane.type === "terminal" || pane.type === "claude" || (pane.type === "editor" && pane.filePath))) {
                     items.push("separator");
                   }
                   if (pane.type === "terminal" || pane.type === "claude") {
@@ -604,6 +614,10 @@ export function PaneGroupView({
       <DropZoneTarget
         groupId={groupId}
         paneCount={group.panes.length}
+        activeIsTerminal={(() => {
+          const ap = group.panes.find((p) => p.id === activePaneId);
+          return !!(ap?.ptyId && (ap.type === "terminal" || ap.type === "claude"));
+        })()}
         onDrop={handleDrop}
         onFileDrop={handleFileDrop}
       />
