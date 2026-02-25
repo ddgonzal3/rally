@@ -151,6 +151,7 @@ const styles: Record<string, React.CSSProperties> = {
   dropdownWrapper: {
     position: "relative",
     marginTop: 2,
+    textAlign: "center",
   },
   trigger: {
     fontSize: 13,
