@@ -618,14 +618,29 @@ export function App() {
   // Cmd+W closes the active tab instead of the window
   // Cmd+/ splits the active panel to the right with a new terminal
   useEffect(() => {
-    const handler = (e: KeyboardEvent) => {
+    const handler = async (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key === "w") {
         e.preventDefault();
-        const { activeWorkspaceId, closeActiveTab } =
-          useWorkspaceStore.getState();
-        if (activeWorkspaceId) {
-          closeActiveTab(activeWorkspaceId);
+        const s = useWorkspaceStore.getState();
+        const wsId = s.activeWorkspaceId;
+        if (!wsId) return;
+        const layout = s.layouts[wsId];
+        const activeGroupId = s.activeGroupIds[wsId];
+        if (!layout || !activeGroupId) return;
+        const group = layout.groups[activeGroupId];
+        if (!group) return;
+        const pane = group.panes.find((p) => p.id === group.activePaneId);
+        if (pane?.ptyId && (pane.type === "claude" || pane.type === "terminal")) {
+          const { ask } = await import("@tauri-apps/plugin-dialog");
+          const confirmed = await ask("Close this terminal session?", {
+            title: "Close Terminal",
+            kind: "warning",
+            okLabel: "Close",
+            cancelLabel: "Cancel",
+          });
+          if (!confirmed) return;
         }
+        useWorkspaceStore.getState().closeActiveTab(wsId);
       }
       // Ctrl+` toggles the bottom panel (bypasses ratio clamp)
       if (e.ctrlKey && e.key === "`") {

@@ -20,6 +20,12 @@ import {
 
 const DRAG_THRESHOLD = 5; // px before drag starts
 
+/** Returns true if the pane has a live terminal session that should prompt before closing. */
+function paneHasActiveSession(pane: Pane | undefined): boolean {
+  if (!pane) return false;
+  return !!(pane.ptyId && (pane.type === "claude" || pane.type === "terminal"));
+}
+
 interface PaneGroupViewProps {
   groupId: string;
   workspaceId: string;
@@ -96,6 +102,22 @@ export function PaneGroupView({
   const ws = workspaces.find((w) => w.id === workspaceId);
   const paths = ws?.paths ?? [workspacePath];
   const isMultiRoot = paths.length > 1;
+
+  // Confirm before closing a pane with a live terminal session
+  const confirmClose = useCallback(async (paneId: string) => {
+    const pane = group?.panes.find((p) => p.id === paneId);
+    if (paneHasActiveSession(pane)) {
+      const { ask } = await import("@tauri-apps/plugin-dialog");
+      const confirmed = await ask("Close this terminal session?", {
+        title: "Close Terminal",
+        kind: "warning",
+        okLabel: "Close",
+        cancelLabel: "Cancel",
+      });
+      if (!confirmed) return;
+    }
+    closePane(workspaceId, groupId, paneId);
+  }, [group, closePane, workspaceId, groupId]);
 
   if (!group) return null;
 
@@ -375,7 +397,7 @@ export function PaneGroupView({
                   }
                   items.push({
                     label: "Close Tab",
-                    action: () => closePane(workspaceId, groupId, pane.id),
+                    action: () => confirmClose(pane.id),
                   });
                   showContextMenu(items);
                 }}
@@ -460,7 +482,7 @@ export function PaneGroupView({
                     }}
                     onClick={(e) => {
                       e.stopPropagation();
-                      closePane(workspaceId, groupId, pane.id);
+                      confirmClose(pane.id);
                     }}
                   >
                     <svg width="11" height="11" viewBox="0 0 14 14" fill="none">

@@ -2252,13 +2252,51 @@ export const useWorkspaceStore = create<WorkspaceState>()(
     const pane = sourceGroup.panes.find((p) => p.id === sourcePaneId);
     if (!pane) return;
 
+    // Helper: remove pane from source group WITHOUT killing the PTY.
+    // closePane() kills the PTY which destroys terminal content during moves.
+    function removePaneFromSource(): { groups: Record<string, PaneGroup>; root: LayoutNode } {
+      const currentLayout = get().getOrCreateLayout(workspaceId);
+      const src = currentLayout.groups[sourceGroupId];
+      if (!src) return { groups: currentLayout.groups, root: currentLayout.root };
+
+      const remaining = src.panes.filter((p) => p.id !== sourcePaneId);
+      let groups = { ...currentLayout.groups };
+      let root = currentLayout.root;
+
+      if (remaining.length === 0 && sourceGroupId !== targetGroupId) {
+        // Source group is now empty — collapse it from the tree
+        const parentInfo = findParent(root, sourceGroupId);
+        if (parentInfo) {
+          const sibIdx = parentInfo.index === 0 ? 1 : 0;
+          const sibling = parentInfo.parent.children[sibIdx];
+          root = replaceNode(root, parentInfo.parent.id, sibling);
+        }
+        delete groups[sourceGroupId];
+      } else if (remaining.length > 0) {
+        groups[sourceGroupId] = {
+          ...src,
+          panes: remaining,
+          activePaneId:
+            src.activePaneId === sourcePaneId
+              ? remaining[0].id
+              : src.activePaneId,
+        };
+      }
+      return { groups, root };
+    }
+
     // "center" = move tab to target group (no split)
     if (position === "center") {
       if (sourceGroupId === targetGroupId) return;
-      // Add pane to target group
+      // Add pane to target, then remove from source (PTY stays alive)
       get().addPaneToGroup(workspaceId, targetGroupId, pane);
-      // Remove from source
-      get().closePane(workspaceId, sourceGroupId, sourcePaneId);
+      const { groups: newGroups, root: newRoot } = removePaneFromSource();
+      set((s) => ({
+        layouts: {
+          ...s.layouts,
+          [workspaceId]: { root: newRoot, groups: newGroups },
+        },
+      }));
       return;
     }
 
@@ -2267,11 +2305,6 @@ export const useWorkspaceStore = create<WorkspaceState>()(
       position === "left" || position === "right" ? "horizontal" : "vertical";
     const newFirst = position === "top" || position === "left";
 
-    // Remove pane from source first
-    const updatedLayout = get().getOrCreateLayout(workspaceId);
-    const updatedSource = updatedLayout.groups[sourceGroupId];
-    if (!updatedSource) return;
-
     // Create a new group for the dropped pane
     const newGroup: PaneGroup = {
       id: crypto.randomUUID(),
@@ -2279,31 +2312,9 @@ export const useWorkspaceStore = create<WorkspaceState>()(
       activePaneId: pane.id,
     };
 
-    // Remove pane from source group
-    const remainingPanes = updatedSource.panes.filter((p) => p.id !== sourcePaneId);
-    let newGroups = { ...updatedLayout.groups, [newGroup.id]: newGroup };
-    let newRoot = updatedLayout.root;
-
-    if (remainingPanes.length === 0 && sourceGroupId !== targetGroupId) {
-      // Source group is now empty — remove it from the tree
-      const parentInfo = findParent(newRoot, sourceGroupId);
-      if (parentInfo) {
-        const sibIdx = parentInfo.index === 0 ? 1 : 0;
-        const sibling = parentInfo.parent.children[sibIdx];
-        newRoot = replaceNode(newRoot, parentInfo.parent.id, sibling);
-      }
-      delete newGroups[sourceGroupId];
-    } else if (remainingPanes.length > 0) {
-      // Update source group with remaining panes
-      newGroups[sourceGroupId] = {
-        ...updatedSource,
-        panes: remainingPanes,
-        activePaneId:
-          updatedSource.activePaneId === sourcePaneId
-            ? remainingPanes[0].id
-            : updatedSource.activePaneId,
-      };
-    }
+    // Remove pane from source (PTY stays alive)
+    let { groups: newGroups, root: newRoot } = removePaneFromSource();
+    newGroups[newGroup.id] = newGroup;
 
     // Now split the target group
     const splitNode: LayoutNode = {
