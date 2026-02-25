@@ -1,0 +1,23 @@
+#!/bin/bash
+# gfinish — Commit + push + merge (after manual review)
+# Installed to ~/.rally/bin/ by Rally on startup
+
+branch=$(git symbolic-ref --short HEAD 2>/dev/null)
+if [ -z "$branch" ]; then echo "Not in a git repo"; exit 1; fi
+if [ "$branch" = "main" ] || [ "$branch" = "master" ]; then
+  echo "Cannot finish from $branch."
+  exit 1
+fi
+
+# Commit
+msg="${1:-Review fixes}"
+git add -u
+git commit -m "$msg" || { echo "Nothing to commit."; exit 1; }
+
+# Push (smart: try normal, fall back to set-upstream)
+echo "Pushing..."
+git push 2>/dev/null || git push --set-upstream origin "$branch"
+
+# Merge + sync
+echo "Merging..."
+exec "$(dirname "$0")/gmerge"

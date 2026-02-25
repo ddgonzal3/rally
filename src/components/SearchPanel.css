@@ -1,0 +1,421 @@
+.search-view {
+  --vscode-foreground: #cccccc;
+  --vscode-descriptionForeground: rgba(204, 204, 204, 0.7);
+  --vscode-icon-foreground: #c5c5c5;
+  --vscode-sideBar-background: #181818;
+  --vscode-sideBar-border: #2b2b2b;
+  --vscode-input-background: #313131;
+  --vscode-input-foreground: #cccccc;
+  --vscode-input-placeholderForeground: #989898;
+  --vscode-focusBorder: #0078d4;
+  --vscode-toolbar-hoverBackground: #5a5d5e50;
+  --vscode-toolbar-activeBackground: #6a6d6e60;
+  --vscode-inputOption-hoverBackground: #5a5d5e80;
+  --vscode-inputOption-activeBackground: #2489db82;
+  --vscode-inputOption-activeBorder: #2488db;
+  --vscode-inputOption-activeForeground: #ffffff;
+  --vscode-search-resultsInfoForeground: rgba(204, 204, 204, 0.65);
+  --vscode-list-hoverBackground: #2a2d2e;
+  --vscode-badge-background: #616161;
+  --vscode-badge-foreground: #f8f8f8;
+  --vscode-menu-background: #252526;
+  --vscode-menu-border: #454545;
+  --vscode-menu-hoverBackground: #094771;
+  --vscode-menu-hoverForeground: #ffffff;
+  --vscode-editor-findMatchHighlightBackground: #ea5c0055;
+  --vscode-editor-findMatchHighlightBorder: transparent;
+  --monaco-monospace-font: "SF Mono", Monaco, Menlo, Courier, monospace;
+
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--vscode-sideBar-background);
+  color: var(--vscode-foreground);
+  font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+  font-size: 13px;
+  line-height: 1.4em;
+}
+
+.search-view .codicon[class*="codicon-"] {
+  font: normal normal normal 16px/1 codicon;
+  display: inline-block;
+  text-decoration: none;
+  text-rendering: auto;
+  text-align: center;
+  text-transform: none;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.search-view .codicon[class*="codicon-"]::before {
+  display: inline-block;
+}
+
+.search-view .codicon.codicon-case-sensitive::before { content: "\eab1"; }
+.search-view .codicon.codicon-chevron-down::before { content: "\eab4"; }
+.search-view .codicon.codicon-chevron-right::before { content: "\eab6"; }
+.search-view .codicon.codicon-collapse-all::before { content: "\eac5"; }
+.search-view .codicon.codicon-expand-all::before { content: "\eb95"; }
+.search-view .codicon.codicon-folder::before { content: "\ea83"; }
+.search-view .codicon.codicon-preserve-case::before { content: "\eb2e"; }
+.search-view .codicon.codicon-regex::before { content: "\eb38"; }
+.search-view .codicon.codicon-replace-all::before { content: "\eb3c"; }
+.search-view .codicon.codicon-whole-word::before { content: "\eb7e"; }
+
+.search-view-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 35px;
+  max-height: 35px;
+  padding: 0 4px 0 12px;
+  border-bottom: 1px solid var(--vscode-sideBar-border);
+  flex-shrink: 0;
+}
+
+.search-view-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--vscode-foreground);
+}
+
+.search-view-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.search-icon-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border: none;
+  border-radius: 4px;
+  padding: 0;
+  background: transparent;
+  color: var(--vscode-icon-foreground);
+  cursor: pointer;
+}
+
+.search-icon-action:hover:not(:disabled) {
+  background: var(--vscode-toolbar-hoverBackground);
+}
+
+.search-icon-action:active:not(:disabled) {
+  background: var(--vscode-toolbar-activeBackground);
+}
+
+.search-icon-action:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.search-widgets-container {
+  margin: 0 12px 0 2px;
+  padding-top: 6px;
+  padding-bottom: 6px;
+}
+
+.search-view-flush-left .search-widgets-container {
+  margin-left: 4px;
+}
+
+.search-widget {
+  position: relative;
+}
+
+.toggle-replace-button {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 16px;
+  height: 100%;
+  border: none;
+  border-radius: 3px;
+  padding: 0;
+  background: unset;
+  color: inherit;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.toggle-replace-button:hover {
+  background: var(--vscode-toolbar-hoverBackground);
+}
+
+.toggle-replace-button:active {
+  background: var(--vscode-toolbar-activeBackground);
+}
+
+.search-container,
+.replace-container {
+  margin-left: 18px;
+}
+
+.search-input-wrapper,
+.replace-input-wrapper {
+  position: relative;
+  width: 100%;
+  height: 26px;
+  border-radius: 4px;
+  border: 1px solid transparent;
+  background: var(--vscode-input-background);
+}
+
+.search-input-wrapper.focused,
+.replace-input-wrapper.focused {
+  border-color: var(--vscode-focusBorder);
+}
+
+.search-input {
+  width: 100%;
+  height: 100%;
+  border: none;
+  outline: none;
+  background: transparent;
+  color: var(--vscode-input-foreground);
+  font-size: 13px;
+  font-weight: 500;
+  font-family: inherit;
+  padding: 3px 72px 3px 6px;
+}
+
+.replace-input-wrapper .search-input {
+  padding-right: 28px;
+}
+
+.search-input::placeholder {
+  color: var(--vscode-input-placeholderForeground);
+}
+
+.search-input-controls {
+  position: absolute;
+  top: 3px;
+  right: 2px;
+  display: flex;
+}
+
+.monaco-custom-toggle {
+  margin-left: 2px;
+  cursor: pointer;
+  overflow: hidden;
+  width: 20px;
+  height: 20px;
+  border-radius: 3px;
+  border: 1px solid transparent;
+  padding: 1px;
+  box-sizing: border-box;
+  user-select: none;
+  -webkit-user-select: none;
+  background: transparent;
+  color: var(--vscode-icon-foreground);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.monaco-custom-toggle:hover {
+  background: var(--vscode-inputOption-hoverBackground);
+}
+
+.monaco-custom-toggle.checked {
+  border-color: var(--vscode-inputOption-activeBorder);
+  background: var(--vscode-inputOption-activeBackground);
+  color: var(--vscode-inputOption-activeForeground);
+}
+
+.replace-container {
+  margin-top: 6px;
+  position: relative;
+  display: inline-flex;
+  width: calc(100% - 18px);
+}
+
+.replace-container.disabled {
+  display: none;
+}
+
+.replace-actions {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  margin-left: 4px;
+  height: 25px;
+}
+
+.replace-actions .replace-action {
+  width: 22px;
+  height: 22px;
+}
+
+.search-results-info {
+  color: var(--vscode-search-resultsInfoForeground);
+  padding: 0 12px 6px;
+  flex-shrink: 0;
+}
+
+.search-view-flush-left .search-results-info {
+  padding-left: 14px;
+}
+
+.search-results {
+  flex-grow: 1;
+  min-height: 0;
+  padding: 0 4px 12px 2px;
+}
+
+.search-view-flush-left .search-results {
+  padding-left: 4px;
+}
+
+.search-empty-message {
+  padding: 8px 16px;
+  color: var(--vscode-descriptionForeground);
+}
+
+.search-file-row {
+  display: flex;
+  align-items: center;
+  position: relative;
+  line-height: 22px;
+  padding: 0 8px;
+  height: 22px;
+  cursor: pointer;
+  font-weight: 400;
+}
+
+.search-repo-row {
+  display: flex;
+  align-items: center;
+  position: relative;
+  line-height: 22px;
+  padding: 0 8px;
+  height: 22px;
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.search-repo-row:hover {
+  background: var(--vscode-list-hoverBackground);
+}
+
+.search-repo-icon {
+  width: 16px;
+  height: 22px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--vscode-icon-foreground);
+  margin-right: 6px;
+  flex-shrink: 0;
+  font-size: 16px;
+  line-height: 16px;
+  transform: translateY(4px);
+}
+
+.search-repo-name {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.repo-file-row {
+  padding-left: 24px;
+}
+
+.search-file-row:hover {
+  background: var(--vscode-list-hoverBackground);
+}
+
+.search-tree-twistie {
+  width: 16px;
+  height: 22px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--vscode-icon-foreground);
+  margin-right: 2px;
+  flex-shrink: 0;
+  transition: transform 0.1s ease;
+}
+
+.search-tree-twistie.expanded {
+  transform: rotate(90deg);
+}
+
+.search-file-name {
+  white-space: nowrap;
+  color: inherit;
+  flex-shrink: 0;
+  font-weight: 600;
+}
+
+.search-file-description {
+  opacity: 0.7;
+  margin-left: 0.5em;
+  font-size: 0.9em;
+  color: var(--vscode-descriptionForeground);
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-weight: 400;
+}
+
+.monaco-count-badge.search-count-badge {
+  margin-left: auto;
+  margin-right: 2px;
+  padding: 3px 5px;
+  border-radius: 11px;
+  font-size: 11px;
+  min-width: 18px;
+  min-height: 18px;
+  line-height: 11px;
+  font-weight: 400;
+  text-align: center;
+  box-sizing: border-box;
+  color: var(--vscode-badge-foreground);
+  background: var(--vscode-badge-background);
+}
+
+.search-match-row {
+  position: relative;
+  line-height: 22px;
+  display: flex;
+  overflow: hidden;
+  padding: 0 8px 0 32px;
+  cursor: pointer;
+  font-family: inherit;
+  font-weight: 500;
+}
+
+.search-match-row:hover {
+  background: var(--vscode-list-hoverBackground);
+}
+
+.search-match-row > .match {
+  flex: 1;
+  min-width: 0;
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: pre;
+  color: inherit;
+  text-decoration: none;
+  font-family: inherit;
+}
+
+.findInFileMatch {
+  white-space: pre;
+  background-color: #ea5c0040;
+  border: 0;
+}

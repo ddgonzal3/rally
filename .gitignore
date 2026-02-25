@@ -1,0 +1,24 @@
+# Dependencies
+node_modules/
+.DS_Store
+
+# Build output
+dist/
+src-tauri/target/
+
+# Tauri generated
+src-tauri/gen/
+
+# Local settings
+.claude/settings.local.json
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# Environment
+.env
+.env.local
+
+docs/plans/

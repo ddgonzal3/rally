@@ -1,0 +1,109 @@
+import React, { useCallback, useRef } from "react";
+import type { SplitDirection } from "../lib/types";
+
+interface ResizeHandleProps {
+  direction: SplitDirection;
+  ratio: number;
+  onResize: (ratio: number) => void;
+}
+
+export function ResizeHandle({ direction, ratio, onResize }: ResizeHandleProps) {
+  const handleRef = useRef<HTMLDivElement>(null);
+  const dragging = useRef(false);
+
+  const onMouseDown = useCallback(
+    (e: React.MouseEvent) => {
+      e.preventDefault();
+      dragging.current = true;
+      const handle = handleRef.current;
+      if (!handle) return;
+
+      const parent = handle.parentElement;
+      if (!parent) return;
+
+      const rect = parent.getBoundingClientRect();
+      const handleRect = handle.getBoundingClientRect();
+      const isVertical = direction === "vertical";
+      const startPointer = isVertical ? e.clientY : e.clientX;
+      const startRatio = ratio;
+      const total = isVertical ? rect.height : rect.width;
+      const handleSize = isVertical ? handleRect.height : handleRect.width;
+      const usable = Math.max(1, total - handleSize);
+
+      const onMouseMove = (ev: MouseEvent) => {
+        if (!dragging.current) return;
+        const pointer = isVertical ? ev.clientY : ev.clientX;
+        const delta = pointer - startPointer;
+        onResize(startRatio + delta / usable);
+      };
+
+      const onMouseUp = () => {
+        dragging.current = false;
+        // Re-enable flex transition after drag
+        if (parent) parent.style.removeProperty("--split-transition");
+        document.removeEventListener("mousemove", onMouseMove);
+        document.removeEventListener("mouseup", onMouseUp);
+        document.body.style.cursor = "";
+        document.body.style.userSelect = "";
+      };
+
+      // Disable flex transition during drag so resizing feels instant
+      if (parent) parent.style.setProperty("--split-transition", "none");
+
+      document.addEventListener("mousemove", onMouseMove);
+      document.addEventListener("mouseup", onMouseUp);
+      document.body.style.cursor = isVertical ? "row-resize" : "col-resize";
+      document.body.style.userSelect = "none";
+    },
+    [direction, onResize, ratio],
+  );
+
+  // "vertical" direction = horizontal line (separates top/bottom)
+  // "horizontal" direction = vertical line (separates left/right)
+  const isHorizontalLine = direction === "vertical";
+
+  // Vertical lines: 1px visible line
+  // Horizontal lines: 80% as noticeable (lower opacity)
+  const lineThickness = 1;
+  const lineOpacity = isHorizontalLine ? 0.8 : 1;
+
+  return (
+    <div
+      ref={handleRef}
+      onMouseDown={onMouseDown}
+      style={{
+        flexShrink: 0,
+        // Wider hit area (6px) for easy grabbing, but thin visible line
+        width: isHorizontalLine ? "100%" : 6,
+        height: isHorizontalLine ? 6 : "100%",
+        cursor: isHorizontalLine ? "row-resize" : "col-resize",
+        background: "#1a1a1a",
+        zIndex: 10,
+        display: "flex",
+        alignItems: isHorizontalLine ? "flex-end" : "center",
+        justifyContent: isHorizontalLine ? "center" : "center",
+      }}
+      onMouseEnter={(e) => {
+        const line = e.currentTarget.firstElementChild as HTMLDivElement;
+        if (line) line.style.background = "#444";
+      }}
+      onMouseLeave={(e) => {
+        if (!dragging.current) {
+          const line = e.currentTarget.firstElementChild as HTMLDivElement;
+          if (line) line.style.background = "#2a2a2a";
+        }
+      }}
+    >
+      <div
+        style={{
+          width: isHorizontalLine ? "100%" : lineThickness,
+          height: isHorizontalLine ? lineThickness : "100%",
+          background: "#2a2a2a",
+          opacity: lineOpacity,
+          transition: "background 0.15s",
+          pointerEvents: "none",
+        }}
+      />
+    </div>
+  );
+}
