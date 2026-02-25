@@ -22,3 +22,6 @@ src-tauri/gen/
 .env.local
 
 docs/plans/
+
+# Test screenshots (captured during test runs)
+tests/screenshots/captures/

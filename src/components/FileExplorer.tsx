@@ -79,6 +79,33 @@ function saveExpandedPaths() {
   );
 }
 
+/** Return current expanded paths (for layout preset save). */
+export function getExpandedPaths(): string[] {
+  return [...expandedPaths];
+}
+
+/**
+ * Replace expanded paths under given root prefixes and persist.
+ * If no roots provided, replaces ALL expanded paths.
+ * Used by layout preset restore to swap explorer state for one workspace
+ * without affecting expanded paths from other workspaces.
+ */
+export function setExpandedPaths(paths: string[], roots?: string[]): void {
+  if (roots && roots.length > 0) {
+    // Remove only paths belonging to the specified roots, then add the new ones
+    for (const ep of [...expandedPaths]) {
+      if (roots.some((r) => ep === r || ep.startsWith(r + "/"))) {
+        expandedPaths.delete(ep);
+      }
+    }
+  } else {
+    expandedPaths.clear();
+  }
+  for (const p of paths) expandedPaths.add(p);
+  saveExpandedPaths();
+  document.dispatchEvent(new Event("rally:expanded-paths-changed"));
+}
+
 /** Module-level cache of directory listings — survives component unmount/remount */
 const directoryCache = new Map<string, FileEntry[]>();
 
@@ -1959,6 +1986,9 @@ function LayoutPresetsDropdown({ workspaceId }: { workspaceId: string }) {
     return Array.isArray(arr) ? arr : EMPTY_PRESETS;
   });
 
+  const activePresetId = useWorkspaceStore((s) => s.activePresetId[workspaceId]);
+  const activePreset = presets.find((p) => p.id === activePresetId);
+
   const close = useCallback(() => {
     setOpen(false);
     setSaving(false);
@@ -1990,12 +2020,18 @@ function LayoutPresetsDropdown({ workspaceId }: { workspaceId: string }) {
     if (saving) inputRef.current?.focus();
   }, [saving]);
 
-  const doSave = () => {
+  const doSaveNew = () => {
     const trimmed = name.trim();
     if (!trimmed) return;
     useWorkspaceStore.getState().saveLayoutPreset(workspaceId, trimmed);
     setSaving(false);
     setName("");
+  };
+
+  const doSaveCurrent = () => {
+    if (!activePresetId) return;
+    useWorkspaceStore.getState().updateLayoutPreset(workspaceId, activePresetId);
+    close();
   };
 
   const doRestore = (presetId: string) => {
@@ -2009,15 +2045,24 @@ function LayoutPresetsDropdown({ workspaceId }: { workspaceId: string }) {
   };
 
   const btnRef = useRef<HTMLButtonElement>(null);
-  const [pos, setPos] = useState({ top: 0, right: 0 });
+  const [pos, setPos] = useState({ top: 0, right: 0, left: -1 });
+
+  const DROPDOWN_MIN_WIDTH = 200;
 
   const handleToggle = (e: React.MouseEvent) => {
     e.stopPropagation();
     if (open) { close(); return; }
-    // Measure button position for portal placement
+    // Measure button position for portal placement — prefer right-aligned,
+    // but flip to left-aligned if that would push the dropdown off-screen.
     const rect = btnRef.current?.getBoundingClientRect();
     if (rect) {
-      setPos({ top: rect.bottom + 4, right: window.innerWidth - rect.right });
+      const rightAligned = window.innerWidth - rect.right;
+      // If right-aligning would push the dropdown past the left edge, left-align instead
+      if (rect.right - DROPDOWN_MIN_WIDTH < 0) {
+        setPos({ top: rect.bottom + 4, right: -1, left: rect.left });
+      } else {
+        setPos({ top: rect.bottom + 4, right: rightAligned, left: -1 });
+      }
     }
     setOpen(true);
     setSaving(false);
@@ -2028,7 +2073,9 @@ function LayoutPresetsDropdown({ workspaceId }: { workspaceId: string }) {
     <div
       ref={dropdownRef}
       style={{
-        position: "fixed", top: pos.top, right: pos.right, minWidth: 180,
+        position: "fixed", top: pos.top,
+        ...(pos.right >= 0 ? { right: pos.right } : { left: pos.left }),
+        minWidth: DROPDOWN_MIN_WIDTH,
         background: "rgba(36,36,36,0.78)", backdropFilter: "blur(20px) saturate(180%)",
         WebkitBackdropFilter: "blur(20px) saturate(180%)",
         border: "1px solid rgba(255,255,255,0.12)", borderRadius: 6, padding: "4px 0",
@@ -2036,32 +2083,41 @@ function LayoutPresetsDropdown({ workspaceId }: { workspaceId: string }) {
       }}
     >
       {/* Saved layouts — click to restore, hover shows X to delete */}
-      {presets.map((p) => (
-        <div
-          key={p.id}
-          className="layout-preset-row"
-          style={{ display: "flex", alignItems: "center", padding: "0 4px 0 10px", height: 26, cursor: "pointer", borderRadius: 4, margin: "0 4px" }}
-          onClick={() => doRestore(p.id)}
-        >
-          <span style={{ flex: 1, fontSize: 13, fontWeight: 600, color: "#e0e0e0", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.name}</span>
-          <button
-            className="layout-preset-delete"
-            style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 18, height: 18, background: "none", border: "none", color: "#666", cursor: "pointer", borderRadius: 3, flexShrink: 0, opacity: 0 }}
-            onClick={(e) => doDelete(e, p.id)}
-            title="Delete layout"
+      {presets.map((p) => {
+        const isActive = p.id === activePresetId;
+        return (
+          <div
+            key={p.id}
+            className="layout-preset-row"
+            style={{
+              display: "flex", alignItems: "center", padding: "0 6px 0 10px", height: 28, cursor: "pointer", borderRadius: 4, margin: "0 4px",
+              borderLeft: isActive ? "2px solid rgba(255,255,255,0.5)" : "2px solid transparent",
+            }}
+            onClick={() => doRestore(p.id)}
           >
-            <svg width="8" height="8" viewBox="0 0 12 12" fill="none">
-              <path d="M3 3l6 6M9 3l-6 6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-            </svg>
-          </button>
-        </div>
-      ))}
+            <span style={{
+              flex: 1, fontSize: 13, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+              color: "#e0e0e0",
+            }}>{p.name}</span>
+            <button
+              className="layout-preset-delete"
+              style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 22, height: 22, background: "none", border: "none", color: "#e0e0e0", cursor: "pointer", borderRadius: 3, flexShrink: 0, opacity: 0 }}
+              onClick={(e) => doDelete(e, p.id)}
+              title="Delete layout"
+            >
+              <svg width="10" height="10" viewBox="0 0 12 12" fill="none">
+                <path d="M3 3l6 6M9 3l-6 6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+              </svg>
+            </button>
+          </div>
+        );
+      })}
 
       {presets.length > 0 && (
         <div style={{ height: 1, background: "rgba(255,255,255,0.08)", margin: "4px 4px" }} />
       )}
 
-      {/* Save current layout */}
+      {/* Save as New Layout (safer action first) */}
       {saving ? (
         <div style={{ display: "flex", alignItems: "center", gap: 4, padding: "4px 6px" }}>
           <input
@@ -2069,7 +2125,7 @@ function LayoutPresetsDropdown({ workspaceId }: { workspaceId: string }) {
             value={name}
             onChange={(e) => setName(e.target.value)}
             onKeyDown={(e) => {
-              if (e.key === "Enter") doSave();
+              if (e.key === "Enter") doSaveNew();
               if (e.key === "Escape") { setSaving(false); setName(""); }
             }}
             placeholder="Layout name..."
@@ -2081,22 +2137,33 @@ function LayoutPresetsDropdown({ workspaceId }: { workspaceId: string }) {
           />
           <button
             className="tab-action"
-            style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 22, height: 22, background: "none", border: "none", color: "#999", cursor: "pointer", borderRadius: 4, flexShrink: 0 }}
-            onClick={doSave}
+            style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 24, height: 24, background: "none", border: "none", color: "#e0e0e0", cursor: "pointer", borderRadius: 4, flexShrink: 0 }}
+            onClick={doSaveNew}
             title="Save"
           >
-            <svg width="10" height="10" viewBox="0 0 12 12" fill="none">
-              <path d="M2 6l3 3 5-5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+            <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+              <path d="M2 6l3 3 5-5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
             </svg>
           </button>
         </div>
       ) : (
         <div
           className="layout-preset-row"
-          style={{ display: "flex", alignItems: "center", padding: "0 10px", height: 26, cursor: "pointer", borderRadius: 4, margin: "0 4px" }}
+          style={{ display: "flex", alignItems: "center", padding: "0 10px", height: 28, cursor: "pointer", borderRadius: 4, margin: "0 4px" }}
           onClick={() => setSaving(true)}
         >
-          <span style={{ fontSize: 13, fontWeight: 600, color: "#999" }}>Save current layout...</span>
+          <span style={{ fontSize: 13, fontWeight: 600, color: "#e0e0e0" }}>Save as new layout...</span>
+        </div>
+      )}
+
+      {/* Update current layout (overwrite) — only if a preset is active */}
+      {activePreset && (
+        <div
+          className="layout-preset-row"
+          style={{ display: "flex", alignItems: "center", padding: "0 10px", height: 28, cursor: "pointer", borderRadius: 4, margin: "0 4px" }}
+          onClick={doSaveCurrent}
+        >
+          <span style={{ fontSize: 13, fontWeight: 600, color: "#e0e0e0" }}>Update &lsquo;{activePreset.name}&rsquo;</span>
         </div>
       )}
     </div>,
@@ -2158,6 +2225,14 @@ export function FileExplorer({ onCollapse, flushLeft }: FileExplorerProps) {
     setDragRootToIndex(null);
     setDragRootOffsetY(0);
     setDragRootItemHeight(0);
+  }, []);
+
+  // Re-render when expandedPaths are replaced externally (layout preset restore)
+  const [, setExpandedTick] = useState(0);
+  useEffect(() => {
+    const handler = () => setExpandedTick((t) => t + 1);
+    document.addEventListener("rally:expanded-paths-changed", handler);
+    return () => document.removeEventListener("rally:expanded-paths-changed", handler);
   }, []);
 
   // Global Enter-to-rename: when a file is selected in the tree, Enter triggers rename

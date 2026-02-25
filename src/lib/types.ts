@@ -261,6 +261,12 @@ export interface LayoutPreset {
   id: string;
   name: string;
   layout: WorkspaceLayout;
+  explorerState?: {
+    activePathIndex: number;
+    expandedPaths: string[];
+    /** Repo paths present in the workspace when the preset was saved */
+    paths?: string[];
+  };
 }
 
 // --- Layout Tree Utilities ---

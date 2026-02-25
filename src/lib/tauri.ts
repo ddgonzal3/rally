@@ -34,6 +34,9 @@ export const api = {
   removeWorkspacePath: (id: string, path: string) =>
     invoke<Workspace>("remove_workspace_path", { id, path }),
 
+  setWorkspacePaths: (id: string, paths: string[]) =>
+    invoke<Workspace>("set_workspace_paths", { id, paths }),
+
   reorderWorkspacePath: (workspaceId: string, path: string, toIndex: number) =>
     invoke<Workspace>("reorder_workspace_path", { workspaceId, path, toIndex }),
 

@@ -1,0 +1,80 @@
+[
+  {
+    "name": "app is ready and bridge is injected",
+    "file": "tests/e2e/smoke.test.ts",
+    "status": "pass",
+    "durationMs": 41
+  },
+  {
+    "name": "document has a title",
+    "file": "tests/e2e/smoke.test.ts",
+    "status": "pass",
+    "durationMs": 3
+  },
+  {
+    "name": "app root is mounted",
+    "file": "tests/e2e/smoke.test.ts",
+    "status": "pass",
+    "durationMs": 3
+  },
+  {
+    "name": "store is accessible",
+    "file": "tests/e2e/smoke.test.ts",
+    "status": "pass",
+    "durationMs": 7
+  },
+  {
+    "name": "capture initial screenshot",
+    "file": "tests/e2e/smoke.test.ts",
+    "status": "pass",
+    "durationMs": 892
+  },
+  {
+    "name": "list workspaces returns empty array initially",
+    "file": "tests/e2e/workspace.test.ts",
+    "status": "pass",
+    "durationMs": 7
+  },
+  {
+    "name": "create workspace via invoke",
+    "file": "tests/e2e/workspace.test.ts",
+    "status": "pass",
+    "durationMs": 11
+  },
+  {
+    "name": "workspace appears in store state",
+    "file": "tests/e2e/workspace.test.ts",
+    "status": "pass",
+    "durationMs": 3
+  },
+  {
+    "name": "capture workspace view",
+    "file": "tests/e2e/workspace.test.ts",
+    "status": "pass",
+    "durationMs": 909
+  },
+  {
+    "name": "remove workspace via invoke",
+    "file": "tests/e2e/workspace.test.ts",
+    "status": "pass",
+    "durationMs": 9
+  },
+  {
+    "name": "capture and evaluate overall layout",
+    "file": "tests/visual/layout.test.ts",
+    "status": "pass",
+    "durationMs": 863
+  },
+  {
+    "name": "capture sidebar view for evaluation",
+    "file": "tests/visual/layout.test.ts",
+    "status": "pass",
+    "durationMs": 668
+  },
+  {
+    "name": "verify color values via computed styles",
+    "file": "tests/visual/layout.test.ts",
+    "status": "pass",
+    "durationMs": 4
+  }
+]

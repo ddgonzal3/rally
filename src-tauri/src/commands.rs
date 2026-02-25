@@ -225,6 +225,25 @@ pub fn remove_workspace_path(
 }
 
 #[tauri::command]
+pub fn set_workspace_paths(
+    app: tauri::AppHandle,
+    id: String,
+    paths: Vec<String>,
+) -> Result<Workspace, String> {
+    let mut workspaces = workspace::load_workspaces();
+    let ws = workspaces
+        .iter_mut()
+        .find(|w| w.id == id)
+        .ok_or_else(|| format!("Workspace not found: {}", id))?;
+
+    ws.paths = paths;
+    let result = ws.clone();
+    workspace::save_workspaces(&workspaces)?;
+    emit_workspaces_updated(&app);
+    Ok(result)
+}
+
+#[tauri::command]
 pub fn reorder_workspace_path(
     app: tauri::AppHandle,
     workspace_id: String,

@@ -14,6 +14,11 @@ use tauri::Emitter;
 use tauri::Manager;
 use tauri_plugin_dialog::{DialogExt, MessageDialogButtons, MessageDialogKind};
 
+/// Whether we're running in test mode (RALLY_TEST_MODE=1).
+fn is_test_mode() -> bool {
+    std::env::var("RALLY_TEST_MODE").is_ok()
+}
+
 /// Show the native "Close Window?" confirmation dialog for secondary windows.
 fn show_close_window_dialog(
     window: tauri::Window,
@@ -122,75 +127,84 @@ fn main() {
     // Window labels that are allowed to bypass close confirmation once.
     let bypass_close_confirm: Arc<Mutex<HashSet<String>>> = Arc::new(Mutex::new(HashSet::new()));
 
-    tauri::Builder::default()
+    let mut builder = tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_window_state::Builder::new().build())
         .manage(pty_state)
-        .manage(git_watch_state)
-        .invoke_handler(tauri::generate_handler![
-            commands::list_workspaces,
-            commands::update_git_watch_roots,
-            commands::create_workspace,
-            commands::remove_workspace,
-            commands::reorder_workspace,
-            commands::rename_workspace,
-            commands::add_workspace_path,
-            commands::remove_workspace_path,
-            commands::reorder_workspace_path,
-            commands::clone_repo,
-            commands::git_status,
-            commands::git_pr_status,
-            commands::git_pr_details,
-            commands::git_pr_diff,
-            commands::git_edit_pr_title,
-            commands::git_close_pr,
-            commands::git_merge_pr,
-            commands::git_changes,
-            commands::git_file_at_head,
-            commands::git_stage_file,
-            commands::git_unstage_file,
-            commands::git_discard_file,
-            commands::git_diff,
-            commands::git_apply_patch,
-            commands::git_commit_staged,
-            commands::git_push,
-            commands::git_create_pr,
-            commands::git_commit_log,
-            commands::git_diff_stat,
-            commands::git_fetch,
-            commands::git_rebase_on_main,
-            commands::list_directory,
-            commands::detect_git_info,
-            commands::trash_file,
-            commands::rename_file,
-            commands::reveal_in_finder,
-            commands::list_scripts,
-            commands::file_exists,
-            pty_manager::spawn_pty,
-            pty_manager::write_pty,
-            pty_manager::resize_pty,
-            pty_manager::kill_pty,
-            pty_manager::list_ptys,
-            pty_manager::kill_all_ptys,
-            pty_manager::get_pty_foreground_process,
-            config_ops::read_file_content,
-            config_ops::read_file_base64,
-            config_ops::write_file_content,
-            config_ops::create_directory,
-            config_ops::path_status,
-            config_ops::list_claude_configs,
-            config_ops::list_skills,
-            ship_ops::check_ship_signal,
-            ship_ops::clear_ship_signal,
-            ship_ops::check_ship_trigger,
-            ship_ops::post_merge_sync,
-            ship_ops::list_rally_scripts,
-            ship_ops::restore_rally_script,
-            rally::search_ops::search_in_files,
-            rally::search_ops::replace_in_files,
-            rally::search_ops::list_all_files,
-        ])
+        .manage(git_watch_state);
+
+    // In test-bridge mode, create the shared result channels.
+    #[cfg(feature = "test-bridge")]
+    let test_bridge_pending: rally::test_server::ResultSenders =
+        std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new()));
+
+    builder = builder.invoke_handler(tauri::generate_handler![
+        commands::list_workspaces,
+        commands::update_git_watch_roots,
+        commands::create_workspace,
+        commands::remove_workspace,
+        commands::reorder_workspace,
+        commands::rename_workspace,
+        commands::add_workspace_path,
+        commands::remove_workspace_path,
+        commands::set_workspace_paths,
+        commands::reorder_workspace_path,
+        commands::clone_repo,
+        commands::git_status,
+        commands::git_pr_status,
+        commands::git_pr_details,
+        commands::git_pr_diff,
+        commands::git_edit_pr_title,
+        commands::git_close_pr,
+        commands::git_merge_pr,
+        commands::git_changes,
+        commands::git_file_at_head,
+        commands::git_stage_file,
+        commands::git_unstage_file,
+        commands::git_discard_file,
+        commands::git_diff,
+        commands::git_apply_patch,
+        commands::git_commit_staged,
+        commands::git_push,
+        commands::git_create_pr,
+        commands::git_commit_log,
+        commands::git_diff_stat,
+        commands::git_fetch,
+        commands::git_rebase_on_main,
+        commands::list_directory,
+        commands::detect_git_info,
+        commands::trash_file,
+        commands::rename_file,
+        commands::reveal_in_finder,
+        commands::list_scripts,
+        commands::file_exists,
+        pty_manager::spawn_pty,
+        pty_manager::write_pty,
+        pty_manager::resize_pty,
+        pty_manager::kill_pty,
+        pty_manager::list_ptys,
+        pty_manager::kill_all_ptys,
+        pty_manager::get_pty_foreground_process,
+        config_ops::read_file_content,
+        config_ops::read_file_base64,
+        config_ops::write_file_content,
+        config_ops::create_directory,
+        config_ops::path_status,
+        config_ops::list_claude_configs,
+        config_ops::list_skills,
+        ship_ops::check_ship_signal,
+        ship_ops::clear_ship_signal,
+        ship_ops::check_ship_trigger,
+        ship_ops::post_merge_sync,
+        ship_ops::list_rally_scripts,
+        ship_ops::restore_rally_script,
+        rally::search_ops::search_in_files,
+        rally::search_ops::replace_in_files,
+        rally::search_ops::list_all_files,
+    ]);
+
+    builder
         // Intercept window close button (red X):
         // - if more than one window exists: confirm closing only this window
         // - if this is the last window: confirm quitting Rally
@@ -200,6 +214,11 @@ fn main() {
             let bypass_close_confirm = bypass_close_confirm.clone();
             move |window, event| {
                 if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                    // In test mode, allow close without confirmation
+                    if is_test_mode() {
+                        return;
+                    }
+
                     let label = window.label().to_string();
 
                     if let Ok(mut bypass) = bypass_close_confirm.lock() {
@@ -256,10 +275,42 @@ fn main() {
                 }
             }
         })
-        .setup(|app| {
+        .setup({
+            #[cfg(feature = "test-bridge")]
+            let test_pending = test_bridge_pending.clone();
+
+            move |app| {
             // Install default commands (ship.md, review-pr.md) globally
             if let Err(e) = ship_ops::ensure_default_commands() {
                 eprintln!("Warning: failed to install default commands: {}", e);
+            }
+
+            // --- Test mode setup ---
+            #[cfg(feature = "test-bridge")]
+            if is_test_mode() {
+                eprintln!("[test-mode] Rally starting in test mode");
+                rally::test_server::setup_listener(app.handle(), test_pending.clone());
+                rally::test_server::start(app.handle().clone(), test_pending.clone());
+
+                // Inject bridge script after React has mounted.
+                // We spawn a thread that waits briefly, then evals the bridge JS.
+                let handle = app.handle().clone();
+                std::thread::spawn(move || {
+                    // Wait for React to mount (the Vite-built frontend loads fast)
+                    std::thread::sleep(std::time::Duration::from_secs(2));
+                    let bridge_js = include_str!("../resources/test-bridge.js");
+                    if let Some(window) = handle.get_webview_window("main") {
+                        if let Err(e) = window.eval(bridge_js) {
+                            eprintln!("[test-mode] bridge inject failed: {}", e);
+                        } else {
+                            eprintln!("[test-mode] bridge injected successfully");
+                            // Mark the app as ready for tests
+                            rally::test_server::mark_ready();
+                        }
+                    } else {
+                        eprintln!("[test-mode] no main window found for bridge injection");
+                    }
+                });
             }
 
             // Custom app menu: replaces the default Quit with our own that shows
@@ -367,7 +418,7 @@ fn main() {
                 }
             }
             Ok(())
-        })
+        }})
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
         .run({

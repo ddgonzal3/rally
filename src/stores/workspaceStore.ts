@@ -29,6 +29,7 @@ import {
   findFirstGroupInSubtree,
 } from "../lib/types";
 import { api } from "../lib/tauri";
+import { getExpandedPaths, setExpandedPaths } from "../components/FileExplorer";
 
 /**
  * Ship PTY output buffer — stored outside Zustand state to avoid O(n) array
@@ -70,6 +71,7 @@ type PersistedWorkspaceState = {
   layouts: Record<string, WorkspaceLayout>;
   activeGroupIds: Record<string, string>;
   layoutPresets: Record<string, LayoutPreset[]>;
+  activePresetId: Record<string, string>;
   gitDiffActiveTab: "unstaged" | "staged";
   unifiedGitPanelOpen: boolean;
   unifiedGitPanelPath: string | null;
@@ -83,6 +85,7 @@ const workspacePersistStorage = (() => {
     layouts: PersistedWorkspaceState["layouts"];
     activeGroupIds: PersistedWorkspaceState["activeGroupIds"];
     layoutPresets: PersistedWorkspaceState["layoutPresets"];
+    activePresetId: PersistedWorkspaceState["activePresetId"];
     gitDiffActiveTab: string;
     unifiedGitPanelOpen: boolean;
     unifiedGitPanelPath: string | null;
@@ -116,6 +119,7 @@ const workspacePersistStorage = (() => {
         lastRefs.layouts === state.layouts &&
         lastRefs.activeGroupIds === state.activeGroupIds &&
         lastRefs.layoutPresets === state.layoutPresets &&
+        lastRefs.activePresetId === state.activePresetId &&
         lastRefs.gitDiffActiveTab === state.gitDiffActiveTab &&
         lastRefs.unifiedGitPanelOpen === state.unifiedGitPanelOpen &&
         lastRefs.unifiedGitPanelPath === state.unifiedGitPanelPath &&
@@ -131,6 +135,7 @@ const workspacePersistStorage = (() => {
         layouts: state.layouts,
         activeGroupIds: state.activeGroupIds,
         layoutPresets: state.layoutPresets,
+        activePresetId: state.activePresetId,
         gitDiffActiveTab: state.gitDiffActiveTab,
         unifiedGitPanelOpen: state.unifiedGitPanelOpen,
         unifiedGitPanelPath: state.unifiedGitPanelPath,
@@ -160,6 +165,8 @@ interface WorkspaceState {
   activeGroupIds: Record<string, string>;
   /** Saved layout presets per workspace */
   layoutPresets: Record<string, LayoutPreset[]>;
+  /** Currently active preset per workspace (set on restore, cleared on delete) */
+  activePresetId: Record<string, string>;
   /** Active script runs keyed by "rootPath:scriptName" */
   scriptRuns: Record<string, ScriptRun>;
   /** Ship status keyed by repo path */
@@ -269,6 +276,8 @@ interface WorkspaceState {
   closeActiveTab: (workspaceId: string) => void;
   /** Save current layout as a named preset */
   saveLayoutPreset: (workspaceId: string, name: string) => void;
+  /** Overwrite an existing preset with the current layout + repos */
+  updateLayoutPreset: (workspaceId: string, presetId: string) => void;
   /** Restore a saved layout preset (kills existing PTYs) */
   restoreLayoutPreset: (workspaceId: string, presetId: string) => void;
   /** Delete a saved layout preset */
@@ -547,6 +556,7 @@ export const useWorkspaceStore = create<WorkspaceState>()(
   layouts: {},
   activeGroupIds: {},
   layoutPresets: {},
+  activePresetId: {},
   scriptRuns: {},
   shipStatuses: {},
   shipSession: null,
@@ -1927,15 +1937,79 @@ export const useWorkspaceStore = create<WorkspaceState>()(
       root: JSON.parse(JSON.stringify(layout.root)),
       groups,
     };
+    // Capture explorer state: active repo index + expanded paths under this workspace's roots
+    const ws = get().workspaces.find((w) => w.id === workspaceId);
+    const allExpanded = getExpandedPaths();
+    const wsPaths = ws?.paths ?? [];
+    const relevantExpanded = allExpanded.filter((ep) =>
+      wsPaths.some((root) => ep === root || ep.startsWith(root + "/"))
+    );
+
     const preset: LayoutPreset = {
       id: crypto.randomUUID(),
       name,
       layout: snapshot,
+      explorerState: {
+        activePathIndex: get().activePathIndex[workspaceId] ?? 0,
+        expandedPaths: relevantExpanded,
+        paths: [...wsPaths],
+      },
     };
     set((s) => ({
       layoutPresets: {
         ...s.layoutPresets,
         [workspaceId]: [...(s.layoutPresets[workspaceId] ?? []), preset],
+      },
+      activePresetId: { ...s.activePresetId, [workspaceId]: preset.id },
+    }));
+  },
+
+  updateLayoutPreset: (workspaceId, presetId) => {
+    const presets = get().layoutPresets[workspaceId] ?? [];
+    const existing = presets.find((p) => p.id === presetId);
+    if (!existing) return;
+
+    // Snapshot current layout (same logic as saveLayoutPreset)
+    const layout = get().getOrCreateLayout(workspaceId);
+    const groups: Record<string, PaneGroup> = {};
+    for (const [gId, group] of Object.entries(layout.groups)) {
+      groups[gId] = {
+        ...group,
+        panes: group.panes.map((p) => {
+          const { ptyId: _, scriptBufferKey: _2, ...rest } = p;
+          if (rest.type === "claude") {
+            return { id: rest.id, type: "claude-launcher" as const, title: rest.title, ...(rest.cwd ? { cwd: rest.cwd } : {}) };
+          }
+          return rest;
+        }),
+      };
+    }
+    const snapshot: WorkspaceLayout = {
+      root: JSON.parse(JSON.stringify(layout.root)),
+      groups,
+    };
+    const ws = get().workspaces.find((w) => w.id === workspaceId);
+    const allExpanded = getExpandedPaths();
+    const wsPaths = ws?.paths ?? [];
+    const relevantExpanded = allExpanded.filter((ep) =>
+      wsPaths.some((root) => ep === root || ep.startsWith(root + "/"))
+    );
+
+    const updated: LayoutPreset = {
+      ...existing,
+      layout: snapshot,
+      explorerState: {
+        activePathIndex: get().activePathIndex[workspaceId] ?? 0,
+        expandedPaths: relevantExpanded,
+        paths: [...wsPaths],
+      },
+    };
+    set((s) => ({
+      layoutPresets: {
+        ...s.layoutPresets,
+        [workspaceId]: (s.layoutPresets[workspaceId] ?? []).map((p) =>
+          p.id === presetId ? updated : p
+        ),
       },
     }));
   },
@@ -1992,12 +2066,39 @@ export const useWorkspaceStore = create<WorkspaceState>()(
     const restored: WorkspaceLayout = { root: remapTree(cloned.root), groups: newGroups };
     const firstGroup = findFirstGroupInSubtree(restored.root);
 
+    // Restore explorer state if present in the preset
+    const ws = get().workspaces.find((w) => w.id === workspaceId);
+    const explorerUpdate: Record<string, unknown> = {};
+    if (preset.explorerState) {
+      explorerUpdate.activePathIndex = {
+        ...get().activePathIndex,
+        [workspaceId]: preset.explorerState.activePathIndex,
+      };
+      setExpandedPaths(preset.explorerState.expandedPaths, ws?.paths);
+
+      // Restore workspace paths (repos) if saved in the preset
+      if (preset.explorerState.paths && preset.explorerState.paths.length > 0) {
+        const currentPaths = ws?.paths ?? [];
+        const savedPaths = preset.explorerState.paths;
+        const pathsChanged =
+          currentPaths.length !== savedPaths.length ||
+          currentPaths.some((p, i) => p !== savedPaths[i]);
+        if (pathsChanged) {
+          api.setWorkspacePaths(workspaceId, savedPaths).then(() => {
+            get().loadWorkspaces();
+          }).catch(() => {});
+        }
+      }
+    }
+
     set((s) => ({
       layouts: { ...s.layouts, [workspaceId]: restored },
       activeGroupIds: {
         ...s.activeGroupIds,
         [workspaceId]: firstGroup ?? s.activeGroupIds[workspaceId],
       },
+      activePresetId: { ...s.activePresetId, [workspaceId]: presetId },
+      ...explorerUpdate,
     }));
 
     // Fresh IDs mean React unmounts old terminals (removing pty-exit
@@ -2009,14 +2110,22 @@ export const useWorkspaceStore = create<WorkspaceState>()(
   },
 
   deleteLayoutPreset: (workspaceId, presetId) => {
-    set((s) => ({
-      layoutPresets: {
-        ...s.layoutPresets,
-        [workspaceId]: (s.layoutPresets[workspaceId] ?? []).filter(
-          (p) => p.id !== presetId,
-        ),
-      },
-    }));
+    set((s) => {
+      const update: Partial<WorkspaceState> = {
+        layoutPresets: {
+          ...s.layoutPresets,
+          [workspaceId]: (s.layoutPresets[workspaceId] ?? []).filter(
+            (p) => p.id !== presetId,
+          ),
+        },
+      };
+      // Clear active preset if the deleted one was active
+      if (s.activePresetId[workspaceId] === presetId) {
+        const { [workspaceId]: _, ...rest } = s.activePresetId;
+        update.activePresetId = rest;
+      }
+      return update;
+    });
   },
 
   openFile: (workspaceId, filePath, options) => {
@@ -2279,6 +2388,7 @@ export const useWorkspaceStore = create<WorkspaceState>()(
         layouts: state.layouts,
         activeGroupIds: state.activeGroupIds,
         layoutPresets: state.layoutPresets,
+        activePresetId: state.activePresetId,
         gitDiffActiveTab: state.gitDiffActiveTab,
         unifiedGitPanelOpen: state.unifiedGitPanelOpen,
         unifiedGitPanelPath: state.unifiedGitPanelPath,
@@ -2293,6 +2403,7 @@ export const useWorkspaceStore = create<WorkspaceState>()(
           layouts: restoreLayouts(p?.layouts ?? {}),
           activeGroupIds: p?.activeGroupIds ?? current.activeGroupIds,
           layoutPresets: (p?.layoutPresets && typeof p.layoutPresets === "object") ? p.layoutPresets : {},
+          activePresetId: (p?.activePresetId && typeof p.activePresetId === "object") ? p.activePresetId : {},
           gitDiffActiveTab: p?.gitDiffActiveTab ?? "unstaged",
           unifiedGitPanelOpen: p?.unifiedGitPanelOpen ?? false,
           unifiedGitPanelPath: p?.unifiedGitPanelPath ?? null,
@@ -2302,6 +2413,9 @@ export const useWorkspaceStore = create<WorkspaceState>()(
     }
   )
 );
+
+// Expose store accessor globally for the test bridge (only used when RALLY_TEST_MODE=1)
+(window as any).__rallyStoreAccessor = () => useWorkspaceStore.getState();
 
 /** Helper to find a split node by ID in the tree */
 function findSplitById(

@@ -21,6 +21,7 @@
         "hiddenTitle": true
       }
     ],
+    "withGlobalTauri": true,
     "security": {
       "csp": null
     }
