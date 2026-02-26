@@ -196,10 +196,28 @@ export function Terminal({ cwd, command, initialInput, ptyId: existingPtyId, loc
           label: "Paste",
           accelerator: "CmdOrCtrl+V",
           action: async () => {
-            if (ptyId) {
-              const text = await navigator.clipboard.readText();
-              if (text) api.writePty(ptyId, Array.from(encoder.encode(text)));
+            if (!ptyId) return;
+            try {
+              // Check for image data first via Clipboard API
+              const clipItems = await navigator.clipboard.read();
+              for (const item of clipItems) {
+                const imageType = item.types.find((t) => t.startsWith("image/"));
+                if (imageType) {
+                  const blob = await item.getType(imageType);
+                  const buf = await blob.arrayBuffer();
+                  const base64 = btoa(
+                    new Uint8Array(buf).reduce((s, b) => s + String.fromCharCode(b), ""),
+                  );
+                  const path = await api.saveClipboardImage(base64, imageType);
+                  api.writePty(ptyId, Array.from(encoder.encode(path)));
+                  return;
+                }
+              }
+            } catch {
+              // Clipboard API .read() may fail (permissions); fall through to text
             }
+            const text = await navigator.clipboard.readText();
+            if (text) api.writePty(ptyId, Array.from(encoder.encode(text)));
           },
         },
         {
@@ -308,6 +326,40 @@ export function Terminal({ cwd, command, initialInput, ptyId: existingPtyId, loc
     termEl.addEventListener("keydown", handleKeyDown);
     termEl.addEventListener("keyup", handleKeyUp);
     window.addEventListener("blur", handleBlur);
+
+    // Intercept paste events to handle image data from clipboard.
+    // xterm.js only handles text paste — images are silently ignored.
+    // We detect image items, save to a temp file via Tauri, and write
+    // the file path into the PTY so the running process can reference it.
+    const handlePaste = (e: ClipboardEvent) => {
+      if (!e.clipboardData) return;
+      const items = e.clipboardData.items;
+      for (let i = 0; i < items.length; i++) {
+        if (items[i].type.startsWith("image/")) {
+          e.preventDefault();
+          e.stopPropagation();
+          const blob = items[i].getAsFile();
+          if (!blob) return;
+          const mimeType = items[i].type;
+          const reader = new FileReader();
+          reader.onload = async () => {
+            const dataUrl = reader.result as string;
+            // Strip "data:image/png;base64," prefix
+            const base64 = dataUrl.split(",")[1];
+            if (!base64 || !ptyIdRef.current) return;
+            try {
+              const path = await api.saveClipboardImage(base64, mimeType);
+              api.writePty(ptyIdRef.current, Array.from(encoder.encode(path)));
+            } catch (err) {
+              console.error("Failed to save clipboard image:", err);
+            }
+          };
+          reader.readAsDataURL(blob);
+          return; // handle first image only
+        }
+      }
+    };
+    termEl.addEventListener("paste", handlePaste);
 
     // Handle Cmd+C (copy), Cmd+V (paste), Cmd+A (select all),
     // and Option+Arrow (word movement)
@@ -579,6 +631,7 @@ export function Terminal({ cwd, command, initialInput, ptyId: existingPtyId, loc
       termEl.removeEventListener("keydown", handleKeyDown);
       termEl.removeEventListener("keyup", handleKeyUp);
       window.removeEventListener("blur", handleBlur);
+      termEl.removeEventListener("paste", handlePaste);
       // Kill PTY on unmount ONLY if we own it AND the store isn't managing it.
       // When onPtySpawned is provided, the store persists the ptyId and handles
       // cleanup in closePane/closeGroup — so we must not kill here (the component

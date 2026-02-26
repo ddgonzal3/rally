@@ -124,6 +124,9 @@ export const api = {
   listScripts: (rootPath: string) =>
     invoke<ScriptEntry[]>("list_scripts", { rootPath }),
 
+  saveClipboardImage: (data: string, mimeType: string) =>
+    invoke<string>("save_clipboard_image", { data, mimeType }),
+
   readFileContent: (path: string) =>
     invoke<string>("read_file_content", { path }),
 

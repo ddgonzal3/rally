@@ -179,6 +179,7 @@ fn main() {
         commands::reveal_in_finder,
         commands::list_scripts,
         commands::file_exists,
+        commands::save_clipboard_image,
         pty_manager::spawn_pty,
         pty_manager::write_pty,
         pty_manager::resize_pty,

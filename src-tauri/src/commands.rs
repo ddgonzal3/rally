@@ -4,6 +4,7 @@ use std::path::Path;
 use std::process::Command;
 use tauri::Emitter;
 
+use base64::Engine;
 use crate::git_ops;
 use crate::git_watch::GitWatchState;
 use crate::workspace::{self, ChangesSummary, CommitEntry, GitStatus, PrDetails, PrStatus, PushResult, Workspace};
@@ -544,6 +545,37 @@ fn discover_scripts(root_path: &str, exclude: &[String]) -> Vec<ScriptEntry> {
 #[tauri::command]
 pub fn file_exists(path: String) -> bool {
     Path::new(&path).is_file()
+}
+
+/// Save base64-encoded image data to a temp file.
+/// Returns the absolute path to the saved file.
+#[tauri::command]
+pub fn save_clipboard_image(data: String, mime_type: String) -> Result<String, String> {
+    let ext = match mime_type.as_str() {
+        "image/png" => "png",
+        "image/jpeg" | "image/jpg" => "jpg",
+        "image/gif" => "gif",
+        "image/webp" => "webp",
+        "image/bmp" => "bmp",
+        _ => "png", // default to png
+    };
+
+    let bytes = base64::engine::general_purpose::STANDARD
+        .decode(&data)
+        .map_err(|e| format!("Failed to decode base64: {}", e))?;
+
+    let dir = std::env::temp_dir().join("rally-clipboard");
+    fs::create_dir_all(&dir).map_err(|e| format!("Failed to create temp dir: {}", e))?;
+
+    let filename = format!(
+        "paste-{}.{}",
+        uuid::Uuid::new_v4().to_string().split('-').next().unwrap_or("img"),
+        ext
+    );
+    let path = dir.join(&filename);
+    fs::write(&path, &bytes).map_err(|e| format!("Failed to write image: {}", e))?;
+
+    Ok(path.to_string_lossy().to_string())
 }
 
 #[tauri::command]
