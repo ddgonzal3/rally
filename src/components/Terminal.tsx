@@ -420,17 +420,12 @@ export function Terminal({ cwd, command, initialInput, ptyId: existingPtyId, loc
         return true;
       }
       if (ev.key === "v") {
-        // Explicitly read clipboard and write to PTY. The previous approach
-        // (return false to let the browser fire a native paste event) was
-        // unreliable — the xterm textarea may not have focus, causing the
-        // paste to silently fail. Reading the clipboard directly is robust.
-        ev.preventDefault();
-        navigator.clipboard.readText().then(text => {
-          if (text && ptyIdRef.current) {
-            api.writePty(ptyIdRef.current, Array.from(encoder.encode(text)));
-          }
-        }).catch(() => { /* clipboard access denied */ });
-        return false;
+        // Ensure the xterm textarea is focused so the browser fires a native
+        // paste event on it. Using navigator.clipboard.readText() triggers
+        // WebKit's "Paste" permission popup in Tauri's webview, so we rely
+        // on the native paste flow instead (no popup, no permission needed).
+        term.focus();
+        return true;
       }
       if (ev.key === "a") {
         term.selectAll();
