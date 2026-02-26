@@ -86,7 +86,7 @@ export function PaneLayout() {
   }
 
   return (
-    <div style={styles.container}>
+    <div style={styles.container} data-pane-area="">
       {mountedWorkspaceIds.map((wsId) => (
         <WorkspaceLayoutView
           key={wsId}
@@ -105,6 +105,7 @@ const styles: Record<string, React.CSSProperties> = {
     minWidth: 0,
     minHeight: 0,
     overflow: "hidden",
+    position: "relative" as const,
   },
   empty: {
     flex: 1,

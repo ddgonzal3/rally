@@ -71,9 +71,16 @@ export function TaskPanel({ rootPath, workspaceId }: TaskPanelProps) {
     e.preventDefault();
     e.stopPropagation();
     if (!entry.file_path) return;
+    const filePath = entry.file_path;
     const isLocal = !entry.builtin;
+    const relativePath = filePath.startsWith(rootPath + "/")
+      ? filePath.slice(rootPath.length + 1)
+      : filePath;
     const actions: Parameters<typeof showContextMenu>[0] = [
-      { label: "Reveal in Finder", action: () => api.revealInFinder(entry.file_path!) },
+      { label: "Copy Relative Path", action: () => navigator.clipboard.writeText(relativePath) },
+      { label: "Copy Path", action: () => navigator.clipboard.writeText(filePath) },
+      "separator",
+      { label: "Reveal in Finder", action: () => api.revealInFinder(filePath) },
     ];
     if (isLocal) {
       actions.push("separator");
@@ -100,8 +107,21 @@ export function TaskPanel({ rootPath, workspaceId }: TaskPanelProps) {
           className={`file-node${isEntrySelected ? " file-node-active" : ""}`}
           style={styles.row}
           tabIndex={0}
-          onClick={() => { setSelectedEntry(entry.name); }}
-          onDoubleClick={() => openScriptFile(entry)}
+          draggable={!!entry.file_path}
+          onDragStart={(e) => {
+            if (entry.file_path) {
+              e.dataTransfer.setData("text/plain", entry.file_path);
+              e.dataTransfer.effectAllowed = "copy";
+            }
+          }}
+          onClick={() => {
+            setSelectedEntry(entry.name);
+            if (isRunning) {
+              openScriptTerminal(workspaceId, rootPath, entry.name);
+            } else {
+              openScriptFile(entry);
+            }
+          }}
           onKeyDown={(e) => {
             if (e.key === "Enter" && isEntrySelected && !entry.builtin) {
               e.preventDefault();
@@ -126,11 +146,7 @@ export function TaskPanel({ rootPath, workspaceId }: TaskPanelProps) {
             />
           ) : (
             <span
-              style={{ ...styles.label, cursor: "pointer" }}
-              onClick={(e) => {
-                e.stopPropagation();
-                openScriptFile(entry);
-              }}
+              style={styles.label}
               title={entry.file_path ?? entry.command}
             >
               {entry.label}
@@ -141,11 +157,15 @@ export function TaskPanel({ rootPath, workspaceId }: TaskPanelProps) {
             {isRunning && (
               <button
                 className="tab-action"
-                onClick={(e) => { e.stopPropagation(); openScriptTerminal(workspaceId, rootPath, entry.name); }}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  stopScript(rootPath, entry.name);
+                  setTimeout(() => runScript(rootPath, entry.name, entry.command), 100);
+                }}
                 style={styles.watcherBtn}
-                title="View terminal"
+                title="Restart"
               >
-                <TerminalIcon />
+                <RestartIcon />
               </button>
             )}
             <button
@@ -173,14 +193,25 @@ export function TaskPanel({ rootPath, workspaceId }: TaskPanelProps) {
         className={`file-node${isEntrySelected ? " file-node-active" : ""}`}
         style={styles.row}
         tabIndex={0}
+        draggable={!!entry.file_path}
+        onDragStart={(e) => {
+          if (entry.file_path) {
+            e.dataTransfer.setData("text/plain", entry.file_path);
+            e.dataTransfer.effectAllowed = "copy";
+          }
+        }}
         onClick={(e) => {
           if ((e.metaKey || e.ctrlKey) && scriptRuns[key]) {
             showScriptOutput(e, key);
             return;
           }
           setSelectedEntry(entry.name);
+          if (isRunning) {
+            openScriptTerminal(workspaceId, rootPath, entry.name);
+          } else {
+            openScriptFile(entry);
+          }
         }}
-        onDoubleClick={() => openScriptFile(entry)}
         onKeyDown={(e) => {
           if (e.key === "Enter" && isEntrySelected && !entry.builtin) {
             e.preventDefault();
@@ -205,11 +236,7 @@ export function TaskPanel({ rootPath, workspaceId }: TaskPanelProps) {
           />
         ) : (
           <span
-            style={{ ...styles.label, cursor: "pointer" }}
-            onClick={(e) => {
-              e.stopPropagation();
-              openScriptFile(entry);
-            }}
+            style={styles.label}
             title={entry.file_path ?? entry.command}
           >
             {entry.label}
@@ -348,12 +375,13 @@ function BuildStatusDot({ status }: { status: WatcherBuildStatus }) {
   );
 }
 
-function TerminalIcon() {
+function RestartIcon() {
   return (
     <svg width="11" height="11" viewBox="0 0 12 12" fill="none">
-      <rect x="0.5" y="1" width="11" height="9" rx="1.5" stroke="currentColor" strokeWidth="1.2" />
-      <path d="M3 4.5L5 6L3 7.5" stroke="currentColor" strokeWidth="1.1" strokeLinecap="round" strokeLinejoin="round" />
-      <line x1="6.5" y1="7.5" x2="9" y2="7.5" stroke="currentColor" strokeWidth="1.1" strokeLinecap="round" />
+      <path d="M1.5 6a4.5 4.5 0 018.18-2.6" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
+      <path d="M10.5 6a4.5 4.5 0 01-8.18 2.6" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
+      <path d="M9 1.5L9.7 3.4L7.8 3.4" stroke="currentColor" strokeWidth="1.1" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M3 10.5L2.3 8.6L4.2 8.6" stroke="currentColor" strokeWidth="1.1" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   );
 }

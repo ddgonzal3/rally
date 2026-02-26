@@ -404,18 +404,30 @@ fn main() {
             app.set_menu(menu)?;
 
             let win = app.get_webview_window("main").unwrap();
-            // Position window on the largest monitor's left half
-            if let Ok(monitors) = win.available_monitors() {
-                if let Some(monitor) = monitors.iter().max_by_key(|m| m.size().width) {
-                    let pos = monitor.position();
-                    let size = monitor.size();
-                    let scale = monitor.scale_factor();
-                    let half_w = (size.width as f64 / scale / 2.0) as f64;
-                    let h = (size.height as f64 / scale) as f64;
-                    let x = pos.x as f64 / scale;
-                    let y = pos.y as f64 / scale;
-                    let _ = win.set_position(tauri::LogicalPosition::new(x, y));
-                    let _ = win.set_size(tauri::LogicalSize::new(half_w, h));
+            // Only position on largest monitor's left half on first launch.
+            // On subsequent launches, tauri_plugin_window_state restores the
+            // saved position/size before setup runs — we must not override it.
+            let has_saved_state = app
+                .path()
+                .app_data_dir()
+                .ok()
+                .map(|dir| dir.join(".window-state.json"))
+                .map(|p| p.exists())
+                .unwrap_or(false);
+
+            if !has_saved_state {
+                if let Ok(monitors) = win.available_monitors() {
+                    if let Some(monitor) = monitors.iter().max_by_key(|m| m.size().width) {
+                        let pos = monitor.position();
+                        let size = monitor.size();
+                        let scale = monitor.scale_factor();
+                        let half_w = (size.width as f64 / scale / 2.0) as f64;
+                        let h = (size.height as f64 / scale) as f64;
+                        let x = pos.x as f64 / scale;
+                        let y = pos.y as f64 / scale;
+                        let _ = win.set_position(tauri::LogicalPosition::new(x, y));
+                        let _ = win.set_size(tauri::LogicalSize::new(half_w, h));
+                    }
                 }
             }
             Ok(())

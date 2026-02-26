@@ -4,8 +4,13 @@ import type { Workspace, GitStatus, PrStatus, PrDetails, PushResult, ChangesSumm
 /** Open a URL in the user's default browser via Tauri shell plugin. */
 export function openUrl(url: string) {
   if (!/^https?:\/\//i.test(url)) return;
-  invoke("plugin:shell|open", { path: url }).catch(() => {
-    window.open(url, "_blank");
+  invoke("plugin:shell|open", { path: url }).catch((err) => {
+    console.warn("shell:open failed, falling back to window.open:", err);
+    try {
+      window.open(url, "_blank");
+    } catch (e) {
+      console.error("window.open also failed:", e);
+    }
   });
 }
 

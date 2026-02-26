@@ -53,6 +53,9 @@ export function App() {
     (s) => s.refreshGitStatusForPath,
   );
   const refreshAllPrStatuses = useWorkspaceStore((s) => s.refreshAllPrStatuses);
+  const refreshPrStatusForPath = useWorkspaceStore(
+    (s) => s.refreshPrStatusForPath,
+  );
   const pollShipSignals = useWorkspaceStore((s) => s.pollShipSignals);
   const fetchAllRepos = useWorkspaceStore((s) => s.fetchAllRepos);
   const activeWorkspaceName = useWorkspaceStore((s) => {
@@ -331,6 +334,9 @@ export function App() {
           .workspaces.find((w) => w.paths.includes(rootPath));
         if (ws) {
           void refreshGitStatusForPath(rootPath, ws.main_branch);
+          // Also refresh PR status — picks up externally created PRs
+          // (e.g. gh pr create, gpr) without waiting for the 20s poll
+          void refreshPrStatusForPath(rootPath);
         }
       }, delay);
       refreshTimers.set(rootPath, timer);
@@ -349,7 +355,7 @@ export function App() {
       refreshTimers.clear();
       unlisten?.();
     };
-  }, [refreshGitStatusForPath, shouldDeferBackgroundWork]);
+  }, [refreshGitStatusForPath, refreshPrStatusForPath, shouldDeferBackgroundWork]);
 
   // Native File menu actions (always handled here so they work even when
   // sidebar/explorer panels are collapsed).
@@ -779,56 +785,72 @@ export function App() {
           return;
         }
 
-        if (root.type !== "split" || root.direction !== "vertical") return;
-        const storageKey = `rally:bottomPanelRatio:${wsId}`;
-        const isCollapsed = root.ratio >= 0.79;
+        // Collect all vertical splits in the tree (handles both root-level
+        // vertical splits and vertical splits nested inside horizontal columns)
+        function collectVerticalSplits(node: LayoutNode): Array<Extract<LayoutNode, { type: "split" }>> {
+          if (node.type === "group") return [];
+          if (node.direction === "vertical") return [node];
+          return [
+            ...collectVerticalSplits(node.children[0]),
+            ...collectVerticalSplits(node.children[1]),
+          ];
+        }
+        const vertSplits = root.type === "split" && root.direction === "vertical"
+          ? [root as Extract<LayoutNode, { type: "split" }>]
+          : collectVerticalSplits(root);
+        if (vertSplits.length === 0) return;
 
-        // When expanding, check if the bottom group is empty (was closed) — repopulate it
+        const storageKey = `rally:bottomPanelRatio:${wsId}`;
+        const isCollapsed = vertSplits.every((vs) => vs.ratio >= 0.79);
+
+        // When expanding, repopulate any empty bottom groups with a terminal
         if (isCollapsed) {
-          const bottomGroupId = findFirstGroupInSubtree(root.children[1]);
-          const bottomGroup = bottomGroupId ? layout.groups[bottomGroupId] : null;
-          if (bottomGroupId && bottomGroup && bottomGroup.panes.length === 0) {
-            const activeGroupId = s.activeGroupIds[wsId];
-            const activeGroup = activeGroupId ? layout.groups[activeGroupId] : null;
-            const activePane = activeGroup?.panes.find(
-              (p) => p.id === activeGroup.activePaneId
-            );
-            const cwd = activePane?.cwd || s.getActivePath(wsId) || undefined;
-            const newPane: Pane = {
-              id: crypto.randomUUID(),
-              type: "terminal",
-              title: "Terminal",
-              ...(cwd ? { cwd } : {}),
-            };
-            layout = {
-              ...layout,
-              groups: {
-                ...layout.groups,
-                [bottomGroupId]: {
-                  ...bottomGroup,
-                  panes: [newPane],
-                  activePaneId: newPane.id,
+          for (const vs of vertSplits) {
+            const bottomGroupId = findFirstGroupInSubtree(vs.children[1]);
+            const bottomGroup = bottomGroupId ? layout.groups[bottomGroupId] : null;
+            if (bottomGroupId && bottomGroup && bottomGroup.panes.length === 0) {
+              const activeGroupId = s.activeGroupIds[wsId];
+              const activeGroup = activeGroupId ? layout.groups[activeGroupId] : null;
+              const activePane = activeGroup?.panes.find(
+                (p) => p.id === activeGroup.activePaneId
+              );
+              const cwd = activePane?.cwd || s.getActivePath(wsId) || undefined;
+              const newPane: Pane = {
+                id: crypto.randomUUID(),
+                type: "terminal",
+                title: "Terminal",
+                ...(cwd ? { cwd } : {}),
+              };
+              layout = {
+                ...layout,
+                groups: {
+                  ...layout.groups,
+                  [bottomGroupId]: {
+                    ...bottomGroup,
+                    panes: [newPane],
+                    activePaneId: newPane.id,
+                  },
                 },
-              },
-            };
+              };
+            }
           }
         }
 
         const newRatio = isCollapsed
           ? Number(localStorage.getItem(storageKey)) || 0.5
-          : (localStorage.setItem(storageKey, String(root.ratio)), 0.8);
-        // Set ratio directly, bypassing updateSplitRatio's [0.15, 0.85] clamp
-        const newRoot = replaceNode(root, root.id, {
-          ...root,
-          ratio: newRatio,
-        });
+          : (localStorage.setItem(storageKey, String(vertSplits[0].ratio)), 0.8);
+        // Update all vertical splits to the same ratio
+        let newRoot = layout.root;
+        for (const vs of vertSplits) {
+          newRoot = replaceNode(newRoot, vs.id, { ...vs, ratio: newRatio });
+        }
         useWorkspaceStore.setState({
           layouts: { ...s.layouts, [wsId]: { ...layout, root: newRoot } },
         });
 
         // Focus the bottom terminal when expanding
         if (isCollapsed) {
-          const focusGroupId = findFirstGroupInSubtree(root.children[1]);
+          const focusGroupId = findFirstGroupInSubtree(vertSplits[0].children[1]);
           if (focusGroupId) {
             setTimeout(() => {
               window.dispatchEvent(

@@ -148,9 +148,12 @@ export class TerminalLinkProvider implements ILinkProvider {
           pointerCursor: this._cmdHeld,
           underline: this._cmdHeld,
         },
-        activate: (event: MouseEvent, linkText: string) => {
-          // Only activate on Cmd+click
-          if (!event.metaKey) return;
+        activate: (_event: MouseEvent, linkText: string) => {
+          // Only activate when Cmd is held. We use our own cmdHeld state
+          // (tracked via keydown/keyup) instead of event.metaKey because
+          // WebKit in Tauri's webview doesn't reliably set metaKey on
+          // the mouseup event that xterm passes to activate().
+          if (!this._cmdHeld) return;
 
           if (match.kind === "url") {
             openUrl(linkText);

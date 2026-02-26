@@ -43,8 +43,10 @@ function paneLabel(pane: Pane, isDirty: boolean, workspacePath?: string): string
     const cwd = pane.cwd || workspacePath || "";
     return cwd.split("/").pop() || "Claude Code";
   }
-  if (pane.type === "claude")
-    return pane.title || "claude";
+  if (pane.type === "claude") {
+    const cwd = pane.cwd || "";
+    return cwd.split("/").pop() || "claude";
+  }
   if (pane.type === "editor" || pane.type === "diff")
     return isDirty ? `${pane.title} *` : pane.title;
   if (pane.type === "terminal" && isClaudeCodeTitle(pane.title)) {

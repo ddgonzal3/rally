@@ -1862,10 +1862,16 @@ export const useWorkspaceStore = create<WorkspaceState>()(
   updateSplitRatio: (workspaceId, splitId, ratio) => {
     const layout = get().getOrCreateLayout(workspaceId);
     const clamped = Math.max(0.15, Math.min(0.85, ratio));
-    const newRoot = replaceNode(layout.root, splitId, {
-      ...findSplitById(layout.root, splitId)!,
+    const targetSplit = findSplitById(layout.root, splitId);
+    if (!targetSplit) return;
+    let newRoot = replaceNode(layout.root, splitId, {
+      ...targetSplit,
       ratio: clamped,
     });
+    // Sync sibling vertical splits so row dividers stay aligned across columns
+    if (targetSplit.direction === "vertical") {
+      newRoot = syncPeerVerticalSplits(newRoot, splitId, clamped);
+    }
     set((s) => ({
       layouts: {
         ...s.layouts,
@@ -2339,6 +2345,23 @@ export const useWorkspaceStore = create<WorkspaceState>()(
   dropFileOnGroup: (workspaceId, targetGroupId, filePaths, position) => {
     if (filePaths.length === 0) return;
 
+    // If dropping onto a terminal/claude pane, write paths into the PTY
+    // instead of opening editor tabs (matches Finder drop behavior in App.tsx)
+    if (position === "center") {
+      const layout = get().layouts[workspaceId];
+      if (layout) {
+        const group = layout.groups[targetGroupId];
+        if (group) {
+          const activePane = group.panes.find((p) => p.id === group.activePaneId);
+          if (activePane?.ptyId && (activePane.type === "terminal" || activePane.type === "claude")) {
+            const escaped = filePaths.map((p) => p.includes(" ") ? `'${p}'` : p).join(" ");
+            api.writePty(activePane.ptyId, Array.from(new TextEncoder().encode(escaped)));
+            return;
+          }
+        }
+      }
+    }
+
     const makePanes = (): Pane[] =>
       filePaths.map((fp) => ({
         id: crypto.randomUUID(),
@@ -2441,4 +2464,56 @@ function findSplitById(
     );
   }
   return null;
+}
+
+/**
+ * Collect all vertical split IDs reachable from a node by walking through
+ * horizontal splits. Stops at the first vertical split on each branch.
+ */
+function collectPeerVerticalSplits(node: LayoutNode): string[] {
+  if (node.type === "group") return [];
+  if (node.direction === "vertical") return [node.id];
+  // Horizontal split: recurse to find vertical splits in both branches
+  return [
+    ...collectPeerVerticalSplits(node.children[0]),
+    ...collectPeerVerticalSplits(node.children[1]),
+  ];
+}
+
+/**
+ * When a vertical split ratio changes, sync all sibling vertical splits
+ * under the nearest horizontal ancestor so row dividers stay aligned.
+ */
+function syncPeerVerticalSplits(
+  root: LayoutNode,
+  changedSplitId: string,
+  ratio: number
+): LayoutNode {
+  // Walk up to find the nearest horizontal ancestor
+  let currentId = changedSplitId;
+  let horizontalAncestor: Extract<LayoutNode, { type: "split" }> | null = null;
+  while (true) {
+    const parentInfo = findParent(root, currentId);
+    if (!parentInfo) break;
+    if (parentInfo.parent.direction === "horizontal") {
+      horizontalAncestor = parentInfo.parent;
+      break;
+    }
+    currentId = parentInfo.parent.id;
+  }
+  if (!horizontalAncestor) return root;
+
+  // Find all peer vertical splits under this horizontal ancestor
+  const peerIds = collectPeerVerticalSplits(horizontalAncestor);
+
+  // Update all peers except the one already updated
+  let result = root;
+  for (const peerId of peerIds) {
+    if (peerId === changedSplitId) continue;
+    const peer = findSplitById(result, peerId);
+    if (peer) {
+      result = replaceNode(result, peerId, { ...peer, ratio });
+    }
+  }
+  return result;
 }

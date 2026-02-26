@@ -135,6 +135,11 @@ export function Terminal({ cwd, command, initialInput, ptyId: existingPtyId, loc
           claudeLikelyActiveRef.current = true;
           claudeLostPollCountRef.current = 0;
           emptyCount = 0;
+          // Hide blinking cursor while Claude Code manages the TUI
+          const term = termRef.current;
+          if (term && term.options.cursorBlink) {
+            term.options.cursorBlink = false;
+          }
           emitTitle("claude");
           return;
         }
@@ -148,6 +153,11 @@ export function Terminal({ cwd, command, initialInput, ptyId: existingPtyId, loc
           }
           claudeLikelyActiveRef.current = false;
           claudeLostPollCountRef.current = 0;
+          // Restore blinking cursor now that Claude is gone
+          const term = termRef.current;
+          if (term && !term.options.cursorBlink) {
+            term.options.cursorBlink = true;
+          }
         }
 
         if (!name && !claudeLikelyActiveRef.current && lastPublishedTitleRef.current === "") {
@@ -197,27 +207,16 @@ export function Terminal({ cwd, command, initialInput, ptyId: existingPtyId, loc
           accelerator: "CmdOrCtrl+V",
           action: async () => {
             if (!ptyId) return;
+            // Use readText() only for context menu paste — navigator.clipboard.read()
+            // triggers a browser permission popup ("Paste from clipboard?") which
+            // causes a distracting secondary popup after the context menu.
+            // Image paste is handled separately via the native paste event handler.
             try {
-              // Check for image data first via Clipboard API
-              const clipItems = await navigator.clipboard.read();
-              for (const item of clipItems) {
-                const imageType = item.types.find((t) => t.startsWith("image/"));
-                if (imageType) {
-                  const blob = await item.getType(imageType);
-                  const buf = await blob.arrayBuffer();
-                  const base64 = btoa(
-                    new Uint8Array(buf).reduce((s, b) => s + String.fromCharCode(b), ""),
-                  );
-                  const path = await api.saveClipboardImage(base64, imageType);
-                  api.writePty(ptyId, Array.from(encoder.encode(path)));
-                  return;
-                }
-              }
+              const text = await navigator.clipboard.readText();
+              if (text) api.writePty(ptyId, Array.from(encoder.encode(text)));
             } catch {
-              // Clipboard API .read() may fail (permissions); fall through to text
+              /* clipboard access failed */
             }
-            const text = await navigator.clipboard.readText();
-            if (text) api.writePty(ptyId, Array.from(encoder.encode(text)));
           },
         },
         {
@@ -242,12 +241,15 @@ export function Terminal({ cwd, command, initialInput, ptyId: existingPtyId, loc
   }, []);
 
   const handleMouseDown = useCallback(() => {
-    // Focus xterm's hidden textarea immediately on click so cursor activation
-    // doesn't depend on downstream async handlers.
+    // Focus xterm's hidden textarea on click so keyboard input works.
+    // Only focus if the textarea doesn't already have focus — focusing
+    // during an active mousedown can interfere with text selection.
     const textarea = containerRef.current?.querySelector(
       "textarea.xterm-helper-textarea"
     ) as HTMLTextAreaElement | null;
-    textarea?.focus();
+    if (textarea && document.activeElement !== textarea) {
+      textarea.focus();
+    }
   }, []);
 
   useEffect(() => {
@@ -262,7 +264,7 @@ export function Terminal({ cwd, command, initialInput, ptyId: existingPtyId, loc
         background: "#1b1b1b",
         foreground: "#d4d4d4",
         cursor: "#aeafad",
-        selectionBackground: "#44444488",
+        selectionBackground: "#5a5a5aaa",
         black: "#1e1e1e",
         red: "#df7d7d",
         green: "#7ddf7d",
@@ -305,6 +307,10 @@ export function Terminal({ cwd, command, initialInput, ptyId: existingPtyId, loc
       if (isClaudeCodeTitle(normalized)) {
         claudeLikelyActiveRef.current = true;
         claudeLostPollCountRef.current = 0;
+        // Hide blinking cursor immediately when Claude sets the title
+        if (term.options.cursorBlink) {
+          term.options.cursorBlink = false;
+        }
         emitTitle("claude");
         return;
       }
@@ -318,13 +324,16 @@ export function Terminal({ cwd, command, initialInput, ptyId: existingPtyId, loc
       emitTitle(normalized);
     });
 
-    // Track Cmd key for link decorations
+    // Track Cmd key for link decorations.
+    // Listen on window (not termEl) so Cmd is tracked even when the terminal
+    // doesn't have keyboard focus — the user may Cmd+click a link in an
+    // unfocused terminal pane.
     const termEl = containerRef.current;
     const handleKeyDown = (e: KeyboardEvent) => { if (e.key === "Meta") linkProvider.cmdHeld = true; };
     const handleKeyUp = (e: KeyboardEvent) => { if (e.key === "Meta") linkProvider.cmdHeld = false; };
     const handleBlur = () => { linkProvider.cmdHeld = false; };
-    termEl.addEventListener("keydown", handleKeyDown);
-    termEl.addEventListener("keyup", handleKeyUp);
+    window.addEventListener("keydown", handleKeyDown);
+    window.addEventListener("keyup", handleKeyUp);
     window.addEventListener("blur", handleBlur);
 
     // Intercept paste events to handle image data from clipboard.
@@ -411,8 +420,16 @@ export function Terminal({ cwd, command, initialInput, ptyId: existingPtyId, loc
         return true;
       }
       if (ev.key === "v") {
-        // Don't preventDefault — let the browser fire the native paste event.
-        // xterm handles paste events natively via clipboardData (no permission popup).
+        // Explicitly read clipboard and write to PTY. The previous approach
+        // (return false to let the browser fire a native paste event) was
+        // unreliable — the xterm textarea may not have focus, causing the
+        // paste to silently fail. Reading the clipboard directly is robust.
+        ev.preventDefault();
+        navigator.clipboard.readText().then(text => {
+          if (text && ptyIdRef.current) {
+            api.writePty(ptyIdRef.current, Array.from(encoder.encode(text)));
+          }
+        }).catch(() => { /* clipboard access denied */ });
         return false;
       }
       if (ev.key === "a") {
@@ -628,8 +645,8 @@ export function Terminal({ cwd, command, initialInput, ptyId: existingPtyId, loc
       observer.disconnect();
       linkDisposable.dispose();
       titleDisposable.dispose();
-      termEl.removeEventListener("keydown", handleKeyDown);
-      termEl.removeEventListener("keyup", handleKeyUp);
+      window.removeEventListener("keydown", handleKeyDown);
+      window.removeEventListener("keyup", handleKeyUp);
       window.removeEventListener("blur", handleBlur);
       termEl.removeEventListener("paste", handlePaste);
       // Kill PTY on unmount ONLY if we own it AND the store isn't managing it.

@@ -521,6 +521,20 @@ const FileTreeNode = React.memo(
       }
     }, [isCreatingHere]); // eslint-disable-line react-hooks/exhaustive-deps
 
+    // Re-fetch directory listing when filesystem changes are detected
+    useEffect(() => {
+      if (!entry.is_dir || !expanded) return;
+      const handler = (e: Event) => {
+        const detail = (e as CustomEvent<{ rootPath: string }>).detail;
+        // Refresh if this directory is under the changed root
+        if (detail?.rootPath && entry.path.startsWith(detail.rootPath)) {
+          refreshChildren();
+        }
+      };
+      document.addEventListener(FS_CHANGED_EVENT, handler);
+      return () => document.removeEventListener(FS_CHANGED_EVENT, handler);
+    }, [entry.is_dir, entry.path, expanded, refreshChildren]);
+
     const dragStartRef = useRef<{
       x: number;
       y: number;
@@ -1108,6 +1122,16 @@ function RootSection({
     return () => document.removeEventListener("rally:dir-refresh", handler);
   }, [rootPath, refreshRootEntries]);
 
+  // Listen for filesystem changes (git watcher detected new/deleted files)
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent<{ rootPath: string }>).detail;
+      if (detail?.rootPath === rootPath) refreshRootEntries();
+    };
+    document.addEventListener(FS_CHANGED_EVENT, handler);
+    return () => document.removeEventListener(FS_CHANGED_EVENT, handler);
+  }, [rootPath, refreshRootEntries]);
+
   function handleContextMenu(e: React.MouseEvent) {
     e.preventDefault();
     const actions: Parameters<typeof showContextMenu>[0] = [
@@ -1329,6 +1353,39 @@ function RootSection({
               )}
             </div>
             <div style={styles.rootActions}>
+              <button
+                className="repo-terminal-btn"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (activeWorkspaceId) {
+                    useWorkspaceStore.getState().openTerminalInBottom(activeWorkspaceId, rootPath);
+                  }
+                }}
+                style={styles.repoTerminalBtn}
+                title="New Terminal"
+              >
+                <svg
+                  width="16"
+                  height="16"
+                  viewBox="0 0 16 16"
+                  fill="none"
+                  style={{ flexShrink: 0 }}
+                >
+                  <path
+                    d="M3 4l4 4-4 4"
+                    stroke="#999"
+                    strokeWidth="1.5"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+                  <path
+                    d="M8.5 12H13"
+                    stroke="#999"
+                    strokeWidth="1.5"
+                    strokeLinecap="round"
+                  />
+                </svg>
+              </button>
               {isGitRepo && (
                 <>
                   {gitStatus && gitStatus.behind > 0 && (
@@ -1485,6 +1542,9 @@ const STATUS_COLORS: Record<string, string> = {
 };
 const GIT_CHANGES_REFRESH_EVENT = "rally:git-changes-refresh";
 const BACKEND_GIT_CHANGES_UPDATED_EVENT = "git-changes-updated";
+/** Dispatched when filesystem changes are detected (via git watcher).
+ *  RootSection + FileTreeNode listen for this to re-fetch directory listings. */
+const FS_CHANGED_EVENT = "rally:fs-changed";
 
 function ChangeStatusGlyph({ status }: { status: string }) {
   const color = STATUS_COLORS[status] ?? "#888";
@@ -2304,8 +2364,22 @@ export function FileExplorer({ onCollapse, flushLeft }: FileExplorerProps) {
       const timer = setTimeout(() => {
         refreshTimers.delete(rootPath);
         if (cancelled) return;
+        // Refresh the git changes panel
         document.dispatchEvent(
           new CustomEvent<{ rootPath: string }>(GIT_CHANGES_REFRESH_EVENT, {
+            detail: { rootPath },
+          }),
+        );
+        // Invalidate directory cache for expanded paths under this root
+        // so the file tree picks up new/deleted files created by Claude Code
+        for (const cachedPath of directoryCache.keys()) {
+          if (cachedPath === rootPath || cachedPath.startsWith(rootPath + "/")) {
+            directoryCache.delete(cachedPath);
+          }
+        }
+        // Notify RootSection + FileTreeNode to re-fetch their listings
+        document.dispatchEvent(
+          new CustomEvent<{ rootPath: string }>(FS_CHANGED_EVENT, {
             detail: { rootPath },
           }),
         );
@@ -2786,6 +2860,19 @@ const styles: Record<string, React.CSSProperties> = {
     flexShrink: 0,
     borderRadius: 4,
     cursor: "pointer",
+  },
+  repoTerminalBtn: {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    background: "none",
+    border: "none",
+    padding: "4px",
+    flexShrink: 0,
+    borderRadius: 4,
+    cursor: "pointer",
+    opacity: 0,
+    transition: "opacity 120ms",
   },
   node: {
     display: "flex",
