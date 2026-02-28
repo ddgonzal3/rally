@@ -521,8 +521,6 @@ pub struct RallyConfig {
     #[serde(default, rename = "excludeScripts")]
     exclude_scripts: Vec<String>,
     #[serde(default)]
-    pub favorites: Vec<String>,
-    #[serde(default)]
     pub mode: Option<String>,
     #[serde(default)]
     pub setup: Option<SetupConfig>,
@@ -541,7 +539,6 @@ pub fn read_rally_config(root_path: String) -> Result<RallyConfig, String> {
         return Ok(RallyConfig {
             exclude_builtins: Vec::new(),
             exclude_scripts: Vec::new(),
-            favorites: Vec::new(),
             mode: None,
             setup: None,
         });

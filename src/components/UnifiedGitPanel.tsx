@@ -5,14 +5,7 @@ import { addToast } from "./ToastContainer";
 import { GitDiffContent } from "./GitDiffOverlay";
 import { PrReviewContent } from "./PrReviewOverlay";
 
-const SPLIT_BREAKPOINT = 900; // px — below this, panel overlays full area
-
-interface UnifiedGitPanelProps {
-  splitWidth?: number;
-  panelRef?: React.RefObject<HTMLDivElement | null>;
-}
-
-export function UnifiedGitPanel({ splitWidth = 480, panelRef }: UnifiedGitPanelProps) {
+export function UnifiedGitPanel() {
   const open = useWorkspaceStore((s) => s.unifiedGitPanelOpen);
   const rootPath = useWorkspaceStore((s) => s.unifiedGitPanelPath);
   const activeTab = useWorkspaceStore((s) => s.unifiedGitPanelTab);
@@ -36,68 +29,24 @@ export function UnifiedGitPanel({ splitWidth = 480, panelRef }: UnifiedGitPanelP
   const [entered, setEntered] = useState(false);
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [loading, setLoading] = useState<Record<string, boolean>>({});
-  const [isSplit, setIsSplit] = useState(false);
   const loadingRef = useRef<Record<string, boolean>>({});
   const dropdownRef = useRef<HTMLDivElement>(null);
-  const containerRef = useRef<HTMLDivElement>(null);
 
-  // Mount/unmount with smooth slide transition
+  // Mount/unmount lifecycle
   useEffect(() => {
     if (open) {
       setMounted(true);
       setEntered(false);
-      // Trigger slide-in on next frame (after mount paint) so CSS transition fires
-      const id = requestAnimationFrame(() => {
-        useWorkspaceStore.setState({ gitPanelAnimating: true });
-        setEntered(true);
-      });
+      // Trigger fade-in on next frame (after mount paint) so CSS transition fires
+      const id = requestAnimationFrame(() => setEntered(true));
       return () => cancelAnimationFrame(id);
     } else if (mounted) {
-      const currentSplit = useWorkspaceStore.getState().unifiedGitPanelSplit;
-      if (entered && currentSplit) {
-        // Split mode — animate the slide-out via marginLeft transition
-        useWorkspaceStore.setState({ gitPanelAnimating: true });
-      } else {
-        // Replace mode or never fully entered — unmount immediately
-        // (in replace mode, the content pane instantly takes over, no animation needed)
-        setMounted(false);
-        setEntered(false);
-      }
-    }
-  }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  const handleTransitionEnd = useCallback((e: React.TransitionEvent) => {
-    if (e.target !== e.currentTarget) return;
-    if (e.propertyName !== "margin-left" && e.propertyName !== "opacity") return;
-    useWorkspaceStore.setState({ gitPanelAnimating: false });
-    // Signal terminals to refit after animation
-    window.dispatchEvent(new CustomEvent("git-panel-animation-end"));
-    if (!open) {
+      // Close: unmount immediately — no fade-out animation.
+      // Fading out while still occupying width leaves a black gap.
       setMounted(false);
       setEntered(false);
     }
-  }, [open]);
-
-  // Measure parent to decide split vs replace
-  useEffect(() => {
-    if (!mounted) return;
-    const el = containerRef.current?.parentElement;
-    if (!el) return;
-    const update = (w: number) => {
-      const split = w >= SPLIT_BREAKPOINT;
-      setIsSplit(split);
-      useWorkspaceStore.setState({ unifiedGitPanelSplit: split });
-    };
-    const ro = new ResizeObserver((entries) => {
-      update(entries[0]?.contentRect.width ?? 0);
-    });
-    update(el.clientWidth);
-    ro.observe(el);
-    return () => {
-      ro.disconnect();
-      useWorkspaceStore.setState({ unifiedGitPanelSplit: false });
-    };
-  }, [mounted]);
+  }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Escape key to close
   useEffect(() => {
@@ -205,49 +154,23 @@ export function UnifiedGitPanel({ splitWidth = 480, panelRef }: UnifiedGitPanelP
 
   const branchName = gitStatus?.branch ?? "";
 
-  // Merge internal containerRef with external panelRef — must be before early return
-  const setRefs = useCallback((el: HTMLDivElement | null) => {
-    (containerRef as React.MutableRefObject<HTMLDivElement | null>).current = el;
-    if (panelRef) {
-      (panelRef as React.MutableRefObject<HTMLDivElement | null>).current = el;
-    }
-  }, [panelRef]);
-
   if (!mounted) return null;
 
-  // expanded: true when the panel should be visually open (slide-in complete or in progress)
-  // Derives directly from `open` for closing — no effect indirection needed.
   const expanded = open && entered;
 
-  // Split: fixed width with slide animation. Replace: full width with opacity fade.
-  const panelStyle: React.CSSProperties = isSplit
-    ? {
-        width: splitWidth,
-        marginLeft: expanded ? 0 : -splitWidth,
-        flexShrink: 0,
-        background: "#1a1a1a",
-        display: "flex",
-        flexDirection: "column",
-        borderRight: "1px solid #2a2a2a",
-        transition: "margin-left 200ms ease-out",
-        overflow: "hidden",
-      }
-    : {
-        flex: 1,
-        minWidth: 0,
+  return (
+    <div
+      className="git-diff-overlay"
+      style={{
+        position: "absolute",
+        inset: 0,
+        zIndex: 10,
         background: "#1a1a1a",
         display: "flex",
         flexDirection: "column",
         opacity: expanded ? 1 : 0,
         transition: "opacity 150ms ease",
-      };
-
-  return (
-    <div
-      ref={setRefs}
-      className="git-diff-overlay"
-      style={panelStyle}
-      onTransitionEnd={handleTransitionEnd}
+      }}
     >
       {/* Header */}
       <div style={s.header}>

@@ -162,7 +162,6 @@ export interface SetupConfig {
 export interface RallyConfig {
   excludeBuiltins: string[];
   excludeScripts: string[];
-  favorites: string[];
   mode: string | null;
   setup?: SetupConfig;
 }

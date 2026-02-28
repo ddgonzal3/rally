@@ -216,8 +216,6 @@ interface WorkspaceState {
   unifiedGitPanelOpen: boolean;
   unifiedGitPanelPath: string | null;
   unifiedGitPanelTab: "changes" | "pr";
-  unifiedGitPanelSplit: boolean;
-  gitPanelAnimating: boolean;
   openUnifiedGitPanel: (rootPath: string, tab?: "changes" | "pr") => void;
   closeUnifiedGitPanel: () => void;
   setUnifiedGitPanelTab: (tab: "changes" | "pr") => void;
@@ -612,8 +610,6 @@ export const useWorkspaceStore = create<WorkspaceState>()(
   unifiedGitPanelOpen: false,
   unifiedGitPanelPath: null,
   unifiedGitPanelTab: "changes" as const,
-  unifiedGitPanelSplit: false,
-  gitPanelAnimating: false,
   loading: false,
   dirtyPanes: new Set(),
   workspaceModes: {},

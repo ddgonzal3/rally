@@ -638,8 +638,6 @@ export function Terminal({ cwd, command, initialInput, ptyId: existingPtyId, loc
     const el = containerRef.current;
     const observer = new ResizeObserver(() => {
       if (el.clientWidth < 100 || el.clientHeight < 50) return;
-      // Skip intermediate fits during git panel animation to prevent terminal flicker
-      if (useWorkspaceStore.getState().gitPanelAnimating) return;
 
       if (rafId !== null) cancelAnimationFrame(rafId);
       rafId = requestAnimationFrame(() => {
@@ -653,19 +651,9 @@ export function Terminal({ cwd, command, initialInput, ptyId: existingPtyId, loc
     });
     observer.observe(el);
 
-    // Refit once after git panel animation ends
-    const handleAnimEnd = () => {
-      if (!ptySpawned) return;
-      requestAnimationFrame(() => {
-        lockCols ? fitRowsOnly() : safeFit(term, fitAddon);
-      });
-    };
-    window.addEventListener("git-panel-animation-end", handleAnimEnd);
-
     return () => {
       if (rafId !== null) cancelAnimationFrame(rafId);
       observer.disconnect();
-      window.removeEventListener("git-panel-animation-end", handleAnimEnd);
       linkDisposable.dispose();
       titleDisposable.dispose();
       window.removeEventListener("keydown", handleKeyDown);
