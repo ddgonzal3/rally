@@ -2575,7 +2575,7 @@ export function FileExplorer({ onCollapse, flushLeft }: FileExplorerProps) {
     <div className="no-select" style={styles.container}>
       <div style={styles.explorerHeader}>
         <span style={styles.explorerTitle}>Explorer</span>
-        <div style={{ display: "flex", alignItems: "center", gap: 2 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 0 }}>
           {activeWorkspaceId && !isProductMode && (
             <LayoutPresetsDropdown workspaceId={activeWorkspaceId} />
           )}
@@ -2701,16 +2701,8 @@ export function FileExplorer({ onCollapse, flushLeft }: FileExplorerProps) {
               <RootSection
                 rootPath={p}
                 isGitRepo={gitRoots.has(p)}
-                showChanges={
-                  unifiedGitPanelOpen &&
-                  unifiedGitPanelPath === p &&
-                  unifiedGitPanelTab === "changes"
-                }
-                showPrFiles={
-                  unifiedGitPanelOpen &&
-                  unifiedGitPanelPath === p &&
-                  unifiedGitPanelTab === "pr"
-                }
+                showChanges={false}
+                showPrFiles={false}
                 onToggleChanges={() => handleGitIconClick(p)}
                 onSelectChangeFile={handleSelectFile}
                 onSelectPrFile={handleSelectPrFile}

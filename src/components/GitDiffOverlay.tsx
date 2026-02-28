@@ -376,7 +376,6 @@ export function GitDiffContent({ rootPath }: GitDiffContentProps) {
         additions={diffStatAdd}
         deletions={diffStatDel}
         onCommitted={fetchDiffs}
-        anchorRef={commitBtnRef}
         hasPr={hasPr}
       />
     </>

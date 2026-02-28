@@ -1121,43 +1121,6 @@ export function App() {
         onMouseDown={handleDrag}
       >
         <div style={styles.titlebarLeft}>
-          <button
-            className="activity-btn"
-            style={styles.titlebarBtn}
-            onClick={() => {
-              setFileExplorerCollapsed(!fileExplorerCollapsed);
-            }}
-            title={
-              fileExplorerCollapsed
-                ? "Show side panel"
-                : "Hide side panel"
-            }
-          >
-            <svg
-              width="16"
-              height="16"
-              viewBox="0 0 16 16"
-              fill="none"
-              aria-hidden="true"
-            >
-              <rect
-                x="1.5"
-                y="1.5"
-                width="13"
-                height="13"
-                rx="2"
-                stroke="#aaa"
-                strokeWidth="1.3"
-              />
-              <line x1="7" y1="1" x2="7" y2="15" stroke="#aaa" strokeWidth="1.3" />
-              {!fileExplorerCollapsed && (
-                <path
-                  d="M3.5 2C2.672 2 2 2.672 2 3.5V12.5C2 13.328 2.672 14 3.5 14H7V2H3.5Z"
-                  fill="#aaa"
-                />
-              )}
-            </svg>
-          </button>
           {activeWorkspaceId && (
             <button
               className="activity-btn"
@@ -1323,9 +1286,9 @@ export function App() {
             ) : (
               <PaneLayout />
             )}
-            <UnifiedGitPanel />
           </div>
         </div>
+        <UnifiedGitPanel />
       </div>
       <style>{`
         .syn-comment { color: #8b949e; font-style: italic; }
@@ -1334,6 +1297,7 @@ export function App() {
         .syn-literal { color: #79c0ff; }
         .syn-number { color: #d2a8ff; }
         .hunk-action-btn:hover { background: rgba(255,255,255,0.1) !important; color: #eee !important; }
+        .file-list-item:hover { background: rgba(255,255,255,0.05) !important; }
         .git-diff-overlay { scrollbar-gutter: stable; }
         .git-diff-overlay ::-webkit-scrollbar { width: 6px; height: 0; }
         .git-diff-overlay ::-webkit-scrollbar-track { background: transparent; }
@@ -1427,6 +1391,8 @@ const styles: Record<string, React.CSSProperties> = {
     flex: 1,
     display: "flex",
     minHeight: 0,
+    position: "relative",
+    overflow: "hidden",
   },
   activityBar: {
     width: 46,
