@@ -311,7 +311,7 @@ const styles: Record<string, React.CSSProperties> = {
     flexDirection: "column",
     alignItems: "center",
     justifyContent: "center",
-    paddingBottom: "15%",
+    paddingBottom: 120,
     paddingLeft: 24,
     paddingRight: 24,
     gap: 8,

@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
+import { createPortal } from "react-dom";
 import { api } from "../lib/tauri";
 import { addToast } from "./ToastContainer";
 import { useWorkspaceStore } from "../stores/workspaceStore";
 
-type NextStep = "commit" | "commit-push" | "commit-pr" | "commit-ship";
+type NextStep = "commit" | "commit-push" | "commit-pr";
 
 interface CommitModalProps {
   open: boolean;
@@ -15,10 +16,8 @@ interface CommitModalProps {
   additions: number;
   deletions: number;
   onCommitted: () => void;
-  onShip: () => void;
   anchorRef?: React.RefObject<HTMLButtonElement | null>;
   hasPr?: boolean;
-  productMode?: boolean;
 }
 
 export function CommitModal({
@@ -31,10 +30,8 @@ export function CommitModal({
   additions,
   deletions,
   onCommitted,
-  onShip,
   anchorRef,
   hasPr,
-  productMode,
 }: CommitModalProps) {
   const [commitMsg, setCommitMsg] = useState("");
   const [nextStep, setNextStep] = useState<NextStep>("commit");
@@ -110,7 +107,7 @@ export function CommitModal({
       await api.gitCommitStaged(rootPath, commitMsg.trim());
 
       // Post-commit actions
-      if (nextStep === "commit-push" || nextStep === "commit-pr" || nextStep === "commit-ship") {
+      if (nextStep === "commit-push" || nextStep === "commit-pr") {
         const pushResult = await api.gitPush(rootPath);
         addToast({ type: "success", title: "Pushed", message: pushResult.output });
       }
@@ -129,12 +126,6 @@ export function CommitModal({
         useWorkspaceStore.getState().refreshPrStatusForPath(rootPath).catch(() => {});
       }
 
-      if (nextStep === "commit-ship") {
-        onShip();
-        onClose();
-        return;
-      }
-
       addToast({ type: "success", title: "Committed!", message: "" });
       onCommitted();
       onClose();
@@ -143,9 +134,14 @@ export function CommitModal({
     } finally {
       setRunning(false);
     }
-  }, [commitMsg, nextStep, includeUnstaged, rootPath, running, onCommitted, onShip, onClose]);
+  }, [commitMsg, nextStep, includeUnstaged, rootPath, running, onCommitted, onClose]);
 
   if (!open) return null;
+
+  const modalContent = renderModal();
+  return createPortal(modalContent, document.body);
+
+  function renderModal() {
 
   const radioOptions: { value: NextStep; icon: React.ReactNode; label: string; sub?: string }[] = [
     {
@@ -168,8 +164,8 @@ export function CommitModal({
       ),
       label: "Commit and push",
     },
-    // Only show "Create PR" option when no PR exists yet and not in product mode
-    ...(!productMode && !hasPr ? [{
+    // Only show "Create PR" option when no PR exists yet
+    ...(!hasPr ? [{
       value: "commit-pr" as NextStep,
       icon: (
         <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
@@ -177,17 +173,6 @@ export function CommitModal({
         </svg>
       ),
       label: "Commit and create PR",
-    }] : []),
-    // Hide Ship in product mode
-    ...(!productMode ? [{
-      value: "commit-ship" as NextStep,
-      icon: (
-        <svg width="18" height="18" viewBox="0 0 16 16" fill="none">
-          <path d="M8 2l2 4h4l-3 3 1 4-4-2-4 2 1-4-3-3h4z" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round"/>
-        </svg>
-      ),
-      label: "Commit and Ship",
-      sub: "push, PR, review & merge",
     }] : []),
   ];
 
@@ -341,6 +326,7 @@ export function CommitModal({
       </div>
     </div>
   );
+  } // end renderModal
 }
 
 const st: Record<string, React.CSSProperties> = {

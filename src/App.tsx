@@ -137,6 +137,10 @@ export function App() {
     const saved = localStorage.getItem(fileExplorerWidthKey);
     return saved ? Number(saved) : 220;
   });
+  const [gitPanelWidth, setGitPanelWidth] = useState(() => {
+    const saved = localStorage.getItem("rally:gitPanelWidth");
+    return saved ? Number(saved) : 480;
+  });
   useEffect(() => {
     localStorage.setItem(
       fileExplorerCollapsedKey,
@@ -151,6 +155,7 @@ export function App() {
   const fetchInFlightRef = useRef(false);
   const lastInteractionAtRef = useRef(Date.now());
   const explorerRef = useRef<HTMLDivElement>(null);
+  const gitPanelRef = useRef<HTMLDivElement>(null);
   // The user's preferred explorer width (set by drag resize or initial load).
   // When the window is too narrow we shrink below this, and restore when space returns.
   const preferredExplorerWidthRef = useRef(fileExplorerWidth);
@@ -1103,6 +1108,47 @@ export function App() {
     [fileExplorerWidth, fileExplorerWidthKey],
   );
 
+  const handleGitPanelResize = useCallback(
+    (e: React.MouseEvent) => {
+      e.preventDefault();
+      resizingRef.current = true;
+      const startX = e.clientX;
+      const startWidth = gitPanelWidth;
+      let finalWidth = startWidth;
+      let raf = 0;
+
+      const onMouseMove = (ev: MouseEvent) => {
+        if (!resizingRef.current) return;
+        // Panel is on the left, so dragging RIGHT increases width
+        finalWidth = Math.max(
+          280,
+          Math.min(800, startWidth + (ev.clientX - startX)),
+        );
+        cancelAnimationFrame(raf);
+        raf = requestAnimationFrame(() => {
+          if (gitPanelRef.current) {
+            gitPanelRef.current.style.width = finalWidth + "px";
+          }
+        });
+      };
+      const onMouseUp = () => {
+        resizingRef.current = false;
+        cancelAnimationFrame(raf);
+        setGitPanelWidth(finalWidth);
+        localStorage.setItem("rally:gitPanelWidth", String(finalWidth));
+        document.removeEventListener("mousemove", onMouseMove);
+        document.removeEventListener("mouseup", onMouseUp);
+        document.body.style.cursor = "";
+        document.body.style.userSelect = "";
+      };
+      document.addEventListener("mousemove", onMouseMove);
+      document.addEventListener("mouseup", onMouseUp);
+      document.body.style.cursor = "col-resize";
+      document.body.style.userSelect = "none";
+    },
+    [gitPanelWidth],
+  );
+
   const handleDrag = useCallback(
     (e: React.MouseEvent) => {
       if ((e.target as HTMLElement).closest("button")) return;
@@ -1315,7 +1361,15 @@ export function App() {
           </>
         )}
         <div style={styles.main}>
-          <UnifiedGitPanel />
+          <UnifiedGitPanel splitWidth={gitPanelWidth} panelRef={gitPanelRef} />
+          {gitPanelOpen && gitPanelSplit && (
+            <div
+              onMouseDown={handleGitPanelResize}
+              style={styles.explorerResizeHandle}
+            >
+              <div style={styles.resizeLine} />
+            </div>
+          )}
           {/* Hide content when git panel is in replace mode (not split) */}
           {!(gitPanelOpen && !gitPanelSplit) && (
             <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", position: "relative" }}>
@@ -1461,6 +1515,7 @@ const styles: Record<string, React.CSSProperties> = {
     flexDirection: "row",
     minWidth: 0,
     position: "relative",
+    overflow: "hidden",
   },
   explorerResizeHandle: {
     width: 8,

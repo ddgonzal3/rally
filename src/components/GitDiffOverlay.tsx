@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import { useWorkspaceStore } from "../stores/workspaceStore";
 import { api } from "../lib/tauri";
-import { parseUnifiedDiff, generateHunkPatch, createUntrackedDiffFile, type DiffFile } from "../lib/diffParser";
+import { parseUnifiedDiff, createUntrackedDiffFile, type DiffFile } from "../lib/diffParser";
 import { DiffFileSection } from "./DiffFileSection";
 import { CommitModal } from "./CommitModal";
 import { addToast } from "./ToastContainer";
@@ -19,8 +19,6 @@ interface GitDiffContentProps {
 export function GitDiffContent({ rootPath }: GitDiffContentProps) {
   const activeTab = useWorkspaceStore((s) => s.gitDiffActiveTab);
   const setActiveTab = useWorkspaceStore((s) => s.setGitDiffActiveTab);
-  const startShipSession = useWorkspaceStore((s) => s.startShipSession);
-  const closeUnifiedGitPanel = useWorkspaceStore((s) => s.closeUnifiedGitPanel);
   const scrollToFile = useWorkspaceStore((s) => s.gitDiffScrollToFile);
   const gitStatus = useWorkspaceStore((s) => s.gitStatuses[rootPath]);
   const prStatus = useWorkspaceStore((s) => s.prStatuses[rootPath]);
@@ -37,7 +35,6 @@ export function GitDiffContent({ rootPath }: GitDiffContentProps) {
   const [diffStatAdd, setDiffStatAdd] = useState(0);
   const [diffStatDel, setDiffStatDel] = useState(0);
   const [commitModalOpen, setCommitModalOpen] = useState(false);
-  const [shipPopoverOpen, setShipPopoverOpen] = useState(false);
   const [scrollTarget, setScrollTarget] = useState<string | null>(null);
   const [expandKey, setExpandKey] = useState(0);
   const [defaultExpanded, setDefaultExpanded] = useState(true);
@@ -166,45 +163,6 @@ export function GitDiffContent({ rootPath }: GitDiffContentProps) {
     [rootPath, changes, fetchDiffs],
   );
 
-  const handleHunkRevert = useCallback(
-    async (filePath: string, hunkIndex: number) => {
-      if (!rootPath) return;
-      try {
-        const file = unstagedFiles.find((f) => (f.newPath || f.oldPath) === filePath);
-        if (!file || !file.hunks[hunkIndex]) return;
-        const patch = generateHunkPatch(file, file.hunks[hunkIndex]);
-        await api.gitApplyPatch(rootPath, patch, true, false);
-      } catch (e) {
-        addToast({ type: "warning", title: "Revert failed", message: String(e) });
-      }
-      fetchDiffs();
-    },
-    [rootPath, unstagedFiles, fetchDiffs],
-  );
-
-  const handleHunkStage = useCallback(
-    async (filePath: string, hunkIndex: number) => {
-      if (!rootPath) return;
-      try {
-        if (activeTab === "unstaged") {
-          const file = unstagedFiles.find((f) => (f.newPath || f.oldPath) === filePath);
-          if (!file || !file.hunks[hunkIndex]) return;
-          const patch = generateHunkPatch(file, file.hunks[hunkIndex]);
-          await api.gitApplyPatch(rootPath, patch, false, true);
-        } else {
-          const file = stagedFiles.find((f) => (f.newPath || f.oldPath) === filePath);
-          if (!file || !file.hunks[hunkIndex]) return;
-          const patch = generateHunkPatch(file, file.hunks[hunkIndex]);
-          await api.gitApplyPatch(rootPath, patch, true, true);
-        }
-      } catch (e) {
-        addToast({ type: "warning", title: "Hunk action failed", message: String(e) });
-      }
-      fetchDiffs();
-    },
-    [rootPath, activeTab, unstagedFiles, stagedFiles, fetchDiffs],
-  );
-
   const [revertConfirming, setRevertConfirming] = useState(false);
 
   const handleRevertAll = useCallback(async () => {
@@ -257,7 +215,6 @@ export function GitDiffContent({ rootPath }: GitDiffContentProps) {
   const stagedCount = changes?.staged.length ?? 0;
   const hasStaged = stagedCount > 0;
   const hasPr = !!(prStatus && prStatus.state === "OPEN");
-  const shipVisible = commits.length > 0 || unstagedCount > 0 || stagedCount > 0;
   const createPrVisible = !hasPr && commits.length > 0;
   const [creatingPr, setCreatingPr] = useState(false);
   const refreshPrStatusForPath = useWorkspaceStore((s) => s.refreshPrStatusForPath);
@@ -275,26 +232,6 @@ export function GitDiffContent({ rootPath }: GitDiffContentProps) {
       setCreatingPr(false);
     }
   }, [rootPath, refreshPrStatusForPath]);
-
-  const handleShip = useCallback(() => {
-    if (!rootPath) return;
-    startShipSession(rootPath);
-    closeUnifiedGitPanel();
-  }, [rootPath, startShipSession, closeUnifiedGitPanel]);
-
-  const handleShipClick = useCallback(() => {
-    if (!rootPath) return;
-    const hasCommits = commits.length > 0;
-    const hasDirty = unstagedCount > 0 || stagedCount > 0;
-
-    if (hasCommits && !hasDirty) {
-      handleShip();
-    } else if (hasCommits && hasDirty) {
-      setShipPopoverOpen(true);
-    } else if (!hasCommits && hasDirty) {
-      setCommitModalOpen(true);
-    }
-  }, [rootPath, commits.length, unstagedCount, stagedCount, handleShip]);
 
   return (
     <>
@@ -328,8 +265,8 @@ export function GitDiffContent({ rootPath }: GitDiffContentProps) {
             Unstage all
           </button>
         )}
-        {/* Commit / Create PR / Ship — inline in tab header */}
-        {(hasStaged || unstagedCount > 0 || createPrVisible || shipVisible) && (
+        {/* Commit / Create PR — inline in tab header */}
+        {(hasStaged || unstagedCount > 0 || createPrVisible) && (
           <>
             <div style={{ width: 1, height: 14, background: "#333", margin: "0 2px" }} />
             <button
@@ -354,29 +291,6 @@ export function GitDiffContent({ rootPath }: GitDiffContentProps) {
               >
                 {creatingPr ? "Creating..." : "Create PR"}
               </button>
-            )}
-            {shipVisible && (
-              <div style={{ position: "relative" }}>
-                <button
-                  onClick={handleShipClick}
-                  style={cs.bulkActionBtn}
-                >
-                  Ship
-                </button>
-                {shipPopoverOpen && (
-                  <ShipPopover
-                    onCommitFirst={() => {
-                      setShipPopoverOpen(false);
-                      setCommitModalOpen(true);
-                    }}
-                    onShipAnyway={() => {
-                      setShipPopoverOpen(false);
-                      handleShip();
-                    }}
-                    onDismiss={() => setShipPopoverOpen(false)}
-                  />
-                )}
-              </div>
             )}
           </>
         )}
@@ -445,8 +359,6 @@ export function GitDiffContent({ rootPath }: GitDiffContentProps) {
                 onStage={handleStage}
                 onUnstage={handleUnstage}
                 onDiscard={handleDiscard}
-                onHunkRevert={handleHunkRevert}
-                onHunkStage={handleHunkStage}
               />
             </div>
           ))
@@ -464,58 +376,10 @@ export function GitDiffContent({ rootPath }: GitDiffContentProps) {
         additions={diffStatAdd}
         deletions={diffStatDel}
         onCommitted={fetchDiffs}
-        onShip={handleShip}
         anchorRef={commitBtnRef}
         hasPr={hasPr}
       />
     </>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// ShipPopover — "You have uncommitted changes" popover
-// ---------------------------------------------------------------------------
-
-function ShipPopover({
-  onCommitFirst,
-  onShipAnyway,
-  onDismiss,
-}: {
-  onCommitFirst: () => void;
-  onShipAnyway: () => void;
-  onDismiss: () => void;
-}) {
-  const popoverRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    const handleMouseDown = (e: MouseEvent) => {
-      if (popoverRef.current && !popoverRef.current.contains(e.target as Node)) {
-        onDismiss();
-      }
-    };
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onDismiss();
-    };
-    document.addEventListener("mousedown", handleMouseDown);
-    document.addEventListener("keydown", handleKeyDown);
-    return () => {
-      document.removeEventListener("mousedown", handleMouseDown);
-      document.removeEventListener("keydown", handleKeyDown);
-    };
-  }, [onDismiss]);
-
-  return (
-    <div ref={popoverRef} style={cs.shipPopover}>
-      <div style={cs.shipPopoverText}>You have uncommitted changes</div>
-      <div style={cs.shipPopoverActions}>
-        <button onClick={onCommitFirst} style={cs.shipPopoverBtn}>
-          Commit First
-        </button>
-        <button onClick={onShipAnyway} style={cs.shipPopoverBtn}>
-          Ship Anyway
-        </button>
-      </div>
-    </div>
   );
 }
 
@@ -527,7 +391,7 @@ const cs: Record<string, React.CSSProperties> = {
   header: {
     display: "flex",
     alignItems: "center",
-    gap: 4,
+    gap: 6,
     padding: "0 8px",
     borderBottom: "1px solid #2a2a2a",
     flexShrink: 0,
@@ -578,9 +442,9 @@ const cs: Record<string, React.CSSProperties> = {
     fontSize: 11,
     fontWeight: 600,
     cursor: "pointer",
-    padding: "4px 8px",
+    padding: "3px 8px",
     borderRadius: 20,
-    lineHeight: "14px",
+    lineHeight: "16px",
     transition: "background 150ms, color 150ms",
     flexShrink: 0,
   },
@@ -593,47 +457,11 @@ const cs: Record<string, React.CSSProperties> = {
     fontSize: 11,
     fontWeight: 600,
     cursor: "pointer",
-    padding: "4px 8px",
+    padding: "3px 8px",
     borderRadius: 20,
-    lineHeight: "14px",
+    lineHeight: "16px",
     transition: "background 150ms, color 150ms",
     flexShrink: 0,
-  },
-  shipPopover: {
-    position: "absolute" as const,
-    top: "calc(100% + 6px)",
-    right: 0,
-    zIndex: 100,
-    background: "rgba(36, 36, 36, 0.78)",
-    backdropFilter: "blur(20px) saturate(180%)",
-    WebkitBackdropFilter: "blur(20px) saturate(180%)",
-    border: "1px solid rgba(255, 255, 255, 0.12)",
-    borderRadius: 10,
-    padding: "10px 12px",
-    minWidth: 200,
-  },
-  shipPopoverText: {
-    fontSize: 12,
-    fontWeight: 500,
-    color: "#ccc",
-    marginBottom: 8,
-  },
-  shipPopoverActions: {
-    display: "flex",
-    gap: 6,
-  },
-  shipPopoverBtn: {
-    flex: 1,
-    padding: "5px 10px",
-    borderRadius: 6,
-    border: "none",
-    background: "#404040",
-    color: "#ddd",
-    fontSize: 11,
-    fontWeight: 600,
-    cursor: "pointer",
-    transition: "background 150ms",
-    lineHeight: "14px",
   },
   commitsSection: {
     marginBottom: 16,

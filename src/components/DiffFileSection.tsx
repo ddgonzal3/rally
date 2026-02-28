@@ -10,8 +10,6 @@ export function DiffFileSection({
   onStage,
   onUnstage,
   onDiscard,
-  onHunkRevert,
-  onHunkStage,
 }: {
   file: DiffFile;
   defaultExpanded: boolean;
@@ -20,8 +18,6 @@ export function DiffFileSection({
   onStage?: (filePath: string) => void;
   onUnstage?: (filePath: string) => void;
   onDiscard?: (filePath: string) => void;
-  onHunkRevert?: (filePath: string, hunkIndex: number) => void;
-  onHunkStage?: (filePath: string, hunkIndex: number) => void;
 }) {
   const [expanded, setExpanded] = useState(defaultExpanded);
 
@@ -71,9 +67,9 @@ export function DiffFileSection({
                 title={confirming ? "Click again to confirm" : "Discard changes"}
               >
                 {confirming ? (
-                  <span style={{ fontSize: 11, fontWeight: 600 }}>Confirm?</span>
+                  <span style={{ fontSize: 10, fontWeight: 600 }}>Confirm?</span>
                 ) : (
-                  <svg width="14" height="14" viewBox="0 0 13 13" fill="none">
+                  <svg width="12" height="12" viewBox="0 0 13 13" fill="none">
                     <path d="M4 3.2V6h2.8M4 6c0-2.2 1.8-4 4-4a4 4 0 1 1-3.1 6.5" stroke="currentColor" strokeWidth="1.35" strokeLinecap="round" strokeLinejoin="round" />
                   </svg>
                 )}
@@ -84,7 +80,7 @@ export function DiffFileSection({
                 style={styles.iconBtn}
                 title="Stage file"
               >
-                <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+                <svg width="12" height="12" viewBox="0 0 14 14" fill="none">
                   <path d="M7 3v8M3 7h8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
                 </svg>
               </button>
@@ -97,7 +93,7 @@ export function DiffFileSection({
               style={styles.iconBtn}
               title="Unstage file"
             >
-              <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+              <svg width="12" height="12" viewBox="0 0 14 14" fill="none">
                 <path d="M3 7h8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
               </svg>
             </button>
@@ -115,8 +111,6 @@ export function DiffFileSection({
               hunks={file.hunks}
               filePath={filePath}
               tab={tab}
-              onHunkRevert={onHunkRevert ? (hi) => onHunkRevert(filePath, hi) : undefined}
-              onHunkStage={onHunkStage ? (hi) => onHunkStage(filePath, hi) : undefined}
             />
           )}
         </div>
@@ -216,15 +210,15 @@ const styles: Record<string, React.CSSProperties> = {
     flexShrink: 0,
     background: "#2a2a2a",
     border: "1px solid #3a3a3a",
-    borderRadius: 20,
+    borderRadius: 14,
     overflow: "hidden",
   },
   iconBtn: {
     display: "flex",
     alignItems: "center",
     justifyContent: "center",
-    width: 28,
-    height: 28,
+    width: 24,
+    height: 22,
     borderRadius: 0,
     border: "none",
     background: "transparent",
@@ -236,14 +230,14 @@ const styles: Record<string, React.CSSProperties> = {
     display: "flex",
     alignItems: "center",
     justifyContent: "center",
-    minWidth: 28,
-    height: 28,
+    minWidth: 24,
+    height: 22,
     borderRadius: 0,
     border: "none",
     background: "rgba(248, 81, 73, 0.15)",
     color: "#f85149",
     cursor: "pointer",
-    padding: "0 6px",
+    padding: "0 5px",
     transition: "color 150ms, background 150ms",
   },
   hunks: {
