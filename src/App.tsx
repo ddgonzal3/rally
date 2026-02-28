@@ -287,7 +287,7 @@ export function App() {
     }, 10000);
     const prInterval = setInterval(() => {
       void runPrRefresh();
-    }, 20000);
+    }, 15000);
     const shipInterval = setInterval(() => {
       void runShipPoll();
     }, 5000);
@@ -361,6 +361,7 @@ export function App() {
   // sidebar/explorer panels are collapsed).
   useEffect(() => {
     let cancelled = false;
+    let unlistenNewFile: UnlistenFn | null = null;
     let unlistenNewWorkspace: UnlistenFn | null = null;
     let unlistenAddFolder: UnlistenFn | null = null;
     let unlistenNewWindow: UnlistenFn | null = null;
@@ -411,6 +412,21 @@ export function App() {
         });
       });
     };
+
+    listen("rally-menu-new-file", () => {
+      // Ensure file explorer is visible
+      setFileExplorerCollapsed(false);
+      setExplorerView("files");
+      // Dispatch a DOM event that FileExplorer listens for
+      document.dispatchEvent(new Event("rally-new-file"));
+    })
+      .then((fn) => {
+        if (cancelled) fn();
+        else unlistenNewFile = fn;
+      })
+      .catch((e) =>
+        console.error("Failed to listen for new-file menu event:", e),
+      );
 
     listen("rally-menu-new-workspace", () => {
       autoCollapsedSidebarRef.current = false;
@@ -500,6 +516,7 @@ export function App() {
 
     return () => {
       cancelled = true;
+      unlistenNewFile?.();
       unlistenNewWorkspace?.();
       unlistenAddFolder?.();
       unlistenNewWindow?.();
@@ -507,6 +524,16 @@ export function App() {
       unlistenWorkspacesUpdated?.();
     };
   }, [loadWorkspaces, forceNoWorkspaceSelection]);
+
+  // Ensure file explorer is visible when a file is opened (e.g. Cmd+click in terminal)
+  useEffect(() => {
+    const handler = () => {
+      setFileExplorerCollapsed(false);
+      setExplorerView("files");
+    };
+    document.addEventListener("rally-ensure-explorer-visible", handler);
+    return () => document.removeEventListener("rally-ensure-explorer-visible", handler);
+  }, []);
 
   // Finder drag-and-drop: bridge Tauri file drop events into the drag context
   // so each PaneGroup's DropZoneTarget shows the same overlay as tab drags.

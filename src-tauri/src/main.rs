@@ -173,12 +173,14 @@ fn main() {
         commands::git_fetch,
         commands::git_rebase_on_main,
         commands::list_directory,
+        commands::list_gitignored,
         commands::detect_git_info,
         commands::trash_file,
         commands::rename_file,
         commands::reveal_in_finder,
         commands::list_scripts,
         commands::file_exists,
+        commands::read_clipboard_text,
         commands::save_clipboard_image,
         pty_manager::spawn_pty,
         pty_manager::write_pty,
@@ -250,6 +252,9 @@ fn main() {
                 match event.id().as_ref() {
                     "custom-quit" => {
                         show_quit_dialog(app.clone(), quit_showing.clone());
+                    }
+                    "file-new-file" => {
+                        emit_to_focused_window(app, "rally-menu-new-file");
                     }
                     "file-new-workspace" => {
                         emit_to_focused_window(app, "rally-menu-new-workspace");
@@ -346,8 +351,12 @@ fn main() {
 
             let file_submenu = SubmenuBuilder::new(app, "File")
                 .item(
-                    &MenuItemBuilder::with_id("file-new-workspace", "New Workspace...")
+                    &MenuItemBuilder::with_id("file-new-file", "New File")
                         .accelerator("CmdOrCtrl+N")
+                        .build(app)?,
+                )
+                .item(
+                    &MenuItemBuilder::with_id("file-new-workspace", "New Workspace...")
                         .build(app)?,
                 )
                 .item(

@@ -105,21 +105,11 @@ export function PaneGroupView({
   const paths = ws?.paths ?? [workspacePath];
   const isMultiRoot = paths.length > 1;
 
-  // Confirm before closing a pane with a live terminal session
-  const confirmClose = useCallback(async (paneId: string) => {
-    const pane = group?.panes.find((p) => p.id === paneId);
-    if (paneHasActiveSession(pane)) {
-      const { ask } = await import("@tauri-apps/plugin-dialog");
-      const confirmed = await ask("Close this terminal session?", {
-        title: "Close Terminal",
-        kind: "warning",
-        okLabel: "Close",
-        cancelLabel: "Cancel",
-      });
-      if (!confirmed) return;
-    }
+  // Close pane directly (X button) — no confirmation needed.
+  // Cmd+W confirmation is handled in App.tsx separately.
+  const handleClosePane = useCallback((paneId: string) => {
     closePane(workspaceId, groupId, paneId);
-  }, [group, closePane, workspaceId, groupId]);
+  }, [closePane, workspaceId, groupId]);
 
   if (!group) return null;
 
@@ -409,7 +399,7 @@ export function PaneGroupView({
                   }
                   items.push({
                     label: "Close Tab",
-                    action: () => confirmClose(pane.id),
+                    action: () => handleClosePane(pane.id),
                   });
                   showContextMenu(items);
                 }}
@@ -494,7 +484,7 @@ export function PaneGroupView({
                     }}
                     onClick={(e) => {
                       e.stopPropagation();
-                      confirmClose(pane.id);
+                      handleClosePane(pane.id);
                     }}
                   >
                     <svg width="11" height="11" viewBox="0 0 14 14" fill="none">

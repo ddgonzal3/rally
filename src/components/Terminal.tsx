@@ -4,7 +4,7 @@ import { FitAddon } from "@xterm/addon-fit";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { api } from "../lib/tauri";
 import { TerminalLinkProvider, type OnFileOpen } from "../lib/terminalLinkProvider";
-import { useWorkspaceStore, shipOutputBuffer, scriptOutputBuffers } from "../stores/workspaceStore";
+import { useWorkspaceStore, shipOutputBuffer, scriptOutputBuffers, appendPtyBuffer, clearPtyBuffer, ptyOutputBuffers } from "../stores/workspaceStore";
 import { showContextMenu } from "../lib/contextMenu";
 import "@xterm/xterm/css/xterm.css";
 
@@ -207,12 +207,12 @@ export function Terminal({ cwd, command, initialInput, ptyId: existingPtyId, loc
           accelerator: "CmdOrCtrl+V",
           action: async () => {
             if (!ptyId) return;
-            // Use readText() only for context menu paste — navigator.clipboard.read()
-            // triggers a browser permission popup ("Paste from clipboard?") which
-            // causes a distracting secondary popup after the context menu.
-            // Image paste is handled separately via the native paste event handler.
+            // Use Rust-side clipboard read (pbpaste) to avoid WebKit's
+            // clipboard permission popup that navigator.clipboard.readText()
+            // triggers in Tauri's webview. Image paste is handled separately
+            // via the native paste event handler.
             try {
-              const text = await navigator.clipboard.readText();
+              const text = await api.readClipboardText();
               if (text) api.writePty(ptyId, Array.from(encoder.encode(text)));
             } catch {
               /* clipboard access failed */
@@ -242,12 +242,13 @@ export function Terminal({ cwd, command, initialInput, ptyId: existingPtyId, loc
 
   const handleMouseDown = useCallback(() => {
     // Focus xterm's hidden textarea on click so keyboard input works.
-    // Only focus if the textarea doesn't already have focus — focusing
-    // during an active mousedown can interfere with text selection.
+    // Always focus — even if already active — to handle app activation
+    // click-through (clicking into an inactive window should route focus
+    // to the terminal that was clicked, not where focus was last).
     const textarea = containerRef.current?.querySelector(
       "textarea.xterm-helper-textarea"
     ) as HTMLTextAreaElement | null;
-    if (textarea && document.activeElement !== textarea) {
+    if (textarea) {
       textarea.focus();
     }
   }, []);
@@ -368,7 +369,8 @@ export function Terminal({ cwd, command, initialInput, ptyId: existingPtyId, loc
         }
       }
     };
-    termEl.addEventListener("paste", handlePaste);
+    // Use capture phase so we see the paste before xterm.js can handle it
+    termEl.addEventListener("paste", handlePaste, true);
 
     // Handle Cmd+C (copy), Cmd+V (paste), Cmd+A (select all),
     // and Option+Arrow (word movement)
@@ -474,6 +476,8 @@ export function Terminal({ cwd, command, initialInput, ptyId: existingPtyId, loc
         `pty-output-${ptyId}`,
         (event) => {
           const chunk = new Uint8Array(event.payload.data);
+          // Buffer output for replay on remount (e.g. after split)
+          appendPtyBuffer(ptyId, chunk);
           // Parse OSC 7 to track shell CWD
           if (onCwdChanged) {
             const text = new TextDecoder().decode(chunk);
@@ -496,6 +500,8 @@ export function Terminal({ cwd, command, initialInput, ptyId: existingPtyId, loc
           term.writeln(
             `\r\n\x1b[90m[Process exited${code != null ? ` with code ${code}` : ""}]\x1b[0m`
           );
+          // Clean up PTY output buffer on exit
+          clearPtyBuffer(ptyId);
         }
       );
 
@@ -539,6 +545,16 @@ export function Terminal({ cwd, command, initialInput, ptyId: existingPtyId, loc
         }
         if (scriptBufferKey) {
           const buf = scriptOutputBuffers.get(scriptBufferKey);
+          if (buf) {
+            for (const chunk of buf) {
+              term.write(chunk);
+            }
+          }
+        }
+
+        // Replay general PTY output buffer (for regular terminals after layout changes)
+        if (!lockCols && !scriptBufferKey) {
+          const buf = ptyOutputBuffers.get(existingPtyId);
           if (buf) {
             for (const chunk of buf) {
               term.write(chunk);
@@ -643,12 +659,13 @@ export function Terminal({ cwd, command, initialInput, ptyId: existingPtyId, loc
       window.removeEventListener("keydown", handleKeyDown);
       window.removeEventListener("keyup", handleKeyUp);
       window.removeEventListener("blur", handleBlur);
-      termEl.removeEventListener("paste", handlePaste);
+      termEl.removeEventListener("paste", handlePaste, true);
       // Kill PTY on unmount ONLY if we own it AND the store isn't managing it.
       // When onPtySpawned is provided, the store persists the ptyId and handles
       // cleanup in closePane/closeGroup — so we must not kill here (the component
       // may just be remounting due to layout restructuring).
       if (ptyIdRef.current && ownsPty && !onPtySpawned) {
+        clearPtyBuffer(ptyIdRef.current);
         api.killPty(ptyIdRef.current);
       }
       ptyIdRef.current = null;

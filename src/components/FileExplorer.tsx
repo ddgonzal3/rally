@@ -109,6 +109,21 @@ export function setExpandedPaths(paths: string[], roots?: string[]): void {
 /** Module-level cache of directory listings — survives component unmount/remount */
 const directoryCache = new Map<string, FileEntry[]>();
 
+/** Module-level cache of gitignored file names per directory */
+const gitIgnoredCache = new Map<string, Set<string>>();
+
+/** Fetch gitignored names for a directory and cache them */
+function fetchGitIgnored(dirPath: string) {
+  api.listGitignored(dirPath)
+    .then((names) => {
+      gitIgnoredCache.set(dirPath, new Set(names));
+    })
+    .catch(() => {
+      // Not a git repo or error — no ignored files
+      gitIgnoredCache.set(dirPath, new Set());
+    });
+}
+
 /** Currently selected path in the file tree (for Enter-to-rename) */
 let selectedFilePath: string | null = null;
 
@@ -394,6 +409,10 @@ const FileTreeNode = React.memo(
     const selected = useSelectedFilePath();
     const isSelected = entry.path === selected;
 
+    // Check if this entry is gitignored (by checking parent directory's cache)
+    const parentPath = entry.path.replace(/\/[^/]+$/, "");
+    const isGitIgnored = gitIgnoredCache.get(parentPath)?.has(entry.name) ?? false;
+
     const isActiveFile = !entry.is_dir && entry.path === activeFilePath;
     // Check if this directory is an ancestor of a file being explicitly revealed
     const revealPath = useWorkspaceStore((s) => s.revealedFilePath);
@@ -409,6 +428,7 @@ const FileTreeNode = React.memo(
         invoke<FileEntry[]>("list_directory", { path: entry.path })
           .then((entries) => {
             directoryCache.set(entry.path, entries);
+            fetchGitIgnored(entry.path);
             setChildren(entries);
             setLoaded(true);
           })
@@ -426,6 +446,7 @@ const FileTreeNode = React.memo(
         invoke<FileEntry[]>("list_directory", { path: entry.path })
           .then((entries) => {
             directoryCache.set(entry.path, entries);
+            fetchGitIgnored(entry.path);
             setChildren(entries);
             setLoaded(true);
           })
@@ -464,6 +485,7 @@ const FileTreeNode = React.memo(
                 path: entry.path,
               });
               directoryCache.set(entry.path, entries);
+              fetchGitIgnored(entry.path);
               setChildren(entries);
               setLoaded(true);
             } catch (e) {
@@ -505,6 +527,7 @@ const FileTreeNode = React.memo(
       invoke<FileEntry[]>("list_directory", { path: entry.path })
         .then((entries) => {
           directoryCache.set(entry.path, entries);
+          fetchGitIgnored(entry.path);
           setChildren(entries);
           setLoaded(true);
         })
@@ -601,6 +624,7 @@ const FileTreeNode = React.memo(
                   path: parent,
                 });
                 directoryCache.set(parent, entries);
+                fetchGitIgnored(parent);
                 // Force re-render via a DOM event
                 document.dispatchEvent(
                   new CustomEvent("rally:dir-refresh", {
@@ -651,7 +675,7 @@ const FileTreeNode = React.memo(
                 }),
               );
             }}
-            style={{ ...styles.node, paddingLeft: depth * 10 }}
+            style={{ ...styles.node, paddingLeft: depth * 10, ...(isGitIgnored ? { opacity: 0.4 } : undefined) }}
           >
             {entry.is_dir ? (
               <ChevronIcon open={expanded} />
@@ -815,9 +839,7 @@ function GitStatusIcon({
   onClick?: () => void;
   active?: boolean;
 }) {
-  const changeCount =
-    (status?.modified_files.length ?? 0) +
-    (status?.untracked_files.length ?? 0);
+  const changeCount = status?.modified_files.length ?? 0;
 
   return (
     <button
@@ -1086,6 +1108,7 @@ function RootSection({
   useEffect(() => {
     invoke<FileEntry[]>("list_directory", { path: rootPath })
       .then((r) => {
+        fetchGitIgnored(rootPath);
         setFsEntries(r);
         setFsLoaded(true);
       })
@@ -1093,10 +1116,19 @@ function RootSection({
   }, [rootPath]);
 
   const editState = useInlineEdit();
+  // Only show root-level InlineInput when creating directly in root or in
+  // directories that don't exist as loaded FileTreeNodes (scripts/, .claude/commands/).
+  // Subfolders that ARE in the tree handle their own InlineInput via isCreatingHere.
   const isCreatingAtRoot =
     editState?.type === "create" &&
     (editState.parentPath === rootPath ||
-      editState.parentPath.startsWith(rootPath + "/"));
+      (editState.parentPath.startsWith(rootPath + "/") &&
+        !fsEntries.some(
+          (e) =>
+            e.is_dir &&
+            (editState.parentPath === e.path ||
+              editState.parentPath.startsWith(e.path + "/")),
+        )));
 
   const handleRemoveRootChild = useCallback((path: string) => {
     setFsEntries((prev) => prev.filter((e) => e.path !== path));
@@ -1106,6 +1138,7 @@ function RootSection({
     invoke<FileEntry[]>("list_directory", { path: rootPath })
       .then((r) => {
         directoryCache.set(rootPath, r);
+        fetchGitIgnored(rootPath);
         setFsEntries(r);
         setFsLoaded(true);
       })
@@ -1177,7 +1210,7 @@ function RootSection({
         label: "New Terminal",
         action: () =>
           activeWorkspaceId &&
-          useWorkspaceStore.getState().openTerminalInBottom(activeWorkspaceId, rootPath),
+          useWorkspaceStore.getState().openTerminalInActiveGroup(activeWorkspaceId, rootPath),
       },
     ];
     if (isGitRepo) {
@@ -1358,7 +1391,7 @@ function RootSection({
                 onClick={(e) => {
                   e.stopPropagation();
                   if (activeWorkspaceId) {
-                    useWorkspaceStore.getState().openTerminalInBottom(activeWorkspaceId, rootPath);
+                    useWorkspaceStore.getState().openTerminalInActiveGroup(activeWorkspaceId, rootPath);
                   }
                 }}
                 style={styles.repoTerminalBtn}
@@ -2294,6 +2327,30 @@ export function FileExplorer({ onCollapse, flushLeft }: FileExplorerProps) {
     document.addEventListener("rally:expanded-paths-changed", handler);
     return () => document.removeEventListener("rally:expanded-paths-changed", handler);
   }, []);
+
+  // Cmd+N → New File: triggered via native menu → Tauri event → DOM event
+  useEffect(() => {
+    const handler = () => {
+      // Determine parent directory: use selected file's parent, or first workspace path
+      let parentPath: string | null = null;
+      if (selectedFilePath) {
+        // If selected item is a directory, create inside it; otherwise use its parent
+        const stat = directoryCache.get(selectedFilePath);
+        // Check if selectedFilePath is a directory by checking if it has a cache entry
+        // or is in the workspace paths list
+        const isDir = directoryCache.has(selectedFilePath) ||
+          (ws?.paths ?? []).includes(selectedFilePath);
+        parentPath = isDir ? selectedFilePath : selectedFilePath.replace(/\/[^/]+$/, "");
+      } else if (ws?.paths?.[0]) {
+        parentPath = ws.paths[0];
+      }
+      if (parentPath) {
+        setInlineEdit({ type: "create", parentPath, isDir: false });
+      }
+    };
+    document.addEventListener("rally-new-file", handler);
+    return () => document.removeEventListener("rally-new-file", handler);
+  }, [ws?.paths]);
 
   // Global Enter-to-rename: when a file is selected in the tree, Enter triggers rename
   useEffect(() => {

@@ -45,6 +45,31 @@ export const shipOutputBuffer: Uint8Array[] = [];
  */
 export const scriptOutputBuffers = new Map<string, Uint8Array[]>();
 
+/**
+ * Module-level buffer for ALL PTY output, keyed by ptyId.
+ * Allows replaying output when a terminal remounts (e.g. after a split).
+ * Limited to MAX_PTY_BUFFER_CHUNKS to prevent unbounded memory growth.
+ */
+const MAX_PTY_BUFFER_CHUNKS = 2000;
+export const ptyOutputBuffers = new Map<string, Uint8Array[]>();
+
+export function appendPtyBuffer(ptyId: string, chunk: Uint8Array) {
+  let buf = ptyOutputBuffers.get(ptyId);
+  if (!buf) {
+    buf = [];
+    ptyOutputBuffers.set(ptyId, buf);
+  }
+  buf.push(chunk);
+  // Trim to prevent unbounded growth
+  if (buf.length > MAX_PTY_BUFFER_CHUNKS) {
+    buf.splice(0, buf.length - MAX_PTY_BUFFER_CHUNKS);
+  }
+}
+
+export function clearPtyBuffer(ptyId: string) {
+  ptyOutputBuffers.delete(ptyId);
+}
+
 const WINDOW_PERSIST_KEY = (() => {
   try {
     return `rally-state:${getCurrentWindow().label}`;
@@ -302,6 +327,9 @@ interface WorkspaceState {
 
   /** Open a plain terminal pane in the bottom half of the layout. */
   openTerminalInBottom: (workspaceId: string, cwd: string) => void;
+
+  /** Open a plain terminal tab in the active (or first) group. */
+  openTerminalInActiveGroup: (workspaceId: string, cwd: string) => void;
 
   /** Open a Claude pane that auto-sends a slash command. Does NOT steal focus. */
   openClaudeCommand: (workspaceId: string, cwd: string, slashCommand: string, title: string) => void;
@@ -787,6 +815,7 @@ export const useWorkspaceStore = create<WorkspaceState>()(
       }),
     );
 
+    const changedPaths: string[] = [];
     set((s) => {
       let changed = false;
       const next = { ...s.gitStatuses };
@@ -796,10 +825,19 @@ export const useWorkspaceStore = create<WorkspaceState>()(
         if (!prev || !gitStatusEqual(prev, result.status)) {
           next[result.path] = result.status;
           changed = true;
+          changedPaths.push(result.path);
         }
       }
       return changed ? { gitStatuses: next } : s;
     });
+
+    // When git status changes (push, commit, branch switch, etc.),
+    // refresh PR status for affected paths so PRs show up immediately
+    if (changedPaths.length > 0) {
+      for (const path of changedPaths) {
+        get().refreshPrStatusForPath(path).catch(() => {});
+      }
+    }
   },
 
   refreshPrStatusForPath: async (path) => {
@@ -1321,6 +1359,31 @@ export const useWorkspaceStore = create<WorkspaceState>()(
     }));
   },
 
+  openTerminalInActiveGroup: (workspaceId, cwd) => {
+    const layout = get().getOrCreateLayout(workspaceId);
+    const activeGroupId = get().activeGroupIds[workspaceId];
+
+    const folderName = cwd.split("/").pop() ?? "Terminal";
+    const pane: Pane = {
+      id: crypto.randomUUID(),
+      type: "terminal",
+      title: folderName,
+      cwd,
+    };
+
+    // Try the active group first, then find the first group in the tree
+    const targetGroupId = activeGroupId && layout.groups[activeGroupId]
+      ? activeGroupId
+      : findFirstGroupInSubtree(layout.root);
+
+    if (targetGroupId) {
+      get().addPaneToGroup(workspaceId, targetGroupId, pane);
+    } else {
+      // Fallback: create as bottom (shouldn't normally happen)
+      get().openTerminalInBottom(workspaceId, cwd);
+    }
+  },
+
   openClaudeCommand: (workspaceId, cwd, slashCommand, title) => {
     // Close git diff overlay if open — opening a command should take precedence
     if (get().unifiedGitPanelOpen) {
@@ -1683,8 +1746,7 @@ export const useWorkspaceStore = create<WorkspaceState>()(
           }, 0);
         }
       } else {
-        // Group has siblings in the same row — collapse it.
-        // Find the sibling group that will survive so we can focus it.
+        // Group has siblings — collapse it so the sibling expands.
         const siblingIndex = parentInfo.index === 0 ? 1 : 0;
         const siblingNode = parentInfo.parent.children[siblingIndex];
         const targetGroupId = findFirstGroupInSubtree(siblingNode);
@@ -2182,6 +2244,11 @@ export const useWorkspaceStore = create<WorkspaceState>()(
       initialCol: options?.col,
     };
     get().addPaneToGroup(workspaceId, targetGroupId, pane);
+
+    // Reveal the file in the explorer (expand ancestors, scroll into view)
+    // and ensure the explorer panel is visible
+    get().revealFileInExplorer(filePath);
+    document.dispatchEvent(new Event("rally-ensure-explorer-visible"));
   },
 
   revealFileInExplorer: (filePath) => {

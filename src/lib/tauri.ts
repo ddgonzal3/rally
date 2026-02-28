@@ -126,8 +126,14 @@ export const api = {
   renameFile: (oldPath: string, newPath: string) =>
     invoke<void>("rename_file", { oldPath, newPath }),
 
+  listGitignored: (dirPath: string) =>
+    invoke<string[]>("list_gitignored", { dirPath }),
+
   listScripts: (rootPath: string) =>
     invoke<ScriptEntry[]>("list_scripts", { rootPath }),
+
+  readClipboardText: () =>
+    invoke<string>("read_clipboard_text"),
 
   saveClipboardImage: (data: string, mimeType: string) =>
     invoke<string>("save_clipboard_image", { data, mimeType }),
