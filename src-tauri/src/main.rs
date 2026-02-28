@@ -179,6 +179,8 @@ fn main() {
         commands::rename_file,
         commands::reveal_in_finder,
         commands::list_scripts,
+        commands::read_rally_config,
+        commands::check_workspace_ready,
         commands::file_exists,
         commands::read_clipboard_text,
         commands::save_clipboard_image,

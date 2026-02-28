@@ -1386,39 +1386,6 @@ function RootSection({
               )}
             </div>
             <div style={styles.rootActions}>
-              <button
-                className="repo-terminal-btn"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  if (activeWorkspaceId) {
-                    useWorkspaceStore.getState().openTerminalInActiveGroup(activeWorkspaceId, rootPath);
-                  }
-                }}
-                style={styles.repoTerminalBtn}
-                title="New Terminal"
-              >
-                <svg
-                  width="16"
-                  height="16"
-                  viewBox="0 0 16 16"
-                  fill="none"
-                  style={{ flexShrink: 0 }}
-                >
-                  <path
-                    d="M3 4l4 4-4 4"
-                    stroke="#999"
-                    strokeWidth="1.5"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  />
-                  <path
-                    d="M8.5 12H13"
-                    stroke="#999"
-                    strokeWidth="1.5"
-                    strokeLinecap="round"
-                  />
-                </svg>
-              </button>
               {isGitRepo && (
                 <>
                   {gitStatus && gitStatus.behind > 0 && (
@@ -2100,11 +2067,14 @@ function LayoutPresetsDropdown({ workspaceId }: { workspaceId: string }) {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") close();
     };
-    document.addEventListener("mousedown", onDown);
+    const onDismiss = () => close();
+    document.addEventListener("mousedown", onDown, true);
     document.addEventListener("keydown", onKey);
+    document.addEventListener("rally:dismiss-popups", onDismiss);
     return () => {
-      document.removeEventListener("mousedown", onDown);
+      document.removeEventListener("mousedown", onDown, true);
       document.removeEventListener("keydown", onKey);
+      document.removeEventListener("rally:dismiss-popups", onDismiss);
     };
   }, [open, close]);
 
@@ -2273,9 +2243,8 @@ function LayoutPresetsDropdown({ workspaceId }: { workspaceId: string }) {
         title="Saved layouts"
       >
         <svg width="12" height="12" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-          <rect x="1" y="1" width="6" height="6" rx="1" stroke="currentColor" strokeWidth="1.3" />
+          <rect x="1" y="1" width="6.5" height="14" rx="1" stroke="currentColor" strokeWidth="1.3" />
           <rect x="9" y="1" width="6" height="6" rx="1" stroke="currentColor" strokeWidth="1.3" />
-          <rect x="1" y="9" width="6" height="6" rx="1" stroke="currentColor" strokeWidth="1.3" />
           <rect x="9" y="9" width="6" height="6" rx="1" stroke="currentColor" strokeWidth="1.3" />
         </svg>
       </button>
@@ -2299,6 +2268,8 @@ export function FileExplorer({ onCollapse, flushLeft }: FileExplorerProps) {
   const addPathToWorkspace = useWorkspaceStore((s) => s.addPathToWorkspace);
   const reorderWorkspacePath = useWorkspaceStore((s) => s.reorderWorkspacePath);
   const openUnifiedGitPanel = useWorkspaceStore((s) => s.openUnifiedGitPanel);
+  const workspaceMode = useWorkspaceStore((s) => activeWorkspaceId ? s.workspaceModes[activeWorkspaceId] ?? "dev" : "dev");
+  const isProductMode = workspaceMode === "product";
   const unifiedGitPanelOpen = useWorkspaceStore((s) => s.unifiedGitPanelOpen);
   const unifiedGitPanelPath = useWorkspaceStore((s) => s.unifiedGitPanelPath);
   const unifiedGitPanelTab = useWorkspaceStore((s) => s.unifiedGitPanelTab);
@@ -2605,7 +2576,7 @@ export function FileExplorer({ onCollapse, flushLeft }: FileExplorerProps) {
       <div style={styles.explorerHeader}>
         <span style={styles.explorerTitle}>Explorer</span>
         <div style={{ display: "flex", alignItems: "center", gap: 2 }}>
-          {activeWorkspaceId && (
+          {activeWorkspaceId && !isProductMode && (
             <LayoutPresetsDropdown workspaceId={activeWorkspaceId} />
           )}
           <button
@@ -2917,19 +2888,6 @@ const styles: Record<string, React.CSSProperties> = {
     flexShrink: 0,
     borderRadius: 4,
     cursor: "pointer",
-  },
-  repoTerminalBtn: {
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    background: "none",
-    border: "none",
-    padding: "4px",
-    flexShrink: 0,
-    borderRadius: 4,
-    cursor: "pointer",
-    opacity: 0,
-    transition: "opacity 120ms",
   },
   node: {
     display: "flex",

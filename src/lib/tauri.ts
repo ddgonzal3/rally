@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import type { Workspace, GitStatus, PrStatus, PrDetails, PushResult, ChangesSummary, CommitEntry, ScriptEntry, ShipSignal, RallyScriptInfo, SearchMatch, ReplaceOp, ReplaceResult, PtyInfo } from "./types";
+import type { Workspace, GitStatus, PrStatus, PrDetails, PushResult, ChangesSummary, CommitEntry, ScriptEntry, ShipSignal, RallyScriptInfo, SearchMatch, ReplaceOp, ReplaceResult, PtyInfo, RallyConfig, WorkspaceReadiness } from "./types";
 
 /** Open a URL in the user's default browser via Tauri shell plugin. */
 export function openUrl(url: string) {
@@ -201,4 +201,12 @@ export const api = {
 
   listAllFiles: (paths: string[]) =>
     invoke<string[]>("list_all_files", { paths }),
+
+  // Rally config
+  readRallyConfig: (rootPath: string) =>
+    invoke<RallyConfig>("read_rally_config", { rootPath }),
+
+  // Workspace readiness
+  checkWorkspaceReady: (rootPath: string) =>
+    invoke<WorkspaceReadiness>("check_workspace_ready", { rootPath }),
 };

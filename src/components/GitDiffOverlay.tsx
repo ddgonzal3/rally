@@ -86,11 +86,18 @@ export function GitDiffContent({ rootPath }: GitDiffContentProps) {
     }
   }, [rootPath, mainBranch]);
 
-  // Fetch on mount + handle scrollToFile from store
+  // Re-fetch when git status poll detects changes (dirty state or file count changes)
+  const gitStatusFingerprint = useWorkspaceStore((s) => {
+    const gs = s.gitStatuses[rootPath];
+    if (!gs) return "";
+    return `${gs.dirty}-${gs.modified_files.length}-${gs.untracked_files.length}`;
+  });
+
+  // Fetch on mount + handle scrollToFile from store + git status changes
   useEffect(() => {
     setScrollTarget(scrollToFile ?? null);
     fetchDiffs();
-  }, [rootPath, scrollToFile, fetchDiffs]);
+  }, [rootPath, scrollToFile, fetchDiffs, gitStatusFingerprint]);
 
   // Scroll to target file after diffs load
   useEffect(() => {
@@ -291,7 +298,7 @@ export function GitDiffContent({ rootPath }: GitDiffContentProps) {
 
   return (
     <>
-      {/* Header */}
+      {/* Tab row */}
       <div style={cs.header}>
         <button
           onClick={() => setActiveTab("unstaged")}
@@ -321,59 +328,57 @@ export function GitDiffContent({ rootPath }: GitDiffContentProps) {
             Unstage all
           </button>
         )}
-        {/* Diff stats */}
-        {(diffStatAdd > 0 || diffStatDel > 0) && (
-          <span style={cs.diffStats}>
-            {diffStatAdd > 0 && <span style={{ color: "#3fb950" }}>+{diffStatAdd}</span>}
-            {diffStatAdd > 0 && diffStatDel > 0 && " "}
-            {diffStatDel > 0 && <span style={{ color: "#f85149" }}>-{diffStatDel}</span>}
-          </span>
-        )}
-        <button
-          ref={commitBtnRef}
-          onClick={() => setCommitModalOpen(true)}
-          disabled={!hasStaged && unstagedCount === 0}
-          style={{
-            ...cs.headerCommitBtn,
-            opacity: hasStaged || unstagedCount > 0 ? 1 : 0.4,
-          }}
-        >
-          Commit
-        </button>
-        {createPrVisible && (
-          <button
-            onClick={handleCreatePr}
-            disabled={creatingPr}
-            style={{
-              ...cs.createPrBtn,
-              opacity: creatingPr ? 0.5 : 1,
-            }}
-          >
-            {creatingPr ? "Creating..." : "Create PR"}
-          </button>
-        )}
-        {shipVisible && (
-          <div style={{ position: "relative" }}>
+        {/* Commit / Create PR / Ship — inline in tab header */}
+        {(hasStaged || unstagedCount > 0 || createPrVisible || shipVisible) && (
+          <>
+            <div style={{ width: 1, height: 14, background: "#333", margin: "0 2px" }} />
             <button
-              onClick={handleShipClick}
-              style={cs.shipBtn}
+              ref={commitBtnRef}
+              onClick={() => setCommitModalOpen(true)}
+              disabled={!hasStaged && unstagedCount === 0}
+              style={{
+                ...cs.bulkActionBtn,
+                opacity: hasStaged || unstagedCount > 0 ? 1 : 0.4,
+              }}
             >
-              Ship
+              Commit
             </button>
-            {shipPopoverOpen && (
-              <ShipPopover
-                onCommitFirst={() => {
-                  setShipPopoverOpen(false);
-                  setCommitModalOpen(true);
+            {createPrVisible && (
+              <button
+                onClick={handleCreatePr}
+                disabled={creatingPr}
+                style={{
+                  ...cs.bulkActionBtn,
+                  opacity: creatingPr ? 0.5 : 1,
                 }}
-                onShipAnyway={() => {
-                  setShipPopoverOpen(false);
-                  handleShip();
-                }}
-                onDismiss={() => setShipPopoverOpen(false)}
-              />
+              >
+                {creatingPr ? "Creating..." : "Create PR"}
+              </button>
             )}
-          </div>
+            {shipVisible && (
+              <div style={{ position: "relative" }}>
+                <button
+                  onClick={handleShipClick}
+                  style={cs.bulkActionBtn}
+                >
+                  Ship
+                </button>
+                {shipPopoverOpen && (
+                  <ShipPopover
+                    onCommitFirst={() => {
+                      setShipPopoverOpen(false);
+                      setCommitModalOpen(true);
+                    }}
+                    onShipAnyway={() => {
+                      setShipPopoverOpen(false);
+                      handleShip();
+                    }}
+                    onDismiss={() => setShipPopoverOpen(false)}
+                  />
+                )}
+              </div>
+            )}
+          </>
         )}
       </div>
 
@@ -523,31 +528,30 @@ const cs: Record<string, React.CSSProperties> = {
     display: "flex",
     alignItems: "center",
     gap: 4,
-    padding: "0 16px",
+    padding: "0 8px",
     borderBottom: "1px solid #2a2a2a",
     flexShrink: 0,
     position: "relative",
-    whiteSpace: "nowrap",
   },
   tab: {
-    padding: "10px 12px",
+    padding: "10px 8px",
     background: "none",
     border: "none",
     borderBottom: "2px solid transparent",
     color: "#999",
-    fontSize: 13,
+    fontSize: 12,
     cursor: "pointer",
     fontWeight: 500,
     transition: "color 150ms",
     flexShrink: 0,
   },
   tabActive: {
-    padding: "10px 12px",
+    padding: "10px 8px",
     background: "none",
     border: "none",
     borderBottom: "2px solid #e6edf3",
     color: "#e6edf3",
-    fontSize: 13,
+    fontSize: 12,
     cursor: "pointer",
     fontWeight: 600,
     flexShrink: 0,
@@ -555,7 +559,7 @@ const cs: Record<string, React.CSSProperties> = {
   fileList: {
     flex: 1,
     overflow: "auto",
-    padding: "16px 20px",
+    padding: "12px 10px",
     scrollPaddingTop: 8,
   },
   empty: {
@@ -574,7 +578,7 @@ const cs: Record<string, React.CSSProperties> = {
     fontSize: 11,
     fontWeight: 600,
     cursor: "pointer",
-    padding: "4px 10px",
+    padding: "4px 8px",
     borderRadius: 20,
     lineHeight: "14px",
     transition: "background 150ms, color 150ms",
@@ -589,62 +593,11 @@ const cs: Record<string, React.CSSProperties> = {
     fontSize: 11,
     fontWeight: 600,
     cursor: "pointer",
-    padding: "4px 10px",
+    padding: "4px 8px",
     borderRadius: 20,
     lineHeight: "14px",
     transition: "background 150ms, color 150ms",
     flexShrink: 0,
-  },
-  diffStats: {
-    fontSize: 12,
-    fontWeight: 600,
-    fontFamily: "'SF Mono', 'Menlo', monospace",
-    padding: "0 8px",
-    flexShrink: 0,
-  },
-  headerCommitBtn: {
-    padding: "5px 16px",
-    borderRadius: 8,
-    border: "none",
-    background: "#e6edf3",
-    color: "#1a1a1a",
-    fontSize: 12,
-    fontWeight: 600,
-    cursor: "pointer",
-    flexShrink: 0,
-    letterSpacing: "-0.01em",
-    transition: "opacity 150ms",
-    lineHeight: "16px",
-  },
-  createPrBtn: {
-    padding: "5px 14px",
-    borderRadius: 8,
-    border: "1px solid #444",
-    background: "transparent",
-    color: "#e0e0e0",
-    fontSize: 12,
-    fontWeight: 600,
-    cursor: "pointer",
-    flexShrink: 0,
-    letterSpacing: "-0.01em",
-    transition: "opacity 150ms",
-    lineHeight: "16px",
-  },
-  shipBtn: {
-    display: "inline-flex",
-    alignItems: "center",
-    padding: "5px 14px",
-    borderRadius: 8,
-    border: "none",
-    background: "#2d6a4f",
-    color: "#e0e0e0",
-    fontSize: 12,
-    fontWeight: 600,
-    cursor: "pointer",
-    flexShrink: 0,
-    letterSpacing: "-0.01em",
-    transition: "background 150ms",
-    lineHeight: "16px",
   },
   shipPopover: {
     position: "absolute" as const,

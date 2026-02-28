@@ -21,6 +21,7 @@ import type {
   ShipSignal,
   ShipDetailPhase,
   EditorViewMode,
+  RallyConfig,
 } from "../lib/types";
 import {
   createDefaultLayout,
@@ -90,6 +91,8 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object";
 }
 
+type WorkspaceMode = "product" | "dev";
+
 type PersistedWorkspaceState = {
   activeWorkspaceId: string | null;
   activePathIndex: Record<string, number>;
@@ -101,6 +104,7 @@ type PersistedWorkspaceState = {
   unifiedGitPanelOpen: boolean;
   unifiedGitPanelPath: string | null;
   unifiedGitPanelTab: "changes" | "pr";
+  workspaceModes: Record<string, WorkspaceMode>;
 };
 
 const workspacePersistStorage = (() => {
@@ -115,6 +119,7 @@ const workspacePersistStorage = (() => {
     unifiedGitPanelOpen: boolean;
     unifiedGitPanelPath: string | null;
     unifiedGitPanelTab: string;
+    workspaceModes: PersistedWorkspaceState["workspaceModes"];
     version: number;
   } | null = null;
 
@@ -148,7 +153,8 @@ const workspacePersistStorage = (() => {
         lastRefs.gitDiffActiveTab === state.gitDiffActiveTab &&
         lastRefs.unifiedGitPanelOpen === state.unifiedGitPanelOpen &&
         lastRefs.unifiedGitPanelPath === state.unifiedGitPanelPath &&
-        lastRefs.unifiedGitPanelTab === state.unifiedGitPanelTab
+        lastRefs.unifiedGitPanelTab === state.unifiedGitPanelTab &&
+        lastRefs.workspaceModes === state.workspaceModes
       ) {
         return;
       }
@@ -165,6 +171,7 @@ const workspacePersistStorage = (() => {
         unifiedGitPanelOpen: state.unifiedGitPanelOpen,
         unifiedGitPanelPath: state.unifiedGitPanelPath,
         unifiedGitPanelTab: state.unifiedGitPanelTab,
+        workspaceModes: state.workspaceModes,
         version: resolvedVersion,
       };
     },
@@ -209,16 +216,25 @@ interface WorkspaceState {
   unifiedGitPanelOpen: boolean;
   unifiedGitPanelPath: string | null;
   unifiedGitPanelTab: "changes" | "pr";
+  unifiedGitPanelSplit: boolean;
   openUnifiedGitPanel: (rootPath: string, tab?: "changes" | "pr") => void;
   closeUnifiedGitPanel: () => void;
   setUnifiedGitPanelTab: (tab: "changes" | "pr") => void;
   loading: boolean;
   /** Set of pane IDs with unsaved editor changes */
   dirtyPanes: Set<string>;
+  /** Workspace mode per workspace ID (product or dev) */
+  workspaceModes: Record<string, WorkspaceMode>;
+  /** Cached RALLY.json configs per repo path (not persisted) */
+  rallyConfigs: Record<string, RallyConfig>;
 
   // Dirty pane tracking
   markPaneDirty: (paneId: string) => void;
   markPaneClean: (paneId: string) => void;
+
+  // Mode actions
+  setWorkspaceMode: (workspaceId: string, mode: WorkspaceMode) => void;
+  loadRallyConfig: (rootPath: string) => Promise<void>;
 
   // Workspace actions
   loadWorkspaces: (options?: { keepNullActive?: boolean }) => Promise<void>;
@@ -595,8 +611,11 @@ export const useWorkspaceStore = create<WorkspaceState>()(
   unifiedGitPanelOpen: false,
   unifiedGitPanelPath: null,
   unifiedGitPanelTab: "changes" as const,
+  unifiedGitPanelSplit: false,
   loading: false,
   dirtyPanes: new Set(),
+  workspaceModes: {},
+  rallyConfigs: {},
 
   markPaneDirty: (paneId) => {
     const s = get();
@@ -612,6 +631,21 @@ export const useWorkspaceStore = create<WorkspaceState>()(
     const next = new Set(s.dirtyPanes);
     next.delete(paneId);
     set({ dirtyPanes: next });
+  },
+
+  // --- Mode actions ---
+
+  setWorkspaceMode: (workspaceId, mode) => {
+    set((s) => ({ workspaceModes: { ...s.workspaceModes, [workspaceId]: mode } }));
+  },
+
+  loadRallyConfig: async (rootPath) => {
+    try {
+      const config = await api.readRallyConfig(rootPath);
+      set((s) => ({ rallyConfigs: { ...s.rallyConfigs, [rootPath]: config } }));
+    } catch (e) {
+      console.error(`Failed to load RALLY.json for ${rootPath}:`, e);
+    }
   },
 
   // --- Workspace actions ---
@@ -2494,6 +2528,7 @@ export const useWorkspaceStore = create<WorkspaceState>()(
         unifiedGitPanelOpen: state.unifiedGitPanelOpen,
         unifiedGitPanelPath: state.unifiedGitPanelPath,
         unifiedGitPanelTab: state.unifiedGitPanelTab,
+        workspaceModes: state.workspaceModes,
       }),
       merge: (persisted, current) => {
         const p = persisted as Partial<WorkspaceState> | undefined;
@@ -2509,6 +2544,7 @@ export const useWorkspaceStore = create<WorkspaceState>()(
           unifiedGitPanelOpen: p?.unifiedGitPanelOpen ?? false,
           unifiedGitPanelPath: p?.unifiedGitPanelPath ?? null,
           unifiedGitPanelTab: (p?.unifiedGitPanelTab === "pr" ? "pr" : "changes") as "changes" | "pr",
+          workspaceModes: (p?.workspaceModes && typeof p.workspaceModes === "object") ? p.workspaceModes as Record<string, WorkspaceMode> : {},
         };
       },
     }

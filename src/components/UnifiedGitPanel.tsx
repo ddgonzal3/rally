@@ -4,6 +4,10 @@ import { api, openUrl } from "../lib/tauri";
 import { addToast } from "./ToastContainer";
 import { GitDiffContent } from "./GitDiffOverlay";
 import { PrReviewContent } from "./PrReviewOverlay";
+
+const SPLIT_BREAKPOINT = 900; // px — below this, panel overlays full area
+const SPLIT_WIDTH = 480; // px — width of the side panel in split mode
+
 export function UnifiedGitPanel() {
   const open = useWorkspaceStore((s) => s.unifiedGitPanelOpen);
   const rootPath = useWorkspaceStore((s) => s.unifiedGitPanelPath);
@@ -27,8 +31,10 @@ export function UnifiedGitPanel() {
   const [exiting, setExiting] = useState(false);
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [loading, setLoading] = useState<Record<string, boolean>>({});
+  const [isSplit, setIsSplit] = useState(false);
   const loadingRef = useRef<Record<string, boolean>>({});
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
 
   // Mount/unmount with CSS animation (no rAF delay)
   useEffect(() => {
@@ -44,6 +50,27 @@ export function UnifiedGitPanel() {
       return () => clearTimeout(timer);
     }
   }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Measure parent to decide split vs replace
+  useEffect(() => {
+    if (!mounted) return;
+    const el = containerRef.current?.parentElement;
+    if (!el) return;
+    const update = (w: number) => {
+      const split = w >= SPLIT_BREAKPOINT;
+      setIsSplit(split);
+      useWorkspaceStore.setState({ unifiedGitPanelSplit: split });
+    };
+    const ro = new ResizeObserver((entries) => {
+      update(entries[0]?.contentRect.width ?? 0);
+    });
+    update(el.clientWidth);
+    ro.observe(el);
+    return () => {
+      ro.disconnect();
+      useWorkspaceStore.setState({ unifiedGitPanelSplit: false });
+    };
+  }, [mounted]);
 
   // Escape key to close
   useEffect(() => {
@@ -149,20 +176,44 @@ export function UnifiedGitPanel() {
     }
   }, [hasPr, activeTab, setActiveTab]);
 
+  const branchName = gitStatus?.branch ?? "";
+
   if (!mounted) return null;
+
+  // Split: fixed width, sits alongside content. Replace: takes full width, content hidden.
+  const panelStyle: React.CSSProperties = isSplit
+    ? {
+        width: SPLIT_WIDTH,
+        flexShrink: 0,
+        background: "#1a1a1a",
+        display: "flex",
+        flexDirection: "column",
+        borderRight: "1px solid #2a2a2a",
+      }
+    : {
+        flex: 1,
+        minWidth: 0,
+        background: "#1a1a1a",
+        display: "flex",
+        flexDirection: "column",
+      };
 
   return (
     <div
+      ref={containerRef}
       className="git-diff-overlay"
       style={{
-        ...s.backdrop,
+        ...panelStyle,
         animation: exiting ? "panel-exit 100ms ease forwards" : "panel-enter 100ms ease forwards",
       }}
     >
       {/* Header */}
       <div style={s.header}>
+        <span style={s.repoName}>{folderName}</span>
+
         {hasPr ? (
           <>
+            <div style={{ width: 1, height: 14, background: "#333", margin: "0 4px" }} />
             <button
               onClick={() => setActiveTab("changes")}
               style={effectiveTab === "changes" ? s.tabActive : s.tab}
@@ -180,7 +231,18 @@ export function UnifiedGitPanel() {
         ) : null}
 
         <div style={{ flex: 1, minWidth: 0 }} />
-        <span style={s.repoName}>{folderName}</span>
+
+        {branchName && (
+          <span style={s.branchPill}>
+            <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="#e6edf3" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+              <circle cx="5" cy="4" r="1.5" />
+              <circle cx="5" cy="12" r="1.5" />
+              <circle cx="12" cy="8" r="1.5" />
+              <path d="M5 5.5v5M12 6.5c0-2-1.5-2.5-3.5-2.5" />
+            </svg>
+            {branchName}
+          </span>
+        )}
       </div>
 
       {/* Tab content */}
@@ -335,29 +397,16 @@ const s: Record<string, React.CSSProperties> = {
     textOverflow: "ellipsis",
     minWidth: 0,
   },
-  menuBtn: {
-    background: "none",
-    border: "none",
-    color: "#999",
-    cursor: "pointer",
-    padding: "2px 4px",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    borderRadius: 4,
-    transition: "color 150ms",
-  },
   branchPill: {
     display: "inline-flex",
     alignItems: "center",
     gap: 5,
-    fontSize: 11,
-    color: "#ddd",
-    fontFamily: "'SF Mono', 'Menlo', monospace",
+    fontSize: 13,
+    color: "#e6edf3",
     fontWeight: 600,
     background: "none",
     padding: 0,
-    lineHeight: "14px",
+    lineHeight: "16px",
     minWidth: 0,
     overflow: "hidden",
     whiteSpace: "nowrap",

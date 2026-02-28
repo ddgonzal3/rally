@@ -152,6 +152,26 @@ export interface ShipStatus {
   pr_number?: number;
 }
 
+// --- Rally Config Types ---
+
+export interface SetupConfig {
+  check?: string;
+  run?: string;
+}
+
+export interface RallyConfig {
+  excludeBuiltins: string[];
+  excludeScripts: string[];
+  favorites: string[];
+  mode: string | null;
+  setup?: SetupConfig;
+}
+
+export interface WorkspaceReadiness {
+  ready: boolean;
+  issues: string[];
+}
+
 // --- Rally Script Editor Types ---
 
 export interface RallyScriptInfo {
@@ -421,6 +441,23 @@ export function findNeighborGroup(
 }
 
 // --- Default Layout Factory ---
+
+export function createProductLayout(): WorkspaceLayout {
+  const claudePane: Pane = {
+    id: crypto.randomUUID(),
+    type: "claude-launcher",
+    title: "Claude Code",
+  };
+  const g1: PaneGroup = {
+    id: crypto.randomUUID(),
+    panes: [claudePane],
+    activePaneId: claudePane.id,
+  };
+  return {
+    root: { type: "group", groupId: g1.id },
+    groups: { [g1.id]: g1 },
+  };
+}
 
 export function createDefaultLayout(): WorkspaceLayout {
   const claudePane: Pane = {

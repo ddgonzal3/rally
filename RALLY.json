@@ -1,0 +1,11 @@
+{
+  "mode": "dev",
+  "favorites": [
+    "CLAUDE.md",
+    "src/components/",
+    "src/stores/",
+    "src/lib/",
+    "src-tauri/src/",
+    "scripts/"
+  ]
+}

@@ -18,7 +18,8 @@
         "fullscreen": false,
         "decorations": true,
         "titleBarStyle": "Overlay",
-        "hiddenTitle": true
+        "hiddenTitle": true,
+        "acceptFirstMouse": true
       }
     ],
     "withGlobalTauri": true,

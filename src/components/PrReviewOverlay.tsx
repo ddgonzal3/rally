@@ -479,9 +479,15 @@ export function PrReviewContent({
       <div ref={fileListRef} style={st.content}>
         {error ? (
           <div style={st.empty}>
-            <span style={{ color: "#f85149" }}>Failed to load PR</span>
-            <br />
-            <span style={{ fontSize: 12, color: "#888", marginTop: 8, display: "block" }}>{error}</span>
+            {error.includes("no pull requests found") ? (
+              <span style={{ fontSize: 13, color: "#888" }}>No open PR for this branch</span>
+            ) : (
+              <>
+                <span style={{ color: "#f85149" }}>Failed to load PR</span>
+                <br />
+                <span style={{ fontSize: 12, color: "#888", marginTop: 8, display: "block" }}>{error}</span>
+              </>
+            )}
           </div>
         ) : activeTab === "conversation" ? (
           <ConversationTab

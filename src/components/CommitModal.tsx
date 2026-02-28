@@ -18,6 +18,7 @@ interface CommitModalProps {
   onShip: () => void;
   anchorRef?: React.RefObject<HTMLButtonElement | null>;
   hasPr?: boolean;
+  productMode?: boolean;
 }
 
 export function CommitModal({
@@ -33,6 +34,7 @@ export function CommitModal({
   onShip,
   anchorRef,
   hasPr,
+  productMode,
 }: CommitModalProps) {
   const [commitMsg, setCommitMsg] = useState("");
   const [nextStep, setNextStep] = useState<NextStep>("commit");
@@ -166,8 +168,8 @@ export function CommitModal({
       ),
       label: "Commit and push",
     },
-    // Only show "Create PR" option when no PR exists yet
-    ...(!hasPr ? [{
+    // Only show "Create PR" option when no PR exists yet and not in product mode
+    ...(!productMode && !hasPr ? [{
       value: "commit-pr" as NextStep,
       icon: (
         <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
@@ -176,8 +178,9 @@ export function CommitModal({
       ),
       label: "Commit and create PR",
     }] : []),
-    {
-      value: "commit-ship",
+    // Hide Ship in product mode
+    ...(!productMode ? [{
+      value: "commit-ship" as NextStep,
       icon: (
         <svg width="18" height="18" viewBox="0 0 16 16" fill="none">
           <path d="M8 2l2 4h4l-3 3 1 4-4-2-4 2 1-4-3-3h4z" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round"/>
@@ -185,7 +188,7 @@ export function CommitModal({
       ),
       label: "Commit and Ship",
       sub: "push, PR, review & merge",
-    },
+    }] : []),
   ];
 
   return (
