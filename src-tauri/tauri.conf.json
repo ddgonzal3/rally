@@ -40,11 +40,9 @@
     "macOS": {
       "minimumSystemVersion": "10.15"
     },
-    "resources": [
-      "../sidecar/claude-sidecar.mjs",
-      "../sidecar/package.json",
-      "../sidecar/node_modules/**"
-    ]
+    "resources": {
+      "../sidecar": "sidecar"
+    }
   },
   "plugins": {
     "shell": {
