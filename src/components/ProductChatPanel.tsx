@@ -53,8 +53,14 @@ export function ProductChatPanel({ rootPath, workspaceId }: ProductChatPanelProp
   const repoName = rootPath.split("/").pop() || "Claude Code";
 
   const SHELL_DEFAULT = 33;
-  const SHELL_MAX = 50;
-  const [shellHeight, setShellHeight] = useState(SHELL_DEFAULT); // percentage
+  const SHELL_MAX = 50; // percentage of container height
+  const [shellHeight, setShellHeight] = useState(SHELL_DEFAULT);
+  const resizeCleanupRef = useRef<(() => void) | null>(null);
+
+  // Clean up resize listeners on unmount
+  useEffect(() => {
+    return () => resizeCleanupRef.current?.();
+  }, []);
 
   const handleShellResize = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
@@ -69,12 +75,15 @@ export function ProductChatPanel({ rootPath, workspaceId }: ProductChatPanelProp
       const newHeight = startHeight + (dy / containerHeight) * 100;
       setShellHeight(Math.min(SHELL_MAX, Math.max(15, newHeight)));
     };
-    const onUp = () => {
+    const cleanup = () => {
       document.removeEventListener("mousemove", onMove);
-      document.removeEventListener("mouseup", onUp);
+      document.removeEventListener("mouseup", cleanup);
+      resizeCleanupRef.current = null;
     };
+    resizeCleanupRef.current?.();
     document.addEventListener("mousemove", onMove);
-    document.addEventListener("mouseup", onUp);
+    document.addEventListener("mouseup", cleanup);
+    resizeCleanupRef.current = cleanup;
   }, [shellHeight]);
 
   // Check workspace readiness on mount
@@ -365,7 +374,7 @@ export function ProductChatPanel({ rootPath, workspaceId }: ProductChatPanelProp
         <ClaudeTerminalWrapper
           key={ptyId ?? "fresh"}
           cwd={rootPath}
-          command={ptyId ? undefined : `claude --dangerously-skip-permissions "${prompt.replace(/"/g, '\\"')}"`}
+          command={ptyId ? undefined : `claude --dangerously-skip-permissions '${prompt.replace(/'/g, "'\\''")}'`}
           ptyId={ptyId}
           onPtySpawned={handlePtySpawned}
           onFileOpen={handleFileOpen}

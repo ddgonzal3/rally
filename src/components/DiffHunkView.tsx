@@ -90,13 +90,11 @@ function computeHunkOldEnd(hunk: DiffHunk): number {
 interface DiffFileViewProps {
   hunks: DiffHunk[];
   filePath: string;
-  tab: "unstaged" | "staged" | "pr";
 }
 
 export function DiffFileView({
   hunks,
   filePath,
-  tab,
 }: DiffFileViewProps) {
   const lang = useMemo(() => getLangForPath(filePath), [filePath]);
   const segments = useMemo(() => buildSegments(hunks), [hunks]);

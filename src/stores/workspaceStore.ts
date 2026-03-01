@@ -22,6 +22,9 @@ import type {
   ShipDetailPhase,
   EditorViewMode,
   RallyConfig,
+  WorkspaceMode,
+  ProductSession,
+  ShellPanel,
 } from "../lib/types";
 import {
   createDefaultLayout,
@@ -90,19 +93,6 @@ const VALID_PANE_TYPES = new Set([
 function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object";
 }
-
-type WorkspaceMode = "product" | "dev";
-
-type ProductSession = {
-  state: "idle" | "active";
-  ptyId: string | undefined;
-  prompt: string;
-};
-
-type ShellPanel = {
-  ptyId: string;
-  visible: boolean;
-};
 
 type PersistedWorkspaceState = {
   activeWorkspaceId: string | null;
@@ -848,13 +838,22 @@ export const useWorkspaceStore = create<WorkspaceState>()(
   removeWorkspace: async (id) => {
     await api.removeWorkspace(id);
     const remaining = get().workspaces.filter((w) => w.id !== id);
-    const { layouts, ...rest } = get();
+    const { layouts, workspaceModes, productSessions, shellPanels, ...rest } = get();
     const newLayouts = { ...layouts };
     delete newLayouts[id];
+    const newModes = { ...workspaceModes };
+    delete newModes[id];
+    const newSessions = { ...productSessions };
+    delete newSessions[id];
+    const newShells = { ...shellPanels };
+    delete newShells[id];
     set({
       ...rest,
       workspaces: remaining,
       layouts: newLayouts,
+      workspaceModes: newModes,
+      productSessions: newSessions,
+      shellPanels: newShells,
       activeWorkspaceId:
         get().activeWorkspaceId === id
           ? remaining[0]?.id ?? null

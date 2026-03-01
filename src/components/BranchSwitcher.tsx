@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useRef, useEffect } from "react";
+import React, { useState, useCallback, useRef, useEffect, useMemo } from "react";
 import { api } from "../lib/tauri";
 import { addToast } from "./ToastContainer";
 import type { BranchInfo } from "../lib/types";
@@ -26,6 +26,7 @@ export function BranchSwitcher({
   const [newBranchName, setNewBranchName] = useState("");
   const [switching, setSwitching] = useState(false);
   const [confirmingDelete, setConfirmingDelete] = useState<string | null>(null);
+  const [forceDeleteMode, setForceDeleteMode] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
 
@@ -35,6 +36,7 @@ export function BranchSwitcher({
     setCreatingBranch(false);
     setNewBranchName("");
     setConfirmingDelete(null);
+    setForceDeleteMode(false);
     try {
       const list = await api.gitListBranches(rootPath);
       setBranches(list);
@@ -78,33 +80,26 @@ export function BranchSwitcher({
   }, [rootPath, newBranchName, switching, onBranchChanged]);
 
   const handleDelete = useCallback(
-    async (branch: string) => {
+    async (branch: string, force = false) => {
       if (switching) return;
       setSwitching(true);
       try {
-        await api.gitDeleteBranch(rootPath, branch, false);
-        addToast({ type: "success", title: "Branch deleted", message: branch });
+        await api.gitDeleteBranch(rootPath, branch, force);
+        addToast({ type: "success", title: force ? "Branch force deleted" : "Branch deleted", message: branch });
         setConfirmingDelete(null);
-        // Refresh list
+        setForceDeleteMode(false);
         const list = await api.gitListBranches(rootPath);
         setBranches(list);
       } catch (e) {
         const msg = String(e);
-        // If not fully merged, offer force delete
-        if (msg.includes("not fully merged")) {
-          try {
-            await api.gitDeleteBranch(rootPath, branch, true);
-            addToast({ type: "success", title: "Branch deleted (force)", message: branch });
-            setConfirmingDelete(null);
-            const list = await api.gitListBranches(rootPath);
-            setBranches(list);
-          } catch (e2) {
-            addToast({ type: "warning", title: "Delete failed", message: String(e2) });
-          }
+        if (!force && msg.includes("not fully merged")) {
+          // Show force-delete confirmation instead of auto-escalating
+          setForceDeleteMode(true);
         } else {
           addToast({ type: "warning", title: "Delete failed", message: msg });
+          setConfirmingDelete(null);
+          setForceDeleteMode(false);
         }
-        setConfirmingDelete(null);
       } finally {
         setSwitching(false);
       }
@@ -133,6 +128,7 @@ export function BranchSwitcher({
         e.preventDefault();
         if (confirmingDelete) {
           setConfirmingDelete(null);
+          setForceDeleteMode(false);
         } else if (creatingBranch) {
           setCreatingBranch(false);
         } else {
@@ -144,8 +140,9 @@ export function BranchSwitcher({
     return () => document.removeEventListener("keydown", handler, true);
   }, [open, creatingBranch, confirmingDelete]);
 
-  const filtered = branches.filter((b) =>
-    b.name.toLowerCase().includes(filter.toLowerCase()),
+  const filtered = useMemo(
+    () => branches.filter((b) => b.name.toLowerCase().includes(filter.toLowerCase())),
+    [branches, filter],
   );
 
   const isPill = variant === "pill";
@@ -328,11 +325,13 @@ export function BranchSwitcher({
                       fontSize: 12,
                     }}
                   >
-                    <span style={{ color: "#e0e0e0", flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                      Delete <strong>{b.name}</strong>?
+                    <span style={{ color: forceDeleteMode ? "#e8a838" : "#e0e0e0", flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                      {forceDeleteMode
+                        ? <>Unmerged commits will be lost!</>
+                        : <>Delete <strong>{b.name}</strong>?</>}
                     </span>
                     <button
-                      onClick={() => handleDelete(b.name)}
+                      onClick={() => handleDelete(b.name, forceDeleteMode)}
                       disabled={switching}
                       style={{
                         padding: "2px 8px",
@@ -345,10 +344,10 @@ export function BranchSwitcher({
                         flexShrink: 0,
                       }}
                     >
-                      Delete
+                      {forceDeleteMode ? "Force Delete" : "Delete"}
                     </button>
                     <button
-                      onClick={() => setConfirmingDelete(null)}
+                      onClick={() => { setConfirmingDelete(null); setForceDeleteMode(false); }}
                       style={{
                         padding: "2px 8px",
                         fontSize: 11,

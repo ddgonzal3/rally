@@ -25,3 +25,6 @@ docs/plans/
 
 # Test screenshots (captured during test runs)
 tests/screenshots/captures/
+
+# Per-project Rally config (user-specific)
+RALLY.json

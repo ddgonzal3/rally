@@ -182,6 +182,21 @@ export interface WorkspaceReadiness {
   issues: string[];
 }
 
+// --- Workspace Mode Types ---
+
+export type WorkspaceMode = "product" | "dev";
+
+export interface ProductSession {
+  state: "idle" | "active";
+  ptyId: string | undefined;
+  prompt: string;
+}
+
+export interface ShellPanel {
+  ptyId: string;
+  visible: boolean;
+}
+
 // --- Rally Script Editor Types ---
 
 export interface RallyScriptInfo {

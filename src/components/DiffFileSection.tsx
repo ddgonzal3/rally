@@ -118,7 +118,6 @@ export function DiffFileSection({
             <DiffFileView
               hunks={file.hunks}
               filePath={filePath}
-              tab={tab}
             />
           )}
         </div>
