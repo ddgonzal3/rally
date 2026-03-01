@@ -33,15 +33,19 @@ impl ChatManager {
     }
 
     /// Resolve the path to the sidecar script.
-    /// Production: `../Resources/sidecar/claude-sidecar.mjs` relative to the executable.
-    /// Dev fallback: `sidecar/claude-sidecar.mjs` relative to cwd.
+    /// Checks (in order):
+    /// 1. Production bundle: `../Resources/sidecar/claude-sidecar.mjs` relative to exe
+    /// 2. Dev (cwd): `sidecar/claude-sidecar.mjs`
+    /// 3. Dev (project root): `../sidecar/claude-sidecar.mjs` relative to CARGO_MANIFEST_DIR
     fn sidecar_path() -> Result<String, String> {
-        // Try production path first
+        let script = "claude-sidecar.mjs";
+
+        // 1. Production: exe/../Resources/sidecar/
         if let Ok(exe) = std::env::current_exe() {
             let prod_path = exe
                 .parent()
                 .unwrap_or(std::path::Path::new("."))
-                .join("../Resources/sidecar/claude-sidecar.mjs");
+                .join(format!("../Resources/sidecar/{}", script));
             if prod_path.exists() {
                 return prod_path
                     .to_str()
@@ -50,10 +54,10 @@ impl ChatManager {
             }
         }
 
-        // Dev fallback
-        let dev_path = std::path::Path::new("sidecar/claude-sidecar.mjs");
-        if dev_path.exists() {
-            return dev_path
+        // 2. Dev: relative to cwd (works when launched from project root)
+        let dev_cwd = std::path::Path::new("sidecar").join(script);
+        if dev_cwd.exists() {
+            return dev_cwd
                 .canonicalize()
                 .map_err(|e| format!("Failed to canonicalize dev sidecar path: {}", e))?
                 .to_str()
@@ -61,7 +65,19 @@ impl ChatManager {
                 .ok_or_else(|| "Invalid dev sidecar path encoding".to_string());
         }
 
-        Err("Sidecar script not found. Looked in production (../Resources/sidecar/) and dev (sidecar/) locations.".to_string())
+        // 3. Dev: relative to Cargo manifest dir (works with cargo tauri dev)
+        let manifest_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+        let dev_manifest = manifest_dir.join(format!("../sidecar/{}", script));
+        if dev_manifest.exists() {
+            return dev_manifest
+                .canonicalize()
+                .map_err(|e| format!("Failed to canonicalize dev sidecar path: {}", e))?
+                .to_str()
+                .map(|s| s.to_string())
+                .ok_or_else(|| "Invalid dev sidecar path encoding".to_string());
+        }
+
+        Err("Sidecar script not found. Looked in production (../Resources/sidecar/), dev cwd (sidecar/), and dev manifest (../sidecar/) locations.".to_string())
     }
 
     /// Resolve the path to the `node` binary, using the same login-shell PATH
@@ -96,6 +112,7 @@ impl ChatManager {
             .stdout(Stdio::piped())
             .stderr(Stdio::inherit())
             .current_dir(&cwd)
+            .env_remove("CLAUDECODE")
             .spawn()
             .map_err(|e| format!("Failed to spawn sidecar (node={}): {}", node, e))?;
 

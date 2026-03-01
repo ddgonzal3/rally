@@ -84,11 +84,11 @@ function safeFit(term: XTerminal, fitAddon: FitAddon): boolean {
   if (cols < MIN_COLS || rows < MIN_ROWS) return false;
   if (cols === term.cols && rows === term.rows) return false;
 
-  // Access xterm internals to clear renderer before resize (same as FitAddon.fit)
-  const core = (term as any)._core;
-  if (core?._renderService) {
-    core._renderService.clear();
-  }
+  // Resize in-place without clearing the renderer first.
+  // FitAddon.fit() calls _renderService.clear() before resize, but that
+  // blanks the canvas for one frame — visible as flicker when sibling
+  // panes are removed and the ResizeObserver fires transiently.
+  // xterm's resize() reflows content correctly without a prior clear.
   term.resize(cols, rows);
   return true;
 }
@@ -613,7 +613,7 @@ export function Terminal({ cwd, command, initialInput, ptyId: existingPtyId, loc
             if (ptyIdRef.current) {
               api.writePty(
                 ptyIdRef.current,
-                Array.from(encoder.encode(initialInput + "\n"))
+                Array.from(encoder.encode(initialInput + "\r"))
               );
             }
           }, 1500);

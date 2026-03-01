@@ -1,5 +1,4 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
-import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { useWorkspaceStore } from "../stores/workspaceStore";
 import { api } from "../lib/tauri";
 import { marked } from "marked";
@@ -274,7 +273,6 @@ interface ChatViewProps {
 
 export function ChatView({ workspaceId, rootPath }: ChatViewProps) {
   const chatSession = useWorkspaceStore((s) => s.chatSessions[workspaceId]);
-  const handleChatEvent = useWorkspaceStore((s) => s.handleChatEvent);
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -289,30 +287,8 @@ export function ChatView({ workspaceId, rootPath }: ChatViewProps) {
     el.style.height = el.scrollHeight + "px";
   }, []);
 
-  // ---- Event listener for sidecar events ----
-
-  useEffect(() => {
-    if (!chatSession?.sessionId) return;
-    let cancelled = false;
-    let unlisten: UnlistenFn | null = null;
-
-    listen<{ session_id: string; data: any }>(
-      `chat-event-${chatSession.sessionId}`,
-      (event) => {
-        if (!cancelled) {
-          handleChatEvent(workspaceId, event.payload.data);
-        }
-      }
-    ).then((fn) => {
-      if (cancelled) fn();
-      else unlisten = fn;
-    });
-
-    return () => {
-      cancelled = true;
-      unlisten?.();
-    };
-  }, [chatSession?.sessionId, workspaceId, handleChatEvent]);
+  // Event listener is registered in the store's startChatSession()
+  // to avoid race conditions with fast sidecar responses.
 
   // ---- Auto-scroll ----
 

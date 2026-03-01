@@ -840,6 +840,7 @@ function PaneContent({
                 flexDirection: "column",
                 zIndex: isActive ? 1 : 0,
                 visibility: isActive ? "visible" : "hidden",
+                contain: "layout paint",
               }}
             >
               {pane.type === "editor" && pane.filePath ? (

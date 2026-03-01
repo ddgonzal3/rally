@@ -75,6 +75,12 @@ export function clearPtyBuffer(ptyId: string) {
   ptyOutputBuffers.delete(ptyId);
 }
 
+/**
+ * Active chat event listeners keyed by workspaceId.
+ * Registered in startChatSession (before sidecar emits) to avoid race conditions.
+ */
+const chatEventListeners = new Map<string, UnlistenFn>();
+
 const WINDOW_PERSIST_KEY = (() => {
   try {
     return `rally-state:${getCurrentWindow().label}`;
@@ -694,6 +700,19 @@ export const useWorkspaceStore = create<WorkspaceState>()(
   startChatSession: async (workspaceId, rootPath, prompt) => {
     try {
       const sessionId = await api.startChatSession(rootPath, prompt);
+
+      // Register event listener IMMEDIATELY — before React renders ChatView —
+      // so we don't miss fast sidecar responses (race condition).
+      // Clean up any previous listener for this workspace.
+      chatEventListeners.get(workspaceId)?.();
+      const unlisten = await listen<{ session_id: string; data: any }>(
+        `chat-event-${sessionId}`,
+        (event) => {
+          get().handleChatEvent(workspaceId, event.payload.data);
+        },
+      );
+      chatEventListeners.set(workspaceId, unlisten);
+
       set((s) => ({
         chatSessions: {
           ...s.chatSessions,
@@ -830,6 +849,9 @@ export const useWorkspaceStore = create<WorkspaceState>()(
     if (session?.sessionId) {
       try { await api.endChatSession(session.sessionId); } catch {}
     }
+    // Clean up the event listener registered in startChatSession
+    chatEventListeners.get(workspaceId)?.();
+    chatEventListeners.delete(workspaceId);
     set((s) => {
       const { [workspaceId]: _, ...rest } = s.chatSessions;
       return { chatSessions: rest };
@@ -2056,11 +2078,17 @@ export const useWorkspaceStore = create<WorkspaceState>()(
 
     let newActive = group.activePaneId;
     if (group.activePaneId === paneId) {
-      // Focus the tab to the left of the closed one; if none, focus the one to the right
-      const closedIndex = group.panes.findIndex((p) => p.id === paneId);
-      const leftNeighbor = closedIndex > 0 ? group.panes[closedIndex - 1] : null;
-      const rightNeighbor = closedIndex < group.panes.length - 1 ? group.panes[closedIndex + 1] : null;
-      newActive = (leftNeighbor ?? rightNeighbor)?.id ?? newPanes[0]?.id ?? "";
+      // Focus the most recently used tab from history
+      const mruPick = [...newHistory].reverse().find((id) => remainingIds.has(id));
+      if (mruPick) {
+        newActive = mruPick;
+      } else {
+        // Fallback: left neighbor → right neighbor → first remaining
+        const closedIndex = group.panes.findIndex((p) => p.id === paneId);
+        const leftNeighbor = closedIndex > 0 ? group.panes[closedIndex - 1] : null;
+        const rightNeighbor = closedIndex < group.panes.length - 1 ? group.panes[closedIndex + 1] : null;
+        newActive = (leftNeighbor ?? rightNeighbor)?.id ?? newPanes[0]?.id ?? "";
+      }
     }
 
     set((s) => ({

@@ -340,6 +340,10 @@ export function UnifiedGitPanel() {
     if (!expanded) return;
     const handleMouseDown = (e: MouseEvent) => {
       if (drawerRef.current && !drawerRef.current.contains(e.target as Node)) {
+        // Don't close if clicking a repo action button — its own click handler toggles the panel.
+        // mousedown fires before click, so closing here would make the click handler see the
+        // panel as already closed and re-open it (causing a close-then-snap-back).
+        if ((e.target as HTMLElement).closest('.repo-action-btn')) return;
         closePanel();
       }
     };
