@@ -32,7 +32,7 @@ function WorkspacePicker({ onSelect }: { onSelect: (id: string) => void }) {
   const activeWorkspaceId = useWorkspaceStore((s) => s.activeWorkspaceId);
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", height: "100%", background: "#1e1e1e" }}>
+    <div style={{ display: "flex", flexDirection: "column", height: "100%", background: "#161616" }}>
       <div style={{ padding: "8px 12px", fontSize: 11, fontWeight: 700, color: "#e0e0e0", textTransform: "uppercase" as const, letterSpacing: "0.06em" }}>
         Workspaces
       </div>
@@ -153,6 +153,12 @@ export function App() {
   // The user's preferred explorer width (set by drag resize or initial load).
   // When the window is too narrow we shrink below this, and restore when space returns.
   const preferredExplorerWidthRef = useRef(fileExplorerWidth);
+
+  // Hover-to-open for workspaces panel
+  const workspacesHoverRef = useRef(false);
+  const hoverCloseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const preHoverRef = useRef<{ collapsed: boolean; view: typeof explorerView } | null>(null);
+  const [wsHoverAnim, setWsHoverAnim] = useState<"in" | "out" | null>(null);
 
   // Auto-shrink explorer (and collapse sidebar as last resort) to keep main area usable
   const MIN_MAIN_WIDTH = 600;
@@ -307,7 +313,7 @@ export function App() {
     }, 10000);
     const prInterval = setInterval(() => {
       void runPrRefresh();
-    }, 15000);
+    }, 120000);
     const shipInterval = setInterval(() => {
       void runShipPoll();
     }, 5000);
@@ -330,6 +336,16 @@ export function App() {
     runFetchAll,
     forceNoWorkspaceSelection,
   ]);
+
+  // Refresh PR status when switching workspaces so PR badges appear immediately
+  useEffect(() => {
+    if (!activeWorkspaceId) return;
+    const ws = workspaces.find((w) => w.id === activeWorkspaceId);
+    if (!ws) return;
+    for (const path of ws.paths) {
+      refreshPrStatusForPath(path).catch(() => {});
+    }
+  }, [activeWorkspaceId, workspaces, refreshPrStatusForPath]);
 
   // Load RALLY.json config when active workspace changes — sets mode from config
   useEffect(() => {
@@ -373,9 +389,6 @@ export function App() {
           .workspaces.find((w) => w.paths.includes(rootPath));
         if (ws) {
           void refreshGitStatusForPath(rootPath, ws.main_branch);
-          // Also refresh PR status — picks up externally created PRs
-          // (e.g. gh pr create, gpr) without waiting for the 20s poll
-          void refreshPrStatusForPath(rootPath);
         }
       }, delay);
       refreshTimers.set(rootPath, timer);
@@ -394,7 +407,7 @@ export function App() {
       refreshTimers.clear();
       unlisten?.();
     };
-  }, [refreshGitStatusForPath, refreshPrStatusForPath, shouldDeferBackgroundWork]);
+  }, [refreshGitStatusForPath, shouldDeferBackgroundWork]);
 
   // Native File menu actions (always handled here so they work even when
   // sidebar/explorer panels are collapsed).
@@ -1113,6 +1126,52 @@ export function App() {
     [appWindow],
   );
 
+  const clearHoverTimer = useCallback(() => {
+    if (hoverCloseTimerRef.current) {
+      clearTimeout(hoverCloseTimerRef.current);
+      hoverCloseTimerRef.current = null;
+    }
+  }, []);
+
+  const handleWorkspacesHoverEnter = useCallback(() => {
+    clearHoverTimer();
+    setWsHoverAnim((prev) => prev === "out" ? null : prev); // cancel slide-out, snap visible
+    // Already showing workspaces via click (not hover) — don't interfere
+    if (!fileExplorerCollapsed && explorerView === "workspaces" && !workspacesHoverRef.current) {
+      return;
+    }
+    if (!workspacesHoverRef.current) {
+      preHoverRef.current = { collapsed: fileExplorerCollapsed, view: explorerView };
+      workspacesHoverRef.current = true;
+      setWsHoverAnim("in");
+      setExplorerView("workspaces");
+      setFileExplorerCollapsed(false);
+    }
+  }, [fileExplorerCollapsed, explorerView, clearHoverTimer]);
+
+  const handleWorkspacesHoverLeave = useCallback(() => {
+    if (!workspacesHoverRef.current) return;
+    hoverCloseTimerRef.current = setTimeout(() => {
+      if (!workspacesHoverRef.current) return;
+      // Start slide-out animation
+      setWsHoverAnim("out");
+      hoverCloseTimerRef.current = setTimeout(() => {
+        hoverCloseTimerRef.current = null;
+        if (!workspacesHoverRef.current) return;
+        setWsHoverAnim(null);
+        const prev = preHoverRef.current;
+        if (prev) {
+          setFileExplorerCollapsed(prev.collapsed);
+          setExplorerView(prev.view as typeof explorerView);
+        } else {
+          setFileExplorerCollapsed(true);
+        }
+        workspacesHoverRef.current = false;
+        preHoverRef.current = null;
+      }, 90);
+    }, 100);
+  }, []);
+
   return (
     <div style={styles.app}>
       <div
@@ -1214,6 +1273,7 @@ export function App() {
                 className={`activity-btn${isActive ? " activity-btn-active" : ""}`}
                 style={styles.activityBtn}
                 onClick={() => {
+                  if (view === "workspaces") return;
                   if (isActive) {
                     setFileExplorerCollapsed(true);
                   } else {
@@ -1223,6 +1283,8 @@ export function App() {
                     }
                   }
                 }}
+                onMouseEnter={view === "workspaces" ? handleWorkspacesHoverEnter : undefined}
+                onMouseLeave={view === "workspaces" ? handleWorkspacesHoverLeave : undefined}
                 title={
                   isActive
                     ? `Hide ${title.toLowerCase()}`
@@ -1236,7 +1298,16 @@ export function App() {
           <div style={{ flex: 1 }} />
         </div>
         {!fileExplorerCollapsed && (
-          <>
+          <div
+            style={{
+              display: "flex",
+              flexShrink: 0,
+              ...(wsHoverAnim === "in" ? { animation: "wsHoverSlideIn 160ms ease-out" } : {}),
+              ...(wsHoverAnim === "out" ? { animation: "wsHoverSlideOut 90ms ease-in forwards" } : {}),
+            }}
+            onMouseEnter={explorerView === "workspaces" ? handleWorkspacesHoverEnter : undefined}
+            onMouseLeave={explorerView === "workspaces" ? handleWorkspacesHoverLeave : undefined}
+          >
             <div
               ref={explorerRef}
               style={{
@@ -1245,28 +1316,32 @@ export function App() {
                 flexShrink: 0,
               }}
             >
-              {explorerView === "workspaces" ? (
+              {explorerView === "workspaces" && (
                 <WorkspacePicker
                   onSelect={(id) => {
                     setActiveWorkspace(id);
                     setExplorerView("files");
+                    clearHoverTimer();
+                    workspacesHoverRef.current = false;
+                    preHoverRef.current = null;
+                    setWsHoverAnim(null);
                   }}
                 />
-              ) : explorerView === "search" ? (
+              )}
+              {explorerView === "search" && (
                 <SearchPanel
                   onCollapse={() => setFileExplorerCollapsed(true)}
                   flushLeft
                 />
-              ) : explorerView === "claude" ? (
-                <GlobalConfigExplorer />
-              ) : explorerView === "scripts" ? (
-                <ScriptEditor />
-              ) : (
+              )}
+              {explorerView === "claude" && <GlobalConfigExplorer />}
+              {explorerView === "scripts" && <ScriptEditor />}
+              <div style={{ display: explorerView === "files" ? undefined : "none", height: "100%" }}>
                 <FileExplorer
                   onCollapse={() => setFileExplorerCollapsed(true)}
                   flushLeft
                 />
-              )}
+              </div>
             </div>
             <div
               onMouseDown={handleExplorerResize}
@@ -1274,7 +1349,7 @@ export function App() {
             >
               <div style={styles.resizeLine} />
             </div>
-          </>
+          </div>
         )}
         <div style={styles.main}>
           <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", position: "relative" }}>
@@ -1291,6 +1366,14 @@ export function App() {
         <UnifiedGitPanel />
       </div>
       <style>{`
+        @keyframes wsHoverSlideIn {
+          from { transform: translateX(-14px); opacity: 0; }
+          to { transform: translateX(0); opacity: 1; }
+        }
+        @keyframes wsHoverSlideOut {
+          from { transform: translateX(0); opacity: 1; }
+          to { transform: translateX(-14px); opacity: 0; }
+        }
         .syn-comment { color: #8b949e; font-style: italic; }
         .syn-string { color: #a5d6ff; }
         .syn-keyword { color: #ff7b72; }
@@ -1298,6 +1381,7 @@ export function App() {
         .syn-number { color: #d2a8ff; }
         .hunk-action-btn:hover { background: rgba(255,255,255,0.1) !important; color: #eee !important; }
         .file-list-item:hover { background: rgba(255,255,255,0.05) !important; }
+        .file-list-item-selected { background: rgba(255,255,255,0.08) !important; }
         .git-diff-overlay { scrollbar-gutter: stable; }
         .git-diff-overlay ::-webkit-scrollbar { width: 6px; height: 0; }
         .git-diff-overlay ::-webkit-scrollbar-track { background: transparent; }

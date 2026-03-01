@@ -190,6 +190,8 @@ interface WorkspaceState {
   gitStatuses: Record<string, GitStatus>;
   /** PR status keyed by repo path */
   prStatuses: Record<string, PrStatus | null>;
+  /** Timestamp of last successful PR fetch per repo path */
+  prStatusFetchedAt: Record<string, number>;
   /** Which repo path is active per workspace (index into ws.paths) */
   activePathIndex: Record<string, number>;
   layouts: Record<string, WorkspaceLayout>;
@@ -595,6 +597,7 @@ export const useWorkspaceStore = create<WorkspaceState>()(
   activeWorkspaceId: null,
   gitStatuses: {},
   prStatuses: {},
+  prStatusFetchedAt: {},
   activePathIndex: {},
   layouts: {},
   activeGroupIds: {},
@@ -877,11 +880,19 @@ export const useWorkspaceStore = create<WorkspaceState>()(
       const prStatus = await api.gitPrStatus(path);
       // Skip update if nothing changed — prevents unnecessary re-renders
       const prev = get().prStatuses[path];
-      if (prStatusEqual(prev ?? null, prStatus)) return;
-      set((s) => ({ prStatuses: { ...s.prStatuses, [path]: prStatus } }));
+      if (prStatusEqual(prev ?? null, prStatus)) {
+        set((s) => ({ prStatusFetchedAt: { ...s.prStatusFetchedAt, [path]: Date.now() } }));
+        return;
+      }
+      set((s) => ({
+        prStatuses: { ...s.prStatuses, [path]: prStatus },
+        prStatusFetchedAt: { ...s.prStatusFetchedAt, [path]: Date.now() },
+      }));
     } catch {
+      // Keep existing PR status on error (e.g. rate limit, network blip).
+      // Only clear if there was no previous status at all.
       const prev = get().prStatuses[path];
-      if (prev === null) return;
+      if (prev !== undefined) return;
       set((s) => ({ prStatuses: { ...s.prStatuses, [path]: null } }));
     }
   },
@@ -910,19 +921,25 @@ export const useWorkspaceStore = create<WorkspaceState>()(
     set((s) => {
       let changed = false;
       const next = { ...s.prStatuses };
+      const nextFetchedAt = { ...s.prStatusFetchedAt };
       for (const result of results) {
         if (result.error) {
-          if (s.prStatuses[result.path] === null) continue;
+          // Keep existing PR status on error (e.g. rate limit, network blip).
+          // Only clear if there was no previous status at all.
+          if (s.prStatuses[result.path] !== undefined) continue;
           next[result.path] = null;
           changed = true;
           continue;
         }
         const prev = s.prStatuses[result.path];
+        nextFetchedAt[result.path] = Date.now();
         if (prStatusEqual(prev ?? null, result.prStatus)) continue;
         next[result.path] = result.prStatus;
         changed = true;
       }
-      return changed ? { prStatuses: next } : s;
+      return changed
+        ? { prStatuses: next, prStatusFetchedAt: nextFetchedAt }
+        : { prStatusFetchedAt: nextFetchedAt };
     });
   },
 
@@ -2300,8 +2317,9 @@ export const useWorkspaceStore = create<WorkspaceState>()(
       // Only change tab if explicitly provided; otherwise keep current tab
       unifiedGitPanelTab: tab ?? prev.unifiedGitPanelTab,
     }));
-    // Eagerly refresh PR status so the PR tab shows fresh data
-    if (tab === "pr") {
+    // Refresh PR status only if stale (>60s since last successful fetch)
+    const lastFetch = get().prStatusFetchedAt[rootPath] ?? 0;
+    if (Date.now() - lastFetch > 60_000) {
       get().refreshPrStatusForPath(rootPath).catch(() => {});
     }
   },

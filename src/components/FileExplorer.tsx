@@ -1268,7 +1268,7 @@ function RootSection({
       return;
     }
     if (repoCollapsed) setRepoCollapsed(false);
-    openUnifiedGitPanel(rootPath, "changes");
+    openUnifiedGitPanel(rootPath);
   }, [
     repoCollapsed,
     setRepoCollapsed,

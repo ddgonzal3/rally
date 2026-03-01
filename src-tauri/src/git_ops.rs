@@ -284,33 +284,14 @@ pub async fn pr_status(cwd: &str) -> Result<PrStatus, String> {
         cwd,
         &[
             "pr", "view", "--json",
-            "number,title,url,state,isDraft,mergeable,reviewDecision,statusCheckRollup",
+            "number,title,url,state,isDraft,mergeable,reviewDecision",
         ],
     ).await?;
 
     let v: serde_json::Value =
         serde_json::from_str(&json_str).map_err(|e| format!("Failed to parse PR JSON: {}", e))?;
 
-    // Parse statusCheckRollup into a summary status
-    let checks_status = match v.get("statusCheckRollup") {
-        Some(serde_json::Value::Array(checks)) if !checks.is_empty() => {
-            let all_pass = checks
-                .iter()
-                .all(|c| c.get("conclusion").and_then(|v| v.as_str()) == Some("SUCCESS"));
-            let any_fail = checks.iter().any(|c| {
-                let conclusion = c.get("conclusion").and_then(|v| v.as_str()).unwrap_or("");
-                conclusion == "FAILURE" || conclusion == "ERROR"
-            });
-            if any_fail {
-                Some("fail".to_string())
-            } else if all_pass {
-                Some("pass".to_string())
-            } else {
-                Some("pending".to_string())
-            }
-        }
-        _ => None,
-    };
+    let checks_status = None;
 
     Ok(PrStatus {
         number: v["number"].as_u64().unwrap_or(0) as u32,

@@ -2,14 +2,18 @@ import React, { useState, useEffect, useCallback, useRef } from "react";
 import { useWorkspaceStore } from "../stores/workspaceStore";
 import { api } from "../lib/tauri";
 import { addToast } from "./ToastContainer";
-import { parseUnifiedDiff, createUntrackedDiffFile, type DiffFile } from "../lib/diffParser";
+import {
+  parseUnifiedDiff,
+  createUntrackedDiffFile,
+  type DiffFile,
+} from "../lib/diffParser";
 import { DiffFileSection } from "./DiffFileSection";
 import { CommitModal } from "./CommitModal";
 import { PrReviewContent } from "./PrReviewOverlay";
 import type { ChangesSummary, CommitEntry } from "../lib/types";
 import { relativeTime } from "../lib/time";
 
-const SIDEBAR_MIN = 140;
+const SIDEBAR_MIN = 200;
 const SIDEBAR_MAX = 320;
 
 export function UnifiedGitPanel() {
@@ -34,10 +38,15 @@ export function UnifiedGitPanel() {
   const diffTab = useWorkspaceStore((s) => s.gitDiffActiveTab);
   const setDiffTab = useWorkspaceStore((s) => s.setGitDiffActiveTab);
   const scrollToFile = useWorkspaceStore((s) => s.gitDiffScrollToFile);
-  const refreshPrStatusForPath = useWorkspaceStore((s) => s.refreshPrStatusForPath);
+  const refreshPrStatusForPath = useWorkspaceStore(
+    (s) => s.refreshPrStatusForPath,
+  );
 
   const [mounted, setMounted] = useState(false);
   const [entered, setEntered] = useState(false);
+  const [panelWidth, setPanelWidth] = useState<number | null>(null); // null = default 55vw
+  const [panelResizing, setPanelResizing] = useState(false);
+  const drawerRef = useRef<HTMLDivElement>(null);
 
   // Diff data
   const [unstagedFiles, setUnstagedFiles] = useState<DiffFile[]>([]);
@@ -91,19 +100,24 @@ export function UnifiedGitPanel() {
   const fetchDiffs = useCallback(async () => {
     if (!rootPath) return;
     try {
-      const [unstagedRaw, stagedRaw, changesData, stat, commitLog] = await Promise.all([
-        api.gitDiff(rootPath, false),
-        api.gitDiff(rootPath, true),
-        api.gitChanges(rootPath),
-        api.gitDiffStat(rootPath),
-        api.gitCommitLog(rootPath, mainBranch).catch(() => [] as CommitEntry[]),
-      ]);
+      const [unstagedRaw, stagedRaw, changesData, stat, commitLog] =
+        await Promise.all([
+          api.gitDiff(rootPath, false),
+          api.gitDiff(rootPath, true),
+          api.gitChanges(rootPath),
+          api.gitDiffStat(rootPath),
+          api
+            .gitCommitLog(rootPath, mainBranch)
+            .catch(() => [] as CommitEntry[]),
+        ]);
       const parsedUnstaged = parseUnifiedDiff(unstagedRaw);
       if (changesData.untracked.length > 0) {
         const untrackedDiffs = await Promise.all(
           changesData.untracked.map(async (filePath) => {
             try {
-              const content = await api.readFileContent(`${rootPath}/${filePath}`);
+              const content = await api.readFileContent(
+                `${rootPath}/${filePath}`,
+              );
               return createUntrackedDiffFile(filePath, content);
             } catch {
               return createUntrackedDiffFile(filePath, "");
@@ -150,7 +164,8 @@ export function UnifiedGitPanel() {
     if (!mounted) return;
     const handler = () => fetchDiffs();
     document.addEventListener("rally:git-changes-refresh", handler);
-    return () => document.removeEventListener("rally:git-changes-refresh", handler);
+    return () =>
+      document.removeEventListener("rally:git-changes-refresh", handler);
   }, [mounted, fetchDiffs]);
 
   // Handle scroll-to-file from store
@@ -160,28 +175,57 @@ export function UnifiedGitPanel() {
 
   // --- Action handlers ---
 
-  const handleStage = useCallback(async (filePath: string) => {
-    if (!rootPath) return;
-    try { await api.gitStageFile(rootPath, filePath); }
-    catch (e) { addToast({ type: "warning", title: "Stage failed", message: String(e) }); }
-    fetchDiffs();
-  }, [rootPath, fetchDiffs]);
+  const handleStage = useCallback(
+    async (filePath: string) => {
+      if (!rootPath) return;
+      try {
+        await api.gitStageFile(rootPath, filePath);
+      } catch (e) {
+        addToast({
+          type: "warning",
+          title: "Stage failed",
+          message: String(e),
+        });
+      }
+      fetchDiffs();
+    },
+    [rootPath, fetchDiffs],
+  );
 
-  const handleUnstage = useCallback(async (filePath: string) => {
-    if (!rootPath) return;
-    try { await api.gitUnstageFile(rootPath, filePath); }
-    catch (e) { addToast({ type: "warning", title: "Unstage failed", message: String(e) }); }
-    fetchDiffs();
-  }, [rootPath, fetchDiffs]);
+  const handleUnstage = useCallback(
+    async (filePath: string) => {
+      if (!rootPath) return;
+      try {
+        await api.gitUnstageFile(rootPath, filePath);
+      } catch (e) {
+        addToast({
+          type: "warning",
+          title: "Unstage failed",
+          message: String(e),
+        });
+      }
+      fetchDiffs();
+    },
+    [rootPath, fetchDiffs],
+  );
 
-  const handleDiscard = useCallback(async (filePath: string) => {
-    if (!rootPath || !changes) return;
-    try {
-      const isUntracked = changes.untracked.includes(filePath);
-      await api.gitDiscardFile(rootPath, filePath, isUntracked);
-    } catch (e) { addToast({ type: "warning", title: "Discard failed", message: String(e) }); }
-    fetchDiffs();
-  }, [rootPath, changes, fetchDiffs]);
+  const handleDiscard = useCallback(
+    async (filePath: string) => {
+      if (!rootPath || !changes) return;
+      try {
+        const isUntracked = changes.untracked.includes(filePath);
+        await api.gitDiscardFile(rootPath, filePath, isUntracked);
+      } catch (e) {
+        addToast({
+          type: "warning",
+          title: "Discard failed",
+          message: String(e),
+        });
+      }
+      fetchDiffs();
+    },
+    [rootPath, changes, fetchDiffs],
+  );
 
   const [revertConfirming, setRevertConfirming] = useState(false);
 
@@ -193,7 +237,10 @@ export function UnifiedGitPanel() {
       return;
     }
     setRevertConfirming(false);
-    const allFiles = [...changes.unstaged.map((f) => f.path), ...changes.untracked];
+    const allFiles = [
+      ...changes.unstaged.map((f) => f.path),
+      ...changes.untracked,
+    ];
     for (const f of allFiles) {
       const isUntracked = changes.untracked.includes(f);
       await api.gitDiscardFile(rootPath, f, isUntracked);
@@ -203,7 +250,10 @@ export function UnifiedGitPanel() {
 
   const handleStageAll = useCallback(async () => {
     if (!rootPath || !changes) return;
-    const allFiles = [...changes.unstaged.map((f) => f.path), ...changes.untracked];
+    const allFiles = [
+      ...changes.unstaged.map((f) => f.path),
+      ...changes.untracked,
+    ];
     for (const f of allFiles) await api.gitStageFile(rootPath, f);
     await fetchDiffs();
     setDiffTab("staged");
@@ -224,38 +274,90 @@ export function UnifiedGitPanel() {
       const url = await api.gitCreatePr(rootPath);
       addToast({ type: "success", title: "PR created", message: url });
       refreshPrStatusForPath(rootPath).catch(() => {});
-    } catch (e) { addToast({ type: "warning", title: "Create PR failed", message: String(e) }); }
-    finally { setCreatingPr(false); }
+    } catch (e) {
+      addToast({
+        type: "warning",
+        title: "Create PR failed",
+        message: String(e),
+      });
+    } finally {
+      setCreatingPr(false);
+    }
   }, [rootPath, refreshPrStatusForPath]);
 
   // --- Sidebar resize ---
 
-  const handleSidebarResize = useCallback((e: React.MouseEvent) => {
+  const handleSidebarResize = useCallback(
+    (e: React.MouseEvent) => {
+      e.preventDefault();
+      const startX = e.clientX;
+      const startWidth =
+        sidebarRef.current?.offsetWidth ?? effectiveSidebarWidth;
+      let raf = 0;
+      let finalWidth = startWidth;
+
+      const onMouseMove = (ev: MouseEvent) => {
+        finalWidth = Math.max(
+          SIDEBAR_MIN,
+          Math.min(SIDEBAR_MAX, startWidth + (ev.clientX - startX)),
+        );
+        cancelAnimationFrame(raf);
+        raf = requestAnimationFrame(() => {
+          if (sidebarRef.current) {
+            sidebarRef.current.style.width = finalWidth + "px";
+          }
+        });
+      };
+      const onMouseUp = () => {
+        cancelAnimationFrame(raf);
+        setSidebarWidth(finalWidth);
+        setUserResized(true);
+        document.removeEventListener("mousemove", onMouseMove);
+        document.removeEventListener("mouseup", onMouseUp);
+      };
+      document.addEventListener("mousemove", onMouseMove);
+      document.addEventListener("mouseup", onMouseUp);
+    },
+    [sidebarWidth],
+  );
+
+  // --- Panel (left edge) resize ---
+
+  const PANEL_MIN = 400;
+  const PANEL_MAX_RATIO = 0.85; // max 85% of viewport width
+
+  const handlePanelResize = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
     const startX = e.clientX;
-    const startWidth = sidebarRef.current?.offsetWidth ?? effectiveSidebarWidth;
+    const startWidth =
+      drawerRef.current?.offsetWidth ?? window.innerWidth * 0.55;
     let raf = 0;
     let finalWidth = startWidth;
+    setPanelResizing(true);
 
     const onMouseMove = (ev: MouseEvent) => {
-      finalWidth = Math.max(SIDEBAR_MIN, Math.min(SIDEBAR_MAX, startWidth + (ev.clientX - startX)));
+      const maxWidth = window.innerWidth * PANEL_MAX_RATIO;
+      finalWidth = Math.max(
+        PANEL_MIN,
+        Math.min(maxWidth, startWidth - (ev.clientX - startX)),
+      );
       cancelAnimationFrame(raf);
       raf = requestAnimationFrame(() => {
-        if (sidebarRef.current) {
-          sidebarRef.current.style.width = finalWidth + "px";
+        if (drawerRef.current) {
+          drawerRef.current.style.width = finalWidth + "px";
         }
       });
     };
     const onMouseUp = () => {
       cancelAnimationFrame(raf);
-      setSidebarWidth(finalWidth);
-      setUserResized(true);
+      setPanelWidth(finalWidth);
+      setPanelResizing(false);
       document.removeEventListener("mousemove", onMouseMove);
       document.removeEventListener("mouseup", onMouseUp);
     };
     document.addEventListener("mousemove", onMouseMove);
     document.addEventListener("mouseup", onMouseUp);
-  }, [sidebarWidth]);
+  }, []);
 
   // --- Computed ---
 
@@ -266,7 +368,8 @@ export function UnifiedGitPanel() {
   }, [hasPr, panelTab, setPanelTab]);
 
   const activeFiles = diffTab === "unstaged" ? unstagedFiles : stagedFiles;
-  const unstagedCount = (changes?.unstaged.length ?? 0) + (changes?.untracked.length ?? 0);
+  const unstagedCount =
+    (changes?.unstaged.length ?? 0) + (changes?.untracked.length ?? 0);
   const stagedCount = changes?.staged.length ?? 0;
   const hasStaged = stagedCount > 0;
   const folderName = rootPath?.split("/").pop() ?? "";
@@ -286,15 +389,24 @@ export function UnifiedGitPanel() {
     return Math.max(SIDEBAR_MIN, Math.min(SIDEBAR_MAX, estimated));
   })();
 
-  const effectiveSidebarWidth = userResized && sidebarWidth !== null ? sidebarWidth : autoWidth;
+  const effectiveSidebarWidth =
+    userResized && sidebarWidth !== null ? sidebarWidth : autoWidth;
 
   // Recalculate sidebar width when new files appear (even if user previously resized)
-  const fileFingerprint = allFiles.map(f => f.newPath || f.oldPath).sort().join("\n");
+  const fileFingerprint = allFiles
+    .map((f) => f.newPath || f.oldPath)
+    .sort()
+    .join("\n");
   useEffect(() => {
     if (!fileFingerprint) return;
-    if (lastFileFingerprint.current && fileFingerprint !== lastFileFingerprint.current) {
+    if (
+      lastFileFingerprint.current &&
+      fileFingerprint !== lastFileFingerprint.current
+    ) {
       const oldPaths = new Set(lastFileFingerprint.current.split("\n"));
-      const hasNewFiles = fileFingerprint.split("\n").some(p => !oldPaths.has(p));
+      const hasNewFiles = fileFingerprint
+        .split("\n")
+        .some((p) => !oldPaths.has(p));
       if (hasNewFiles) {
         setUserResized(false);
         setSidebarWidth(null);
@@ -334,6 +446,7 @@ export function UnifiedGitPanel() {
     >
       {/* Drawer */}
       <div
+        ref={drawerRef}
         className="git-diff-overlay"
         onClick={(e) => e.stopPropagation()}
         style={{
@@ -341,275 +454,383 @@ export function UnifiedGitPanel() {
           top: 0,
           right: 0,
           bottom: 0,
-          width: "55vw",
+          width: panelWidth != null ? panelWidth : "55vw",
           minWidth: 500,
           background: "#1a1a1a",
-          borderLeft: "1px solid rgba(255, 255, 255, 0.12)",
           display: "flex",
-          flexDirection: "column",
+          flexDirection: "row",
           overflow: "hidden",
           boxShadow: "-4px 0 16px rgba(0,0,0,0.25)",
           transform: expanded ? "translateX(0)" : "translateX(100%)",
           transition: expanded
-            ? "transform 200ms ease-out"   // open: fast start, gentle landing
-            : "transform 160ms ease-in",   // close: accelerates out of view
+            ? "transform 200ms ease-out"
+            : "transform 160ms ease-in",
         }}
       >
-        {/* Header */}
-        <div style={ms.header}>
-          <span style={ms.repoName}>{folderName}</span>
-
-          {hasPr && (
-            <>
-              <div style={{ width: 1, height: 14, background: "#333", margin: "0 4px" }} />
-              <button
-                onClick={() => setPanelTab("changes")}
-                style={effectiveTab === "changes" ? ms.tabActive : ms.tab}
-              >
-                Changes
-                {(unstagedCount + stagedCount) > 0 && (
-                  <span style={ms.tabBadge}>{unstagedCount + stagedCount}</span>
-                )}
-              </button>
-              <button
-                onClick={() => setPanelTab("pr")}
-                style={effectiveTab === "pr" ? ms.tabActive : ms.tab}
-              >
-                PR #{prStatus!.number}
-              </button>
-            </>
-          )}
-
-          <div style={{ flex: 1, minWidth: 0 }} />
-
-          {branchName && (
-            <span style={ms.branchPill}>
-              <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="#e6edf3" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-                <circle cx="5" cy="4" r="1.5" />
-                <circle cx="5" cy="12" r="1.5" />
-                <circle cx="12" cy="8" r="1.5" />
-                <path d="M5 5.5v5M12 6.5c0-2-1.5-2.5-3.5-2.5" />
-              </svg>
-              {branchName}
-            </span>
-          )}
-
+        {/* Left edge resize handle */}
+        <div
+          onMouseDown={handlePanelResize}
+          style={{
+            width: 6,
+            minWidth: 6,
+            cursor: "col-resize",
+            display: "flex",
+            alignItems: "stretch",
+            justifyContent: "center",
+            flexShrink: 0,
+            borderLeft: "1px solid rgba(255, 255, 255, 0.12)",
+          }}
+        >
+          <div
+            style={{
+              width: 1,
+              background: "transparent",
+              pointerEvents: "none",
+            }}
+          />
         </div>
 
-        {/* Sub-header: Unstaged/Staged tabs + action pills — spans full width */}
-        {effectiveTab === "changes" && rootPath && (
-          <div style={ms.subHeader}>
-            <button
-              onClick={() => setDiffTab("unstaged")}
-              style={diffTab === "unstaged" ? ms.sideTabActive : ms.sideTab}
-            >
-              Unstaged{changes ? ` \u00B7 ${unstagedCount}` : ""}
-            </button>
-            <button
-              onClick={() => setDiffTab("staged")}
-              style={diffTab === "staged" ? ms.sideTabActive : ms.sideTab}
-            >
-              Staged{changes ? ` \u00B7 ${stagedCount}` : ""}
-            </button>
-            <div style={{ flex: 1 }} />
-            {diffTab === "unstaged" && unstagedCount > 0 && (
+        {/* Panel content */}
+        <div
+          style={{
+            flex: 1,
+            display: "flex",
+            flexDirection: "column",
+            overflow: "hidden",
+            minWidth: 0,
+            position: "relative",
+          }}
+        >
+          {/* Drag overlay — blocks mouse events from hitting heavy content during resize */}
+          {panelResizing && (
+            <div
+              style={{
+                position: "absolute",
+                inset: 0,
+                zIndex: 9999,
+                cursor: "col-resize",
+              }}
+            />
+          )}
+          {/* Header */}
+          <div style={ms.header}>
+            <span style={ms.repoName}>{folderName}</span>
+
+            {hasPr && (
               <>
-                <button
-                  onClick={handleRevertAll}
-                  style={revertConfirming ? ms.actionBtnDanger : ms.actionBtn}
-                >
-                  {revertConfirming ? "Confirm?" : "Revert"}
-                </button>
-                <button onClick={handleStageAll} style={ms.actionBtn}>
-                  Stage all
-                </button>
-              </>
-            )}
-            {diffTab === "staged" && stagedCount > 0 && (
-              <button onClick={handleUnstageAll} style={ms.actionBtn}>
-                Unstage all
-              </button>
-            )}
-            {(hasStaged || unstagedCount > 0) && (
-              <>
-                {(diffTab === "unstaged" ? unstagedCount > 0 : stagedCount > 0) && (
-                  <div style={{ width: 1, height: 12, background: "#333" }} />
-                )}
-                <button
-                  ref={commitBtnRef}
-                  onClick={() => setCommitModalOpen(true)}
-                  disabled={!hasStaged && unstagedCount === 0}
+                <div
                   style={{
-                    ...ms.actionBtn,
-                    opacity: hasStaged || unstagedCount > 0 ? 1 : 0.4,
+                    width: 1,
+                    height: 14,
+                    background: "#333",
+                    margin: "0 4px",
                   }}
+                />
+                <button
+                  onClick={() => setPanelTab("changes")}
+                  style={effectiveTab === "changes" ? ms.tabActive : ms.tab}
                 >
-                  Commit
+                  Changes
+                  {unstagedCount + stagedCount > 0 && (
+                    <span style={ms.tabBadge}>
+                      {unstagedCount + stagedCount}
+                    </span>
+                  )}
+                </button>
+                <button
+                  onClick={() => setPanelTab("pr")}
+                  style={effectiveTab === "pr" ? ms.tabActive : ms.tab}
+                >
+                  PR #{prStatus!.number}
                 </button>
               </>
             )}
-            {createPrVisible && (
-              <button
-                onClick={handleCreatePr}
-                disabled={creatingPr}
-                style={{ ...ms.actionBtn, opacity: creatingPr ? 0.5 : 1 }}
-              >
-                {creatingPr ? "Creating..." : "Create PR"}
-              </button>
+
+            <div style={{ flex: 1, minWidth: 0 }} />
+
+            {branchName && (
+              <span style={ms.branchPill}>
+                <svg
+                  width="15"
+                  height="15"
+                  viewBox="0 0 16 16"
+                  fill="none"
+                  stroke="#e6edf3"
+                  strokeWidth="1.5"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <circle cx="5" cy="4" r="1.5" />
+                  <circle cx="5" cy="12" r="1.5" />
+                  <circle cx="12" cy="8" r="1.5" />
+                  <path d="M5 5.5v5M12 6.5c0-2-1.5-2.5-3.5-2.5" />
+                </svg>
+                {branchName}
+              </span>
             )}
           </div>
-        )}
 
-        {/* Content */}
-        <div style={{ flex: 1, display: "flex", overflow: "hidden" }}>
+          {/* Sub-header: Unstaged/Staged tabs + action pills — spans full width */}
           {effectiveTab === "changes" && rootPath && (
-            <>
-              {/* File sidebar */}
-              <div ref={sidebarRef} style={{ ...ms.sidebar, width: effectiveSidebarWidth }}>
-                {/* Commits section */}
-                {!diffLoading && commits.length > 0 && (
-                  <div style={ms.commitsSection}>
-                    <button
-                      onClick={() => setCommitsExpanded((v) => !v)}
-                      style={ms.commitsSectionHeader}
-                      className="changes-section-btn"
-                    >
-                      <svg
-                        width="10"
-                        height="10"
-                        viewBox="0 0 12 12"
-                        fill="none"
-                        style={{ transform: commitsExpanded ? "rotate(90deg)" : "none", flexShrink: 0 }}
-                      >
-                        <path d="M4 2.4L8 6L4 9.6" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
-                      </svg>
-                      <span style={{ flex: 1 }}>Commits</span>
-                      <span style={ms.badge}>{commits.length}</span>
-                    </button>
-                    {commitsExpanded && (
-                      <div>
-                        {commits.map((c) => (
-                          <div key={c.sha} style={ms.commitRow}>
-                            <span style={ms.commitSha}>{c.sha.slice(0, 7)}</span>
-                            <span style={ms.commitMsg}>{c.message}</span>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                )}
-
-                {/* File list */}
-                <div style={ms.fileList}>
-                  {diffLoading && (
-                    <div style={ms.loadingContainer}>
-                      <div style={ms.loadingDots}>
-                        <span style={{ ...ms.loadingDot, animationDelay: "0s" }} />
-                        <span style={{ ...ms.loadingDot, animationDelay: "0.15s" }} />
-                        <span style={{ ...ms.loadingDot, animationDelay: "0.3s" }} />
-                      </div>
-                    </div>
+            <div style={ms.subHeader}>
+              <button
+                onClick={() => setDiffTab("unstaged")}
+                style={diffTab === "unstaged" ? ms.sideTabActive : ms.sideTab}
+              >
+                Unstaged{changes ? ` \u00B7 ${unstagedCount}` : ""}
+              </button>
+              <button
+                onClick={() => setDiffTab("staged")}
+                style={diffTab === "staged" ? ms.sideTabActive : ms.sideTab}
+              >
+                Staged{changes ? ` \u00B7 ${stagedCount}` : ""}
+              </button>
+              <div style={{ flex: 1 }} />
+              {diffTab === "unstaged" && unstagedCount > 0 && (
+                <>
+                  <button
+                    onClick={handleRevertAll}
+                    style={revertConfirming ? ms.actionBtnDanger : ms.actionBtn}
+                  >
+                    {revertConfirming ? "Confirm?" : "Revert"}
+                  </button>
+                  <button onClick={handleStageAll} style={ms.actionBtn}>
+                    Stage all
+                  </button>
+                </>
+              )}
+              {diffTab === "staged" && stagedCount > 0 && (
+                <button onClick={handleUnstageAll} style={ms.actionBtn}>
+                  Unstage all
+                </button>
+              )}
+              {(hasStaged || unstagedCount > 0) && (
+                <>
+                  {(diffTab === "unstaged"
+                    ? unstagedCount > 0
+                    : stagedCount > 0) && (
+                    <div style={{ width: 1, height: 12, background: "#333" }} />
                   )}
-                  {!diffLoading && activeFiles.length === 0 && (
-                    <div style={ms.emptyFiles}>
-                      {diffTab === "unstaged" ? "No unstaged changes" : "No staged changes"}
-                    </div>
-                  )}
-                  {!diffLoading &&
-                    activeFiles.map((file) => {
-                      const fp = file.newPath || file.oldPath;
-                      const isSelected = fp === selectedFile;
-                      const fileName = fp.split("/").pop() ?? fp;
-                      const dirPath = fp.includes("/")
-                        ? fp.slice(0, fp.lastIndexOf("/"))
-                        : "";
-                      return (
-                        <button
-                          key={fp}
-                          onClick={() => setSelectedFile(fp)}
-                          style={{
-                            ...ms.fileItem,
-                            background: isSelected
-                              ? "rgba(255,255,255,0.08)"
-                              : "transparent",
-                          }}
-                          className="file-list-item"
-                        >
-                          <span
-                            style={{
-                              ...ms.fileStatus,
-                              color: file.isNew
-                                ? "#7ddf7d"
-                                : file.isDeleted
-                                  ? "#f85149"
-                                  : file.isRenamed
-                                    ? "#d2a8ff"
-                                    : "#e3b341",
-                            }}
-                          >
-                            {file.isNew
-                              ? "A"
-                              : file.isDeleted
-                                ? "D"
-                                : file.isRenamed
-                                  ? "R"
-                                  : "M"}
-                          </span>
-                          <span style={ms.fileItemName}>{fileName}</span>
-                          {dirPath && <span style={ms.fileDir}>{dirPath}</span>}
-                          <span style={ms.fileStats}>
-                            {file.additions > 0 && (
-                              <span style={{ color: "#7ddf7d" }}>+{file.additions}</span>
-                            )}
-                            {file.deletions > 0 && (
-                              <span
-                                style={{
-                                  color: "#f85149",
-                                  marginLeft: file.additions > 0 ? 3 : 0,
-                                }}
-                              >
-                                -{file.deletions}
-                              </span>
-                            )}
-                          </span>
-                        </button>
-                      );
-                    })}
-                </div>
-              </div>
-
-              {/* Resize handle */}
-              <div onMouseDown={handleSidebarResize} style={ms.resizeHandle}>
-                <div style={ms.resizeLine} />
-              </div>
-
-              {/* Diff viewer */}
-              <div style={ms.diffViewer}>
-                {selectedDiffFile ? (
-                  <DiffFileSection
-                    file={selectedDiffFile}
-                    defaultExpanded={true}
-                    tab={diffTab}
-                    onStage={handleStage}
-                    onUnstage={handleUnstage}
-                    onDiscard={handleDiscard}
-                  />
-                ) : !diffLoading ? (
-                  <div style={ms.emptyDiff}>
-                    Select a file to view its diff
-                  </div>
-                ) : null}
-              </div>
-            </>
-          )}
-
-          {effectiveTab === "pr" && rootPath && hasPr && (
-            <div style={{ flex: 1, overflow: "auto" }}>
-              <PrReviewContent rootPath={rootPath} onClose={closePanel} scrollToFile={prScrollToFile} />
+                  <button
+                    ref={commitBtnRef}
+                    onClick={() => setCommitModalOpen(true)}
+                    disabled={!hasStaged && unstagedCount === 0}
+                    style={{
+                      ...ms.actionBtn,
+                      opacity: hasStaged || unstagedCount > 0 ? 1 : 0.4,
+                    }}
+                  >
+                    Commit
+                  </button>
+                </>
+              )}
+              {createPrVisible && (
+                <button
+                  onClick={handleCreatePr}
+                  disabled={creatingPr}
+                  style={{ ...ms.actionBtn, opacity: creatingPr ? 0.5 : 1 }}
+                >
+                  {creatingPr ? "Creating..." : "Create PR"}
+                </button>
+              )}
             </div>
           )}
+
+          {/* Content */}
+          <div style={{ flex: 1, display: "flex", overflow: "hidden" }}>
+            {effectiveTab === "changes" && rootPath && (
+              <>
+                {/* File sidebar */}
+                <div
+                  ref={sidebarRef}
+                  style={{ ...ms.sidebar, width: effectiveSidebarWidth }}
+                >
+                  {/* Commits section */}
+                  {!diffLoading && commits.length > 0 && (
+                    <div style={ms.commitsSection}>
+                      <button
+                        onClick={() => setCommitsExpanded((v) => !v)}
+                        style={ms.commitsSectionHeader}
+                        className="changes-section-btn"
+                      >
+                        <svg
+                          width="10"
+                          height="10"
+                          viewBox="0 0 12 12"
+                          fill="none"
+                          style={{
+                            transform: commitsExpanded
+                              ? "rotate(90deg)"
+                              : "none",
+                            flexShrink: 0,
+                          }}
+                        >
+                          <path
+                            d="M4 2.4L8 6L4 9.6"
+                            stroke="currentColor"
+                            strokeWidth="1.3"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                          />
+                        </svg>
+                        <span style={{ flex: 1 }}>Commits</span>
+                        <span style={ms.badge}>{commits.length}</span>
+                      </button>
+                      {commitsExpanded && (
+                        <div>
+                          {commits.map((c) => (
+                            <div key={c.sha} style={ms.commitRow}>
+                              <span style={ms.commitSha}>
+                                {c.sha.slice(0, 7)}
+                              </span>
+                              <span style={ms.commitMsg}>{c.message}</span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* File list */}
+                  <div style={ms.fileList}>
+                    {diffLoading && (
+                      <div style={ms.loadingContainer}>
+                        <div style={ms.loadingDots}>
+                          <span
+                            style={{ ...ms.loadingDot, animationDelay: "0s" }}
+                          />
+                          <span
+                            style={{
+                              ...ms.loadingDot,
+                              animationDelay: "0.15s",
+                            }}
+                          />
+                          <span
+                            style={{ ...ms.loadingDot, animationDelay: "0.3s" }}
+                          />
+                        </div>
+                      </div>
+                    )}
+                    {!diffLoading && activeFiles.length === 0 && (
+                      <div style={ms.emptyFiles}>
+                        {diffTab === "unstaged"
+                          ? "No unstaged changes"
+                          : "No staged changes"}
+                      </div>
+                    )}
+                    {!diffLoading &&
+                      activeFiles.map((file) => {
+                        const fp = file.newPath || file.oldPath;
+                        const isSelected = fp === selectedFile;
+                        const fileName = fp.split("/").pop() ?? fp;
+                        const dirPath = fp.includes("/")
+                          ? fp.slice(0, fp.lastIndexOf("/"))
+                          : "";
+                        return (
+                          <button
+                            key={fp}
+                            onClick={() => setSelectedFile(fp)}
+                            style={{
+                              ...ms.fileItem,
+                              background: isSelected
+                                ? "rgba(255,255,255,0.08)"
+                                : "transparent",
+                            }}
+                            className="file-list-item"
+                          >
+                            <span
+                              style={{
+                                ...ms.fileStatus,
+                                color: file.isNew
+                                  ? "#7ddf7d"
+                                  : file.isDeleted
+                                    ? "#f85149"
+                                    : file.isRenamed
+                                      ? "#d2a8ff"
+                                      : "#e3b341",
+                              }}
+                            >
+                              {file.isNew
+                                ? "A"
+                                : file.isDeleted
+                                  ? "D"
+                                  : file.isRenamed
+                                    ? "R"
+                                    : "M"}
+                            </span>
+                            <span style={ms.fileItemName}>{fileName}</span>
+                            {dirPath && (
+                              <span style={ms.fileDir}>{dirPath}</span>
+                            )}
+                            <span style={ms.fileStats}>
+                              {file.additions > 0 && (
+                                <span style={{ color: "#7ddf7d" }}>
+                                  +{file.additions}
+                                </span>
+                              )}
+                              {file.deletions > 0 && (
+                                <span
+                                  style={{
+                                    color: "#f85149",
+                                    marginLeft: file.additions > 0 ? 3 : 0,
+                                  }}
+                                >
+                                  -{file.deletions}
+                                </span>
+                              )}
+                            </span>
+                          </button>
+                        );
+                      })}
+                  </div>
+                </div>
+
+                {/* Resize handle */}
+                <div onMouseDown={handleSidebarResize} style={ms.resizeHandle}>
+                  <div style={ms.resizeLine} />
+                </div>
+
+                {/* Diff viewer */}
+                <div style={ms.diffViewer}>
+                  {selectedDiffFile ? (
+                    <DiffFileSection
+                      file={selectedDiffFile}
+                      defaultExpanded={true}
+                      tab={diffTab}
+                      onStage={handleStage}
+                      onUnstage={handleUnstage}
+                      onDiscard={handleDiscard}
+                    />
+                  ) : !diffLoading ? (
+                    <div style={ms.emptyDiff}>
+                      Select a file to view its diff
+                    </div>
+                  ) : null}
+                </div>
+              </>
+            )}
+
+            {effectiveTab === "pr" && rootPath && hasPr && (
+              <div
+                style={{
+                  flex: 1,
+                  display: "flex",
+                  flexDirection: "column",
+                  overflow: "hidden",
+                }}
+              >
+                <PrReviewContent
+                  rootPath={rootPath}
+                  onClose={closePanel}
+                  scrollToFile={prScrollToFile}
+                />
+              </div>
+            )}
+          </div>
         </div>
+        {/* close panel content wrapper */}
       </div>
+      {/* close drawer */}
 
       {/* Commit Modal */}
       {rootPath && (
@@ -854,7 +1075,7 @@ const ms: Record<string, React.CSSProperties> = {
     cursor: "pointer",
     fontSize: 12,
     textAlign: "left" as const,
-    transition: "background 80ms",
+    transition: "none",
   },
   fileStatus: {
     width: 14,
