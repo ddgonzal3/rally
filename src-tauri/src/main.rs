@@ -4,6 +4,7 @@ use std::collections::HashSet;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
+use rally::chat_manager;
 use rally::commands;
 use rally::config_ops;
 use rally::git_watch::GitWatchState;
@@ -132,7 +133,10 @@ fn main() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_window_state::Builder::new().build())
         .manage(pty_state)
-        .manage(git_watch_state);
+        .manage(git_watch_state)
+        .manage(chat_manager::ChatManagerState(std::sync::Mutex::new(
+            chat_manager::ChatManager::new(),
+        )));
 
     // In test-bridge mode, create the shared result channels.
     #[cfg(feature = "test-bridge")]
@@ -214,6 +218,11 @@ fn main() {
         rally::search_ops::search_in_files,
         rally::search_ops::replace_in_files,
         rally::search_ops::list_all_files,
+        chat_manager::start_chat_session,
+        chat_manager::send_chat_message,
+        chat_manager::respond_to_permission,
+        chat_manager::cancel_chat_session,
+        chat_manager::end_chat_session,
     ]);
 
     builder
