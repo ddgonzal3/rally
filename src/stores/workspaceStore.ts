@@ -25,6 +25,7 @@ import type {
   WorkspaceMode,
   ProductSession,
   ShellPanel,
+  ChatSession,
 } from "../lib/types";
 import {
   createDefaultLayout,
@@ -229,6 +230,8 @@ interface WorkspaceState {
   workspaceModes: Record<string, WorkspaceMode>;
   /** PRD mode sessions keyed by workspace ID (in-memory only, not persisted) */
   productSessions: Record<string, ProductSession>;
+  /** Chat sessions keyed by workspace ID (in-memory only, not persisted) */
+  chatSessions: Record<string, ChatSession>;
   /** Bottom shell panel keyed by workspace ID (in-memory only) */
   shellPanels: Record<string, ShellPanel>;
   /** Cached RALLY.json configs per repo path (not persisted) */
@@ -245,6 +248,11 @@ interface WorkspaceState {
   // Product session actions
   setProductSession: (workspaceId: string, session: ProductSession) => void;
   clearProductSession: (workspaceId: string) => void;
+
+  // Chat session actions
+  startChatSession: (workspaceId: string, rootPath: string, prompt: string) => Promise<string>;
+  handleChatEvent: (workspaceId: string, data: any) => void;
+  clearChatSession: (workspaceId: string) => Promise<void>;
 
   // Shell panel actions
   toggleShellPanel: (workspaceId: string, rootPath: string) => Promise<void>;
@@ -632,6 +640,7 @@ export const useWorkspaceStore = create<WorkspaceState>()(
   dirtyPanes: new Set(),
   workspaceModes: {},
   productSessions: {},
+  chatSessions: {},
   shellPanels: {},
   rallyConfigs: {},
 
@@ -677,6 +686,153 @@ export const useWorkspaceStore = create<WorkspaceState>()(
     set((s) => {
       const { [workspaceId]: _, ...rest } = s.productSessions;
       return { productSessions: rest };
+    });
+  },
+
+  // --- Chat session actions ---
+
+  startChatSession: async (workspaceId, rootPath, prompt) => {
+    try {
+      const sessionId = await api.startChatSession(rootPath, prompt);
+      set((s) => ({
+        chatSessions: {
+          ...s.chatSessions,
+          [workspaceId]: {
+            sessionId,
+            status: 'streaming' as const,
+            messages: [{
+              id: crypto.randomUUID(),
+              role: 'user' as const,
+              content: [{ type: 'text' as const, text: prompt }],
+              timestamp: Date.now(),
+            }],
+            streamingText: '',
+            pendingPermission: null,
+            costUsd: 0,
+            numTurns: 0,
+          },
+        },
+        productSessions: {
+          ...s.productSessions,
+          [workspaceId]: { state: 'active' as const, ptyId: undefined, prompt, chatSessionId: sessionId },
+        },
+      }));
+      return sessionId;
+    } catch (e) {
+      console.error('Failed to start chat session:', e);
+      throw e;
+    }
+  },
+
+  handleChatEvent: (workspaceId, data) => {
+    set((s) => {
+      const session = s.chatSessions[workspaceId];
+      if (!session) return s;
+
+      const updated = { ...session };
+      const msgType = data.type;
+
+      if (msgType === 'assistant' && data.message?.content) {
+        // Finalize any streaming text into a message
+        if (updated.streamingText) {
+          updated.messages = [...updated.messages, {
+            id: crypto.randomUUID(),
+            role: 'assistant' as const,
+            content: [{ type: 'text' as const, text: updated.streamingText }],
+            timestamp: Date.now(),
+          }];
+          updated.streamingText = '';
+        }
+
+        // Add the assistant message (may contain tool_use blocks)
+        const content = data.message.content;
+        const mapped = content.map((c: any) => {
+          if (c.type === 'tool_use') return { type: 'tool_use' as const, id: c.id, name: c.name, input: c.input };
+          if (c.type === 'text') return { type: 'text' as const, text: c.text };
+          if (c.type === 'thinking') return { type: 'thinking' as const, text: c.thinking || c.text || '' };
+          return { type: 'text' as const, text: JSON.stringify(c) };
+        });
+
+        // Only add if there's meaningful content
+        if (mapped.length > 0) {
+          updated.messages = [...updated.messages, {
+            id: crypto.randomUUID(),
+            role: 'assistant' as const,
+            content: mapped,
+            timestamp: Date.now(),
+          }];
+        }
+        updated.status = 'streaming';
+      } else if (msgType === 'user' && data.message?.content) {
+        // Tool results from Claude Code
+        const content = data.message.content;
+        const mapped = content.map((c: any) => {
+          if (c.type === 'tool_result') return {
+            type: 'tool_result' as const,
+            tool_use_id: c.tool_use_id,
+            content: typeof c.content === 'string' ? c.content : JSON.stringify(c.content ?? ''),
+            is_error: c.is_error,
+          };
+          return { type: 'text' as const, text: JSON.stringify(c) };
+        });
+        updated.messages = [...updated.messages, {
+          id: crypto.randomUUID(),
+          role: 'user' as const,
+          content: mapped,
+          timestamp: Date.now(),
+        }];
+      } else if (msgType === 'content_block_delta' || (msgType === 'stream_event' && data.event?.type === 'content_block_delta')) {
+        // Token streaming delta
+        const delta = data.delta?.text ?? data.event?.delta?.text ?? '';
+        if (delta) {
+          updated.streamingText = (updated.streamingText || '') + delta;
+          updated.status = 'streaming';
+        }
+      } else if (msgType === 'permission_request') {
+        updated.status = 'waiting_permission';
+        updated.pendingPermission = {
+          request_id: data.request_id,
+          tool_name: data.tool_name,
+          tool_input: data.tool_input,
+        };
+      } else if (msgType === 'result') {
+        // Finalize any remaining streaming text
+        if (updated.streamingText) {
+          updated.messages = [...updated.messages, {
+            id: crypto.randomUUID(),
+            role: 'assistant' as const,
+            content: [{ type: 'text' as const, text: updated.streamingText }],
+            timestamp: Date.now(),
+          }];
+          updated.streamingText = '';
+        }
+        if (data.subtype === 'exit') {
+          // Sidecar process ended — only transition to complete if not already
+          if (updated.status === 'streaming' || updated.status === 'waiting_permission') {
+            updated.status = 'complete';
+          }
+        } else {
+          updated.status = data.subtype === 'success' ? 'complete' : 'error';
+          updated.costUsd = data.cost_usd ?? data.total_cost_usd ?? 0;
+          updated.numTurns = data.num_turns ?? 0;
+          if (data.subtype === 'error') {
+            updated.errorMessage = data.error ?? 'Unknown error';
+          }
+        }
+      }
+
+      return { chatSessions: { ...s.chatSessions, [workspaceId]: updated } };
+    });
+  },
+
+  clearChatSession: async (workspaceId) => {
+    const session = get().chatSessions[workspaceId];
+    if (session?.sessionId) {
+      try { await api.endChatSession(session.sessionId); } catch {}
+    }
+    set((s) => {
+      const { [workspaceId]: _, ...rest } = s.chatSessions;
+      return { chatSessions: rest };
     });
   },
 
@@ -838,13 +994,15 @@ export const useWorkspaceStore = create<WorkspaceState>()(
   removeWorkspace: async (id) => {
     await api.removeWorkspace(id);
     const remaining = get().workspaces.filter((w) => w.id !== id);
-    const { layouts, workspaceModes, productSessions, shellPanels, ...rest } = get();
+    const { layouts, workspaceModes, productSessions, chatSessions, shellPanels, ...rest } = get();
     const newLayouts = { ...layouts };
     delete newLayouts[id];
     const newModes = { ...workspaceModes };
     delete newModes[id];
     const newSessions = { ...productSessions };
     delete newSessions[id];
+    const newChatSessions = { ...chatSessions };
+    delete newChatSessions[id];
     const newShells = { ...shellPanels };
     delete newShells[id];
     set({
@@ -853,6 +1011,7 @@ export const useWorkspaceStore = create<WorkspaceState>()(
       layouts: newLayouts,
       workspaceModes: newModes,
       productSessions: newSessions,
+      chatSessions: newChatSessions,
       shellPanels: newShells,
       activeWorkspaceId:
         get().activeWorkspaceId === id
