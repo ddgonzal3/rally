@@ -1303,6 +1303,7 @@ function RootSection({
   const [syncing, setSyncing] = useState(false);
   const [showCloneModal, setShowCloneModal] = useState(false);
   const [forcePullConfirm, setForcePullConfirm] = useState(false);
+  const [refreshingRepo, setRefreshingRepo] = useState(false);
   const isOnMain = gitStatus?.branch === mainBranch;
   const handleSyncBehind = useCallback(async () => {
     if (syncing) return;
@@ -1363,6 +1364,22 @@ function RootSection({
     }
   }, [syncing, rootPath, mainBranch, gitStatus?.branch, refreshGitStatusForPath]);
 
+  const handleRefreshRepo = useCallback(async () => {
+    if (refreshingRepo) return;
+    setRefreshingRepo(true);
+    try {
+      await api.gitFetch(rootPath);
+      await Promise.all([
+        refreshGitStatusForPath(rootPath, mainBranch),
+        refreshPrStatusForPath(rootPath),
+      ]);
+    } catch (e) {
+      console.error("Refresh failed:", e);
+    } finally {
+      setRefreshingRepo(false);
+    }
+  }, [refreshingRepo, rootPath, mainBranch, refreshGitStatusForPath, refreshPrStatusForPath]);
+
   return (
     <>
       <div>
@@ -1379,7 +1396,7 @@ function RootSection({
           onMouseDown={(e) => onRootHeaderMouseDown?.(e, rootPath)}
           onContextMenu={handleContextMenu}
         >
-          <div style={styles.rootRow}>
+          <div className="repo-header-row" style={styles.rootRow}>
             <button
               onClick={(e) => {
                 if (shouldSuppressHeaderClick?.()) {
@@ -1429,6 +1446,26 @@ function RootSection({
             <div style={styles.rootActions}>
               {isGitRepo && (
                 <>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleRefreshRepo();
+                    }}
+                    disabled={refreshingRepo}
+                    className="repo-action-btn repo-refresh-btn"
+                    style={{
+                      ...styles.rebaseBtn,
+                      opacity: refreshingRepo ? 1 : 0,
+                      transition: "opacity 120ms",
+                      marginRight: -2,
+                    }}
+                    title="Refresh git status & PR"
+                  >
+                    <svg width="16" height="16" viewBox="0 0 16 16" fill="#999" style={refreshingRepo ? { animation: "spin 1s linear infinite" } : undefined}>
+                      <path d="M8 3a5 5 0 1 0 4.546 2.914.5.5 0 1 1 .908-.418A6 6 0 1 1 8 2v1z" />
+                      <path d="M8 4.466V.534a.25.25 0 0 1 .41-.192l2.36 1.966c.12.1.12.284 0 .384L8.41 4.658A.25.25 0 0 1 8 4.466z" />
+                    </svg>
+                  </button>
                   {gitStatus && gitStatus.behind > 0 && !forcePullConfirm && (
                     <button
                       onClick={(e) => {

@@ -313,7 +313,7 @@ export function App() {
     }, 10000);
     const prInterval = setInterval(() => {
       void runPrRefresh();
-    }, 120000);
+    }, 90000);
     const shipInterval = setInterval(() => {
       void runShipPoll();
     }, 5000);
@@ -1391,6 +1391,7 @@ export function App() {
         .syn-literal { color: #79c0ff; }
         .syn-number { color: #d2a8ff; }
         .repo-action-btn:hover { background: rgba(255,255,255,0.1) !important; }
+        .repo-header-row:hover .repo-refresh-btn { opacity: 1 !important; }
         .hunk-action-btn:hover { background: rgba(255,255,255,0.1) !important; color: #eee !important; }
         .file-list-item:hover { background: rgba(255,255,255,0.05) !important; }
         .file-list-item-selected { background: rgba(255,255,255,0.08) !important; }
