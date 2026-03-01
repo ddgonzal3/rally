@@ -1,6 +1,7 @@
 import React, { useState, useCallback, useRef, useEffect } from "react";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { ClaudeTerminalWrapper } from "./ClaudeTerminalWrapper";
+import { Terminal } from "./Terminal";
 import { useWorkspaceStore } from "../stores/workspaceStore";
 import { api } from "../lib/tauri";
 import type { OnFileOpen } from "../lib/terminalLinkProvider";
@@ -11,21 +12,30 @@ interface ProductChatPanelProps {
   workspaceId: string;
 }
 
-type PanelState = "idle" | "active";
-
 function shortenPath(p: string): string {
   return p.replace(/^\/Users\/[^/]+/, "~");
 }
 
+const IDLE_SESSION = { state: "idle" as const, ptyId: undefined, prompt: "" };
+
 export function ProductChatPanel({ rootPath, workspaceId }: ProductChatPanelProps) {
-  const [state, setState] = useState<PanelState>("idle");
-  const [prompt, setPrompt] = useState("");
-  const [ptyId, setPtyId] = useState<string | undefined>(undefined);
+  const session = useWorkspaceStore(
+    (s) => s.productSessions[workspaceId] ?? IDLE_SESSION
+  );
+  const setProductSession = useWorkspaceStore((s) => s.setProductSession);
+  const clearProductSession = useWorkspaceStore((s) => s.clearProductSession);
+
+  const { state, ptyId, prompt } = session;
+
   const [inputFocused, setInputFocused] = useState(false);
   const [readiness, setReadiness] = useState<{ ready: boolean; issues: string[] } | null>(null);
   const ptyIdRef = useRef<string | undefined>(undefined);
   const unlistenExitRef = useRef<UnlistenFn | null>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+
+  useEffect(() => {
+    ptyIdRef.current = ptyId;
+  }, [ptyId]);
 
   const openFile = useWorkspaceStore((s) => s.openFile);
   const gitStatus = useWorkspaceStore((s) => s.gitStatuses[rootPath]);
@@ -37,7 +47,35 @@ export function ProductChatPanel({ rootPath, workspaceId }: ProductChatPanelProp
   const refreshGitStatusForPath = useWorkspaceStore((s) => s.refreshGitStatusForPath);
   const refreshPrStatusForPath = useWorkspaceStore((s) => s.refreshPrStatusForPath);
 
+  const shellPanel = useWorkspaceStore((s) => s.shellPanels[workspaceId]);
+  const toggleShellPanel = useWorkspaceStore((s) => s.toggleShellPanel);
+
   const repoName = rootPath.split("/").pop() || "Claude Code";
+
+  const SHELL_DEFAULT = 33;
+  const SHELL_MAX = 50;
+  const [shellHeight, setShellHeight] = useState(SHELL_DEFAULT); // percentage
+
+  const handleShellResize = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    const startY = e.clientY;
+    const startHeight = shellHeight;
+    const container = (e.target as HTMLElement).closest('[data-shell-container]') as HTMLElement;
+    if (!container) return;
+    const containerHeight = container.getBoundingClientRect().height;
+
+    const onMove = (ev: MouseEvent) => {
+      const dy = startY - ev.clientY;
+      const newHeight = startHeight + (dy / containerHeight) * 100;
+      setShellHeight(Math.min(SHELL_MAX, Math.max(15, newHeight)));
+    };
+    const onUp = () => {
+      document.removeEventListener("mousemove", onMove);
+      document.removeEventListener("mouseup", onUp);
+    };
+    document.addEventListener("mousemove", onMove);
+    document.addEventListener("mouseup", onUp);
+  }, [shellHeight]);
 
   // Check workspace readiness on mount
   useEffect(() => {
@@ -46,9 +84,11 @@ export function ProductChatPanel({ rootPath, workspaceId }: ProductChatPanelProp
       setReadiness(result);
       if (!result.ready && !prompt) {
         const issueList = result.issues.map((i) => `- ${i}`).join("\n");
-        setPrompt(
-          `Set up this project. Issues detected:\n${issueList}\n\nCheck RALLY.json for any setup instructions, then install dependencies and prepare the development environment.`
-        );
+        setProductSession(workspaceId, {
+          state: "idle",
+          ptyId: undefined,
+          prompt: `Set up this project. Issues detected:\n${issueList}\n\nCheck RALLY.json for any setup instructions, then install dependencies and prepare the development environment.`,
+        });
       }
     }).catch(() => {
       // Silently ignore — readiness check is best-effort
@@ -64,8 +104,8 @@ export function ProductChatPanel({ rootPath, workspaceId }: ProductChatPanelProp
 
   const handlePtySpawned = useCallback((id: string) => {
     ptyIdRef.current = id;
-    setPtyId(id);
-  }, []);
+    setProductSession(workspaceId, { state: "active", ptyId: id, prompt });
+  }, [workspaceId, prompt, setProductSession]);
 
   // Listen for PTY exit to transition back to idle
   useEffect(() => {
@@ -78,10 +118,7 @@ export function ProductChatPanel({ rootPath, workspaceId }: ProductChatPanelProp
       setTimeout(() => {
         if (!cancelled) {
           ptyIdRef.current = undefined;
-          setPtyId(undefined);
-          setState("idle");
-          setPrompt("");
-          // Re-check readiness after PTY exits
+          clearProductSession(workspaceId);
           setReadiness(null);
         }
       }, 2000);
@@ -98,13 +135,13 @@ export function ProductChatPanel({ rootPath, workspaceId }: ProductChatPanelProp
       unlistenExitRef.current?.();
       unlistenExitRef.current = null;
     };
-  }, [ptyId]);
+  }, [ptyId, workspaceId, clearProductSession]);
 
   const handleSubmit = useCallback(() => {
     const trimmed = prompt.trim();
     if (!trimmed) return;
-    setState("active");
-  }, [prompt]);
+    setProductSession(workspaceId, { state: "active", ptyId: undefined, prompt: trimmed });
+  }, [prompt, workspaceId, setProductSession]);
 
   // Auto-resize textarea to fit content
   const autoResize = useCallback(() => {
@@ -115,10 +152,9 @@ export function ProductChatPanel({ rootPath, workspaceId }: ProductChatPanelProp
   }, []);
 
   const handleChange = useCallback((e: React.ChangeEvent<HTMLTextAreaElement>) => {
-    setPrompt(e.target.value);
-    // Resize on next frame so the DOM has the new value
+    setProductSession(workspaceId, { ...session, prompt: e.target.value });
     requestAnimationFrame(autoResize);
-  }, [autoResize]);
+  }, [workspaceId, session, setProductSession, autoResize]);
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -130,17 +166,15 @@ export function ProductChatPanel({ rootPath, workspaceId }: ProductChatPanelProp
     [handleSubmit],
   );
 
-  const handleRestart = useCallback(() => {
+  const handleNewSession = useCallback(() => {
     if (ptyIdRef.current) {
       api.killPty(ptyIdRef.current);
     }
     unlistenExitRef.current?.();
     unlistenExitRef.current = null;
     ptyIdRef.current = undefined;
-    setPtyId(undefined);
-    setState("idle");
-    setPrompt("");
-  }, []);
+    clearProductSession(workspaceId);
+  }, [workspaceId, clearProductSession]);
 
   // Focus input when returning to idle
   useEffect(() => {
@@ -151,12 +185,18 @@ export function ProductChatPanel({ rootPath, workspaceId }: ProductChatPanelProp
     }
   }, [state]);
 
+  // Content stays at 28% when shell <= default. Above default, shift up proportionally.
+  const contentTop = shellPanel?.visible && shellHeight > SHELL_DEFAULT
+    ? Math.max(8, 28 - (shellHeight - SHELL_DEFAULT))
+    : 28;
+
   if (state === "idle") {
     const needsSetup = readiness && !readiness.ready;
 
     return (
-      <div style={styles.idleContainer}>
-        <div style={styles.idleContent}>
+      <div style={styles.outerContainer} data-shell-container>
+        <div style={styles.idleContainer} />
+        <div style={{ ...styles.idleContent, top: `${contentTop}%` }}>
           {/* Claude mascot */}
           <svg
             width="36"
@@ -251,35 +291,75 @@ export function ProductChatPanel({ rootPath, workspaceId }: ProductChatPanelProp
                   variant="inline"
                 />
               )}
+              <button
+                style={styles.shellToggleBtn}
+                onClick={() => toggleShellPanel(workspaceId, rootPath)}
+                title="Toggle terminal (Ctrl+`)"
+              >
+                Terminal
+              </button>
             </div>
           </div>
         </div>
+      {shellPanel?.visible && (
+        <div style={{ height: `${shellHeight}%`, minHeight: 80, display: "flex", flexDirection: "column", zIndex: 2, flexShrink: 0 }}>
+          <div style={styles.shellResizeHandle} onMouseDown={handleShellResize}>
+            <div style={styles.shellResizeLine} />
+          </div>
+          <div style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0, borderTop: "1px solid #333" }}>
+            <Terminal cwd={rootPath} ptyId={shellPanel.ptyId} onFileOpen={handleFileOpen} />
+          </div>
+        </div>
+      )}
       </div>
     );
   }
 
   // Active state: header + terminal
   return (
-    <div style={styles.activeContainer}>
+    <div style={styles.outerContainer} data-shell-container>
+    <div style={{ ...styles.activeContainer, flex: shellPanel?.visible ? undefined : 1, height: shellPanel?.visible ? `${100 - shellHeight}%` : undefined }}>
       <div style={styles.activeHeader}>
-        <span style={styles.headerTitle}>{repoName}</span>
         <button
           className="sidebar-btn"
-          style={styles.headerBtn}
-          onClick={handleRestart}
-          title="Restart Claude Code"
+          style={styles.newSessionBtn}
+          onClick={handleNewSession}
+          title="End session and start a new one"
         >
-          <svg width="12" height="12" viewBox="0 0 16 16" fill="none">
-            <path
-              d="M13.5 8a5.5 5.5 0 01-10.58 2M2.5 8a5.5 5.5 0 0110.58-2"
-              stroke="#999"
-              strokeWidth="1.2"
-              strokeLinecap="round"
-            />
-            <path d="M2 13V10h3" stroke="#999" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" />
-            <path d="M14 3v3h-3" stroke="#999" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" />
-          </svg>
+          New Session
         </button>
+        <div style={styles.headerRight}>
+          <svg width="11" height="11" viewBox="0 0 16 16" fill="none" style={{ flexShrink: 0 }}>
+            <path
+              d="M2 4.5A1.5 1.5 0 013.5 3H6l1 1.5h5.5A1.5 1.5 0 0114 6v5.5a1.5 1.5 0 01-1.5 1.5h-9A1.5 1.5 0 012 11.5v-7z"
+              stroke="#777"
+              strokeWidth="1.1"
+              strokeLinejoin="round"
+              fill="none"
+            />
+          </svg>
+          <span style={styles.headerPathText}>{shortenPath(rootPath)}</span>
+          {branch && (
+            <BranchSwitcher
+              rootPath={rootPath}
+              branchName={branch}
+              mainBranch={mainBranch}
+              onBranchChanged={() => {
+                refreshGitStatusForPath(rootPath, mainBranch).catch(() => {});
+                refreshPrStatusForPath(rootPath).catch(() => {});
+              }}
+              variant="inline"
+            />
+          )}
+          <button
+            className="sidebar-btn"
+            style={styles.shellToggleBtnHeader}
+            onClick={() => toggleShellPanel(workspaceId, rootPath)}
+            title="Toggle terminal (Ctrl+`)"
+          >
+            Terminal
+          </button>
+        </div>
       </div>
       <div style={styles.terminalArea}>
         <ClaudeTerminalWrapper
@@ -292,31 +372,43 @@ export function ProductChatPanel({ rootPath, workspaceId }: ProductChatPanelProp
         />
       </div>
     </div>
+    {shellPanel?.visible && (
+      <div style={{ height: `${shellHeight}%`, minHeight: 80, display: "flex", flexDirection: "column", zIndex: 2, flexShrink: 0 }}>
+        <div style={styles.shellResizeHandle} onMouseDown={handleShellResize}>
+          <div style={styles.shellResizeLine} />
+        </div>
+        <div style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0, borderTop: "1px solid #333" }}>
+          <Terminal cwd={rootPath} ptyId={shellPanel.ptyId} onFileOpen={handleFileOpen} />
+        </div>
+      </div>
+    )}
+    </div>
   );
 }
 
 const styles: Record<string, React.CSSProperties> = {
   // Idle state
   idleContainer: {
-    flex: 1,
-    display: "flex",
-    flexDirection: "column",
+    position: "absolute",
+    inset: 0,
     background: "#1b1b1b",
     backgroundImage: "radial-gradient(circle, rgba(255,255,255,0.04) 1px, transparent 1px)",
     backgroundSize: "16px 16px",
-    minHeight: 0,
-    minWidth: 0,
   },
   idleContent: {
-    flex: 1,
+    position: "absolute",
+    left: "50%",
+    transform: "translateX(-50%)",
     display: "flex",
     flexDirection: "column",
     alignItems: "center",
-    justifyContent: "center",
-    paddingBottom: 120,
+    width: "100%",
+    maxWidth: 648,
     paddingLeft: 24,
     paddingRight: 24,
     gap: 8,
+    zIndex: 1,
+    pointerEvents: "auto",
   },
   repoName: {
     fontSize: 20,
@@ -410,26 +502,38 @@ const styles: Record<string, React.CSSProperties> = {
     maxHeight: 29,
     background: "#1e1e1e",
     borderBottom: "1px solid #333",
+    zIndex: 10,
+    position: "relative" as const,
     flexShrink: 0,
   },
-  headerTitle: {
-    fontSize: 11,
-    fontWeight: 700,
-    textTransform: "uppercase" as const,
-    letterSpacing: "0.05em",
-    color: "#fff",
-  },
-  headerBtn: {
+  newSessionBtn: {
     display: "flex",
     alignItems: "center",
-    justifyContent: "center",
-    width: 22,
-    height: 22,
     background: "none",
     border: "none",
     cursor: "pointer",
+    fontSize: 11,
+    fontWeight: 500,
+    color: "#999",
+    padding: "0 6px",
     borderRadius: 4,
-    padding: 0,
+    height: 22,
+    whiteSpace: "nowrap" as const,
+  },
+  headerRight: {
+    display: "flex",
+    alignItems: "center",
+    gap: 5,
+    overflow: "hidden",
+    minWidth: 0,
+  },
+  headerPathText: {
+    fontSize: 11,
+    color: "#777",
+    fontWeight: 400,
+    overflow: "hidden",
+    textOverflow: "ellipsis",
+    whiteSpace: "nowrap" as const,
   },
   terminalArea: {
     flex: 1,
@@ -438,5 +542,58 @@ const styles: Record<string, React.CSSProperties> = {
     minHeight: 0,
     minWidth: 0,
     position: "relative",
+  },
+
+  // Shell panel
+  outerContainer: {
+    flex: 1,
+    display: "flex",
+    flexDirection: "column",
+    justifyContent: "flex-end",
+    position: "relative",
+    minHeight: 0,
+    minWidth: 0,
+    overflow: "hidden",
+  },
+  shellToggleBtn: {
+    background: "none",
+    border: "none",
+    cursor: "pointer",
+    marginLeft: "auto",
+    borderRadius: 3,
+    fontSize: 11,
+    color: "#999",
+    fontWeight: 400,
+    padding: "1px 4px",
+    letterSpacing: "0.01em",
+  },
+  shellToggleBtnHeader: {
+    background: "none",
+    border: "none",
+    cursor: "pointer",
+    borderRadius: 4,
+    padding: "0 6px",
+    marginLeft: 6,
+    fontSize: 11,
+    color: "#999",
+    fontWeight: 400,
+    height: 22,
+    letterSpacing: "0.01em",
+    whiteSpace: "nowrap" as const,
+  },
+  shellResizeHandle: {
+    height: 6,
+    cursor: "row-resize",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    flexShrink: 0,
+    background: "#1e1e1e",
+  },
+  shellResizeLine: {
+    width: 32,
+    height: 2,
+    borderRadius: 1,
+    background: "rgba(255,255,255,0.15)",
   },
 };

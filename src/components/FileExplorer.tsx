@@ -815,7 +815,7 @@ function PrBadge({
         e.stopPropagation();
         onClick?.();
       }}
-      className="pr-badge-btn"
+      className="repo-action-btn"
       title={pr.is_draft ? `Draft PR #${pr.number}` : `PR #${pr.number}`}
       style={{
         ...styles.prBadge,
@@ -847,7 +847,7 @@ function GitStatusIcon({
         e.stopPropagation();
         if (onClick) onClick();
       }}
-      className="git-status-btn"
+      className="repo-action-btn"
       title={changeCount > 0 ? `${changeCount} changes — view diff` : "Clean"}
       style={{
         display: "flex",
@@ -1083,6 +1083,7 @@ function RootSection({
     (s) => s.unifiedGitPanelOpen && s.unifiedGitPanelPath === rootPath,
   );
   const rebaseOnMain = useWorkspaceStore((s) => s.rebaseOnMain);
+  const refreshGitStatusForPath = useWorkspaceStore((s) => s.refreshGitStatusForPath);
   const mainBranch = useWorkspaceStore((s) => {
     const ws = s.workspaces.find((w) => w.paths.includes(rootPath));
     return ws?.main_branch ?? "main";
@@ -1299,28 +1300,68 @@ function RootSection({
     }
   }, [creatingPr, rootPath, refreshPrStatusForPath]);
 
-  const [rebasingOnMain, setRebasingOnMain] = useState(false);
+  const [syncing, setSyncing] = useState(false);
   const [showCloneModal, setShowCloneModal] = useState(false);
-  const handleRebaseOnMain = useCallback(async () => {
-    if (rebasingOnMain) return;
-    setRebasingOnMain(true);
+  const [forcePullConfirm, setForcePullConfirm] = useState(false);
+  const isOnMain = gitStatus?.branch === mainBranch;
+  const handleSyncBehind = useCallback(async () => {
+    if (syncing) return;
+    setSyncing(true);
     try {
-      await rebaseOnMain(rootPath, mainBranch);
+      if (isOnMain) {
+        await api.gitPull(rootPath);
+        await refreshGitStatusForPath(rootPath, mainBranch);
+        addToast({
+          type: "success",
+          title: "Pulled",
+          message: `Updated ${mainBranch} from origin`,
+        });
+      } else {
+        await rebaseOnMain(rootPath, mainBranch);
+        addToast({
+          type: "success",
+          title: "Rebased",
+          message: `Rebased onto ${mainBranch}`,
+        });
+      }
+    } catch (e) {
+      const msg = String(e instanceof Error ? e.message : e);
+      if (isOnMain && msg.startsWith("DIVERGED:")) {
+        setForcePullConfirm(true);
+      } else {
+        addToast({
+          type: "warning",
+          title: isOnMain ? "Pull failed" : "Rebase failed",
+          message: msg,
+        });
+      }
+    } finally {
+      setSyncing(false);
+    }
+  }, [syncing, isOnMain, rebaseOnMain, rootPath, mainBranch, refreshGitStatusForPath]);
+
+  const handleForcePull = useCallback(async () => {
+    if (syncing) return;
+    setSyncing(true);
+    try {
+      await api.gitForcePull(rootPath);
+      await refreshGitStatusForPath(rootPath, mainBranch);
       addToast({
         type: "success",
-        title: "Rebased",
-        message: `Rebased onto ${mainBranch}`,
+        title: "Force pulled",
+        message: `Reset ${gitStatus?.branch ?? mainBranch} to origin`,
       });
     } catch (e) {
       addToast({
         type: "warning",
-        title: "Rebase failed",
+        title: "Force pull failed",
         message: String(e instanceof Error ? e.message : e),
       });
     } finally {
-      setRebasingOnMain(false);
+      setSyncing(false);
+      setForcePullConfirm(false);
     }
-  }, [rebasingOnMain, rebaseOnMain, rootPath, mainBranch]);
+  }, [syncing, rootPath, mainBranch, gitStatus?.branch, refreshGitStatusForPath]);
 
   return (
     <>
@@ -1388,37 +1429,70 @@ function RootSection({
             <div style={styles.rootActions}>
               {isGitRepo && (
                 <>
-                  {gitStatus && gitStatus.behind > 0 && (
+                  {gitStatus && gitStatus.behind > 0 && !forcePullConfirm && (
                     <button
                       onClick={(e) => {
                         e.stopPropagation();
-                        handleRebaseOnMain();
+                        handleSyncBehind();
                       }}
-                      disabled={rebasingOnMain}
+                      disabled={syncing}
+                      className="repo-action-btn"
                       style={{
                         ...styles.rebaseBtn,
-                        opacity: rebasingOnMain ? 0.5 : 1,
+                        opacity: syncing ? 0.5 : 1,
                       }}
                       title={
-                        rebasingOnMain
-                          ? "Rebasing..."
-                          : `Rebase onto ${mainBranch}`
+                        syncing
+                          ? (isOnMain ? "Pulling..." : "Rebasing...")
+                          : (isOnMain ? `Pull from origin` : `Rebase onto ${mainBranch}`)
                       }
                     >
-                      <svg
-                        width="18"
-                        height="18"
-                        viewBox="60 -880 860 860"
-                        fill="#999"
-                        style={
-                          rebasingOnMain
-                            ? { animation: "spin 1s linear infinite" }
-                            : undefined
-                        }
-                      >
-                        <path d="m430-30-56-57 73-73H313q-13 35-43.5 57.5T200-80q-50 0-85-35t-35-85q0-39 22.5-69.5T160-313v-334q-35-13-57.5-43.5T80-760q0-50 35-85t85-35q39 0 69.5 22.5T313-800h134l-73-73 56-57 170 170-170 170-56-57 73-73H313q-9 26-28 45t-45 28v334q26 9 45 28t28 45h134l-73-73 56-57 170 170L430-30Zm245-85q-35-35-35-85 0-40 22.5-70.5T720-313v-334q-35-12-57.5-42.5T640-760q0-50 35-85t85-35q50 0 85 35t35 85q0 40-22.5 70.5T800-647v334q35 13 57.5 43.5T880-200q0 50-35 85t-85 35q-50 0-85-35Zm-475-45q17 0 28.5-11.5T240-200q0-17-11.5-28.5T200-240q-17 0-28.5 11.5T160-200q0 17 11.5 28.5T200-160Zm560 0q17 0 28.5-11.5T800-200q0-17-11.5-28.5T760-240q-17 0-28.5 11.5T720-200q0 17 11.5 28.5T760-160ZM200-720q17 0 28.5-11.5T240-760q0-17-11.5-28.5T200-800q-17 0-28.5 11.5T160-760q0 17 11.5 28.5T200-720Zm560 0q17 0 28.5-11.5T800-760q0-17-11.5-28.5T760-800q-17 0-28.5 11.5T720-760q0 17 11.5 28.5T760-720ZM200-200Zm560 0ZM200-760Zm560 0Z" />
-                      </svg>
+                      {isOnMain ? (
+                        <svg width="18" height="18" viewBox="0 -960 960 960" fill="#999" style={syncing ? { animation: "spin 1s linear infinite" } : undefined}>
+                          <path d="M440-800v487L216-537l-56 57 320 320 320-320-56-57-224 224v-487h-80Z" />
+                        </svg>
+                      ) : (
+                        <svg width="18" height="18" viewBox="60 -880 860 860" fill="#999" style={syncing ? { animation: "spin 1s linear infinite" } : undefined}>
+                          <path d="m430-30-56-57 73-73H313q-13 35-43.5 57.5T200-80q-50 0-85-35t-35-85q0-39 22.5-69.5T160-313v-334q-35-13-57.5-43.5T80-760q0-50 35-85t85-35q39 0 69.5 22.5T313-800h134l-73-73 56-57 170 170-170 170-56-57 73-73H313q-9 26-28 45t-45 28v334q26 9 45 28t28 45h134l-73-73 56-57 170 170L430-30Zm245-85q-35-35-35-85 0-40 22.5-70.5T720-313v-334q-35-12-57.5-42.5T640-760q0-50 35-85t85-35q50 0 85 35t35 85q0 40-22.5 70.5T800-647v334q35 13 57.5 43.5T880-200q0 50-35 85t-85 35q-50 0-85-35Zm-475-45q17 0 28.5-11.5T240-200q0-17-11.5-28.5T200-240q-17 0-28.5 11.5T160-200q0 17 11.5 28.5T200-160Zm560 0q17 0 28.5-11.5T800-200q0-17-11.5-28.5T760-240q-17 0-28.5 11.5T720-200q0 17 11.5 28.5T760-160ZM200-720q17 0 28.5-11.5T240-760q0-17-11.5-28.5T200-800q-17 0-28.5 11.5T160-760q0 17 11.5 28.5T200-720Zm560 0q17 0 28.5-11.5T800-760q0-17-11.5-28.5T760-800q-17 0-28.5 11.5T720-760q0 17 11.5 28.5T760-720ZM200-200Zm560 0ZM200-760Zm560 0Z" />
+                        </svg>
+                      )}
                     </button>
+                  )}
+                  {forcePullConfirm && (
+                    <div style={{ display: "inline-flex", alignItems: "center", gap: 3 }} onClick={(e) => e.stopPropagation()}>
+                      <span style={{ fontSize: 10, color: "#e8a838", whiteSpace: "nowrap" }}>Reset to remote?</span>
+                      <button
+                        onClick={handleForcePull}
+                        disabled={syncing}
+                        style={{
+                          background: "#c53030",
+                          border: "none",
+                          color: "#fff",
+                          fontSize: 10,
+                          fontWeight: 600,
+                          cursor: syncing ? "default" : "pointer",
+                          padding: "1px 6px",
+                          borderRadius: 4,
+                          opacity: syncing ? 0.5 : 1,
+                        }}
+                      >
+                        Yes
+                      </button>
+                      <button
+                        onClick={() => setForcePullConfirm(false)}
+                        style={{
+                          background: "transparent",
+                          border: "1px solid rgba(255,255,255,0.2)",
+                          color: "#ddd",
+                          fontSize: 10,
+                          cursor: "pointer",
+                          padding: "1px 6px",
+                          borderRadius: 4,
+                        }}
+                      >
+                        No
+                      </button>
+                    </div>
                   )}
                   <PrBadge
                     pr={prStatus}
@@ -2876,9 +2950,9 @@ const styles: Record<string, React.CSSProperties> = {
     justifyContent: "center",
     background: "none",
     border: "none",
-    padding: "2px",
+    padding: "4px",
     flexShrink: 0,
-    borderRadius: 4,
+    borderRadius: 6,
     cursor: "pointer",
   },
   node: {

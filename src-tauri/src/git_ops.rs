@@ -143,14 +143,64 @@ pub async fn status(cwd: &str, main_branch: &str) -> Result<GitStatus, String> {
         Err(_) => (0, 0),
     };
 
+    // Count ahead/behind vs remote tracking branch (origin/<current_branch>)
+    // Uses @{upstream} which resolves to the configured tracking branch.
+    // Fails gracefully if no upstream is set (locally-created branches).
+    let (tracking_ahead, tracking_behind) = match git_cmd(cwd, &["rev-list", "--left-right", "--count", "HEAD...@{upstream}"]).await {
+        Ok(counts) => {
+            let parts: Vec<&str> = counts.split_whitespace().collect();
+            if parts.len() == 2 {
+                (
+                    parts[0].parse().unwrap_or(0),
+                    parts[1].parse().unwrap_or(0),
+                )
+            } else {
+                (0, 0)
+            }
+        }
+        Err(_) => (0, 0), // No upstream configured
+    };
+
     Ok(GitStatus {
         branch,
         dirty,
         ahead,
         behind,
+        tracking_ahead,
+        tracking_behind,
         modified_files: modified,
         untracked_files: untracked,
     })
+}
+
+/// Pull from the remote tracking branch.
+/// Returns `Err("DIVERGED:...")` when branches have diverged so the caller
+/// can prompt the user before force-pulling.
+pub async fn pull(cwd: &str) -> Result<String, String> {
+    match tokio::time::timeout(
+        Duration::from_secs(30),
+        git_cmd(cwd, &["pull"]),
+    )
+    .await
+    {
+        Ok(Ok(output)) => Ok(if output.is_empty() { "Already up to date.".to_string() } else { output }),
+        Ok(Err(e)) => {
+            let err_lower = e.to_lowercase();
+            if err_lower.contains("divergent") || err_lower.contains("need to specify how to reconcile") {
+                Err(format!("DIVERGED:{}", e))
+            } else {
+                Err(e)
+            }
+        }
+        Err(_) => Err("git pull timed out after 30s".to_string()),
+    }
+}
+
+/// Force-pull: reset local branch to match remote tracking branch exactly.
+/// Discards any local commits that aren't on the remote.
+pub async fn force_pull(cwd: &str) -> Result<String, String> {
+    git_cmd(cwd, &["reset", "--hard", "@{upstream}"]).await?;
+    Ok("Reset to remote".to_string())
 }
 
 /// Sync: checkout main, pull, rebase branch on top

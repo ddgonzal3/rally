@@ -172,6 +172,8 @@ fn main() {
         commands::git_commit_diff,
         commands::git_diff_stat,
         commands::git_fetch,
+        commands::git_pull,
+        commands::git_force_pull,
         commands::git_rebase_on_main,
         commands::git_list_branches,
         commands::git_checkout_branch,

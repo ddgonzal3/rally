@@ -475,6 +475,16 @@ pub async fn git_fetch(workspace_path: String) -> Result<(), String> {
 }
 
 #[tauri::command]
+pub async fn git_pull(workspace_path: String) -> Result<String, String> {
+    git_ops::pull(&workspace_path).await
+}
+
+#[tauri::command]
+pub async fn git_force_pull(workspace_path: String) -> Result<String, String> {
+    git_ops::force_pull(&workspace_path).await
+}
+
+#[tauri::command]
 pub async fn git_rebase_on_main(workspace_path: String, main_branch: String) -> Result<String, String> {
     git_ops::rebase_on_main(&workspace_path, &main_branch).await
 }

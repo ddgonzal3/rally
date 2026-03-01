@@ -784,6 +784,17 @@ export function App() {
         const s = useWorkspaceStore.getState();
         const wsId = s.activeWorkspaceId;
         if (!wsId) return;
+
+        // In product mode, toggle the shell panel
+        const mode = s.workspaceModes[wsId];
+        if (mode === "product") {
+          const rootPath = s.getActivePath(wsId);
+          if (rootPath) {
+            s.toggleShellPanel(wsId, rootPath);
+          }
+          return;
+        }
+
         let layout = s.getOrCreateLayout(wsId);
         const root = layout.root;
 
@@ -1379,6 +1390,7 @@ export function App() {
         .syn-keyword { color: #ff7b72; }
         .syn-literal { color: #79c0ff; }
         .syn-number { color: #d2a8ff; }
+        .repo-action-btn:hover { background: rgba(255,255,255,0.1) !important; }
         .hunk-action-btn:hover { background: rgba(255,255,255,0.1) !important; color: #eee !important; }
         .file-list-item:hover { background: rgba(255,255,255,0.05) !important; }
         .file-list-item-selected { background: rgba(255,255,255,0.08) !important; }

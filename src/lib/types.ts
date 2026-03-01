@@ -20,6 +20,10 @@ export interface GitStatus {
   dirty: boolean;
   ahead: number;
   behind: number;
+  /** Commits ahead of origin/<current_branch> */
+  tracking_ahead: number;
+  /** Commits behind origin/<current_branch> */
+  tracking_behind: number;
   modified_files: string[];
   untracked_files: string[];
 }

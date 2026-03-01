@@ -75,6 +75,8 @@ export function UnifiedGitPanel() {
   const [selectedCommitFile, setSelectedCommitFile] = useState<string | null>(
     null,
   );
+  const [pulling, setPulling] = useState(false);
+  const [forcePullConfirm, setForcePullConfirm] = useState(false);
   const lastFetchedPath = useRef<string | null>(null);
   const lastFileFingerprint = useRef<string>("");
 
@@ -508,9 +510,22 @@ export function UnifiedGitPanel() {
     setSelectedCommitFile(null);
   }, [diffTab]);
 
+  // Close panel on click outside (document-level listener instead of a full-screen backdrop,
+  // so sidebar buttons remain clickable when the panel is open)
+  const expanded = open && entered;
+  useEffect(() => {
+    if (!expanded) return;
+    const handleMouseDown = (e: MouseEvent) => {
+      if (drawerRef.current && !drawerRef.current.contains(e.target as Node)) {
+        closePanel();
+      }
+    };
+    document.addEventListener("mousedown", handleMouseDown);
+    return () => document.removeEventListener("mousedown", handleMouseDown);
+  }, [expanded, closePanel]);
+
   if (!mounted) return null;
 
-  const expanded = open && entered;
   const selectedDiffFile = activeFiles.find(
     (f) => (f.newPath || f.oldPath) === selectedFile,
   );
@@ -521,15 +536,13 @@ export function UnifiedGitPanel() {
         position: "absolute",
         inset: 0,
         zIndex: 9999,
-        pointerEvents: expanded ? "auto" : "none",
+        pointerEvents: "none",
       }}
-      onClick={closePanel}
     >
       {/* Drawer */}
       <div
         ref={drawerRef}
         className="git-diff-overlay"
-        onClick={(e) => e.stopPropagation()}
         style={{
           position: "absolute",
           top: 0,
@@ -541,6 +554,7 @@ export function UnifiedGitPanel() {
           display: "flex",
           flexDirection: "row",
           overflow: "hidden",
+          pointerEvents: "auto",
           boxShadow: "-4px 0 16px rgba(0,0,0,0.25)",
           transform: expanded ? "translateX(0)" : "translateX(100%)",
           transition: expanded
@@ -630,16 +644,110 @@ export function UnifiedGitPanel() {
             <div style={{ flex: 1, minWidth: 0 }} />
 
             {branchName && rootPath && (
-              <BranchSwitcher
-                rootPath={rootPath}
-                branchName={branchName}
-                mainBranch={mainBranch}
-                onBranchChanged={() => {
-                  refreshGitStatusForPath(rootPath, mainBranch).catch(() => {});
-                  refreshPrStatusForPath(rootPath).catch(() => {});
-                }}
-                variant="pill"
-              />
+              <>
+                <BranchSwitcher
+                  rootPath={rootPath}
+                  branchName={branchName}
+                  mainBranch={mainBranch}
+                  onBranchChanged={() => {
+                    refreshGitStatusForPath(rootPath, mainBranch).catch(() => {});
+                    refreshPrStatusForPath(rootPath).catch(() => {});
+                  }}
+                  variant="pill"
+                />
+                {(gitStatus?.tracking_behind ?? 0) > 0 && !forcePullConfirm && (
+                  <button
+                    onClick={async () => {
+                      if (pulling) return;
+                      setPulling(true);
+                      try {
+                        await api.gitPull(rootPath);
+                        await refreshGitStatusForPath(rootPath, mainBranch);
+                        addToast({ type: "success", title: "Pulled", message: `Updated ${branchName} from origin` });
+                      } catch (e) {
+                        const msg = String(e);
+                        if (msg.startsWith("DIVERGED:")) {
+                          setForcePullConfirm(true);
+                        } else {
+                          addToast({ type: "warning", title: "Pull failed", message: msg });
+                        }
+                      } finally {
+                        setPulling(false);
+                      }
+                    }}
+                    title={`Pull ${gitStatus!.tracking_behind} commit${gitStatus!.tracking_behind === 1 ? "" : "s"} from origin`}
+                    style={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: 3,
+                      background: "#2a2a2a",
+                      border: "none",
+                      color: "#ddd",
+                      fontSize: 11,
+                      fontWeight: 600,
+                      cursor: pulling ? "default" : "pointer",
+                      padding: "2px 7px",
+                      borderRadius: 20,
+                      lineHeight: "16px",
+                      opacity: pulling ? 0.5 : 1,
+                      flexShrink: 0,
+                    }}
+                  >
+                    <svg width={12} height={12} viewBox="0 -960 960 960" fill="#ddd" style={{ flexShrink: 0 }}>
+                      <path d="M440-800v487L216-537l-56 57 320 320 320-320-56-57-224 224v-487h-80Z" />
+                    </svg>
+                    {gitStatus!.tracking_behind}
+                  </button>
+                )}
+                {forcePullConfirm && (
+                  <div style={{ display: "inline-flex", alignItems: "center", gap: 4, flexShrink: 0 }}>
+                    <span style={{ fontSize: 11, color: "#e8a838" }}>Discard local &amp; reset to remote?</span>
+                    <button
+                      onClick={async () => {
+                        setPulling(true);
+                        try {
+                          await api.gitForcePull(rootPath);
+                          await refreshGitStatusForPath(rootPath, mainBranch);
+                          addToast({ type: "success", title: "Force pulled", message: `Reset ${branchName} to origin` });
+                        } catch (e) {
+                          addToast({ type: "warning", title: "Force pull failed", message: String(e) });
+                        } finally {
+                          setPulling(false);
+                          setForcePullConfirm(false);
+                        }
+                      }}
+                      disabled={pulling}
+                      style={{
+                        background: "#c53030",
+                        border: "none",
+                        color: "#fff",
+                        fontSize: 11,
+                        fontWeight: 600,
+                        cursor: pulling ? "default" : "pointer",
+                        padding: "2px 8px",
+                        borderRadius: 4,
+                        opacity: pulling ? 0.5 : 1,
+                      }}
+                    >
+                      Yes
+                    </button>
+                    <button
+                      onClick={() => setForcePullConfirm(false)}
+                      style={{
+                        background: "transparent",
+                        border: "1px solid rgba(255,255,255,0.2)",
+                        color: "#ddd",
+                        fontSize: 11,
+                        cursor: "pointer",
+                        padding: "2px 8px",
+                        borderRadius: 4,
+                      }}
+                    >
+                      No
+                    </button>
+                  </div>
+                )}
+              </>
             )}
           </div>
 

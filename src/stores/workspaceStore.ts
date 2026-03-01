@@ -93,6 +93,17 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 type WorkspaceMode = "product" | "dev";
 
+type ProductSession = {
+  state: "idle" | "active";
+  ptyId: string | undefined;
+  prompt: string;
+};
+
+type ShellPanel = {
+  ptyId: string;
+  visible: boolean;
+};
+
 type PersistedWorkspaceState = {
   activeWorkspaceId: string | null;
   activePathIndex: Record<string, number>;
@@ -226,6 +237,10 @@ interface WorkspaceState {
   dirtyPanes: Set<string>;
   /** Workspace mode per workspace ID (product or dev) */
   workspaceModes: Record<string, WorkspaceMode>;
+  /** PRD mode sessions keyed by workspace ID (in-memory only, not persisted) */
+  productSessions: Record<string, ProductSession>;
+  /** Bottom shell panel keyed by workspace ID (in-memory only) */
+  shellPanels: Record<string, ShellPanel>;
   /** Cached RALLY.json configs per repo path (not persisted) */
   rallyConfigs: Record<string, RallyConfig>;
 
@@ -236,6 +251,14 @@ interface WorkspaceState {
   // Mode actions
   setWorkspaceMode: (workspaceId: string, mode: WorkspaceMode) => void;
   loadRallyConfig: (rootPath: string) => Promise<void>;
+
+  // Product session actions
+  setProductSession: (workspaceId: string, session: ProductSession) => void;
+  clearProductSession: (workspaceId: string) => void;
+
+  // Shell panel actions
+  toggleShellPanel: (workspaceId: string, rootPath: string) => Promise<void>;
+  hideShellPanel: (workspaceId: string) => void;
 
   // Workspace actions
   loadWorkspaces: (options?: { keepNullActive?: boolean }) => Promise<void>;
@@ -570,6 +593,8 @@ function gitStatusEqual(a: GitStatus, b: GitStatus): boolean {
     a.dirty === b.dirty &&
     a.ahead === b.ahead &&
     a.behind === b.behind &&
+    a.tracking_ahead === b.tracking_ahead &&
+    a.tracking_behind === b.tracking_behind &&
     arraysEqual(a.modified_files, b.modified_files) &&
     arraysEqual(a.untracked_files, b.untracked_files)
   );
@@ -616,6 +641,8 @@ export const useWorkspaceStore = create<WorkspaceState>()(
   loading: false,
   dirtyPanes: new Set(),
   workspaceModes: {},
+  productSessions: {},
+  shellPanels: {},
   rallyConfigs: {},
 
   markPaneDirty: (paneId) => {
@@ -646,6 +673,57 @@ export const useWorkspaceStore = create<WorkspaceState>()(
       set((s) => ({ rallyConfigs: { ...s.rallyConfigs, [rootPath]: config } }));
     } catch (e) {
       console.error(`Failed to load RALLY.json for ${rootPath}:`, e);
+    }
+  },
+
+  // --- Product session actions ---
+
+  setProductSession: (workspaceId, session) => {
+    set((s) => ({
+      productSessions: { ...s.productSessions, [workspaceId]: session },
+    }));
+  },
+  clearProductSession: (workspaceId) => {
+    set((s) => {
+      const { [workspaceId]: _, ...rest } = s.productSessions;
+      return { productSessions: rest };
+    });
+  },
+
+  // --- Shell panel actions ---
+
+  toggleShellPanel: async (workspaceId, rootPath) => {
+    const s = get();
+    const existing = s.shellPanels[workspaceId];
+    if (existing) {
+      // Toggle visibility
+      set({
+        shellPanels: {
+          ...s.shellPanels,
+          [workspaceId]: { ...existing, visible: !existing.visible },
+        },
+      });
+      return;
+    }
+    // Spawn a new shell PTY
+    const ptyId = await api.spawnPty(rootPath, null, 80, 24);
+    set({
+      shellPanels: {
+        ...get().shellPanels,
+        [workspaceId]: { ptyId, visible: true },
+      },
+    });
+  },
+  hideShellPanel: (workspaceId) => {
+    const s = get();
+    const existing = s.shellPanels[workspaceId];
+    if (existing) {
+      set({
+        shellPanels: {
+          ...s.shellPanels,
+          [workspaceId]: { ...existing, visible: false },
+        },
+      });
     }
   },
 

@@ -111,6 +111,12 @@ export const api = {
   gitFetch: (workspacePath: string) =>
     invoke<void>("git_fetch", { workspacePath }),
 
+  gitPull: (workspacePath: string) =>
+    invoke<string>("git_pull", { workspacePath }),
+
+  gitForcePull: (workspacePath: string) =>
+    invoke<string>("git_force_pull", { workspacePath }),
+
   gitRebaseOnMain: (workspacePath: string, mainBranch: string) =>
     invoke<string>("git_rebase_on_main", { workspacePath, mainBranch }),
 
