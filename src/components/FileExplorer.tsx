@@ -1217,6 +1217,10 @@ function RootSection({
     if (isGitRepo) {
       actions.push("separator");
       actions.push({
+        label: "Refresh Git Status",
+        action: () => handleRefreshRepo(),
+      });
+      actions.push({
         label: "New Checkout\u2026",
         action: () => setShowCloneModal(true),
       });
@@ -1262,6 +1266,29 @@ function RootSection({
   ]);
 
   const closeUnifiedGitPanel = useWorkspaceStore((s) => s.closeUnifiedGitPanel);
+
+  const [creatingPr, setCreatingPr] = useState(false);
+  const refreshPrStatusForPath = useWorkspaceStore(
+    (s) => s.refreshPrStatusForPath,
+  );
+  const [refreshingRepo, setRefreshingRepo] = useState(false);
+
+  const handleRefreshRepo = useCallback(async () => {
+    if (refreshingRepo) return;
+    setRefreshingRepo(true);
+    try {
+      await api.gitFetch(rootPath);
+      await Promise.all([
+        refreshGitStatusForPath(rootPath, mainBranch),
+        refreshPrStatusForPath(rootPath),
+      ]);
+    } catch (e) {
+      console.error("Refresh failed:", e);
+    } finally {
+      setRefreshingRepo(false);
+    }
+  }, [refreshingRepo, rootPath, mainBranch, refreshGitStatusForPath, refreshPrStatusForPath]);
+
   const handleToggleChanges = useCallback(() => {
     const state = useWorkspaceStore.getState();
     if (state.unifiedGitPanelOpen && state.unifiedGitPanelPath === rootPath) {
@@ -1270,18 +1297,17 @@ function RootSection({
     }
     if (repoCollapsed) setRepoCollapsed(false);
     openUnifiedGitPanel(rootPath);
+    // Also refresh git status as a side effect
+    handleRefreshRepo();
   }, [
     repoCollapsed,
     setRepoCollapsed,
     openUnifiedGitPanel,
     closeUnifiedGitPanel,
     rootPath,
+    handleRefreshRepo,
   ]);
 
-  const [creatingPr, setCreatingPr] = useState(false);
-  const refreshPrStatusForPath = useWorkspaceStore(
-    (s) => s.refreshPrStatusForPath,
-  );
   const handleCreatePr = useCallback(async () => {
     if (creatingPr) return;
     setCreatingPr(true);
@@ -1303,7 +1329,6 @@ function RootSection({
   const [syncing, setSyncing] = useState(false);
   const [showCloneModal, setShowCloneModal] = useState(false);
   const [forcePullConfirm, setForcePullConfirm] = useState(false);
-  const [refreshingRepo, setRefreshingRepo] = useState(false);
   const isOnMain = gitStatus?.branch === mainBranch;
   const handleSyncBehind = useCallback(async () => {
     if (syncing) return;
@@ -1363,22 +1388,6 @@ function RootSection({
       setForcePullConfirm(false);
     }
   }, [syncing, rootPath, mainBranch, gitStatus?.branch, refreshGitStatusForPath]);
-
-  const handleRefreshRepo = useCallback(async () => {
-    if (refreshingRepo) return;
-    setRefreshingRepo(true);
-    try {
-      await api.gitFetch(rootPath);
-      await Promise.all([
-        refreshGitStatusForPath(rootPath, mainBranch),
-        refreshPrStatusForPath(rootPath),
-      ]);
-    } catch (e) {
-      console.error("Refresh failed:", e);
-    } finally {
-      setRefreshingRepo(false);
-    }
-  }, [refreshingRepo, rootPath, mainBranch, refreshGitStatusForPath, refreshPrStatusForPath]);
 
   return (
     <>
@@ -1446,26 +1455,6 @@ function RootSection({
             <div style={styles.rootActions}>
               {isGitRepo && (
                 <>
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleRefreshRepo();
-                    }}
-                    disabled={refreshingRepo}
-                    className="repo-action-btn repo-refresh-btn"
-                    style={{
-                      ...styles.rebaseBtn,
-                      opacity: refreshingRepo ? 1 : 0,
-                      transition: "opacity 120ms",
-                      marginRight: -2,
-                    }}
-                    title="Refresh git status & PR"
-                  >
-                    <svg width="16" height="16" viewBox="0 0 16 16" fill="#999" style={refreshingRepo ? { animation: "spin 1s linear infinite" } : undefined}>
-                      <path d="M8 3a5 5 0 1 0 4.546 2.914.5.5 0 1 1 .908-.418A6 6 0 1 1 8 2v1z" />
-                      <path d="M8 4.466V.534a.25.25 0 0 1 .41-.192l2.36 1.966c.12.1.12.284 0 .384L8.41 4.658A.25.25 0 0 1 8 4.466z" />
-                    </svg>
-                  </button>
                   {gitStatus && gitStatus.behind > 0 && !forcePullConfirm && (
                     <button
                       onClick={(e) => {

@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
-import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import { listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { addToast } from "../components/ToastContainer";
@@ -1897,11 +1897,17 @@ export const useWorkspaceStore = create<WorkspaceState>()(
 
     let newActive = group.activePaneId;
     if (group.activePaneId === paneId) {
-      // Focus the tab to the left of the closed one; if none, focus the one to the right
-      const closedIndex = group.panes.findIndex((p) => p.id === paneId);
-      const leftNeighbor = closedIndex > 0 ? group.panes[closedIndex - 1] : null;
-      const rightNeighbor = closedIndex < group.panes.length - 1 ? group.panes[closedIndex + 1] : null;
-      newActive = (leftNeighbor ?? rightNeighbor)?.id ?? newPanes[0]?.id ?? "";
+      // Focus the most recently used tab from history
+      const mruPick = [...newHistory].reverse().find((id) => remainingIds.has(id));
+      if (mruPick) {
+        newActive = mruPick;
+      } else {
+        // Fallback: left neighbor → right neighbor → first remaining
+        const closedIndex = group.panes.findIndex((p) => p.id === paneId);
+        const leftNeighbor = closedIndex > 0 ? group.panes[closedIndex - 1] : null;
+        const rightNeighbor = closedIndex < group.panes.length - 1 ? group.panes[closedIndex + 1] : null;
+        newActive = (leftNeighbor ?? rightNeighbor)?.id ?? newPanes[0]?.id ?? "";
+      }
     }
 
     set((s) => ({

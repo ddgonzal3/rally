@@ -230,4 +230,5 @@ export const api = {
   // Workspace readiness
   checkWorkspaceReady: (rootPath: string) =>
     invoke<WorkspaceReadiness>("check_workspace_ready", { rootPath }),
+
 };

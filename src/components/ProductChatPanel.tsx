@@ -2,7 +2,7 @@ import React, { useState, useCallback, useRef, useEffect } from "react";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { ClaudeTerminalWrapper } from "./ClaudeTerminalWrapper";
 import { Terminal } from "./Terminal";
-import { useWorkspaceStore } from "../stores/workspaceStore";
+import { useWorkspaceStore, clearPtyBuffer } from "../stores/workspaceStore";
 import { api } from "../lib/tauri";
 import type { OnFileOpen } from "../lib/terminalLinkProvider";
 import { BranchSwitcher } from "./BranchSwitcher";
@@ -29,6 +29,7 @@ export function ProductChatPanel({ rootPath, workspaceId }: ProductChatPanelProp
 
   const [inputFocused, setInputFocused] = useState(false);
   const [readiness, setReadiness] = useState<{ ready: boolean; issues: string[] } | null>(null);
+  const [dangerousMode, setDangerousMode] = useState(true);
   const ptyIdRef = useRef<string | undefined>(undefined);
   const unlistenExitRef = useRef<UnlistenFn | null>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -53,14 +54,23 @@ export function ProductChatPanel({ rootPath, workspaceId }: ProductChatPanelProp
   const repoName = rootPath.split("/").pop() || "Claude Code";
 
   const SHELL_DEFAULT = 33;
-  const SHELL_MAX = 50; // percentage of container height
+  const SHELL_MAX = 50;
   const [shellHeight, setShellHeight] = useState(SHELL_DEFAULT);
   const resizeCleanupRef = useRef<(() => void) | null>(null);
 
-  // Clean up resize listeners on unmount
   useEffect(() => {
     return () => resizeCleanupRef.current?.();
   }, []);
+
+  // Clear shell panel PTY buffer on unmount (mode switch PRD→DEV)
+  useEffect(() => {
+    return () => {
+      const panel = useWorkspaceStore.getState().shellPanels[workspaceId];
+      if (panel?.ptyId) {
+        clearPtyBuffer(panel.ptyId);
+      }
+    };
+  }, [workspaceId]);
 
   const handleShellResize = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
@@ -86,7 +96,6 @@ export function ProductChatPanel({ rootPath, workspaceId }: ProductChatPanelProp
     resizeCleanupRef.current = cleanup;
   }, [shellHeight]);
 
-  // Check workspace readiness on mount
   useEffect(() => {
     if (state !== "idle") return;
     api.checkWorkspaceReady(rootPath).then((result) => {
@@ -99,9 +108,7 @@ export function ProductChatPanel({ rootPath, workspaceId }: ProductChatPanelProp
           prompt: `Set up this project. Issues detected:\n${issueList}\n\nCheck RALLY.json for any setup instructions, then install dependencies and prepare the development environment.`,
         });
       }
-    }).catch(() => {
-      // Silently ignore — readiness check is best-effort
-    });
+    }).catch(() => {});
   }, [state, rootPath]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleFileOpen: OnFileOpen = useCallback(
@@ -123,7 +130,6 @@ export function ProductChatPanel({ rootPath, workspaceId }: ProductChatPanelProp
     let cancelled = false;
     listen<{ code: number | null }>(`pty-exit-${ptyId}`, () => {
       if (cancelled) return;
-      // Small delay so user can see the exit message
       setTimeout(() => {
         if (!cancelled) {
           ptyIdRef.current = undefined;
@@ -152,7 +158,6 @@ export function ProductChatPanel({ rootPath, workspaceId }: ProductChatPanelProp
     setProductSession(workspaceId, { state: "active", ptyId: undefined, prompt: trimmed });
   }, [prompt, workspaceId, setProductSession]);
 
-  // Auto-resize textarea to fit content
   const autoResize = useCallback(() => {
     const el = inputRef.current;
     if (!el) return;
@@ -185,19 +190,19 @@ export function ProductChatPanel({ rootPath, workspaceId }: ProductChatPanelProp
     clearProductSession(workspaceId);
   }, [workspaceId, clearProductSession]);
 
-  // Focus input when returning to idle
   useEffect(() => {
     if (state === "idle") {
-      // Short delay to let the DOM settle
       const t = setTimeout(() => inputRef.current?.focus(), 100);
       return () => clearTimeout(t);
     }
   }, [state]);
 
-  // Content stays at 28% when shell <= default. Above default, shift up proportionally.
   const contentTop = shellPanel?.visible && shellHeight > SHELL_DEFAULT
     ? Math.max(8, 28 - (shellHeight - SHELL_DEFAULT))
     : 28;
+
+  // Build the claude command with prompt as CLI argument
+  const claudeFlags = dangerousMode ? " --dangerously-skip-permissions" : "";
 
   if (state === "idle") {
     const needsSetup = readiness && !readiness.ready;
@@ -206,7 +211,6 @@ export function ProductChatPanel({ rootPath, workspaceId }: ProductChatPanelProp
       <div style={styles.outerContainer} data-shell-container>
         <div style={styles.idleContainer} />
         <div style={{ ...styles.idleContent, top: `${contentTop}%` }}>
-          {/* Claude mascot */}
           <svg
             width="36"
             height="36"
@@ -224,7 +228,6 @@ export function ProductChatPanel({ rootPath, workspaceId }: ProductChatPanelProp
             <span style={styles.setupHint}>This project needs setup</span>
           )}
 
-          {/* Frosted glass input card */}
           <div
             style={{
               ...styles.inputCard,
@@ -239,7 +242,6 @@ export function ProductChatPanel({ rootPath, workspaceId }: ProductChatPanelProp
               <textarea
                 ref={(el) => {
                   (inputRef as React.MutableRefObject<HTMLTextAreaElement | null>).current = el;
-                  // Resize on mount to fit pre-filled text
                   if (el) {
                     el.style.height = "auto";
                     el.style.height = el.scrollHeight + "px";
@@ -275,9 +277,7 @@ export function ProductChatPanel({ rootPath, workspaceId }: ProductChatPanelProp
               </button>
             </div>
 
-            {/* Info bar */}
             <div style={styles.infoBar}>
-              {/* Folder icon */}
               <svg width="12" height="12" viewBox="0 0 16 16" fill="none" style={{ flexShrink: 0 }}>
                 <path
                   d="M2 4.5A1.5 1.5 0 013.5 3H6l1 1.5h5.5A1.5 1.5 0 0114 6v5.5a1.5 1.5 0 01-1.5 1.5h-9A1.5 1.5 0 012 11.5v-7z"
@@ -300,6 +300,27 @@ export function ProductChatPanel({ rootPath, workspaceId }: ProductChatPanelProp
                   variant="inline"
                 />
               )}
+              <label
+                style={styles.toggleLabel}
+                title="Start Claude Code with --dangerously-skip-permissions"
+                onMouseDown={(e) => e.preventDefault()}
+              >
+                <div
+                  onClick={() => setDangerousMode(!dangerousMode)}
+                  style={{
+                    ...styles.toggleTrack,
+                    background: dangerousMode ? "rgba(100,130,180,0.55)" : "rgba(255,255,255,0.08)",
+                  }}
+                >
+                  <div
+                    style={{
+                      ...styles.toggleThumb,
+                      transform: dangerousMode ? "translateX(12px)" : "translateX(0)",
+                    }}
+                  />
+                </div>
+                <span style={styles.toggleText}>Bypass permissions</span>
+              </label>
               <button
                 style={styles.shellToggleBtn}
                 onClick={() => toggleShellPanel(workspaceId, rootPath)}
@@ -324,7 +345,7 @@ export function ProductChatPanel({ rootPath, workspaceId }: ProductChatPanelProp
     );
   }
 
-  // Active state: header + terminal
+  // Active state: header + claude terminal
   return (
     <div style={styles.outerContainer} data-shell-container>
     <div style={{ ...styles.activeContainer, flex: shellPanel?.visible ? undefined : 1, height: shellPanel?.visible ? `${100 - shellHeight}%` : undefined }}>
@@ -374,7 +395,7 @@ export function ProductChatPanel({ rootPath, workspaceId }: ProductChatPanelProp
         <ClaudeTerminalWrapper
           key={ptyId ?? "fresh"}
           cwd={rootPath}
-          command={ptyId ? undefined : `claude --dangerously-skip-permissions '${prompt.replace(/'/g, "'\\''")}'`}
+          command={ptyId ? undefined : `claude${claudeFlags} '${prompt.replace(/'/g, "'\\''")}'`}
           ptyId={ptyId}
           onPtySpawned={handlePtySpawned}
           onFileOpen={handleFileOpen}
@@ -396,7 +417,6 @@ export function ProductChatPanel({ rootPath, workspaceId }: ProductChatPanelProp
 }
 
 const styles: Record<string, React.CSSProperties> = {
-  // Idle state
   idleContainer: {
     position: "absolute",
     inset: 0,
@@ -480,17 +500,52 @@ const styles: Record<string, React.CSSProperties> = {
   infoBar: {
     display: "flex",
     alignItems: "center",
-    gap: 5,
-    padding: "6px 16px",
+    gap: 6,
+    padding: "7px 16px",
     borderTop: "1px solid rgba(255,255,255,0.06)",
   },
   infoText: {
-    fontSize: 11,
+    fontSize: 12,
     color: "#bbb",
     fontWeight: 400,
     overflow: "hidden",
     textOverflow: "ellipsis",
     whiteSpace: "nowrap" as const,
+  },
+
+  // Toggle
+  toggleLabel: {
+    display: "flex",
+    alignItems: "center",
+    gap: 6,
+    cursor: "pointer",
+    marginLeft: "auto",
+  },
+  toggleTrack: {
+    width: 26,
+    height: 14,
+    borderRadius: 7,
+    position: "relative" as const,
+    cursor: "pointer",
+    transition: "background 0.15s ease",
+    flexShrink: 0,
+  },
+  toggleThumb: {
+    width: 10,
+    height: 10,
+    borderRadius: "50%",
+    background: "#ddd",
+    position: "absolute" as const,
+    top: 2,
+    left: 2,
+    transition: "transform 0.15s ease",
+  },
+  toggleText: {
+    fontSize: 12,
+    color: "#bbb",
+    fontWeight: 400,
+    whiteSpace: "nowrap" as const,
+    userSelect: "none" as const,
   },
 
   // Active state
@@ -568,9 +623,8 @@ const styles: Record<string, React.CSSProperties> = {
     background: "none",
     border: "none",
     cursor: "pointer",
-    marginLeft: "auto",
     borderRadius: 3,
-    fontSize: 11,
+    fontSize: 12,
     color: "#999",
     fontWeight: 400,
     padding: "1px 4px",
