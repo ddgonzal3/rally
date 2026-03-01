@@ -145,24 +145,24 @@ export function PrReviewContent({
   const prSidebarRef = useRef<HTMLDivElement>(null);
   const [prSidebarWidth, setPrSidebarWidth] = useState<number | null>(null);
   const [prUserResized, setPrUserResized] = useState(false);
-  const [prSelectedFile, setPrSelectedFile] = useState<string | null>(null);
+  const [selectedPath, setSelectedPath] = useState<string | null>(null);
   const [collapsedDirs, setCollapsedDirs] = useState<Set<string>>(new Set());
   const lastPrFileFingerprint = useRef<string>("");
 
-  // Manage selected-file highlight imperatively (avoids re-rendering entire tree)
+  // Manage selected-path highlight imperatively (avoids re-rendering entire tree)
   useEffect(() => {
     const container = fileTreeContainerRef.current;
     if (!container) return;
     container.querySelectorAll(".file-list-item-selected").forEach((el) =>
       el.classList.remove("file-list-item-selected"),
     );
-    if (prSelectedFile) {
+    if (selectedPath) {
       const sel = container.querySelector(
-        `[data-pr-file="${CSS.escape(prSelectedFile)}"]`,
+        `[data-pr-path="${CSS.escape(selectedPath)}"]`,
       );
       sel?.classList.add("file-list-item-selected");
     }
-  }, [prSelectedFile]);
+  }, [selectedPath]);
 
   // When scrollToFile changes, switch to changes tab and set scroll target
   useEffect(() => {
@@ -175,14 +175,19 @@ export function PrReviewContent({
   // Select target file after diffs load
   useEffect(() => {
     if (!scrollTarget) return;
-    setPrSelectedFile(scrollTarget);
+    setSelectedPath(scrollTarget);
     setScrollTarget(null);
   }, [scrollTarget, diffFiles]);
 
-  // Select a file to show its diff
-  const scrollToFileInDiff = useCallback((filePath: string) => {
-    setPrSelectedFile(filePath);
-    // Scroll diff viewer to top when switching files
+  // Select a file to show its diff (toggle: click again to deselect → show all)
+  const handleSelectFile = useCallback((filePath: string) => {
+    setSelectedPath((prev) => (prev === filePath ? null : filePath));
+    fileListRef.current?.scrollTo(0, 0);
+  }, []);
+
+  // Select a directory to show all diffs under it (toggle: click again to deselect)
+  const handleSelectDir = useCallback((dirPath: string) => {
+    setSelectedPath((prev) => (prev === dirPath ? null : dirPath));
     fileListRef.current?.scrollTo(0, 0);
   }, []);
 
@@ -417,6 +422,17 @@ export function PrReviewContent({
 
   const fileTree = useMemo(() => buildFileTree(diffFiles), [diffFiles]);
 
+  // Compute which diff files to show based on selectedPath
+  const filesToShow = useMemo(() => {
+    if (!selectedPath) return diffFiles; // show all
+    // Check exact file match
+    const exactMatch = diffFiles.find((f) => (f.newPath || f.oldPath) === selectedPath);
+    if (exactMatch) return [exactMatch];
+    // Directory prefix match
+    const prefix = selectedPath + "/";
+    return diffFiles.filter((f) => (f.newPath || f.oldPath).startsWith(prefix));
+  }, [diffFiles, selectedPath]);
+
   const toggleDir = useCallback((dirPath: string) => {
     setCollapsedDirs((prev) => {
       const next = new Set(prev);
@@ -625,7 +641,8 @@ export function PrReviewContent({
                 depth={0}
                 collapsedDirs={collapsedDirs}
                 onToggleDir={toggleDir}
-                onSelectFile={scrollToFileInDiff}
+                onSelectFile={handleSelectFile}
+                onSelectDir={handleSelectDir}
               />
             </div>
           </div>
@@ -635,25 +652,24 @@ export function PrReviewContent({
             <div style={st.prResizeLine} />
           </div>
 
-          {/* Diff viewer — only render the selected file's diff */}
+          {/* Diff viewer — render filtered files */}
           <div ref={fileListRef} style={st.prDiffViewer}>
-            {prSelectedFile ? (
-              diffFiles
-                .filter((f) => (f.newPath || f.oldPath) === prSelectedFile)
-                .map((file) => (
-                  <div
-                    key={file.newPath || file.oldPath}
-                    data-filepath={file.newPath || file.oldPath}
-                  >
-                    <DiffFileSection
-                      file={file}
-                      defaultExpanded={true}
-                      tab="pr"
-                    />
-                  </div>
-                ))
+            {filesToShow.length > 0 ? (
+              filesToShow.map((file) => (
+                <div
+                  key={file.newPath || file.oldPath}
+                  data-filepath={file.newPath || file.oldPath}
+                >
+                  <DiffFileSection
+                    file={file}
+                    defaultExpanded={true}
+                    maxLinesBeforeCollapse={300}
+                    tab="pr"
+                  />
+                </div>
+              ))
             ) : (
-              <div style={st.empty}>Select a file to view its diff</div>
+              <div style={st.empty}>No files match the selection</div>
             )}
           </div>
         </div>
@@ -756,12 +772,14 @@ const FileTreeView = React.memo(function FileTreeView({
   collapsedDirs,
   onToggleDir,
   onSelectFile,
+  onSelectDir,
 }: {
   nodes: FileTreeNode[];
   depth: number;
   collapsedDirs: Set<string>;
   onToggleDir: (path: string) => void;
   onSelectFile: (path: string) => void;
+  onSelectDir: (path: string) => void;
 }) {
   const pl = 10 + depth * 16;
 
@@ -774,19 +792,29 @@ const FileTreeView = React.memo(function FileTreeView({
         if (isDir) {
           return (
             <React.Fragment key={node.path}>
-              <button
-                onClick={() => onToggleDir(node.path)}
+              <div
+                data-pr-path={node.path}
                 style={{ ...st.treeDir, paddingLeft: pl }}
                 className="file-list-item"
               >
-                <svg width="10" height="10" viewBox="0 0 12 12" fill="none" style={isCollapsed ? chevronCollapsed : chevronExpanded}>
-                  <path d="M4 2.4L8 6L4 9.6" stroke="#888" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
-                </svg>
-                <svg width="14" height="14" viewBox="0 0 16 16" fill="none" style={folderIconStyle}>
-                  <path d="M1.5 3.5v9c0 .55.45 1 1 1h11c.55 0 1-.45 1-1v-7c0-.55-.45-1-1-1H7.5l-2-2h-3c-.55 0-1 .45-1 1z" stroke="#888" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" />
-                </svg>
-                <span style={st.treeDirName}>{node.name}</span>
-              </button>
+                <span
+                  onClick={(e) => { e.stopPropagation(); onToggleDir(node.path); }}
+                  style={st.treeDirChevron}
+                >
+                  <svg width="10" height="10" viewBox="0 0 12 12" fill="none" style={isCollapsed ? chevronCollapsed : chevronExpanded}>
+                    <path d="M4 2.4L8 6L4 9.6" stroke="#888" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
+                  </svg>
+                </span>
+                <span
+                  onClick={() => onSelectDir(node.path)}
+                  style={st.treeDirLabel}
+                >
+                  <svg width="14" height="14" viewBox="0 0 16 16" fill="none" style={folderIconStyle}>
+                    <path d="M1.5 3.5v9c0 .55.45 1 1 1h11c.55 0 1-.45 1-1v-7c0-.55-.45-1-1-1H7.5l-2-2h-3c-.55 0-1 .45-1 1z" stroke="#888" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" />
+                  </svg>
+                  <span style={st.treeDirName}>{node.name}</span>
+                </span>
+              </div>
               {!isCollapsed && (
                 <FileTreeView
                   nodes={node.children}
@@ -794,6 +822,7 @@ const FileTreeView = React.memo(function FileTreeView({
                   collapsedDirs={collapsedDirs}
                   onToggleDir={onToggleDir}
                   onSelectFile={onSelectFile}
+                  onSelectDir={onSelectDir}
                 />
               )}
             </React.Fragment>
@@ -807,7 +836,7 @@ const FileTreeView = React.memo(function FileTreeView({
         return (
           <button
             key={fp}
-            data-pr-file={fp}
+            data-pr-path={fp}
             onClick={() => onSelectFile(fp)}
             style={{ ...st.prFileItem, paddingLeft: pl }}
             className="file-list-item"
@@ -1150,6 +1179,21 @@ const st: Record<string, React.CSSProperties> = {
     cursor: "pointer",
     fontSize: 12,
     textAlign: "left" as const,
+  },
+  treeDirChevron: {
+    display: "flex",
+    alignItems: "center",
+    cursor: "pointer",
+    padding: 2,
+    flexShrink: 0,
+  },
+  treeDirLabel: {
+    display: "flex",
+    alignItems: "center",
+    gap: 5,
+    cursor: "pointer",
+    flex: 1,
+    minWidth: 0,
   },
   treeDirName: {
     flex: 1,

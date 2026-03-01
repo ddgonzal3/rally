@@ -821,6 +821,78 @@ pub async fn commit_log(cwd: &str, main_branch: &str, limit: u32) -> Result<Vec<
     Ok(commits)
 }
 
+/// Get unified diff for a specific commit.
+pub async fn commit_diff(cwd: &str, sha: &str) -> Result<String, String> {
+    // Validate SHA is hex-only to prevent injection
+    if !sha.chars().all(|c| c.is_ascii_hexdigit()) {
+        return Err("Invalid commit SHA".to_string());
+    }
+    git_cmd(cwd, &["diff-tree", "-p", "--no-commit-id", sha]).await
+}
+
+// ---------------------------------------------------------------------------
+// Branch operations
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct BranchInfo {
+    pub name: String,
+    pub is_current: bool,
+}
+
+/// List local branches with current branch indicator.
+pub async fn list_branches(cwd: &str) -> Result<Vec<BranchInfo>, String> {
+    let output = git_cmd(cwd, &["branch", "--format=%(refname:short)\t%(HEAD)"]).await?;
+    let mut branches: Vec<BranchInfo> = output
+        .lines()
+        .filter(|l| !l.is_empty())
+        .map(|line| {
+            let parts: Vec<&str> = line.splitn(2, '\t').collect();
+            let name = parts.first().unwrap_or(&"").to_string();
+            let is_current = parts.get(1).map(|s| s.trim() == "*").unwrap_or(false);
+            BranchInfo { name, is_current }
+        })
+        .collect();
+
+    // Sort: current branch first, then alphabetical
+    branches.sort_by(|a, b| {
+        b.is_current.cmp(&a.is_current).then(a.name.to_lowercase().cmp(&b.name.to_lowercase()))
+    });
+
+    Ok(branches)
+}
+
+/// Checkout an existing branch.
+pub async fn checkout_branch(cwd: &str, branch: &str) -> Result<String, String> {
+    git_cmd(cwd, &["checkout", branch]).await
+}
+
+/// Create and checkout a new branch.
+pub async fn create_branch(cwd: &str, branch: &str) -> Result<String, String> {
+    // Validate branch name
+    if branch.is_empty() {
+        return Err("Branch name cannot be empty".to_string());
+    }
+    if branch.contains(' ') || branch.contains("..") || branch.starts_with('-') || branch.contains('~') || branch.contains('^') || branch.contains(':') || branch.contains('\\') || branch.contains('\x7f') || branch.chars().any(|c| c.is_control()) {
+        return Err("Invalid branch name".to_string());
+    }
+    git_cmd(cwd, &["checkout", "-b", branch]).await
+}
+
+/// Delete a local branch. Refuses to delete the currently checked-out branch.
+pub async fn delete_branch(cwd: &str, branch: &str, force: bool) -> Result<String, String> {
+    if branch.is_empty() {
+        return Err("Branch name cannot be empty".to_string());
+    }
+    // Check we're not deleting the current branch
+    let current = git_cmd(cwd, &["symbolic-ref", "--short", "HEAD"]).await?;
+    if current == branch {
+        return Err("Cannot delete the currently checked-out branch".to_string());
+    }
+    let flag = if force { "-D" } else { "-d" };
+    git_cmd(cwd, &["branch", flag, branch]).await
+}
+
 pub async fn sync_branch_after_merge(cwd: &str, branch: &str, main_branch: &str) -> Result<(), String> {
     // Hard-reset feature branch to main first (clears all squash-merged commits)
     git_cmd(cwd, &["checkout", branch]).await?;

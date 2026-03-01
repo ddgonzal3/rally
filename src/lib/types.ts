@@ -97,6 +97,13 @@ export interface PrReview {
   created_at: string;
 }
 
+// --- Branch Types ---
+
+export interface BranchInfo {
+  name: string;
+  is_current: boolean;
+}
+
 // --- Commit Log Types ---
 
 export interface CommitEntry {

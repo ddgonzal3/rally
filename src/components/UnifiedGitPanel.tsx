@@ -11,7 +11,9 @@ import { DiffFileSection } from "./DiffFileSection";
 import { CommitModal } from "./CommitModal";
 import { PrReviewContent } from "./PrReviewOverlay";
 import type { ChangesSummary, CommitEntry } from "../lib/types";
+import { BranchSwitcher } from "./BranchSwitcher";
 import { relativeTime } from "../lib/time";
+import { showContextMenu } from "../lib/contextMenu";
 
 const SIDEBAR_MIN = 200;
 const SIDEBAR_MAX = 320;
@@ -41,6 +43,9 @@ export function UnifiedGitPanel() {
   const refreshPrStatusForPath = useWorkspaceStore(
     (s) => s.refreshPrStatusForPath,
   );
+  const refreshGitStatusForPath = useWorkspaceStore(
+    (s) => s.refreshGitStatusForPath,
+  );
 
   const [mounted, setMounted] = useState(false);
   const [entered, setEntered] = useState(false);
@@ -63,6 +68,13 @@ export function UnifiedGitPanel() {
   const [userResized, setUserResized] = useState(false);
   const sidebarRef = useRef<HTMLDivElement>(null);
   const commitBtnRef = useRef<HTMLButtonElement>(null);
+  const [commitsHeight, setCommitsHeight] = useState(280);
+  const [selectedCommit, setSelectedCommit] = useState<string | null>(null);
+  const [commitFiles, setCommitFiles] = useState<DiffFile[]>([]);
+  const [commitDiffLoading, setCommitDiffLoading] = useState(false);
+  const [selectedCommitFile, setSelectedCommitFile] = useState<string | null>(
+    null,
+  );
   const lastFetchedPath = useRef<string | null>(null);
   const lastFileFingerprint = useRef<string>("");
 
@@ -321,6 +333,72 @@ export function UnifiedGitPanel() {
     [sidebarWidth],
   );
 
+  // --- Commits section vertical resize ---
+
+  const handleCommitsResize = useCallback(
+    (e: React.MouseEvent) => {
+      e.preventDefault();
+      const startY = e.clientY;
+      const startHeight = commitsHeight;
+      const sidebarEl = sidebarRef.current;
+      if (!sidebarEl) return;
+      let raf = 0;
+      let finalHeight = startHeight;
+
+      const onMouseMove = (ev: MouseEvent) => {
+        const sidebarRect = sidebarEl.getBoundingClientRect();
+        const maxHeight = sidebarRect.height - 100;
+        finalHeight = Math.max(
+          60,
+          Math.min(maxHeight, startHeight - (ev.clientY - startY)),
+        );
+        cancelAnimationFrame(raf);
+        raf = requestAnimationFrame(() => {
+          setCommitsHeight(finalHeight);
+        });
+      };
+      const onMouseUp = () => {
+        cancelAnimationFrame(raf);
+        setCommitsHeight(finalHeight);
+        document.removeEventListener("mousemove", onMouseMove);
+        document.removeEventListener("mouseup", onMouseUp);
+      };
+      document.addEventListener("mousemove", onMouseMove);
+      document.addEventListener("mouseup", onMouseUp);
+    },
+    [commitsHeight],
+  );
+
+  // --- Commit click handler ---
+
+  const handleCommitClick = useCallback(
+    async (sha: string) => {
+      if (selectedCommit === sha) {
+        setSelectedCommit(null);
+        setCommitFiles([]);
+        setSelectedCommitFile(null);
+        return;
+      }
+      setSelectedCommit(sha);
+      setCommitDiffLoading(true);
+      setSelectedCommitFile(null);
+      try {
+        const raw = await api.gitCommitDiff(rootPath!, sha);
+        const parsed = parseUnifiedDiff(raw);
+        setCommitFiles(parsed);
+        if (parsed.length > 0) {
+          setSelectedCommitFile(parsed[0].newPath || parsed[0].oldPath);
+        }
+      } catch (e) {
+        console.error("Failed to fetch commit diff:", e);
+        setCommitFiles([]);
+      } finally {
+        setCommitDiffLoading(false);
+      }
+    },
+    [selectedCommit, rootPath],
+  );
+
   // --- Panel (left edge) resize ---
 
   const PANEL_MIN = 400;
@@ -425,6 +503,9 @@ export function UnifiedGitPanel() {
   // Reset selection when switching unstaged/staged
   useEffect(() => {
     setSelectedFile(null);
+    setSelectedCommit(null);
+    setCommitFiles([]);
+    setSelectedCommitFile(null);
   }, [diffTab]);
 
   if (!mounted) return null;
@@ -548,25 +629,17 @@ export function UnifiedGitPanel() {
 
             <div style={{ flex: 1, minWidth: 0 }} />
 
-            {branchName && (
-              <span style={ms.branchPill}>
-                <svg
-                  width="15"
-                  height="15"
-                  viewBox="0 0 16 16"
-                  fill="none"
-                  stroke="#e6edf3"
-                  strokeWidth="1.5"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                >
-                  <circle cx="5" cy="4" r="1.5" />
-                  <circle cx="5" cy="12" r="1.5" />
-                  <circle cx="12" cy="8" r="1.5" />
-                  <path d="M5 5.5v5M12 6.5c0-2-1.5-2.5-3.5-2.5" />
-                </svg>
-                {branchName}
-              </span>
+            {branchName && rootPath && (
+              <BranchSwitcher
+                rootPath={rootPath}
+                branchName={branchName}
+                mainBranch={mainBranch}
+                onBranchChanged={() => {
+                  refreshGitStatusForPath(rootPath, mainBranch).catch(() => {});
+                  refreshPrStatusForPath(rootPath).catch(() => {});
+                }}
+                variant="pill"
+              />
             )}
           </div>
 
@@ -636,6 +709,47 @@ export function UnifiedGitPanel() {
             </div>
           )}
 
+          {/* Commit selection indicator */}
+          {effectiveTab === "changes" && selectedCommit && (
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 6,
+                padding: "4px 12px",
+                background: "#1a1a1a",
+                borderBottom: "1px solid #2a2a2a",
+                flexShrink: 0,
+              }}
+            >
+              <span
+                style={{
+                  fontSize: 11,
+                  color: "#e6edf3",
+                  fontWeight: 500,
+                  flex: 1,
+                  minWidth: 0,
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                  whiteSpace: "nowrap",
+                }}
+              >
+                {commits.find((c) => c.sha === selectedCommit)?.message ??
+                  "Commit"}
+              </span>
+              <button
+                onClick={() => {
+                  setSelectedCommit(null);
+                  setCommitFiles([]);
+                  setSelectedCommitFile(null);
+                }}
+                style={{ ...ms.actionBtn, padding: "2px 6px", fontSize: 10 }}
+              >
+                {"\u2715"}
+              </button>
+            </div>
+          )}
+
           {/* Content */}
           <div style={{ flex: 1, display: "flex", overflow: "hidden" }}>
             {effectiveTab === "changes" && rootPath && (
@@ -645,52 +759,6 @@ export function UnifiedGitPanel() {
                   ref={sidebarRef}
                   style={{ ...ms.sidebar, width: effectiveSidebarWidth }}
                 >
-                  {/* Commits section */}
-                  {!diffLoading && commits.length > 0 && (
-                    <div style={ms.commitsSection}>
-                      <button
-                        onClick={() => setCommitsExpanded((v) => !v)}
-                        style={ms.commitsSectionHeader}
-                        className="changes-section-btn"
-                      >
-                        <svg
-                          width="10"
-                          height="10"
-                          viewBox="0 0 12 12"
-                          fill="none"
-                          style={{
-                            transform: commitsExpanded
-                              ? "rotate(90deg)"
-                              : "none",
-                            flexShrink: 0,
-                          }}
-                        >
-                          <path
-                            d="M4 2.4L8 6L4 9.6"
-                            stroke="currentColor"
-                            strokeWidth="1.3"
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                          />
-                        </svg>
-                        <span style={{ flex: 1 }}>Commits</span>
-                        <span style={ms.badge}>{commits.length}</span>
-                      </button>
-                      {commitsExpanded && (
-                        <div>
-                          {commits.map((c) => (
-                            <div key={c.sha} style={ms.commitRow}>
-                              <span style={ms.commitSha}>
-                                {c.sha.slice(0, 7)}
-                              </span>
-                              <span style={ms.commitMsg}>{c.message}</span>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  )}
-
                   {/* File list */}
                   <div style={ms.fileList}>
                     {diffLoading && (
@@ -783,6 +851,244 @@ export function UnifiedGitPanel() {
                         );
                       })}
                   </div>
+
+                  {/* Commits section at bottom */}
+                  {!diffLoading && commits.length > 0 && (
+                    <>
+                      {/* Vertical resize divider */}
+                      <div
+                        onMouseDown={handleCommitsResize}
+                        style={{
+                          height: 6,
+                          minHeight: 6,
+                          cursor: "row-resize",
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          flexShrink: 0,
+                        }}
+                      >
+                        <div
+                          style={{
+                            height: 1,
+                            width: "100%",
+                            background: "#2a2a2a",
+                          }}
+                        />
+                      </div>
+
+                      {/* Commits list */}
+                      <div
+                        style={{
+                          ...ms.commitsSection,
+                          height: commitsHeight,
+                          flexShrink: 0,
+                        }}
+                      >
+                        <div style={ms.commitsSectionHeader}>
+                          <button
+                            onClick={() => setCommitsExpanded((v) => !v)}
+                            style={{
+                              display: "flex",
+                              alignItems: "center",
+                              gap: 6,
+                              flex: 1,
+                              minWidth: 0,
+                              padding: 0,
+                              border: "none",
+                              background: "transparent",
+                              cursor: "pointer",
+                              fontSize: 11,
+                              fontWeight: 600,
+                              color: "#e6edf3",
+                              textAlign: "left",
+                            }}
+                            className="changes-section-btn"
+                          >
+                            <svg
+                              width="10"
+                              height="10"
+                              viewBox="0 0 12 12"
+                              fill="none"
+                              style={{
+                                transform: commitsExpanded
+                                  ? "rotate(90deg)"
+                                  : "none",
+                                flexShrink: 0,
+                              }}
+                            >
+                              <path
+                                d="M4 2.4L8 6L4 9.6"
+                                stroke="currentColor"
+                                strokeWidth="1.3"
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                              />
+                            </svg>
+                            <span style={{ flex: 1 }}>Commits</span>
+                            <span style={ms.badge}>{commits.length}</span>
+                          </button>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              fetchDiffs();
+                            }}
+                            style={{
+                              display: "flex",
+                              alignItems: "center",
+                              justifyContent: "center",
+                              width: 20,
+                              height: 20,
+                              border: "none",
+                              background: "transparent",
+                              color: "#888",
+                              cursor: "pointer",
+                              padding: 0,
+                              flexShrink: 0,
+                            }}
+                            className="icon-btn"
+                            title="Refresh commits"
+                          >
+                            <svg
+                              width="12"
+                              height="12"
+                              viewBox="0 0 16 16"
+                              fill="none"
+                              stroke="currentColor"
+                              strokeWidth="1.5"
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                            >
+                              <path d="M1.5 1.5v4h4" />
+                              <path d="M1.5 5.5a6.5 6.5 0 0 1 11.48-2" />
+                              <path d="M14.5 14.5v-4h-4" />
+                              <path d="M14.5 10.5a6.5 6.5 0 0 1-11.48 2" />
+                            </svg>
+                          </button>
+                        </div>
+                        {commitsExpanded && (
+                          <div style={{ overflow: "auto", flex: 1 }}>
+                            {commits.map((c) => {
+                              const isSelected = selectedCommit === c.sha;
+                              return (
+                                <div key={c.sha}>
+                                  <button
+                                    onClick={() => handleCommitClick(c.sha)}
+                                    onContextMenu={(e) => {
+                                      e.preventDefault();
+                                      e.stopPropagation();
+                                      showContextMenu([
+                                        {
+                                          label: "Copy SHA",
+                                          action: () =>
+                                            navigator.clipboard.writeText(
+                                              c.sha,
+                                            ),
+                                        },
+                                        {
+                                          label: "Copy Short SHA",
+                                          action: () =>
+                                            navigator.clipboard.writeText(
+                                              c.sha.slice(0, 7),
+                                            ),
+                                        },
+                                      ]);
+                                    }}
+                                    style={{
+                                      ...ms.commitRow,
+                                      background: isSelected
+                                        ? "rgba(255,255,255,0.08)"
+                                        : "transparent",
+                                    }}
+                                    className="file-list-item"
+                                  >
+                                    <span style={ms.commitMsg}>
+                                      {c.message}
+                                    </span>
+                                    <span style={ms.commitTime}>
+                                      {relativeTime(c.date)}
+                                    </span>
+                                  </button>
+                                  {isSelected &&
+                                    !commitDiffLoading &&
+                                    commitFiles.map((file) => {
+                                      const fp =
+                                        file.newPath || file.oldPath;
+                                      const fileName =
+                                        fp.split("/").pop() ?? fp;
+                                      const dirPath = fp.includes("/")
+                                        ? fp.slice(
+                                            0,
+                                            fp.lastIndexOf("/"),
+                                          )
+                                        : "";
+                                      const isFileSelected =
+                                        fp === selectedCommitFile;
+                                      return (
+                                        <button
+                                          key={fp}
+                                          onClick={() =>
+                                            setSelectedCommitFile(fp)
+                                          }
+                                          style={{
+                                            ...ms.fileItem,
+                                            paddingLeft: 20,
+                                            background: isFileSelected
+                                              ? "rgba(255,255,255,0.08)"
+                                              : "transparent",
+                                          }}
+                                          className="file-list-item"
+                                        >
+                                          <span
+                                            style={{
+                                              ...ms.fileStatus,
+                                              color: file.isNew
+                                                ? "#7ddf7d"
+                                                : file.isDeleted
+                                                  ? "#f85149"
+                                                  : file.isRenamed
+                                                    ? "#d2a8ff"
+                                                    : "#e3b341",
+                                            }}
+                                          >
+                                            {file.isNew
+                                              ? "A"
+                                              : file.isDeleted
+                                                ? "D"
+                                                : file.isRenamed
+                                                  ? "R"
+                                                  : "M"}
+                                          </span>
+                                          <span style={ms.fileItemName}>
+                                            {fileName}
+                                          </span>
+                                          {dirPath && (
+                                            <span style={ms.fileDir}>
+                                              {dirPath}
+                                            </span>
+                                          )}
+                                        </button>
+                                      );
+                                    })}
+                                  {isSelected && commitDiffLoading && (
+                                    <div
+                                      style={{
+                                        padding: "8px 20px",
+                                        fontSize: 11,
+                                        color: "#666",
+                                      }}
+                                    >
+                                      Loading...
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
+                    </>
+                  )}
                 </div>
 
                 {/* Resize handle */}
@@ -792,7 +1098,21 @@ export function UnifiedGitPanel() {
 
                 {/* Diff viewer */}
                 <div style={ms.diffViewer}>
-                  {selectedDiffFile ? (
+                  {selectedCommit && selectedCommitFile ? (
+                    (() => {
+                      const file = commitFiles.find(
+                        (f) =>
+                          (f.newPath || f.oldPath) === selectedCommitFile,
+                      );
+                      return file ? (
+                        <DiffFileSection
+                          file={file}
+                          defaultExpanded={true}
+                          tab="pr"
+                        />
+                      ) : null;
+                    })()
+                  ) : selectedDiffFile ? (
                     <DiffFileSection
                       file={selectedDiffFile}
                       defaultExpanded={true}
@@ -909,21 +1229,6 @@ const ms: Record<string, React.CSSProperties> = {
     padding: "1px 6px",
     verticalAlign: "middle",
   },
-  branchPill: {
-    display: "inline-flex",
-    alignItems: "center",
-    gap: 5,
-    fontSize: 13,
-    color: "#e6edf3",
-    fontWeight: 600,
-    background: "none",
-    padding: 0,
-    lineHeight: "16px",
-    minWidth: 0,
-    overflow: "hidden",
-    whiteSpace: "nowrap",
-    textOverflow: "ellipsis",
-  },
   subHeader: {
     display: "flex",
     alignItems: "center",
@@ -1006,8 +1311,10 @@ const ms: Record<string, React.CSSProperties> = {
     flexShrink: 0,
   },
   commitsSection: {
-    borderBottom: "1px solid #2a2a2a",
-    flexShrink: 0,
+    borderTop: "1px solid #2a2a2a",
+    display: "flex",
+    flexDirection: "column",
+    overflow: "hidden",
   },
   commitsSectionHeader: {
     width: "100%",
@@ -1015,13 +1322,8 @@ const ms: Record<string, React.CSSProperties> = {
     alignItems: "center",
     gap: 6,
     padding: "6px 10px",
-    border: "none",
     background: "#222",
-    cursor: "pointer",
-    textAlign: "left" as const,
-    fontSize: 11,
-    fontWeight: 600,
-    color: "#e6edf3",
+    flexShrink: 0,
   },
   badge: {
     minWidth: 16,
@@ -1043,13 +1345,17 @@ const ms: Record<string, React.CSSProperties> = {
     padding: "4px 10px",
     fontSize: 11,
     borderBottom: "1px solid #222",
+    width: "100%",
+    border: "none",
+    cursor: "pointer",
+    textAlign: "left" as const,
+    transition: "none",
   },
-  commitSha: {
-    fontFamily: "'SF Mono', 'Menlo', monospace",
+  commitTime: {
     fontSize: 10,
-    color: "#7aa2f7",
+    color: "#666",
     flexShrink: 0,
-    fontWeight: 500,
+    whiteSpace: "nowrap" as const,
   },
   commitMsg: {
     flex: 1,

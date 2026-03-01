@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect } from "react";
+import React, { useState, useCallback, useEffect, useMemo } from "react";
 import type { DiffFile } from "../lib/diffParser";
 import { DiffFileView } from "./DiffHunkView";
 
@@ -7,6 +7,7 @@ export function DiffFileSection({
   defaultExpanded,
   expandKey,
   tab,
+  maxLinesBeforeCollapse,
   onStage,
   onUnstage,
   onDiscard,
@@ -15,16 +16,23 @@ export function DiffFileSection({
   defaultExpanded: boolean;
   expandKey?: number;
   tab: "unstaged" | "staged" | "pr";
+  maxLinesBeforeCollapse?: number;
   onStage?: (filePath: string) => void;
   onUnstage?: (filePath: string) => void;
   onDiscard?: (filePath: string) => void;
 }) {
-  const [expanded, setExpanded] = useState(defaultExpanded);
+  const totalDiffLines = useMemo(
+    () => file.hunks.reduce((sum, h) => sum + h.lines.length, 0),
+    [file.hunks],
+  );
+  const isLargeDiff = maxLinesBeforeCollapse != null && totalDiffLines > maxLinesBeforeCollapse;
+
+  const [expanded, setExpanded] = useState(isLargeDiff ? false : defaultExpanded);
 
   // Reset expand state when expandKey changes (from expand/collapse all)
   useEffect(() => {
-    setExpanded(defaultExpanded);
-  }, [expandKey, defaultExpanded]);
+    setExpanded(isLargeDiff ? false : defaultExpanded);
+  }, [expandKey, defaultExpanded, isLargeDiff]);
   const [confirming, setConfirming] = useState(false);
   const filePath = file.newPath || file.oldPath;
 
@@ -100,7 +108,7 @@ export function DiffFileSection({
           )}
         </div>
       </div>
-      {expanded && (
+      {expanded ? (
         <div style={styles.hunks}>
           {file.hunks.length === 0 ? (
             <div style={styles.noContent}>
@@ -114,7 +122,14 @@ export function DiffFileSection({
             />
           )}
         </div>
-      )}
+      ) : isLargeDiff ? (
+        <div
+          style={styles.largeDiffMessage}
+          onClick={() => setExpanded(true)}
+        >
+          Large diff not rendered — {totalDiffLines} lines. Click to load.
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -249,5 +264,15 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: 12,
     fontStyle: "italic",
     textAlign: "center",
+  },
+  largeDiffMessage: {
+    padding: "14px 20px",
+    textAlign: "center",
+    color: "#e0e0e0",
+    fontSize: 12,
+    cursor: "pointer",
+    background: "#1a1a1a",
+    fontWeight: 500,
+    transition: "background 150ms",
   },
 };

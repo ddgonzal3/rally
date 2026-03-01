@@ -460,6 +460,11 @@ pub async fn git_commit_log(workspace_path: String, main_branch: String, limit: 
 }
 
 #[tauri::command]
+pub async fn git_commit_diff(workspace_path: String, sha: String) -> Result<String, String> {
+    git_ops::commit_diff(&workspace_path, &sha).await
+}
+
+#[tauri::command]
 pub async fn git_diff_stat(workspace_path: String) -> Result<(i64, i64), String> {
     git_ops::diff_stat(&workspace_path).await
 }
@@ -472,6 +477,26 @@ pub async fn git_fetch(workspace_path: String) -> Result<(), String> {
 #[tauri::command]
 pub async fn git_rebase_on_main(workspace_path: String, main_branch: String) -> Result<String, String> {
     git_ops::rebase_on_main(&workspace_path, &main_branch).await
+}
+
+#[tauri::command]
+pub async fn git_list_branches(workspace_path: String) -> Result<Vec<git_ops::BranchInfo>, String> {
+    git_ops::list_branches(&workspace_path).await
+}
+
+#[tauri::command]
+pub async fn git_checkout_branch(workspace_path: String, branch: String) -> Result<String, String> {
+    git_ops::checkout_branch(&workspace_path, &branch).await
+}
+
+#[tauri::command]
+pub async fn git_create_branch(workspace_path: String, branch: String) -> Result<String, String> {
+    git_ops::create_branch(&workspace_path, &branch).await
+}
+
+#[tauri::command]
+pub async fn git_delete_branch(workspace_path: String, branch: String, force: bool) -> Result<String, String> {
+    git_ops::delete_branch(&workspace_path, &branch, force).await
 }
 
 #[tauri::command]

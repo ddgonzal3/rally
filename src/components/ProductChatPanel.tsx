@@ -4,6 +4,7 @@ import { ClaudeTerminalWrapper } from "./ClaudeTerminalWrapper";
 import { useWorkspaceStore } from "../stores/workspaceStore";
 import { api } from "../lib/tauri";
 import type { OnFileOpen } from "../lib/terminalLinkProvider";
+import { BranchSwitcher } from "./BranchSwitcher";
 
 interface ProductChatPanelProps {
   rootPath: string;
@@ -29,6 +30,12 @@ export function ProductChatPanel({ rootPath, workspaceId }: ProductChatPanelProp
   const openFile = useWorkspaceStore((s) => s.openFile);
   const gitStatus = useWorkspaceStore((s) => s.gitStatuses[rootPath]);
   const branch = gitStatus?.branch ?? "";
+  const mainBranch = useWorkspaceStore((s) => {
+    const ws = s.workspaces.find((w) => w.paths.includes(rootPath));
+    return ws?.main_branch ?? "main";
+  });
+  const refreshGitStatusForPath = useWorkspaceStore((s) => s.refreshGitStatusForPath);
+  const refreshPrStatusForPath = useWorkspaceStore((s) => s.refreshPrStatusForPath);
 
   const repoName = rootPath.split("/").pop() || "Claude Code";
 
@@ -233,21 +240,16 @@ export function ProductChatPanel({ rootPath, workspaceId }: ProductChatPanelProp
               </svg>
               <span style={styles.infoText}>{shortenPath(rootPath)}</span>
               {branch && (
-                <>
-                  {/* Branch icon */}
-                  <svg width="12" height="12" viewBox="0 0 16 16" fill="none" style={{ flexShrink: 0, marginLeft: 8 }}>
-                    <path
-                      d="M5 3v6.5a2.5 2.5 0 005 0V3"
-                      stroke="#bbb"
-                      strokeWidth="1.1"
-                      strokeLinecap="round"
-                    />
-                    <circle cx="5" cy="3" r="1.3" stroke="#bbb" strokeWidth="1.0" />
-                    <circle cx="10" cy="3" r="1.3" stroke="#bbb" strokeWidth="1.0" />
-                    <circle cx="10" cy="12" r="1.3" stroke="#bbb" strokeWidth="1.0" />
-                  </svg>
-                  <span style={styles.infoText}>{branch}</span>
-                </>
+                <BranchSwitcher
+                  rootPath={rootPath}
+                  branchName={branch}
+                  mainBranch={mainBranch}
+                  onBranchChanged={() => {
+                    refreshGitStatusForPath(rootPath, mainBranch).catch(() => {});
+                    refreshPrStatusForPath(rootPath).catch(() => {});
+                  }}
+                  variant="inline"
+                />
               )}
             </div>
           </div>
@@ -339,7 +341,6 @@ const styles: Record<string, React.CSSProperties> = {
     backdropFilter: "blur(20px) saturate(150%)",
     border: "1px solid rgba(255,255,255,0.12)",
     borderRadius: 14,
-    overflow: "hidden",
     transition: "border-color 0.15s ease",
   },
   inputRow: {
