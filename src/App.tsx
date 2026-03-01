@@ -9,7 +9,7 @@ import { ScriptEditor } from "./components/ScriptEditor";
 import { PaneLayout } from "./components/PaneLayout";
 import { useWorkspaceStore } from "./stores/workspaceStore";
 import { api } from "./lib/tauri";
-import { findFirstGroupInSubtree, findNeighborGroup, replaceNode, type LayoutNode, type NavigationDirection, type Pane } from "./lib/types";
+import { findFirstGroupInSubtree, findNeighborGroup, replaceNode, type LayoutNode, type NavigationDirection, type Pane, type ThemeName } from "./lib/types";
 import {
   startExternalFileDrag,
   updateDragPosition,
@@ -1306,6 +1306,7 @@ export function App() {
             );
           })}
           <div style={{ flex: 1 }} />
+          <ThemeCycleButton />
         </div>
         {!fileExplorerCollapsed && (
           <div
@@ -1420,6 +1421,49 @@ export function App() {
       <ShipStatusPill />
       <ToastContainer />
     </div>
+  );
+}
+
+function ThemeCycleButton() {
+  const theme = useWorkspaceStore((s) => s.theme);
+  const setTheme = useWorkspaceStore((s) => s.setTheme);
+  const order: ThemeName[] = ["dark", "dimmed", "light"];
+  const next = order[(order.indexOf(theme) + 1) % order.length];
+  const label = theme === "dark" ? "Dark" : theme === "dimmed" ? "Dimmed" : "Light";
+  return (
+    <button
+      className="activity-btn"
+      style={{
+        background: "none",
+        border: "none",
+        cursor: "pointer",
+        width: 32,
+        height: 32,
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        borderRadius: 4,
+        marginBottom: 4,
+      }}
+      onClick={() => setTheme(next)}
+      title={`Theme: ${label} (click to switch)`}
+    >
+      {theme === "light" ? (
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+          <circle cx="12" cy="12" r="4" stroke="var(--text-secondary)" strokeWidth="1.5" />
+          <path d="M12 2v3M12 19v3M4.22 4.22l2.12 2.12M17.66 17.66l2.12 2.12M2 12h3M19 12h3M4.22 19.78l2.12-2.12M17.66 6.34l2.12-2.12" stroke="var(--text-secondary)" strokeWidth="1.5" strokeLinecap="round" />
+        </svg>
+      ) : theme === "dimmed" ? (
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+          <circle cx="12" cy="12" r="4" stroke="var(--text-secondary)" strokeWidth="1.5" />
+          <path d="M12 2v3M12 19v3M2 12h3M19 12h3" stroke="var(--text-secondary)" strokeWidth="1.5" strokeLinecap="round" />
+        </svg>
+      ) : (
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+          <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" stroke="var(--text-secondary)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      )}
+    </button>
   );
 }
 
