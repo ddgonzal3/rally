@@ -115,7 +115,7 @@ const styles: Record<string, React.CSSProperties> = {
   },
   emptyText: {
     textAlign: "center" as const,
-    color: "#666",
+    color: "var(--text-dim)",
     fontSize: 14,
     lineHeight: 1.6,
   },

@@ -596,7 +596,7 @@ export function PrReviewContent({
         {prState === "OPEN" && prNumber != null && (
           <>
             {(prNumber != null) && (
-              <div style={{ width: 1, height: 12, background: "#333" }} />
+              <div style={{ width: 1, height: 12, background: "var(--border)" }} />
             )}
             <button
               data-close-btn
@@ -678,12 +678,12 @@ export function PrReviewContent({
           {error ? (
             <div style={st.empty}>
               {error.includes("no pull requests found") ? (
-                <span style={{ fontSize: 13, color: "#e0e0e0" }}>No open PR for this branch</span>
+                <span style={{ fontSize: 13, color: "var(--text-primary)" }}>No open PR for this branch</span>
               ) : (
                 <>
                   <span style={{ color: "#f85149" }}>Failed to load PR</span>
                   <br />
-                  <span style={{ fontSize: 12, color: "#e0e0e0", marginTop: 8, display: "block" }}>{error}</span>
+                  <span style={{ fontSize: 12, color: "var(--text-primary)", marginTop: 8, display: "block" }}>{error}</span>
                 </>
               )}
             </div>
@@ -802,7 +802,7 @@ const FileTreeView = React.memo(function FileTreeView({
                   style={st.treeDirChevron}
                 >
                   <svg width="10" height="10" viewBox="0 0 12 12" fill="none" style={isCollapsed ? chevronCollapsed : chevronExpanded}>
-                    <path d="M4 2.4L8 6L4 9.6" stroke="#888" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
+                    <path d="M4 2.4L8 6L4 9.6" stroke="var(--text-dim)" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
                   </svg>
                 </span>
                 <span
@@ -810,7 +810,7 @@ const FileTreeView = React.memo(function FileTreeView({
                   style={st.treeDirLabel}
                 >
                   <svg width="14" height="14" viewBox="0 0 16 16" fill="none" style={folderIconStyle}>
-                    <path d="M1.5 3.5v9c0 .55.45 1 1 1h11c.55 0 1-.45 1-1v-7c0-.55-.45-1-1-1H7.5l-2-2h-3c-.55 0-1 .45-1 1z" stroke="#888" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" />
+                    <path d="M1.5 3.5v9c0 .55.45 1 1 1h11c.55 0 1-.45 1-1v-7c0-.55-.45-1-1-1H7.5l-2-2h-3c-.55 0-1 .45-1 1z" stroke="var(--text-dim)" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" />
                   </svg>
                   <span style={st.treeDirName}>{node.name}</span>
                 </span>
@@ -960,8 +960,8 @@ const st: Record<string, React.CSSProperties> = {
     padding: "0 12px",
     minHeight: 29,
     maxHeight: 29,
-    background: "#1a1a1a",
-    borderBottom: "1px solid #2a2a2a",
+    background: "var(--bg-app)",
+    borderBottom: "1px solid var(--border)",
     flexShrink: 0,
   },
   headerLeft: {
@@ -981,7 +981,7 @@ const st: Record<string, React.CSSProperties> = {
   refreshBtn: {
     background: "none",
     border: "none",
-    color: "#ccc",
+    color: "var(--text-secondary)",
     cursor: "pointer",
     padding: 4,
     display: "flex",
@@ -994,7 +994,7 @@ const st: Record<string, React.CSSProperties> = {
   prNumber: {
     fontSize: 13,
     fontWeight: 600,
-    color: "#e0e0e0",
+    color: "var(--text-primary)",
     fontFamily: "'SF Mono', 'Menlo', monospace",
     flexShrink: 0,
     lineHeight: "20px",
@@ -1002,7 +1002,7 @@ const st: Record<string, React.CSSProperties> = {
   prTitle: {
     fontSize: 13,
     fontWeight: 600,
-    color: "#e6edf3",
+    color: "var(--text-primary)",
     overflow: "hidden",
     textOverflow: "ellipsis",
     whiteSpace: "nowrap",
@@ -1014,9 +1014,9 @@ const st: Record<string, React.CSSProperties> = {
   titleInput: {
     fontSize: 13,
     fontWeight: 600,
-    color: "#e6edf3",
-    background: "#2a2a2a",
-    border: "1px solid #444",
+    color: "var(--text-primary)",
+    background: "var(--bg-input)",
+    border: "1px solid var(--border)",
     borderRadius: 6,
     padding: "2px 8px",
     outline: "none",
@@ -1027,7 +1027,7 @@ const st: Record<string, React.CSSProperties> = {
   editBtn: {
     background: "none",
     border: "none",
-    color: "#ccc",
+    color: "var(--text-secondary)",
     cursor: "pointer",
     padding: 4,
     display: "flex",
@@ -1040,7 +1040,7 @@ const st: Record<string, React.CSSProperties> = {
   githubBtn: {
     background: "none",
     border: "none",
-    color: "#ccc",
+    color: "var(--text-secondary)",
     cursor: "pointer",
     padding: 4,
     display: "flex",
@@ -1055,8 +1055,8 @@ const st: Record<string, React.CSSProperties> = {
     alignItems: "center",
     gap: 4,
     padding: "0 12px",
-    background: "#1a1a1a",
-    borderBottom: "1px solid #2a2a2a",
+    background: "var(--bg-app)",
+    borderBottom: "1px solid var(--border)",
     flexShrink: 0,
   },
   tab: {
@@ -1064,7 +1064,7 @@ const st: Record<string, React.CSSProperties> = {
     background: "none",
     border: "none",
     borderBottom: "2px solid transparent",
-    color: "#888",
+    color: "var(--text-dim)",
     fontSize: 12,
     cursor: "pointer",
     fontWeight: 500,
@@ -1075,8 +1075,8 @@ const st: Record<string, React.CSSProperties> = {
     padding: "8px 8px",
     background: "none",
     border: "none",
-    borderBottom: "2px solid #e0e0e0",
-    color: "#e0e0e0",
+    borderBottom: "2px solid var(--text-primary)",
+    color: "var(--text-primary)",
     fontSize: 12,
     cursor: "pointer",
     fontWeight: 600,
@@ -1091,9 +1091,9 @@ const st: Record<string, React.CSSProperties> = {
   actionBtn: {
     display: "inline-flex",
     alignItems: "center",
-    background: "#2a2a2a",
+    background: "var(--bg-input)",
     border: "none",
-    color: "#ddd",
+    color: "var(--text-primary)",
     fontSize: 11,
     fontWeight: 600,
     cursor: "pointer",
@@ -1109,7 +1109,7 @@ const st: Record<string, React.CSSProperties> = {
   },
   mergeNote: {
     fontSize: 10,
-    color: "#e0e0e0",
+    color: "var(--text-primary)",
     fontWeight: 500,
     flexShrink: 0,
   },
@@ -1119,7 +1119,7 @@ const st: Record<string, React.CSSProperties> = {
     padding: "16px 20px",
   },
   empty: {
-    color: "#e0e0e0",
+    color: "var(--text-primary)",
     fontSize: 13,
     textAlign: "center",
     padding: 48,
@@ -1164,7 +1164,7 @@ const st: Record<string, React.CSSProperties> = {
     overflow: "hidden",
     textOverflow: "ellipsis",
     whiteSpace: "nowrap" as const,
-    color: "#e6edf3",
+    color: "var(--text-primary)",
     fontWeight: 500,
   },
   treeDir: {
@@ -1201,7 +1201,7 @@ const st: Record<string, React.CSSProperties> = {
     overflow: "hidden",
     textOverflow: "ellipsis",
     whiteSpace: "nowrap" as const,
-    color: "#e0e0e0",
+    color: "var(--text-primary)",
     fontWeight: 500,
   },
   prResizeHandle: {
@@ -1215,7 +1215,7 @@ const st: Record<string, React.CSSProperties> = {
   },
   prResizeLine: {
     width: 1,
-    background: "#2a2a2a",
+    background: "var(--border)",
     pointerEvents: "none" as const,
   },
   prDiffViewer: {
@@ -1235,8 +1235,8 @@ const st: Record<string, React.CSSProperties> = {
     gap: 12,
     padding: "10px 14px",
     borderRadius: 8,
-    background: "#1e1e1e",
-    border: "1px solid #2a2a2a",
+    background: "var(--bg-elevated)",
+    border: "1px solid var(--border)",
   },
   commitMain: {
     flex: 1,
@@ -1248,7 +1248,7 @@ const st: Record<string, React.CSSProperties> = {
   commitMessage: {
     fontSize: 13,
     fontWeight: 600,
-    color: "#e6edf3",
+    color: "var(--text-primary)",
     overflow: "hidden",
     textOverflow: "ellipsis",
     whiteSpace: "nowrap",
@@ -1260,11 +1260,11 @@ const st: Record<string, React.CSSProperties> = {
     fontSize: 12,
   },
   commitAuthor: {
-    color: "#e0e0e0",
+    color: "var(--text-primary)",
     fontWeight: 500,
   },
   commitDate: {
-    color: "#e0e0e0",
+    color: "var(--text-primary)",
   },
   commitSha: {
     fontSize: 12,
@@ -1287,8 +1287,8 @@ const st: Record<string, React.CSSProperties> = {
   },
   conversationCard: {
     borderRadius: 10,
-    border: "1px solid #2a2a2a",
-    background: "#1e1e1e",
+    border: "1px solid var(--border)",
+    background: "var(--bg-elevated)",
     overflow: "hidden",
   },
   conversationHeader: {
@@ -1296,13 +1296,13 @@ const st: Record<string, React.CSSProperties> = {
     alignItems: "center",
     gap: 8,
     padding: "10px 14px",
-    background: "#222",
-    borderBottom: "1px solid #2a2a2a",
+    background: "var(--bg-elevated)",
+    borderBottom: "1px solid var(--border)",
   },
   conversationAuthor: {
     fontSize: 13,
     fontWeight: 600,
-    color: "#e6edf3",
+    color: "var(--text-primary)",
   },
   conversationLabel: {
     fontSize: 10,
@@ -1310,13 +1310,13 @@ const st: Record<string, React.CSSProperties> = {
     padding: "2px 7px",
     borderRadius: 10,
     background: "rgba(136, 136, 136, 0.12)",
-    color: "#e0e0e0",
+    color: "var(--text-primary)",
     textTransform: "uppercase" as const,
     letterSpacing: "0.03em",
   },
   conversationDate: {
     fontSize: 12,
-    color: "#e0e0e0",
+    color: "var(--text-primary)",
     marginLeft: "auto",
   },
   conversationBody: {

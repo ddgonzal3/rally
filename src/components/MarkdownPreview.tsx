@@ -38,7 +38,7 @@ const styles: Record<string, React.CSSProperties> = {
   container: {
     flex: 1,
     overflow: "auto",
-    background: "#1e1e1e",
+    background: "var(--bg-elevated)",
     minWidth: 0,
     minHeight: 0,
   },

@@ -105,11 +105,11 @@ function ToastCard({ toast, onDismiss }: { toast: Toast; onDismiss: () => void }
 
 const cardStyles: Record<string, React.CSSProperties> = {
   card: {
-    background: "#2a2a2a",
+    background: "var(--bg-elevated)",
     borderRadius: 6,
     minWidth: 280,
     maxWidth: 360,
-    boxShadow: "0 4px 16px rgba(0,0,0,0.4)",
+    boxShadow: "0 4px 16px var(--shadow)",
     pointerEvents: "auto",
     overflow: "hidden",
     display: "flex",
@@ -131,13 +131,13 @@ const cardStyles: Record<string, React.CSSProperties> = {
   title: {
     fontSize: 12,
     fontWeight: 600,
-    color: "#e0e0e0",
+    color: "var(--text-primary)",
     lineHeight: "1.3",
   },
   closeBtn: {
     background: "none",
     border: "none",
-    color: "#888",
+    color: "var(--text-dim)",
     fontSize: 16,
     cursor: "pointer",
     padding: "0 2px",
@@ -146,7 +146,7 @@ const cardStyles: Record<string, React.CSSProperties> = {
   },
   message: {
     fontSize: 11,
-    color: "#999",
+    color: "var(--text-dim)",
     marginTop: 4,
     lineHeight: "1.4",
   },
@@ -156,9 +156,9 @@ const cardStyles: Record<string, React.CSSProperties> = {
     marginTop: 8,
   },
   actionBtn: {
-    background: "#3a3a3a",
-    border: "1px solid #4a4a4a",
-    color: "#ccc",
+    background: "var(--bg-elevated)",
+    border: "1px solid var(--border)",
+    color: "var(--text-secondary)",
     fontSize: 11,
     padding: "3px 10px",
     borderRadius: 4,

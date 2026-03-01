@@ -15,7 +15,7 @@ function highlightRowOverlays() {
   document
     .querySelectorAll<HTMLDivElement>("[data-row-overlay] > div")
     .forEach((el) => {
-      el.style.background = "#444";
+      el.style.background = "var(--border)";
     });
 }
 
@@ -23,7 +23,7 @@ function unhighlightRowOverlays() {
   document
     .querySelectorAll<HTMLDivElement>("[data-row-overlay] > div")
     .forEach((el) => {
-      el.style.background = "#2a2a2a";
+      el.style.background = "var(--border)";
     });
 }
 
@@ -51,7 +51,7 @@ export function ResizeHandle({ direction, ratio, onResize }: ResizeHandleProps) 
     `;
     const line = document.createElement("div");
     line.style.cssText = `
-      width: 100%; height: 1px; background: #2a2a2a;
+      width: 100%; height: 1px; background: var(--border);
       transition: background 0.15s; opacity: 0.8;
     `;
     overlay.appendChild(line);
@@ -145,7 +145,7 @@ export function ResizeHandle({ direction, ratio, onResize }: ResizeHandleProps) 
           width: 6,
           height: "100%",
           cursor: "col-resize",
-          background: "#1a1a1a",
+          background: "var(--bg-app)",
           zIndex: 10,
           display: "flex",
           alignItems: "center",
@@ -153,12 +153,12 @@ export function ResizeHandle({ direction, ratio, onResize }: ResizeHandleProps) 
         }}
         onMouseEnter={(e) => {
           const line = e.currentTarget.firstElementChild as HTMLDivElement;
-          if (line) line.style.background = "#444";
+          if (line) line.style.background = "var(--border)";
         }}
         onMouseLeave={(e) => {
           if (!dragging.current) {
             const line = e.currentTarget.firstElementChild as HTMLDivElement;
-            if (line) line.style.background = "#2a2a2a";
+            if (line) line.style.background = "var(--border)";
           }
         }}
       >
@@ -166,7 +166,7 @@ export function ResizeHandle({ direction, ratio, onResize }: ResizeHandleProps) 
           style={{
             width: 1,
             height: "100%",
-            background: "#2a2a2a",
+            background: "var(--border)",
             transition: "background 0.15s",
             pointerEvents: "none",
           }}
@@ -186,7 +186,7 @@ export function ResizeHandle({ direction, ratio, onResize }: ResizeHandleProps) 
         width: "100%",
         height: 6,
         cursor: "row-resize",
-        background: "#1a1a1a",
+        background: "var(--bg-app)",
         zIndex: 10,
       }}
       onMouseEnter={() => highlightRowOverlays()}
