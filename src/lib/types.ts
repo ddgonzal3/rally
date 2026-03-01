@@ -20,6 +20,10 @@ export interface GitStatus {
   dirty: boolean;
   ahead: number;
   behind: number;
+  /** Commits ahead of origin/<current_branch> */
+  tracking_ahead: number;
+  /** Commits behind origin/<current_branch> */
+  tracking_behind: number;
   modified_files: string[];
   untracked_files: string[];
 }
@@ -97,6 +101,13 @@ export interface PrReview {
   created_at: string;
 }
 
+// --- Branch Types ---
+
+export interface BranchInfo {
+  name: string;
+  is_current: boolean;
+}
+
 // --- Commit Log Types ---
 
 export interface CommitEntry {
@@ -150,6 +161,40 @@ export interface ShipStatus {
   phase: ShipPhase;
   signal?: ShipSignal;
   pr_number?: number;
+}
+
+// --- Rally Config Types ---
+
+export interface SetupConfig {
+  check?: string;
+  run?: string;
+}
+
+export interface RallyConfig {
+  excludeBuiltins: string[];
+  excludeScripts: string[];
+  mode: string | null;
+  setup?: SetupConfig;
+}
+
+export interface WorkspaceReadiness {
+  ready: boolean;
+  issues: string[];
+}
+
+// --- Workspace Mode Types ---
+
+export type WorkspaceMode = "product" | "dev";
+
+export interface ProductSession {
+  state: "idle" | "active";
+  ptyId: string | undefined;
+  prompt: string;
+}
+
+export interface ShellPanel {
+  ptyId: string;
+  visible: boolean;
 }
 
 // --- Rally Script Editor Types ---
@@ -421,6 +466,23 @@ export function findNeighborGroup(
 }
 
 // --- Default Layout Factory ---
+
+export function createProductLayout(): WorkspaceLayout {
+  const claudePane: Pane = {
+    id: crypto.randomUUID(),
+    type: "claude-launcher",
+    title: "Claude Code",
+  };
+  const g1: PaneGroup = {
+    id: crypto.randomUUID(),
+    panes: [claudePane],
+    activePaneId: claudePane.id,
+  };
+  return {
+    root: { type: "group", groupId: g1.id },
+    groups: { [g1.id]: g1 },
+  };
+}
 
 export function createDefaultLayout(): WorkspaceLayout {
   const claudePane: Pane = {

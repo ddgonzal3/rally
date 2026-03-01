@@ -30,6 +30,10 @@ pub struct GitStatus {
     pub dirty: bool,
     pub ahead: u32,
     pub behind: u32,
+    /// Commits ahead of the remote tracking branch (origin/<current_branch>)
+    pub tracking_ahead: u32,
+    /// Commits behind the remote tracking branch (origin/<current_branch>)
+    pub tracking_behind: u32,
     pub modified_files: Vec<String>,
     pub untracked_files: Vec<String>,
 }

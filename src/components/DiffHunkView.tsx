@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useMemo } from "react";
 import type { DiffHunk, DiffLine } from "../lib/diffParser";
 import { highlightLine, getLangForPath } from "../lib/syntaxHighlight";
 
@@ -90,17 +90,11 @@ function computeHunkOldEnd(hunk: DiffHunk): number {
 interface DiffFileViewProps {
   hunks: DiffHunk[];
   filePath: string;
-  tab: "unstaged" | "staged" | "pr";
-  onHunkRevert?: (hunkIndex: number) => void;
-  onHunkStage?: (hunkIndex: number) => void;
 }
 
 export function DiffFileView({
   hunks,
   filePath,
-  tab,
-  onHunkRevert,
-  onHunkStage,
 }: DiffFileViewProps) {
   const lang = useMemo(() => getLangForPath(filePath), [filePath]);
   const segments = useMemo(() => buildSegments(hunks), [hunks]);
@@ -125,10 +119,6 @@ export function DiffFileView({
               key={`cg-${i}`}
               lines={seg.lines}
               lang={lang}
-              hunkIndex={seg.hunkIndex}
-              tab={tab}
-              onRevert={onHunkRevert}
-              onStage={onHunkStage}
             />
           );
         }
@@ -170,69 +160,15 @@ function UnmodifiedBar({
 function ChangeGroup({
   lines,
   lang,
-  hunkIndex,
-  tab,
-  onRevert,
-  onStage,
 }: {
   lines: DiffLine[];
   lang: string | null;
-  hunkIndex: number;
-  tab: "unstaged" | "staged" | "pr";
-  onRevert?: (hunkIndex: number) => void;
-  onStage?: (hunkIndex: number) => void;
 }) {
-  const [hovered, setHovered] = useState(false);
-
   return (
-    <div
-      style={styles.changeGroup}
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
-    >
+    <div style={styles.changeGroup}>
       {lines.map((line, i) => (
         <DiffLineRow key={i} line={line} lang={lang} />
       ))}
-      {hovered && (onRevert || onStage) && (
-        <div style={styles.hoverActions}>
-          {tab === "unstaged" && onRevert && (
-            <button
-              className="hunk-action-btn"
-              onClick={(e) => { e.stopPropagation(); onRevert(hunkIndex); }}
-              style={styles.hoverBtn}
-              title="Revert this change"
-            >
-              <svg width="13" height="13" viewBox="0 0 13 13" fill="none">
-                <path d="M4 3.2V6h2.8M4 6c0-2.2 1.8-4 4-4a4 4 0 1 1-3.1 6.5" stroke="currentColor" strokeWidth="1.35" strokeLinecap="round" strokeLinejoin="round" />
-              </svg>
-            </button>
-          )}
-          {tab === "unstaged" && onStage && (
-            <button
-              className="hunk-action-btn"
-              onClick={(e) => { e.stopPropagation(); onStage(hunkIndex); }}
-              style={styles.hoverBtn}
-              title="Stage this change"
-            >
-              <svg width="13" height="13" viewBox="0 0 14 14" fill="none">
-                <path d="M7 3v8M3 7h8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-              </svg>
-            </button>
-          )}
-          {tab === "staged" && onStage && (
-            <button
-              className="hunk-action-btn"
-              onClick={(e) => { e.stopPropagation(); onStage(hunkIndex); }}
-              style={styles.hoverBtn}
-              title="Unstage this change"
-            >
-              <svg width="13" height="13" viewBox="0 0 14 14" fill="none">
-                <path d="M3 7h8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-              </svg>
-            </button>
-          )}
-        </div>
-      )}
     </div>
   );
 }
@@ -309,32 +245,6 @@ const styles: Record<string, React.CSSProperties> = {
   },
   changeGroup: {
     position: "relative",
-  },
-  hoverActions: {
-    position: "absolute",
-    top: 4,
-    right: 8,
-    display: "flex",
-    alignItems: "center",
-    gap: 0,
-    zIndex: 5,
-    background: "#2a2a2a",
-    border: "1px solid #3a3a3a",
-    borderRadius: 20,
-    overflow: "hidden",
-  },
-  hoverBtn: {
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    width: 28,
-    height: 24,
-    borderRadius: 0,
-    border: "none",
-    background: "transparent",
-    color: "#999",
-    cursor: "pointer",
-    transition: "color 150ms, background 150ms",
   },
   line: {
     display: "flex",

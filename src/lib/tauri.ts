@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import type { Workspace, GitStatus, PrStatus, PrDetails, PushResult, ChangesSummary, CommitEntry, ScriptEntry, ShipSignal, RallyScriptInfo, SearchMatch, ReplaceOp, ReplaceResult, PtyInfo } from "./types";
+import type { Workspace, GitStatus, PrStatus, PrDetails, PushResult, ChangesSummary, CommitEntry, ScriptEntry, ShipSignal, RallyScriptInfo, SearchMatch, ReplaceOp, ReplaceResult, PtyInfo, RallyConfig, WorkspaceReadiness, BranchInfo } from "./types";
 
 /** Open a URL in the user's default browser via Tauri shell plugin. */
 export function openUrl(url: string) {
@@ -102,14 +102,35 @@ export const api = {
   gitCommitLog: (workspacePath: string, mainBranch: string, limit: number = 50) =>
     invoke<CommitEntry[]>("git_commit_log", { workspacePath, mainBranch, limit }),
 
+  gitCommitDiff: (workspacePath: string, sha: string) =>
+    invoke<string>("git_commit_diff", { workspacePath, sha }),
+
   gitDiffStat: (workspacePath: string) =>
     invoke<[number, number]>("git_diff_stat", { workspacePath }),
 
   gitFetch: (workspacePath: string) =>
     invoke<void>("git_fetch", { workspacePath }),
 
+  gitPull: (workspacePath: string) =>
+    invoke<string>("git_pull", { workspacePath }),
+
+  gitForcePull: (workspacePath: string) =>
+    invoke<string>("git_force_pull", { workspacePath }),
+
   gitRebaseOnMain: (workspacePath: string, mainBranch: string) =>
     invoke<string>("git_rebase_on_main", { workspacePath, mainBranch }),
+
+  gitListBranches: (workspacePath: string) =>
+    invoke<BranchInfo[]>("git_list_branches", { workspacePath }),
+
+  gitCheckoutBranch: (workspacePath: string, branch: string) =>
+    invoke<string>("git_checkout_branch", { workspacePath, branch }),
+
+  gitCreateBranch: (workspacePath: string, branch: string) =>
+    invoke<string>("git_create_branch", { workspacePath, branch }),
+
+  gitDeleteBranch: (workspacePath: string, branch: string, force: boolean = false) =>
+    invoke<string>("git_delete_branch", { workspacePath, branch, force }),
 
   detectGitInfo: (path: string) =>
     invoke<{ repo_url: string; branch: string; name: string }>("detect_git_info", { path }),
@@ -201,4 +222,12 @@ export const api = {
 
   listAllFiles: (paths: string[]) =>
     invoke<string[]>("list_all_files", { paths }),
+
+  // Rally config
+  readRallyConfig: (rootPath: string) =>
+    invoke<RallyConfig>("read_rally_config", { rootPath }),
+
+  // Workspace readiness
+  checkWorkspaceReady: (rootPath: string) =>
+    invoke<WorkspaceReadiness>("check_workspace_ready", { rootPath }),
 };

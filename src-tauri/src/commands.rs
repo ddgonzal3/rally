@@ -460,6 +460,11 @@ pub async fn git_commit_log(workspace_path: String, main_branch: String, limit: 
 }
 
 #[tauri::command]
+pub async fn git_commit_diff(workspace_path: String, sha: String) -> Result<String, String> {
+    git_ops::commit_diff(&workspace_path, &sha).await
+}
+
+#[tauri::command]
 pub async fn git_diff_stat(workspace_path: String) -> Result<(i64, i64), String> {
     git_ops::diff_stat(&workspace_path).await
 }
@@ -470,8 +475,38 @@ pub async fn git_fetch(workspace_path: String) -> Result<(), String> {
 }
 
 #[tauri::command]
+pub async fn git_pull(workspace_path: String) -> Result<String, String> {
+    git_ops::pull(&workspace_path).await
+}
+
+#[tauri::command]
+pub async fn git_force_pull(workspace_path: String) -> Result<String, String> {
+    git_ops::force_pull(&workspace_path).await
+}
+
+#[tauri::command]
 pub async fn git_rebase_on_main(workspace_path: String, main_branch: String) -> Result<String, String> {
     git_ops::rebase_on_main(&workspace_path, &main_branch).await
+}
+
+#[tauri::command]
+pub async fn git_list_branches(workspace_path: String) -> Result<Vec<git_ops::BranchInfo>, String> {
+    git_ops::list_branches(&workspace_path).await
+}
+
+#[tauri::command]
+pub async fn git_checkout_branch(workspace_path: String, branch: String) -> Result<String, String> {
+    git_ops::checkout_branch(&workspace_path, &branch).await
+}
+
+#[tauri::command]
+pub async fn git_create_branch(workspace_path: String, branch: String) -> Result<String, String> {
+    git_ops::create_branch(&workspace_path, &branch).await
+}
+
+#[tauri::command]
+pub async fn git_delete_branch(workspace_path: String, branch: String, force: bool) -> Result<String, String> {
+    git_ops::delete_branch(&workspace_path, &branch, force).await
 }
 
 #[tauri::command]
@@ -506,12 +541,158 @@ pub fn reveal_in_finder(path: String) -> Result<(), String> {
     Ok(())
 }
 
-#[derive(Debug, Deserialize)]
-struct RallyConfig {
+#[derive(Debug, Deserialize, Serialize, Clone)]
+pub struct SetupConfig {
+    #[serde(default)]
+    pub check: Option<String>,
+    #[serde(default)]
+    pub run: Option<String>,
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone)]
+pub struct RallyConfig {
     #[serde(default, rename = "excludeBuiltins")]
     exclude_builtins: Vec<String>,
     #[serde(default, rename = "excludeScripts")]
     exclude_scripts: Vec<String>,
+    #[serde(default)]
+    pub mode: Option<String>,
+    #[serde(default)]
+    pub setup: Option<SetupConfig>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct WorkspaceReadiness {
+    pub ready: bool,
+    pub issues: Vec<String>,
+}
+
+#[tauri::command]
+pub fn read_rally_config(root_path: String) -> Result<RallyConfig, String> {
+    let rally_json = Path::new(&root_path).join("RALLY.json");
+    if !rally_json.exists() {
+        return Ok(RallyConfig {
+            exclude_builtins: Vec::new(),
+            exclude_scripts: Vec::new(),
+            mode: None,
+            setup: None,
+        });
+    }
+    let content = fs::read_to_string(&rally_json)
+        .map_err(|e| format!("Failed to read RALLY.json: {}", e))?;
+    serde_json::from_str(&content)
+        .map_err(|e| format!("Failed to parse RALLY.json: {}", e))
+}
+
+// --- Workspace readiness ---
+
+/// Check readiness heuristics for a single directory. Returns issue strings
+/// prefixed with the given label (empty for root).
+fn check_dir_readiness(dir: &Path, label: &str) -> Vec<String> {
+    let mut issues: Vec<String> = Vec::new();
+    let prefix = if label.is_empty() {
+        String::new()
+    } else {
+        format!("{}: ", label)
+    };
+
+    // package.json exists but no node_modules/
+    if dir.join("package.json").exists() && !dir.join("node_modules").is_dir() {
+        issues.push(format!("{}Dependencies not installed", prefix));
+    }
+
+    // Cargo.toml exists but no target/
+    if dir.join("Cargo.toml").exists() && !dir.join("target").is_dir() {
+        issues.push(format!("{}Rust project not built", prefix));
+    }
+
+    // CMakeLists.txt exists but no build/
+    if dir.join("CMakeLists.txt").exists() && !dir.join("build").is_dir() {
+        issues.push(format!("{}C++ project not built", prefix));
+    }
+
+    // .env.example exists but no .env
+    if dir.join(".env.example").exists() && !dir.join(".env").exists() {
+        issues.push(format!("{}Environment not configured", prefix));
+    }
+
+    // Python: requirements.txt or pyproject.toml but no venv
+    let has_python = dir.join("requirements.txt").exists() || dir.join("pyproject.toml").exists();
+    if has_python && !dir.join("venv").is_dir() && !dir.join(".venv").is_dir() {
+        issues.push(format!("{}Python env not set up", prefix));
+    }
+
+    issues
+}
+
+#[tauri::command]
+pub async fn check_workspace_ready(root_path: String) -> Result<WorkspaceReadiness, String> {
+    // Run on a blocking thread so we don't stall the main/async runtime
+    tokio::task::spawn_blocking(move || {
+        let root = Path::new(&root_path);
+        let mut issues: Vec<String> = Vec::new();
+
+        // Check root directory
+        issues.extend(check_dir_readiness(root, ""));
+
+        // Check immediate subdirectories (monorepo support)
+        if let Ok(entries) = fs::read_dir(root) {
+            for entry in entries.filter_map(|e| e.ok()) {
+                if !entry.file_type().map(|ft| ft.is_dir()).unwrap_or(false) {
+                    continue;
+                }
+                let name = entry.file_name().to_string_lossy().to_string();
+                // Skip hidden dirs and common non-project dirs
+                if name.starts_with('.') || HIDDEN_DIRS.contains(&name.as_str()) {
+                    continue;
+                }
+                issues.extend(check_dir_readiness(&entry.path(), &name));
+            }
+        }
+
+        // Check GitHub CLI auth — use `gh auth token` (local keyring only, no network)
+        // instead of `gh auth status` which hits the GitHub API and can take 8+ seconds
+        if let Ok(output) = Command::new("gh").args(["auth", "token"]).output() {
+            if !output.status.success() {
+                issues.push("GitHub CLI not authenticated (run gh auth login)".to_string());
+            }
+        }
+
+        // Custom check from RALLY.json setup.check
+        let rally_json = root.join("RALLY.json");
+        if rally_json.exists() {
+            if let Ok(content) = fs::read_to_string(&rally_json) {
+                if let Ok(config) = serde_json::from_str::<RallyConfig>(&content) {
+                    if let Some(setup) = &config.setup {
+                        if let Some(check_cmd) = &setup.check {
+                            let output = Command::new("sh")
+                                .args(["-c", check_cmd])
+                                .current_dir(&root_path)
+                                .output();
+                            if let Ok(out) = output {
+                                if !out.status.success() {
+                                    let stderr = String::from_utf8_lossy(&out.stderr);
+                                    let msg = stderr.trim();
+                                    if msg.is_empty() {
+                                        issues.push("Setup check failed".to_string());
+                                    } else {
+                                        issues.push(msg.to_string());
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        Ok(WorkspaceReadiness {
+            ready: issues.is_empty(),
+            issues,
+        })
+    })
+    .await
+    .map_err(|e| format!("Task join error: {}", e))?
 }
 
 // --- Scripts & commands ---

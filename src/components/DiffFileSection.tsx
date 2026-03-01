@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect } from "react";
+import React, { useState, useCallback, useEffect, useMemo } from "react";
 import type { DiffFile } from "../lib/diffParser";
 import { DiffFileView } from "./DiffHunkView";
 
@@ -7,28 +7,32 @@ export function DiffFileSection({
   defaultExpanded,
   expandKey,
   tab,
+  maxLinesBeforeCollapse,
   onStage,
   onUnstage,
   onDiscard,
-  onHunkRevert,
-  onHunkStage,
 }: {
   file: DiffFile;
   defaultExpanded: boolean;
   expandKey?: number;
   tab: "unstaged" | "staged" | "pr";
+  maxLinesBeforeCollapse?: number;
   onStage?: (filePath: string) => void;
   onUnstage?: (filePath: string) => void;
   onDiscard?: (filePath: string) => void;
-  onHunkRevert?: (filePath: string, hunkIndex: number) => void;
-  onHunkStage?: (filePath: string, hunkIndex: number) => void;
 }) {
-  const [expanded, setExpanded] = useState(defaultExpanded);
+  const totalDiffLines = useMemo(
+    () => file.hunks.reduce((sum, h) => sum + h.lines.length, 0),
+    [file.hunks],
+  );
+  const isLargeDiff = maxLinesBeforeCollapse != null && totalDiffLines > maxLinesBeforeCollapse;
+
+  const [expanded, setExpanded] = useState(isLargeDiff ? false : defaultExpanded);
 
   // Reset expand state when expandKey changes (from expand/collapse all)
   useEffect(() => {
-    setExpanded(defaultExpanded);
-  }, [expandKey, defaultExpanded]);
+    setExpanded(isLargeDiff ? false : defaultExpanded);
+  }, [expandKey, defaultExpanded, isLargeDiff]);
   const [confirming, setConfirming] = useState(false);
   const filePath = file.newPath || file.oldPath;
 
@@ -71,9 +75,9 @@ export function DiffFileSection({
                 title={confirming ? "Click again to confirm" : "Discard changes"}
               >
                 {confirming ? (
-                  <span style={{ fontSize: 11, fontWeight: 600 }}>Confirm?</span>
+                  <span style={{ fontSize: 10, fontWeight: 600 }}>Confirm?</span>
                 ) : (
-                  <svg width="14" height="14" viewBox="0 0 13 13" fill="none">
+                  <svg width="12" height="12" viewBox="0 0 13 13" fill="none">
                     <path d="M4 3.2V6h2.8M4 6c0-2.2 1.8-4 4-4a4 4 0 1 1-3.1 6.5" stroke="currentColor" strokeWidth="1.35" strokeLinecap="round" strokeLinejoin="round" />
                   </svg>
                 )}
@@ -84,7 +88,7 @@ export function DiffFileSection({
                 style={styles.iconBtn}
                 title="Stage file"
               >
-                <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+                <svg width="12" height="12" viewBox="0 0 14 14" fill="none">
                   <path d="M7 3v8M3 7h8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
                 </svg>
               </button>
@@ -97,14 +101,14 @@ export function DiffFileSection({
               style={styles.iconBtn}
               title="Unstage file"
             >
-              <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+              <svg width="12" height="12" viewBox="0 0 14 14" fill="none">
                 <path d="M3 7h8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
               </svg>
             </button>
           )}
         </div>
       </div>
-      {expanded && (
+      {expanded ? (
         <div style={styles.hunks}>
           {file.hunks.length === 0 ? (
             <div style={styles.noContent}>
@@ -114,13 +118,17 @@ export function DiffFileSection({
             <DiffFileView
               hunks={file.hunks}
               filePath={filePath}
-              tab={tab}
-              onHunkRevert={onHunkRevert ? (hi) => onHunkRevert(filePath, hi) : undefined}
-              onHunkStage={onHunkStage ? (hi) => onHunkStage(filePath, hi) : undefined}
             />
           )}
         </div>
-      )}
+      ) : isLargeDiff ? (
+        <div
+          style={styles.largeDiffMessage}
+          onClick={() => setExpanded(true)}
+        >
+          Large diff not rendered — {totalDiffLines} lines. Click to load.
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -136,13 +144,14 @@ const styles: Record<string, React.CSSProperties> = {
   header: {
     display: "flex",
     alignItems: "center",
-    gap: 8,
-    padding: "8px 14px",
+    gap: 6,
+    padding: "8px 10px",
     background: "#222",
     cursor: "pointer",
     userSelect: "none",
     borderBottom: "1px solid #2a2a2a",
     transition: "background 150ms",
+    minWidth: 0,
   },
   chevron: {
     fontSize: 10,
@@ -151,23 +160,24 @@ const styles: Record<string, React.CSSProperties> = {
     flexShrink: 0,
   },
   fileName: {
-    fontSize: 13,
+    fontSize: 12,
     fontFamily: "'SF Mono', 'Menlo', monospace",
     fontWeight: 600,
     color: "#fff",
     overflow: "hidden",
     textOverflow: "ellipsis",
     whiteSpace: "nowrap",
+    minWidth: 0,
+    flex: 1,
   },
   stats: {
     display: "flex",
     alignItems: "baseline",
-    gap: 6,
-    fontSize: 13,
+    gap: 4,
+    fontSize: 12,
     fontFamily: "'SF Mono', 'Menlo', monospace",
     fontWeight: 600,
     flexShrink: 0,
-    marginRight: "auto",
   },
   additions: {
     color: "#3fb950",
@@ -214,15 +224,15 @@ const styles: Record<string, React.CSSProperties> = {
     flexShrink: 0,
     background: "#2a2a2a",
     border: "1px solid #3a3a3a",
-    borderRadius: 20,
+    borderRadius: 14,
     overflow: "hidden",
   },
   iconBtn: {
     display: "flex",
     alignItems: "center",
     justifyContent: "center",
-    width: 28,
-    height: 28,
+    width: 24,
+    height: 22,
     borderRadius: 0,
     border: "none",
     background: "transparent",
@@ -234,14 +244,14 @@ const styles: Record<string, React.CSSProperties> = {
     display: "flex",
     alignItems: "center",
     justifyContent: "center",
-    minWidth: 28,
-    height: 28,
+    minWidth: 24,
+    height: 22,
     borderRadius: 0,
     border: "none",
     background: "rgba(248, 81, 73, 0.15)",
     color: "#f85149",
     cursor: "pointer",
-    padding: "0 6px",
+    padding: "0 5px",
     transition: "color 150ms, background 150ms",
   },
   hunks: {
@@ -253,5 +263,15 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: 12,
     fontStyle: "italic",
     textAlign: "center",
+  },
+  largeDiffMessage: {
+    padding: "14px 20px",
+    textAlign: "center",
+    color: "#e0e0e0",
+    fontSize: 12,
+    cursor: "pointer",
+    background: "#1a1a1a",
+    fontWeight: 500,
+    transition: "background 150ms",
   },
 };

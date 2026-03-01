@@ -3,7 +3,6 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { open } from "@tauri-apps/plugin-dialog";
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
-import { Sidebar } from "./components/Sidebar";
 import { FileExplorer } from "./components/FileExplorer";
 import { GlobalConfigExplorer } from "./components/SettingsPanel";
 import { ScriptEditor } from "./components/ScriptEditor";
@@ -25,7 +24,53 @@ import { ToastContainer, addToast } from "./components/ToastContainer";
 import { ShipStatusPill } from "./components/ShipStatusPill";
 import { UnifiedGitPanel } from "./components/UnifiedGitPanel";
 import { SearchPanel } from "./components/SearchPanel";
+import { ProductChatPanel } from "./components/ProductChatPanel";
 import QuickOpen from "./components/QuickOpen";
+
+function WorkspacePicker({ onSelect }: { onSelect: (id: string) => void }) {
+  const workspaces = useWorkspaceStore((s) => s.workspaces);
+  const activeWorkspaceId = useWorkspaceStore((s) => s.activeWorkspaceId);
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", height: "100%", background: "#161616" }}>
+      <div style={{ padding: "8px 12px", fontSize: 11, fontWeight: 700, color: "#e0e0e0", textTransform: "uppercase" as const, letterSpacing: "0.06em" }}>
+        Workspaces
+      </div>
+      <div style={{ flex: 1, overflow: "auto" }}>
+        {workspaces.map((ws) => {
+          const isActive = ws.id === activeWorkspaceId;
+          return (
+            <button
+              key={ws.id}
+              className="sidebar-btn"
+              onClick={() => onSelect(ws.id)}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 8,
+                width: "100%",
+                padding: "8px 12px",
+                border: "none",
+                background: isActive ? "rgba(255,255,255,0.08)" : "transparent",
+                color: isActive ? "#fff" : "#ccc",
+                fontSize: 13,
+                fontWeight: isActive ? 600 : 500,
+                cursor: "pointer",
+                textAlign: "left" as const,
+              }}
+            >
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" style={{ flexShrink: 0 }}>
+                <rect x="1.5" y="3" width="13" height="10" rx="1.5" stroke={isActive ? "#ddd" : "#999"} strokeWidth="1.0" />
+                <path d="M1.5 5.5h13" stroke={isActive ? "#ddd" : "#999"} strokeWidth="1.0" />
+              </svg>
+              {ws.name}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
 
 export function App() {
   const windowLabel = getCurrentWindow().label;
@@ -35,9 +80,7 @@ export function App() {
   const forceNoWorkspaceSelection =
     new URLSearchParams(window.location.search).get("blankWorkspace") === "1";
   const BACKGROUND_WORK_DEFER_MS = 2500;
-  const panelCollapsedKey = `rally:panelCollapsed:${windowLabel}`;
   const fileExplorerCollapsedKey = `rally:fileExplorerCollapsed:${windowLabel}`;
-  const sidebarWidthKey = `rally:sidebarWidth:${windowLabel}`;
   const fileExplorerWidthKey = `rally:fileExplorerWidth:${windowLabel}`;
 
   // Individual selectors for action functions — prevents App from re-rendering
@@ -62,10 +105,20 @@ export function App() {
     const ws = s.workspaces.find((w) => w.id === s.activeWorkspaceId);
     return ws?.name ?? "Rally";
   });
+  const activeWorkspaceId = useWorkspaceStore((s) => s.activeWorkspaceId);
+  const workspaceMode = useWorkspaceStore((s) => {
+    if (!s.activeWorkspaceId) return "dev";
+    return s.workspaceModes[s.activeWorkspaceId] ?? "dev";
+  });
+  const setWorkspaceMode = useWorkspaceStore((s) => s.setWorkspaceMode);
+  const loadRallyConfig = useWorkspaceStore((s) => s.loadRallyConfig);
+  const isProductMode = workspaceMode === "product";
+  const activeRootPath = useWorkspaceStore((s) => {
+    const ws = s.workspaces.find((w) => w.id === s.activeWorkspaceId);
+    return ws?.paths[0] ?? "";
+  });
+  const gitPanelOpen = useWorkspaceStore((s) => s.unifiedGitPanelOpen);
 
-  const [panelCollapsed, setPanelCollapsed] = useState(
-    () => localStorage.getItem(panelCollapsedKey) === "true",
-  );
   const [fileExplorerCollapsed, setFileExplorerCollapsed] = useState(
     () => localStorage.getItem(fileExplorerCollapsedKey) === "true",
   );
@@ -74,22 +127,15 @@ export function App() {
     return saved ? Number(saved) : 1.0;
   });
   const [explorerView, setExplorerView] = useState<
-    "files" | "search" | "claude" | "scripts"
+    "files" | "search" | "claude" | "scripts" | "workspaces"
   >("files");
   const [quickOpenVisible, setQuickOpenVisible] = useState(false);
   const [newTerminalCwdRequest, setNewTerminalCwdRequest] =
     useState<RequestNewTerminalCwdDetail | null>(null);
-  const [sidebarWidth, setSidebarWidth] = useState(() => {
-    const saved = localStorage.getItem(sidebarWidthKey);
-    return saved ? Number(saved) : 220;
-  });
   const [fileExplorerWidth, setFileExplorerWidth] = useState(() => {
     const saved = localStorage.getItem(fileExplorerWidthKey);
     return saved ? Number(saved) : 220;
   });
-  useEffect(() => {
-    localStorage.setItem(panelCollapsedKey, String(panelCollapsed));
-  }, [panelCollapsed, panelCollapsedKey]);
   useEffect(() => {
     localStorage.setItem(
       fileExplorerCollapsedKey,
@@ -103,12 +149,16 @@ export function App() {
   const shipPollInFlightRef = useRef(false);
   const fetchInFlightRef = useRef(false);
   const lastInteractionAtRef = useRef(Date.now());
-  const sidebarRef = useRef<HTMLDivElement>(null);
   const explorerRef = useRef<HTMLDivElement>(null);
-  const autoCollapsedSidebarRef = useRef(false);
   // The user's preferred explorer width (set by drag resize or initial load).
   // When the window is too narrow we shrink below this, and restore when space returns.
   const preferredExplorerWidthRef = useRef(fileExplorerWidth);
+
+  // Hover-to-open for workspaces panel
+  const workspacesHoverRef = useRef(false);
+  const hoverCloseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const preHoverRef = useRef<{ collapsed: boolean; view: typeof explorerView } | null>(null);
+  const [wsHoverAnim, setWsHoverAnim] = useState<"in" | "out" | null>(null);
 
   // Auto-shrink explorer (and collapse sidebar as last resort) to keep main area usable
   const MIN_MAIN_WIDTH = 600;
@@ -119,33 +169,22 @@ export function App() {
     const checkWidth = () => {
       if (resizingRef.current) return;
       const w = window.innerWidth;
-      const sidebarSpace = panelCollapsed
-        ? 0
-        : sidebarWidth + RESIZE_HANDLE_WIDTH;
       const explorerSpace = fileExplorerCollapsed
         ? 0
         : fileExplorerWidth + RESIZE_HANDLE_WIDTH;
-      const mainWidth = w - ACTIVITY_BAR_WIDTH - sidebarSpace - explorerSpace;
+      const mainWidth = w - ACTIVITY_BAR_WIDTH - explorerSpace;
 
       if (mainWidth < MIN_MAIN_WIDTH && !fileExplorerCollapsed) {
         // Shrink explorer to fit
         const available =
           w -
           ACTIVITY_BAR_WIDTH -
-          sidebarSpace -
           RESIZE_HANDLE_WIDTH -
           MIN_MAIN_WIDTH;
         if (available >= MIN_EXPLORER_WIDTH) {
           setFileExplorerWidth(available);
         } else {
-          // Explorer can't shrink enough — collapse sidebar instead
-          if (!panelCollapsed) {
-            autoCollapsedSidebarRef.current = true;
-            setPanelCollapsed(true);
-          } else {
-            // Both squeezed — just clamp explorer to minimum
-            setFileExplorerWidth(MIN_EXPLORER_WIDTH);
-          }
+          setFileExplorerWidth(MIN_EXPLORER_WIDTH);
         }
       } else if (
         mainWidth >= MIN_MAIN_WIDTH &&
@@ -160,24 +199,11 @@ export function App() {
         );
         setFileExplorerWidth(restored);
       }
-
-      // Restore auto-collapsed sidebar when there's enough space
-      if (autoCollapsedSidebarRef.current && panelCollapsed) {
-        const withSidebar =
-          w -
-          ACTIVITY_BAR_WIDTH -
-          (sidebarWidth + RESIZE_HANDLE_WIDTH) -
-          explorerSpace;
-        if (withSidebar >= MIN_MAIN_WIDTH) {
-          autoCollapsedSidebarRef.current = false;
-          setPanelCollapsed(false);
-        }
-      }
     };
     window.addEventListener("resize", checkWidth);
     checkWidth();
     return () => window.removeEventListener("resize", checkWidth);
-  }, [panelCollapsed, fileExplorerCollapsed, sidebarWidth, fileExplorerWidth]);
+  }, [fileExplorerCollapsed, fileExplorerWidth]);
 
   // If this window was launched targeting a workspace, apply it before
   // loadWorkspaces() resolves so the store keeps that selection.
@@ -287,7 +313,7 @@ export function App() {
     }, 10000);
     const prInterval = setInterval(() => {
       void runPrRefresh();
-    }, 15000);
+    }, 120000);
     const shipInterval = setInterval(() => {
       void runShipPoll();
     }, 5000);
@@ -310,6 +336,35 @@ export function App() {
     runFetchAll,
     forceNoWorkspaceSelection,
   ]);
+
+  // Refresh PR status when switching workspaces so PR badges appear immediately
+  useEffect(() => {
+    if (!activeWorkspaceId) return;
+    const ws = workspaces.find((w) => w.id === activeWorkspaceId);
+    if (!ws) return;
+    for (const path of ws.paths) {
+      refreshPrStatusForPath(path).catch(() => {});
+    }
+  }, [activeWorkspaceId, workspaces, refreshPrStatusForPath]);
+
+  // Load RALLY.json config when active workspace changes — sets mode from config
+  useEffect(() => {
+    if (!activeWorkspaceId) return;
+    const ws = workspaces.find((w) => w.id === activeWorkspaceId);
+    if (!ws || ws.paths.length === 0) return;
+    const rootPath = ws.paths[0];
+    loadRallyConfig(rootPath).then(() => {
+      const s = useWorkspaceStore.getState();
+      const config = s.rallyConfigs[rootPath];
+      // Only auto-set mode from config if the user hasn't explicitly chosen one
+      if (config?.mode && !s.workspaceModes[activeWorkspaceId]) {
+        const mode = config.mode === "product" ? "product" as const : "dev" as const;
+        s.setWorkspaceMode(activeWorkspaceId, mode);
+      }
+    });
+  }, [activeWorkspaceId, workspaces, loadRallyConfig]);
+
+  // Auto-switch explorer view when mode changes
 
   // Event-driven git status refresh — file watcher emits "git-changes-updated"
   // with ~700ms debounce. Immediately refresh git status for the affected repo
@@ -334,9 +389,6 @@ export function App() {
           .workspaces.find((w) => w.paths.includes(rootPath));
         if (ws) {
           void refreshGitStatusForPath(rootPath, ws.main_branch);
-          // Also refresh PR status — picks up externally created PRs
-          // (e.g. gh pr create, gpr) without waiting for the 20s poll
-          void refreshPrStatusForPath(rootPath);
         }
       }, delay);
       refreshTimers.set(rootPath, timer);
@@ -355,7 +407,7 @@ export function App() {
       refreshTimers.clear();
       unlisten?.();
     };
-  }, [refreshGitStatusForPath, refreshPrStatusForPath, shouldDeferBackgroundWork]);
+  }, [refreshGitStatusForPath, shouldDeferBackgroundWork]);
 
   // Native File menu actions (always handled here so they work even when
   // sidebar/explorer panels are collapsed).
@@ -429,8 +481,6 @@ export function App() {
       );
 
     listen("rally-menu-new-workspace", () => {
-      autoCollapsedSidebarRef.current = false;
-      setPanelCollapsed(false);
       requestAnimationFrame(() => {
         document.dispatchEvent(new Event("rally-open-add-workspace"));
       });
@@ -529,6 +579,10 @@ export function App() {
   useEffect(() => {
     const handler = () => {
       setFileExplorerCollapsed(false);
+      // Respect product mode — don't switch away from product explorer
+      const s = useWorkspaceStore.getState();
+      const wsId = s.activeWorkspaceId;
+      const mode = wsId ? s.workspaceModes[wsId] ?? "dev" : "dev";
       setExplorerView("files");
     };
     document.addEventListener("rally-ensure-explorer-visible", handler);
@@ -730,6 +784,17 @@ export function App() {
         const s = useWorkspaceStore.getState();
         const wsId = s.activeWorkspaceId;
         if (!wsId) return;
+
+        // In product mode, toggle the shell panel
+        const mode = s.workspaceModes[wsId];
+        if (mode === "product") {
+          const rootPath = s.getActivePath(wsId);
+          if (rootPath) {
+            s.toggleShellPanel(wsId, rootPath);
+          }
+          return;
+        }
+
         let layout = s.getOrCreateLayout(wsId);
         const root = layout.root;
 
@@ -903,6 +968,16 @@ export function App() {
           }
         }
       }
+      // Cmd+E: toggle file explorer
+      if ((e.metaKey || e.ctrlKey) && !e.shiftKey && e.key.toLowerCase() === "e") {
+        e.preventDefault();
+        if (fileExplorerCollapsed) {
+          setExplorerView("files");
+          setFileExplorerCollapsed(false);
+        } else {
+          setFileExplorerCollapsed(true);
+        }
+      }
       // Cmd+P: toggle quick open
       if ((e.metaKey || e.ctrlKey) && !e.shiftKey && e.key === "p") {
         e.preventDefault();
@@ -961,6 +1036,18 @@ export function App() {
     const handleRequest = (event: Event) => {
       const detail = (event as CustomEvent<RequestNewTerminalCwdDetail>).detail;
       if (!detail?.workspaceId || !detail?.groupId) return;
+      // If workspace has only one repo, skip the picker and open terminal directly
+      const ws = useWorkspaceStore.getState().workspaces.find((w) => w.id === detail.workspaceId);
+      if (ws && ws.paths.length === 1) {
+        const pane: Pane = {
+          id: crypto.randomUUID(),
+          type: "terminal",
+          title: "Terminal",
+          cwd: ws.paths[0],
+        };
+        addPaneToGroup(detail.workspaceId, detail.groupId, pane);
+        return;
+      }
       setQuickOpenVisible(false);
       setNewTerminalCwdRequest(detail);
     };
@@ -969,7 +1056,7 @@ export function App() {
     return () => {
       window.removeEventListener(REQUEST_NEW_TERMINAL_CWD_EVENT, handleRequest);
     };
-  }, []);
+  }, [addPaneToGroup]);
 
   const terminalPickerPaths = newTerminalCwdRequest
     ? (workspaces.find((w) => w.id === newTerminalCwdRequest.workspaceId)
@@ -996,47 +1083,6 @@ export function App() {
   );
 
   const appWindow = getCurrentWindow();
-
-  const handleSidebarResize = useCallback(
-    (e: React.MouseEvent) => {
-      e.preventDefault();
-      resizingRef.current = true;
-      const startX = e.clientX;
-      const startWidth = sidebarWidth;
-      let finalWidth = startWidth;
-      let raf = 0;
-
-      const onMouseMove = (ev: MouseEvent) => {
-        if (!resizingRef.current) return;
-        finalWidth = Math.max(
-          120,
-          Math.min(400, startWidth + (ev.clientX - startX)),
-        );
-        cancelAnimationFrame(raf);
-        raf = requestAnimationFrame(() => {
-          if (sidebarRef.current) {
-            sidebarRef.current.style.width = finalWidth + "px";
-            sidebarRef.current.style.minWidth = finalWidth + "px";
-          }
-        });
-      };
-      const onMouseUp = () => {
-        resizingRef.current = false;
-        cancelAnimationFrame(raf);
-        setSidebarWidth(finalWidth);
-        localStorage.setItem(sidebarWidthKey, String(finalWidth));
-        document.removeEventListener("mousemove", onMouseMove);
-        document.removeEventListener("mouseup", onMouseUp);
-        document.body.style.cursor = "";
-        document.body.style.userSelect = "";
-      };
-      document.addEventListener("mousemove", onMouseMove);
-      document.addEventListener("mouseup", onMouseUp);
-      document.body.style.cursor = "col-resize";
-      document.body.style.userSelect = "none";
-    },
-    [sidebarWidth, sidebarWidthKey],
-  );
 
   const handleExplorerResize = useCallback(
     (e: React.MouseEvent) => {
@@ -1083,10 +1129,59 @@ export function App() {
   const handleDrag = useCallback(
     (e: React.MouseEvent) => {
       if ((e.target as HTMLElement).closest("button")) return;
+      // Dismiss any open dropdowns/popovers before starting drag
+      // (startDragging swallows the event at native level, so document mousedown listeners won't fire)
+      document.dispatchEvent(new CustomEvent("rally:dismiss-popups"));
       appWindow.startDragging();
     },
     [appWindow],
   );
+
+  const clearHoverTimer = useCallback(() => {
+    if (hoverCloseTimerRef.current) {
+      clearTimeout(hoverCloseTimerRef.current);
+      hoverCloseTimerRef.current = null;
+    }
+  }, []);
+
+  const handleWorkspacesHoverEnter = useCallback(() => {
+    clearHoverTimer();
+    setWsHoverAnim((prev) => prev === "out" ? null : prev); // cancel slide-out, snap visible
+    // Already showing workspaces via click (not hover) — don't interfere
+    if (!fileExplorerCollapsed && explorerView === "workspaces" && !workspacesHoverRef.current) {
+      return;
+    }
+    if (!workspacesHoverRef.current) {
+      preHoverRef.current = { collapsed: fileExplorerCollapsed, view: explorerView };
+      workspacesHoverRef.current = true;
+      setWsHoverAnim("in");
+      setExplorerView("workspaces");
+      setFileExplorerCollapsed(false);
+    }
+  }, [fileExplorerCollapsed, explorerView, clearHoverTimer]);
+
+  const handleWorkspacesHoverLeave = useCallback(() => {
+    if (!workspacesHoverRef.current) return;
+    hoverCloseTimerRef.current = setTimeout(() => {
+      if (!workspacesHoverRef.current) return;
+      // Start slide-out animation
+      setWsHoverAnim("out");
+      hoverCloseTimerRef.current = setTimeout(() => {
+        hoverCloseTimerRef.current = null;
+        if (!workspacesHoverRef.current) return;
+        setWsHoverAnim(null);
+        const prev = preHoverRef.current;
+        if (prev) {
+          setFileExplorerCollapsed(prev.collapsed);
+          setExplorerView(prev.view as typeof explorerView);
+        } else {
+          setFileExplorerCollapsed(true);
+        }
+        workspacesHoverRef.current = false;
+        preHoverRef.current = null;
+      }, 90);
+    }, 100);
+  }, []);
 
   return (
     <div style={styles.app}>
@@ -1095,81 +1190,21 @@ export function App() {
         style={styles.titlebar}
         onMouseDown={handleDrag}
       >
-        <button
-          className="activity-btn"
-          style={styles.titlebarToggle}
-          onClick={() => {
-            const allHidden = panelCollapsed && fileExplorerCollapsed;
-            autoCollapsedSidebarRef.current = false;
-            if (allHidden) {
-              setPanelCollapsed(false);
-              setFileExplorerCollapsed(false);
-            } else {
-              setPanelCollapsed(true);
-              setFileExplorerCollapsed(true);
-            }
-          }}
-          title={
-            panelCollapsed && fileExplorerCollapsed
-              ? "Show panels"
-              : "Hide all panels"
-          }
-        >
-          <svg
-            width="16"
-            height="16"
-            viewBox="0 0 16 16"
-            fill="none"
-            aria-hidden="true"
-          >
-            <rect
-              x="1.5"
-              y="1.5"
-              width="13"
-              height="13"
-              rx="2"
-              stroke="#aaa"
-              strokeWidth="1.3"
-            />
-            <line x1="7" y1="1" x2="7" y2="15" stroke="#aaa" strokeWidth="1.3" />
-            {(!panelCollapsed || !fileExplorerCollapsed) && (
-              <path
-                d="M3.5 2C2.672 2 2 2.672 2 3.5V12.5C2 13.328 2.672 14 3.5 14H7V2H3.5Z"
-                fill="#aaa"
-              />
-            )}
-          </svg>
-        </button>
-        <button
-          className="activity-btn"
-          style={styles.titlebarWorkspacesBtn}
-          onClick={() => {
-            autoCollapsedSidebarRef.current = false;
-            if (panelCollapsed) {
-              const sidebarSpace = sidebarWidth + RESIZE_HANDLE_WIDTH;
-              const explorerSpace = fileExplorerCollapsed
-                ? 0
-                : fileExplorerWidth + RESIZE_HANDLE_WIDTH;
-              const mainAfterOpen =
-                window.innerWidth -
-                ACTIVITY_BAR_WIDTH -
-                sidebarSpace -
-                explorerSpace;
-              if (mainAfterOpen < MIN_MAIN_WIDTH && !fileExplorerCollapsed) {
-                setFileExplorerCollapsed(true);
-              }
-              setPanelCollapsed(false);
-            } else {
-              setPanelCollapsed(true);
-            }
-          }}
-          title={panelCollapsed ? "Show workspaces" : "Hide workspaces"}
-        >
-          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-            <rect x="2" y="4" width="12" height="10" rx="1.5" stroke={panelCollapsed ? "#aaa" : "#ddd"} strokeWidth="1.0" />
-            <path d="M4 4V3a1.5 1.5 0 011.5-1.5h5A1.5 1.5 0 0112 3v1" stroke={panelCollapsed ? "#aaa" : "#ddd"} strokeWidth="1.0" />
-          </svg>
-        </button>
+        <div style={styles.titlebarLeft}>
+          {activeWorkspaceId && (
+            <button
+              className="activity-btn"
+              style={styles.titlebarModeBtn}
+              onClick={() => {
+                const newMode = isProductMode ? "dev" as const : "product" as const;
+                setWorkspaceMode(activeWorkspaceId, newMode);
+              }}
+              title={isProductMode ? "Switch to dev mode" : "Switch to product mode"}
+            >
+              {isProductMode ? "PRD" : "DEV"}
+            </button>
+          )}
+        </div>
         <span style={styles.titleText}>{activeWorkspaceName}</span>
       </div>
       <div style={{ ...styles.body, zoom: zoomLevel }}>
@@ -1177,12 +1212,23 @@ export function App() {
           {(
             [
               {
+                view: "workspaces" as const,
+                title: "Workspaces",
+                icon: (active: boolean) => (
+                  <svg width="18" height="18" viewBox="0 0 16 16" fill="none">
+                    <rect x="1.5" y="1.5" width="5.5" height="5.5" rx="1.2" stroke={active ? "#ddd" : "#bbb"} strokeWidth="1.0" />
+                    <rect x="9" y="1.5" width="5.5" height="5.5" rx="1.2" stroke={active ? "#ddd" : "#bbb"} strokeWidth="1.0" />
+                    <rect x="1.5" y="9" width="5.5" height="5.5" rx="1.2" stroke={active ? "#ddd" : "#bbb"} strokeWidth="1.0" />
+                    <rect x="9" y="9" width="5.5" height="5.5" rx="1.2" stroke={active ? "#ddd" : "#bbb"} strokeWidth="1.0" />
+                  </svg>
+                ),
+              },
+              {
                 view: "files" as const,
                 title: "Files",
                 icon: (active: boolean) => (
-                  <svg width="18" height="18" viewBox="0 0 16 16" fill="none">
-                    <rect x="5" y="1.5" width="9" height="10" rx="1.2" stroke={active ? "#ddd" : "#bbb"} strokeWidth="1.0" />
-                    <rect x="2" y="4.5" width="9" height="10" rx="1.2" stroke={active ? "#ddd" : "#bbb"} strokeWidth="1.0" fill="#1a1a1a" />
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill={active ? "#ddd" : "#bbb"}>
+                    <path d="M17.5 0H8.5L7 1.5V6H2.5L1 7.5V22.5699L2.5 24H14.5699L16 22.5699V18H20.7L22 16.5699V4.5L17.5 0ZM17.5 2.12L19.88 4.5H17.5V2.12ZM14.5 22.5H2.5V7.5H7V16.5699L8.5 18H14.5V22.5ZM20.5 16.5H8.5V1.5H16V6H20.5V16.5Z" />
                   </svg>
                 ),
               },
@@ -1229,7 +1275,7 @@ export function App() {
                   </svg>
                 ),
               },
-            ] as const
+            ] as { view: typeof explorerView; title: string; icon: (active: boolean) => React.ReactNode }[]
           ).map(({ view, title, icon }) => {
             const isActive = !fileExplorerCollapsed && explorerView === view;
             return (
@@ -1238,29 +1284,18 @@ export function App() {
                 className={`activity-btn${isActive ? " activity-btn-active" : ""}`}
                 style={styles.activityBtn}
                 onClick={() => {
+                  if (view === "workspaces") return;
                   if (isActive) {
                     setFileExplorerCollapsed(true);
                   } else {
                     setExplorerView(view);
                     if (fileExplorerCollapsed) {
-                      const sidebarSpace = panelCollapsed
-                        ? 0
-                        : sidebarWidth + RESIZE_HANDLE_WIDTH;
-                      const explorerSpace =
-                        fileExplorerWidth + RESIZE_HANDLE_WIDTH;
-                      const mainAfterOpen =
-                        window.innerWidth -
-                        ACTIVITY_BAR_WIDTH -
-                        sidebarSpace -
-                        explorerSpace;
-                      if (mainAfterOpen < MIN_MAIN_WIDTH && !panelCollapsed) {
-                        setPanelCollapsed(true);
-                        autoCollapsedSidebarRef.current = false;
-                      }
                       setFileExplorerCollapsed(false);
                     }
                   }
                 }}
+                onMouseEnter={view === "workspaces" ? handleWorkspacesHoverEnter : undefined}
+                onMouseLeave={view === "workspaces" ? handleWorkspacesHoverLeave : undefined}
                 title={
                   isActive
                     ? `Hide ${title.toLowerCase()}`
@@ -1271,30 +1306,19 @@ export function App() {
               </button>
             );
           })}
+          <div style={{ flex: 1 }} />
         </div>
-        {!panelCollapsed && (
-          <>
-            <div
-              ref={sidebarRef}
-              style={{
-                width: sidebarWidth,
-                minWidth: sidebarWidth,
-                flexShrink: 0,
-                overflow: "hidden",
-              }}
-            >
-              <Sidebar />
-            </div>
-            <div
-              onMouseDown={handleSidebarResize}
-              style={styles.sidebarResizeHandle}
-            >
-              <div style={styles.resizeLine} />
-            </div>
-          </>
-        )}
         {!fileExplorerCollapsed && (
-          <>
+          <div
+            style={{
+              display: "flex",
+              flexShrink: 0,
+              ...(wsHoverAnim === "in" ? { animation: "wsHoverSlideIn 160ms ease-out" } : {}),
+              ...(wsHoverAnim === "out" ? { animation: "wsHoverSlideOut 90ms ease-in forwards" } : {}),
+            }}
+            onMouseEnter={explorerView === "workspaces" ? handleWorkspacesHoverEnter : undefined}
+            onMouseLeave={explorerView === "workspaces" ? handleWorkspacesHoverLeave : undefined}
+          >
             <div
               ref={explorerRef}
               style={{
@@ -1303,21 +1327,32 @@ export function App() {
                 flexShrink: 0,
               }}
             >
-              {explorerView === "search" ? (
-                <SearchPanel
-                  onCollapse={() => setFileExplorerCollapsed(true)}
-                  flushLeft={panelCollapsed}
-                />
-              ) : explorerView === "claude" ? (
-                <GlobalConfigExplorer />
-              ) : explorerView === "scripts" ? (
-                <ScriptEditor />
-              ) : (
-                <FileExplorer
-                  onCollapse={() => setFileExplorerCollapsed(true)}
-                  flushLeft={panelCollapsed}
+              {explorerView === "workspaces" && (
+                <WorkspacePicker
+                  onSelect={(id) => {
+                    setActiveWorkspace(id);
+                    setExplorerView("files");
+                    clearHoverTimer();
+                    workspacesHoverRef.current = false;
+                    preHoverRef.current = null;
+                    setWsHoverAnim(null);
+                  }}
                 />
               )}
+              {explorerView === "search" && (
+                <SearchPanel
+                  onCollapse={() => setFileExplorerCollapsed(true)}
+                  flushLeft
+                />
+              )}
+              {explorerView === "claude" && <GlobalConfigExplorer />}
+              {explorerView === "scripts" && <ScriptEditor />}
+              <div style={{ display: explorerView === "files" ? undefined : "none", height: "100%" }}>
+                <FileExplorer
+                  onCollapse={() => setFileExplorerCollapsed(true)}
+                  flushLeft
+                />
+              </div>
             </div>
             <div
               onMouseDown={handleExplorerResize}
@@ -1325,24 +1360,44 @@ export function App() {
             >
               <div style={styles.resizeLine} />
             </div>
-          </>
+          </div>
         )}
         <div style={styles.main}>
-          <PaneLayout />
-          <UnifiedGitPanel />
+          <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", position: "relative" }}>
+            {isProductMode && activeWorkspaceId && activeRootPath ? (
+              <ProductChatPanel
+                rootPath={activeRootPath}
+                workspaceId={activeWorkspaceId}
+              />
+            ) : (
+              <PaneLayout />
+            )}
+          </div>
         </div>
+        <UnifiedGitPanel />
       </div>
       <style>{`
+        @keyframes wsHoverSlideIn {
+          from { transform: translateX(-14px); opacity: 0; }
+          to { transform: translateX(0); opacity: 1; }
+        }
+        @keyframes wsHoverSlideOut {
+          from { transform: translateX(0); opacity: 1; }
+          to { transform: translateX(-14px); opacity: 0; }
+        }
         .syn-comment { color: #8b949e; font-style: italic; }
         .syn-string { color: #a5d6ff; }
         .syn-keyword { color: #ff7b72; }
         .syn-literal { color: #79c0ff; }
         .syn-number { color: #d2a8ff; }
+        .repo-action-btn:hover { background: rgba(255,255,255,0.1) !important; }
         .hunk-action-btn:hover { background: rgba(255,255,255,0.1) !important; color: #eee !important; }
+        .file-list-item:hover { background: rgba(255,255,255,0.05) !important; }
+        .file-list-item-selected { background: rgba(255,255,255,0.08) !important; }
         .git-diff-overlay { scrollbar-gutter: stable; }
         .git-diff-overlay ::-webkit-scrollbar { width: 6px; height: 0; }
         .git-diff-overlay ::-webkit-scrollbar-track { background: transparent; }
-        .git-diff-overlay ::-webkit-scrollbar-thumb { background: transparent; border-radius: 3px; transition: background 0.2s; }
+        .git-diff-overlay ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.08); border-radius: 3px; transition: background 0.2s; }
         .git-diff-overlay :hover > ::-webkit-scrollbar-thumb,
         .git-diff-overlay *:hover::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.15); }
         .git-diff-overlay *:hover::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.25); }
@@ -1387,11 +1442,16 @@ const styles: Record<string, React.CSSProperties> = {
     zIndex: 100,
     paddingLeft: 70,
   },
-  titlebarToggle: {
+  titlebarLeft: {
     position: "absolute",
     left: 70,
     top: "50%",
     transform: "translateY(-50%)",
+    display: "flex",
+    alignItems: "center",
+    gap: 2,
+  },
+  titlebarBtn: {
     background: "none",
     border: "none",
     cursor: "pointer",
@@ -1401,19 +1461,20 @@ const styles: Record<string, React.CSSProperties> = {
     justifyContent: "center",
     borderRadius: 4,
   },
-  titlebarWorkspacesBtn: {
-    position: "absolute",
-    left: 98,
-    top: "50%",
-    transform: "translateY(-50%)",
+  titlebarModeBtn: {
     background: "none",
-    border: "none",
+    border: "1px solid rgba(255,255,255,0.15)",
     cursor: "pointer",
-    padding: 4,
+    padding: "1px 6px",
     display: "flex",
     alignItems: "center",
     justifyContent: "center",
     borderRadius: 4,
+    fontSize: 10,
+    fontWeight: 600,
+    color: "#aaa",
+    letterSpacing: "0.04em",
+    lineHeight: "16px",
   },
   titleText: {
     fontSize: 13,
@@ -1426,6 +1487,8 @@ const styles: Record<string, React.CSSProperties> = {
     flex: 1,
     display: "flex",
     minHeight: 0,
+    position: "relative",
+    overflow: "hidden",
   },
   activityBar: {
     width: 46,
@@ -1453,20 +1516,10 @@ const styles: Record<string, React.CSSProperties> = {
   main: {
     flex: 1,
     display: "flex",
-    flexDirection: "column",
+    flexDirection: "row",
     minWidth: 0,
     position: "relative",
-  },
-  sidebarResizeHandle: {
-    width: 8,
-    minWidth: 8,
-    cursor: "col-resize",
-    background: "transparent",
-    flexShrink: 0,
-    zIndex: 10,
-    display: "flex",
-    alignItems: "stretch",
-    justifyContent: "center",
+    overflow: "hidden",
   },
   explorerResizeHandle: {
     width: 8,

@@ -1,11 +1,8 @@
-import React, { useState, useEffect, useCallback, useRef } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { useWorkspaceStore } from "../stores/workspaceStore";
-import { api } from "../lib/tauri";
-import { parseUnifiedDiff, generateHunkPatch, createUntrackedDiffFile, type DiffFile } from "../lib/diffParser";
 import { DiffFileSection } from "./DiffFileSection";
 import { CommitModal } from "./CommitModal";
-import { addToast } from "./ToastContainer";
-import type { ChangesSummary, CommitEntry } from "../lib/types";
+import { useGitDiffActions } from "../hooks/useGitDiffActions";
 import { relativeTime } from "../lib/time";
 
 // ---------------------------------------------------------------------------
@@ -19,78 +16,49 @@ interface GitDiffContentProps {
 export function GitDiffContent({ rootPath }: GitDiffContentProps) {
   const activeTab = useWorkspaceStore((s) => s.gitDiffActiveTab);
   const setActiveTab = useWorkspaceStore((s) => s.setGitDiffActiveTab);
-  const startShipSession = useWorkspaceStore((s) => s.startShipSession);
-  const closeUnifiedGitPanel = useWorkspaceStore((s) => s.closeUnifiedGitPanel);
   const scrollToFile = useWorkspaceStore((s) => s.gitDiffScrollToFile);
   const gitStatus = useWorkspaceStore((s) => s.gitStatuses[rootPath]);
-  const prStatus = useWorkspaceStore((s) => s.prStatuses[rootPath]);
   const mainBranch = useWorkspaceStore((s) => {
     const ws = s.workspaces.find((w) => w.paths.includes(rootPath));
     return ws?.main_branch ?? "main";
   });
 
-  const [unstagedFiles, setUnstagedFiles] = useState<DiffFile[]>([]);
-  const [commits, setCommits] = useState<CommitEntry[]>([]);
-  const [commitsExpanded, setCommitsExpanded] = useState(true);
-  const [stagedFiles, setStagedFiles] = useState<DiffFile[]>([]);
-  const [changes, setChanges] = useState<ChangesSummary | null>(null);
-  const [diffStatAdd, setDiffStatAdd] = useState(0);
-  const [diffStatDel, setDiffStatDel] = useState(0);
+  const {
+    unstagedFiles,
+    stagedFiles,
+    commits,
+    diffStatAdd,
+    diffStatDel,
+    loading,
+    fetchDiffs,
+    handleStage,
+    handleUnstage,
+    handleDiscard,
+    handleRevertAll,
+    revertConfirming,
+    handleStageAll,
+    handleUnstageAll,
+    handleCreatePr,
+    creatingPr,
+    unstagedCount,
+    stagedCount,
+    hasStaged,
+    hasPr,
+    createPrVisible,
+  } = useGitDiffActions({ rootPath, mainBranch });
+
   const [commitModalOpen, setCommitModalOpen] = useState(false);
-  const [shipPopoverOpen, setShipPopoverOpen] = useState(false);
   const [scrollTarget, setScrollTarget] = useState<string | null>(null);
   const [expandKey, setExpandKey] = useState(0);
   const [defaultExpanded, setDefaultExpanded] = useState(true);
-  const [loading, setLoading] = useState(true);
+  const [commitsExpanded, setCommitsExpanded] = useState(true);
   const fileListRef = useRef<HTMLDivElement>(null);
   const commitBtnRef = useRef<HTMLButtonElement>(null);
 
-  const fetchDiffs = useCallback(async () => {
-    if (!rootPath) return;
-    try {
-      const [unstagedRaw, stagedRaw, changesData, stat, commitLog] = await Promise.all([
-        api.gitDiff(rootPath, false),
-        api.gitDiff(rootPath, true),
-        api.gitChanges(rootPath),
-        api.gitDiffStat(rootPath),
-        api.gitCommitLog(rootPath, mainBranch).catch(() => [] as CommitEntry[]),
-      ]);
-      const parsedUnstaged = parseUnifiedDiff(unstagedRaw);
-
-      // Synthesize diff entries for untracked files (git diff doesn't include them)
-      if (changesData.untracked.length > 0) {
-        const untrackedDiffs = await Promise.all(
-          changesData.untracked.map(async (filePath) => {
-            try {
-              const fullPath = `${rootPath}/${filePath}`;
-              const content = await api.readFileContent(fullPath);
-              return createUntrackedDiffFile(filePath, content);
-            } catch {
-              return createUntrackedDiffFile(filePath, "");
-            }
-          }),
-        );
-        parsedUnstaged.push(...untrackedDiffs);
-      }
-
-      setUnstagedFiles(parsedUnstaged);
-      setStagedFiles(parseUnifiedDiff(stagedRaw));
-      setChanges(changesData);
-      setDiffStatAdd(stat[0]);
-      setDiffStatDel(stat[1]);
-      setCommits(commitLog);
-    } catch (e) {
-      console.error("Failed to fetch diffs:", e);
-    } finally {
-      setLoading(false);
-    }
-  }, [rootPath, mainBranch]);
-
-  // Fetch on mount + handle scrollToFile from store
+  // Handle scrollToFile from store
   useEffect(() => {
     setScrollTarget(scrollToFile ?? null);
-    fetchDiffs();
-  }, [rootPath, scrollToFile, fetchDiffs]);
+  }, [scrollToFile]);
 
   // Scroll to target file after diffs load
   useEffect(() => {
@@ -111,199 +79,36 @@ export function GitDiffContent({ rootPath }: GitDiffContentProps) {
     });
   }, [scrollTarget, unstagedFiles, stagedFiles]);
 
-  // Auto-refresh on local git changes
-  useEffect(() => {
-    const handler = () => fetchDiffs();
-    document.addEventListener("rally:git-changes-refresh", handler);
-    return () =>
-      document.removeEventListener("rally:git-changes-refresh", handler);
-  }, [fetchDiffs]);
-
-  const handleStage = useCallback(
-    async (filePath: string) => {
-      if (!rootPath) return;
-      try {
-        await api.gitStageFile(rootPath, filePath);
-      } catch (e) {
-        addToast({ type: "warning", title: "Stage failed", message: String(e) });
-      }
-      fetchDiffs();
-    },
-    [rootPath, fetchDiffs],
-  );
-
-  const handleUnstage = useCallback(
-    async (filePath: string) => {
-      if (!rootPath) return;
-      try {
-        await api.gitUnstageFile(rootPath, filePath);
-      } catch (e) {
-        addToast({ type: "warning", title: "Unstage failed", message: String(e) });
-      }
-      fetchDiffs();
-    },
-    [rootPath, fetchDiffs],
-  );
-
-  const handleDiscard = useCallback(
-    async (filePath: string) => {
-      if (!rootPath || !changes) return;
-      try {
-        const isUntracked = changes.untracked.includes(filePath);
-        await api.gitDiscardFile(rootPath, filePath, isUntracked);
-      } catch (e) {
-        addToast({ type: "warning", title: "Discard failed", message: String(e) });
-      }
-      fetchDiffs();
-    },
-    [rootPath, changes, fetchDiffs],
-  );
-
-  const handleHunkRevert = useCallback(
-    async (filePath: string, hunkIndex: number) => {
-      if (!rootPath) return;
-      try {
-        const file = unstagedFiles.find((f) => (f.newPath || f.oldPath) === filePath);
-        if (!file || !file.hunks[hunkIndex]) return;
-        const patch = generateHunkPatch(file, file.hunks[hunkIndex]);
-        await api.gitApplyPatch(rootPath, patch, true, false);
-      } catch (e) {
-        addToast({ type: "warning", title: "Revert failed", message: String(e) });
-      }
-      fetchDiffs();
-    },
-    [rootPath, unstagedFiles, fetchDiffs],
-  );
-
-  const handleHunkStage = useCallback(
-    async (filePath: string, hunkIndex: number) => {
-      if (!rootPath) return;
-      try {
-        if (activeTab === "unstaged") {
-          const file = unstagedFiles.find((f) => (f.newPath || f.oldPath) === filePath);
-          if (!file || !file.hunks[hunkIndex]) return;
-          const patch = generateHunkPatch(file, file.hunks[hunkIndex]);
-          await api.gitApplyPatch(rootPath, patch, false, true);
-        } else {
-          const file = stagedFiles.find((f) => (f.newPath || f.oldPath) === filePath);
-          if (!file || !file.hunks[hunkIndex]) return;
-          const patch = generateHunkPatch(file, file.hunks[hunkIndex]);
-          await api.gitApplyPatch(rootPath, patch, true, true);
-        }
-      } catch (e) {
-        addToast({ type: "warning", title: "Hunk action failed", message: String(e) });
-      }
-      fetchDiffs();
-    },
-    [rootPath, activeTab, unstagedFiles, stagedFiles, fetchDiffs],
-  );
-
-  const [revertConfirming, setRevertConfirming] = useState(false);
-
-  const handleRevertAll = useCallback(async () => {
-    if (!rootPath || !changes) return;
-    if (!revertConfirming) {
-      setRevertConfirming(true);
-      setTimeout(() => setRevertConfirming(false), 3000);
-      return;
-    }
-    setRevertConfirming(false);
-    const allFiles = [
-      ...changes.unstaged.map((f) => f.path),
-      ...changes.untracked,
-    ];
-    for (const f of allFiles) {
-      const isUntracked = changes.untracked.includes(f);
-      await api.gitDiscardFile(rootPath, f, isUntracked);
-    }
-    fetchDiffs();
-  }, [rootPath, changes, revertConfirming, fetchDiffs]);
-
-  const handleStageAll = useCallback(async () => {
-    if (!rootPath || !changes) return;
-    const allFiles = [
-      ...changes.unstaged.map((f) => f.path),
-      ...changes.untracked,
-    ];
-    for (const f of allFiles) {
-      await api.gitStageFile(rootPath, f);
-    }
-    await fetchDiffs();
-    setActiveTab("staged");
+  // Wrap stageAll/unstageAll to also reset expand state
+  const handleStageAllWithReset = async () => {
+    await handleStageAll();
     setDefaultExpanded(false);
     setExpandKey((k) => k + 1);
-  }, [rootPath, changes, fetchDiffs, setActiveTab]);
+  };
 
-  const handleUnstageAll = useCallback(async () => {
-    if (!rootPath || !changes) return;
-    for (const f of changes.staged) {
-      await api.gitUnstageFile(rootPath, f.path);
-    }
-    await fetchDiffs();
-    setActiveTab("unstaged");
+  const handleUnstageAllWithReset = async () => {
+    await handleUnstageAll();
     setDefaultExpanded(false);
     setExpandKey((k) => k + 1);
-  }, [rootPath, changes, fetchDiffs, setActiveTab]);
+  };
 
   const activeFiles = activeTab === "unstaged" ? unstagedFiles : stagedFiles;
-  const unstagedCount = (changes?.unstaged.length ?? 0) + (changes?.untracked.length ?? 0);
-  const stagedCount = changes?.staged.length ?? 0;
-  const hasStaged = stagedCount > 0;
-  const hasPr = !!(prStatus && prStatus.state === "OPEN");
-  const shipVisible = commits.length > 0 || unstagedCount > 0 || stagedCount > 0;
-  const createPrVisible = !hasPr && commits.length > 0;
-  const [creatingPr, setCreatingPr] = useState(false);
-  const refreshPrStatusForPath = useWorkspaceStore((s) => s.refreshPrStatusForPath);
-
-  const handleCreatePr = useCallback(async () => {
-    if (!rootPath) return;
-    setCreatingPr(true);
-    try {
-      const url = await api.gitCreatePr(rootPath);
-      addToast({ type: "success", title: "PR created", message: url });
-      refreshPrStatusForPath(rootPath).catch(() => {});
-    } catch (e) {
-      addToast({ type: "warning", title: "Create PR failed", message: String(e) });
-    } finally {
-      setCreatingPr(false);
-    }
-  }, [rootPath, refreshPrStatusForPath]);
-
-  const handleShip = useCallback(() => {
-    if (!rootPath) return;
-    startShipSession(rootPath);
-    closeUnifiedGitPanel();
-  }, [rootPath, startShipSession, closeUnifiedGitPanel]);
-
-  const handleShipClick = useCallback(() => {
-    if (!rootPath) return;
-    const hasCommits = commits.length > 0;
-    const hasDirty = unstagedCount > 0 || stagedCount > 0;
-
-    if (hasCommits && !hasDirty) {
-      handleShip();
-    } else if (hasCommits && hasDirty) {
-      setShipPopoverOpen(true);
-    } else if (!hasCommits && hasDirty) {
-      setCommitModalOpen(true);
-    }
-  }, [rootPath, commits.length, unstagedCount, stagedCount, handleShip]);
 
   return (
     <>
-      {/* Header */}
+      {/* Tab row */}
       <div style={cs.header}>
         <button
           onClick={() => setActiveTab("unstaged")}
           style={activeTab === "unstaged" ? cs.tabActive : cs.tab}
         >
-          Unstaged{changes ? ` · ${unstagedCount}` : ""}
+          Unstaged{` · ${unstagedCount}`}
         </button>
         <button
           onClick={() => setActiveTab("staged")}
           style={activeTab === "staged" ? cs.tabActive : cs.tab}
         >
-          Staged{changes ? ` · ${stagedCount}` : ""}
+          Staged{` · ${stagedCount}`}
         </button>
         <div style={{ flex: 1 }} />
         {activeTab === "unstaged" && unstagedCount > 0 && (
@@ -311,69 +116,44 @@ export function GitDiffContent({ rootPath }: GitDiffContentProps) {
             <button onClick={handleRevertAll} style={revertConfirming ? cs.bulkActionBtnDanger : cs.bulkActionBtn}>
               {revertConfirming ? "Confirm?" : "Revert all"}
             </button>
-            <button onClick={handleStageAll} style={cs.bulkActionBtn}>
+            <button onClick={handleStageAllWithReset} style={cs.bulkActionBtn}>
               Stage all
             </button>
           </>
         )}
         {activeTab === "staged" && stagedCount > 0 && (
-          <button onClick={handleUnstageAll} style={cs.bulkActionBtn}>
+          <button onClick={handleUnstageAllWithReset} style={cs.bulkActionBtn}>
             Unstage all
           </button>
         )}
-        {/* Diff stats */}
-        {(diffStatAdd > 0 || diffStatDel > 0) && (
-          <span style={cs.diffStats}>
-            {diffStatAdd > 0 && <span style={{ color: "#3fb950" }}>+{diffStatAdd}</span>}
-            {diffStatAdd > 0 && diffStatDel > 0 && " "}
-            {diffStatDel > 0 && <span style={{ color: "#f85149" }}>-{diffStatDel}</span>}
-          </span>
-        )}
-        <button
-          ref={commitBtnRef}
-          onClick={() => setCommitModalOpen(true)}
-          disabled={!hasStaged && unstagedCount === 0}
-          style={{
-            ...cs.headerCommitBtn,
-            opacity: hasStaged || unstagedCount > 0 ? 1 : 0.4,
-          }}
-        >
-          Commit
-        </button>
-        {createPrVisible && (
-          <button
-            onClick={handleCreatePr}
-            disabled={creatingPr}
-            style={{
-              ...cs.createPrBtn,
-              opacity: creatingPr ? 0.5 : 1,
-            }}
-          >
-            {creatingPr ? "Creating..." : "Create PR"}
-          </button>
-        )}
-        {shipVisible && (
-          <div style={{ position: "relative" }}>
+        {/* Commit / Create PR — inline in tab header */}
+        {(hasStaged || unstagedCount > 0 || createPrVisible) && (
+          <>
+            <div style={{ width: 1, height: 14, background: "#333", margin: "0 2px" }} />
             <button
-              onClick={handleShipClick}
-              style={cs.shipBtn}
+              ref={commitBtnRef}
+              onClick={() => setCommitModalOpen(true)}
+              disabled={!hasStaged && unstagedCount === 0}
+              style={{
+                ...cs.bulkActionBtn,
+                opacity: hasStaged || unstagedCount > 0 ? 1 : 0.4,
+              }}
             >
-              Ship
+              Commit
             </button>
-            {shipPopoverOpen && (
-              <ShipPopover
-                onCommitFirst={() => {
-                  setShipPopoverOpen(false);
-                  setCommitModalOpen(true);
+            {createPrVisible && (
+              <button
+                onClick={handleCreatePr}
+                disabled={creatingPr}
+                style={{
+                  ...cs.bulkActionBtn,
+                  opacity: creatingPr ? 0.5 : 1,
                 }}
-                onShipAnyway={() => {
-                  setShipPopoverOpen(false);
-                  handleShip();
-                }}
-                onDismiss={() => setShipPopoverOpen(false)}
-              />
+              >
+                {creatingPr ? "Creating..." : "Create PR"}
+              </button>
             )}
-          </div>
+          </>
         )}
       </div>
 
@@ -440,8 +220,6 @@ export function GitDiffContent({ rootPath }: GitDiffContentProps) {
                 onStage={handleStage}
                 onUnstage={handleUnstage}
                 onDiscard={handleDiscard}
-                onHunkRevert={handleHunkRevert}
-                onHunkStage={handleHunkStage}
               />
             </div>
           ))
@@ -459,58 +237,9 @@ export function GitDiffContent({ rootPath }: GitDiffContentProps) {
         additions={diffStatAdd}
         deletions={diffStatDel}
         onCommitted={fetchDiffs}
-        onShip={handleShip}
-        anchorRef={commitBtnRef}
         hasPr={hasPr}
       />
     </>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// ShipPopover — "You have uncommitted changes" popover
-// ---------------------------------------------------------------------------
-
-function ShipPopover({
-  onCommitFirst,
-  onShipAnyway,
-  onDismiss,
-}: {
-  onCommitFirst: () => void;
-  onShipAnyway: () => void;
-  onDismiss: () => void;
-}) {
-  const popoverRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    const handleMouseDown = (e: MouseEvent) => {
-      if (popoverRef.current && !popoverRef.current.contains(e.target as Node)) {
-        onDismiss();
-      }
-    };
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onDismiss();
-    };
-    document.addEventListener("mousedown", handleMouseDown);
-    document.addEventListener("keydown", handleKeyDown);
-    return () => {
-      document.removeEventListener("mousedown", handleMouseDown);
-      document.removeEventListener("keydown", handleKeyDown);
-    };
-  }, [onDismiss]);
-
-  return (
-    <div ref={popoverRef} style={cs.shipPopover}>
-      <div style={cs.shipPopoverText}>You have uncommitted changes</div>
-      <div style={cs.shipPopoverActions}>
-        <button onClick={onCommitFirst} style={cs.shipPopoverBtn}>
-          Commit First
-        </button>
-        <button onClick={onShipAnyway} style={cs.shipPopoverBtn}>
-          Ship Anyway
-        </button>
-      </div>
-    </div>
   );
 }
 
@@ -522,32 +251,31 @@ const cs: Record<string, React.CSSProperties> = {
   header: {
     display: "flex",
     alignItems: "center",
-    gap: 4,
-    padding: "0 16px",
+    gap: 6,
+    padding: "0 8px",
     borderBottom: "1px solid #2a2a2a",
     flexShrink: 0,
     position: "relative",
-    whiteSpace: "nowrap",
   },
   tab: {
-    padding: "10px 12px",
+    padding: "10px 8px",
     background: "none",
     border: "none",
     borderBottom: "2px solid transparent",
     color: "#999",
-    fontSize: 13,
+    fontSize: 12,
     cursor: "pointer",
     fontWeight: 500,
     transition: "color 150ms",
     flexShrink: 0,
   },
   tabActive: {
-    padding: "10px 12px",
+    padding: "10px 8px",
     background: "none",
     border: "none",
     borderBottom: "2px solid #e6edf3",
     color: "#e6edf3",
-    fontSize: 13,
+    fontSize: 12,
     cursor: "pointer",
     fontWeight: 600,
     flexShrink: 0,
@@ -555,7 +283,7 @@ const cs: Record<string, React.CSSProperties> = {
   fileList: {
     flex: 1,
     overflow: "auto",
-    padding: "16px 20px",
+    padding: "12px 10px",
     scrollPaddingTop: 8,
   },
   empty: {
@@ -574,9 +302,9 @@ const cs: Record<string, React.CSSProperties> = {
     fontSize: 11,
     fontWeight: 600,
     cursor: "pointer",
-    padding: "4px 10px",
+    padding: "3px 8px",
     borderRadius: 20,
-    lineHeight: "14px",
+    lineHeight: "16px",
     transition: "background 150ms, color 150ms",
     flexShrink: 0,
   },
@@ -589,98 +317,11 @@ const cs: Record<string, React.CSSProperties> = {
     fontSize: 11,
     fontWeight: 600,
     cursor: "pointer",
-    padding: "4px 10px",
+    padding: "3px 8px",
     borderRadius: 20,
-    lineHeight: "14px",
+    lineHeight: "16px",
     transition: "background 150ms, color 150ms",
     flexShrink: 0,
-  },
-  diffStats: {
-    fontSize: 12,
-    fontWeight: 600,
-    fontFamily: "'SF Mono', 'Menlo', monospace",
-    padding: "0 8px",
-    flexShrink: 0,
-  },
-  headerCommitBtn: {
-    padding: "5px 16px",
-    borderRadius: 8,
-    border: "none",
-    background: "#e6edf3",
-    color: "#1a1a1a",
-    fontSize: 12,
-    fontWeight: 600,
-    cursor: "pointer",
-    flexShrink: 0,
-    letterSpacing: "-0.01em",
-    transition: "opacity 150ms",
-    lineHeight: "16px",
-  },
-  createPrBtn: {
-    padding: "5px 14px",
-    borderRadius: 8,
-    border: "1px solid #444",
-    background: "transparent",
-    color: "#e0e0e0",
-    fontSize: 12,
-    fontWeight: 600,
-    cursor: "pointer",
-    flexShrink: 0,
-    letterSpacing: "-0.01em",
-    transition: "opacity 150ms",
-    lineHeight: "16px",
-  },
-  shipBtn: {
-    display: "inline-flex",
-    alignItems: "center",
-    padding: "5px 14px",
-    borderRadius: 8,
-    border: "none",
-    background: "#2d6a4f",
-    color: "#e0e0e0",
-    fontSize: 12,
-    fontWeight: 600,
-    cursor: "pointer",
-    flexShrink: 0,
-    letterSpacing: "-0.01em",
-    transition: "background 150ms",
-    lineHeight: "16px",
-  },
-  shipPopover: {
-    position: "absolute" as const,
-    top: "calc(100% + 6px)",
-    right: 0,
-    zIndex: 100,
-    background: "rgba(36, 36, 36, 0.78)",
-    backdropFilter: "blur(20px) saturate(180%)",
-    WebkitBackdropFilter: "blur(20px) saturate(180%)",
-    border: "1px solid rgba(255, 255, 255, 0.12)",
-    borderRadius: 10,
-    padding: "10px 12px",
-    minWidth: 200,
-  },
-  shipPopoverText: {
-    fontSize: 12,
-    fontWeight: 500,
-    color: "#ccc",
-    marginBottom: 8,
-  },
-  shipPopoverActions: {
-    display: "flex",
-    gap: 6,
-  },
-  shipPopoverBtn: {
-    flex: 1,
-    padding: "5px 10px",
-    borderRadius: 6,
-    border: "none",
-    background: "#404040",
-    color: "#ddd",
-    fontSize: 11,
-    fontWeight: 600,
-    cursor: "pointer",
-    transition: "background 150ms",
-    lineHeight: "14px",
   },
   commitsSection: {
     marginBottom: 16,

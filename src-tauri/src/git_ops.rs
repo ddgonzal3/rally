@@ -143,14 +143,64 @@ pub async fn status(cwd: &str, main_branch: &str) -> Result<GitStatus, String> {
         Err(_) => (0, 0),
     };
 
+    // Count ahead/behind vs remote tracking branch (origin/<current_branch>)
+    // Uses @{upstream} which resolves to the configured tracking branch.
+    // Fails gracefully if no upstream is set (locally-created branches).
+    let (tracking_ahead, tracking_behind) = match git_cmd(cwd, &["rev-list", "--left-right", "--count", "HEAD...@{upstream}"]).await {
+        Ok(counts) => {
+            let parts: Vec<&str> = counts.split_whitespace().collect();
+            if parts.len() == 2 {
+                (
+                    parts[0].parse().unwrap_or(0),
+                    parts[1].parse().unwrap_or(0),
+                )
+            } else {
+                (0, 0)
+            }
+        }
+        Err(_) => (0, 0), // No upstream configured
+    };
+
     Ok(GitStatus {
         branch,
         dirty,
         ahead,
         behind,
+        tracking_ahead,
+        tracking_behind,
         modified_files: modified,
         untracked_files: untracked,
     })
+}
+
+/// Pull from the remote tracking branch.
+/// Returns `Err("DIVERGED:...")` when branches have diverged so the caller
+/// can prompt the user before force-pulling.
+pub async fn pull(cwd: &str) -> Result<String, String> {
+    match tokio::time::timeout(
+        Duration::from_secs(30),
+        git_cmd(cwd, &["pull"]),
+    )
+    .await
+    {
+        Ok(Ok(output)) => Ok(if output.is_empty() { "Already up to date.".to_string() } else { output }),
+        Ok(Err(e)) => {
+            let err_lower = e.to_lowercase();
+            if err_lower.contains("divergent") || err_lower.contains("need to specify how to reconcile") {
+                Err(format!("DIVERGED:{}", e))
+            } else {
+                Err(e)
+            }
+        }
+        Err(_) => Err("git pull timed out after 30s".to_string()),
+    }
+}
+
+/// Force-pull: reset local branch to match remote tracking branch exactly.
+/// Discards any local commits that aren't on the remote.
+pub async fn force_pull(cwd: &str) -> Result<String, String> {
+    git_cmd(cwd, &["reset", "--hard", "@{upstream}"]).await?;
+    Ok("Reset to remote".to_string())
 }
 
 /// Sync: checkout main, pull, rebase branch on top
@@ -284,33 +334,14 @@ pub async fn pr_status(cwd: &str) -> Result<PrStatus, String> {
         cwd,
         &[
             "pr", "view", "--json",
-            "number,title,url,state,isDraft,mergeable,reviewDecision,statusCheckRollup",
+            "number,title,url,state,isDraft,mergeable,reviewDecision",
         ],
     ).await?;
 
     let v: serde_json::Value =
         serde_json::from_str(&json_str).map_err(|e| format!("Failed to parse PR JSON: {}", e))?;
 
-    // Parse statusCheckRollup into a summary status
-    let checks_status = match v.get("statusCheckRollup") {
-        Some(serde_json::Value::Array(checks)) if !checks.is_empty() => {
-            let all_pass = checks
-                .iter()
-                .all(|c| c.get("conclusion").and_then(|v| v.as_str()) == Some("SUCCESS"));
-            let any_fail = checks.iter().any(|c| {
-                let conclusion = c.get("conclusion").and_then(|v| v.as_str()).unwrap_or("");
-                conclusion == "FAILURE" || conclusion == "ERROR"
-            });
-            if any_fail {
-                Some("fail".to_string())
-            } else if all_pass {
-                Some("pass".to_string())
-            } else {
-                Some("pending".to_string())
-            }
-        }
-        _ => None,
-    };
+    let checks_status = None;
 
     Ok(PrStatus {
         number: v["number"].as_u64().unwrap_or(0) as u32,
@@ -838,6 +869,78 @@ pub async fn commit_log(cwd: &str, main_branch: &str, limit: u32) -> Result<Vec<
         }
     }
     Ok(commits)
+}
+
+/// Get unified diff for a specific commit.
+pub async fn commit_diff(cwd: &str, sha: &str) -> Result<String, String> {
+    // Validate SHA is hex-only to prevent injection
+    if !sha.chars().all(|c| c.is_ascii_hexdigit()) {
+        return Err("Invalid commit SHA".to_string());
+    }
+    git_cmd(cwd, &["diff-tree", "-p", "--no-commit-id", sha]).await
+}
+
+// ---------------------------------------------------------------------------
+// Branch operations
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct BranchInfo {
+    pub name: String,
+    pub is_current: bool,
+}
+
+/// List local branches with current branch indicator.
+pub async fn list_branches(cwd: &str) -> Result<Vec<BranchInfo>, String> {
+    let output = git_cmd(cwd, &["branch", "--format=%(refname:short)\t%(HEAD)"]).await?;
+    let mut branches: Vec<BranchInfo> = output
+        .lines()
+        .filter(|l| !l.is_empty())
+        .map(|line| {
+            let parts: Vec<&str> = line.splitn(2, '\t').collect();
+            let name = parts.first().unwrap_or(&"").to_string();
+            let is_current = parts.get(1).map(|s| s.trim() == "*").unwrap_or(false);
+            BranchInfo { name, is_current }
+        })
+        .collect();
+
+    // Sort: current branch first, then alphabetical
+    branches.sort_by(|a, b| {
+        b.is_current.cmp(&a.is_current).then(a.name.to_lowercase().cmp(&b.name.to_lowercase()))
+    });
+
+    Ok(branches)
+}
+
+/// Checkout an existing branch.
+pub async fn checkout_branch(cwd: &str, branch: &str) -> Result<String, String> {
+    git_cmd(cwd, &["checkout", branch]).await
+}
+
+/// Create and checkout a new branch.
+pub async fn create_branch(cwd: &str, branch: &str) -> Result<String, String> {
+    // Validate branch name
+    if branch.is_empty() {
+        return Err("Branch name cannot be empty".to_string());
+    }
+    if branch.contains(' ') || branch.contains("..") || branch.starts_with('-') || branch.contains('~') || branch.contains('^') || branch.contains(':') || branch.contains('\\') || branch.contains('\x7f') || branch.chars().any(|c| c.is_control()) {
+        return Err("Invalid branch name".to_string());
+    }
+    git_cmd(cwd, &["checkout", "-b", branch]).await
+}
+
+/// Delete a local branch. Refuses to delete the currently checked-out branch.
+pub async fn delete_branch(cwd: &str, branch: &str, force: bool) -> Result<String, String> {
+    if branch.is_empty() {
+        return Err("Branch name cannot be empty".to_string());
+    }
+    // Check we're not deleting the current branch
+    let current = git_cmd(cwd, &["symbolic-ref", "--short", "HEAD"]).await?;
+    if current == branch {
+        return Err("Cannot delete the currently checked-out branch".to_string());
+    }
+    let flag = if force { "-D" } else { "-d" };
+    git_cmd(cwd, &["branch", flag, branch]).await
 }
 
 pub async fn sync_branch_after_merge(cwd: &str, branch: &str, main_branch: &str) -> Result<(), String> {

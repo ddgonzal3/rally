@@ -102,6 +102,7 @@ export function Terminal({ cwd, command, initialInput, ptyId: existingPtyId, loc
   const unlistenExitRef = useRef<UnlistenFn | null>(null);
   const lastCwdRef = useRef<string>(cwd);
   const osc7TailRef = useRef<string>("");
+  const prDetectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const onTitleChangeRef = useRef(onTitleChange);
   const lastPublishedTitleRef = useRef<string | null>(null);
   const claudeLikelyActiveRef = useRef(false);
@@ -488,6 +489,14 @@ export function Terminal({ cwd, command, initialInput, ptyId: existingPtyId, loc
               lastCwdRef.current = newCwd;
               onCwdChanged(newCwd);
             }
+            // Detect GitHub PR URLs in terminal output (e.g. from `gh pr create` or `gpr`)
+            if (text.includes("github.com") && /\/pull\/\d+/.test(text)) {
+              if (prDetectTimerRef.current) clearTimeout(prDetectTimerRef.current);
+              prDetectTimerRef.current = setTimeout(() => {
+                prDetectTimerRef.current = null;
+                useWorkspaceStore.getState().refreshPrStatusForPath(cwd);
+              }, 1500);
+            }
           }
           term.write(chunk);
         }
@@ -671,6 +680,7 @@ export function Terminal({ cwd, command, initialInput, ptyId: existingPtyId, loc
       ptyIdRef.current = null;
       unlistenOutputRef.current?.();
       unlistenExitRef.current?.();
+      if (prDetectTimerRef.current) clearTimeout(prDetectTimerRef.current);
       term.dispose();
     };
     // `existingPtyId` and `cwd` are intentionally excluded:

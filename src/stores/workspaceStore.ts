@@ -21,6 +21,10 @@ import type {
   ShipSignal,
   ShipDetailPhase,
   EditorViewMode,
+  RallyConfig,
+  WorkspaceMode,
+  ProductSession,
+  ShellPanel,
 } from "../lib/types";
 import {
   createDefaultLayout,
@@ -101,6 +105,7 @@ type PersistedWorkspaceState = {
   unifiedGitPanelOpen: boolean;
   unifiedGitPanelPath: string | null;
   unifiedGitPanelTab: "changes" | "pr";
+  workspaceModes: Record<string, WorkspaceMode>;
 };
 
 const workspacePersistStorage = (() => {
@@ -115,6 +120,7 @@ const workspacePersistStorage = (() => {
     unifiedGitPanelOpen: boolean;
     unifiedGitPanelPath: string | null;
     unifiedGitPanelTab: string;
+    workspaceModes: PersistedWorkspaceState["workspaceModes"];
     version: number;
   } | null = null;
 
@@ -148,7 +154,8 @@ const workspacePersistStorage = (() => {
         lastRefs.gitDiffActiveTab === state.gitDiffActiveTab &&
         lastRefs.unifiedGitPanelOpen === state.unifiedGitPanelOpen &&
         lastRefs.unifiedGitPanelPath === state.unifiedGitPanelPath &&
-        lastRefs.unifiedGitPanelTab === state.unifiedGitPanelTab
+        lastRefs.unifiedGitPanelTab === state.unifiedGitPanelTab &&
+        lastRefs.workspaceModes === state.workspaceModes
       ) {
         return;
       }
@@ -165,6 +172,7 @@ const workspacePersistStorage = (() => {
         unifiedGitPanelOpen: state.unifiedGitPanelOpen,
         unifiedGitPanelPath: state.unifiedGitPanelPath,
         unifiedGitPanelTab: state.unifiedGitPanelTab,
+        workspaceModes: state.workspaceModes,
         version: resolvedVersion,
       };
     },
@@ -183,6 +191,8 @@ interface WorkspaceState {
   gitStatuses: Record<string, GitStatus>;
   /** PR status keyed by repo path */
   prStatuses: Record<string, PrStatus | null>;
+  /** Timestamp of last successful PR fetch per repo path */
+  prStatusFetchedAt: Record<string, number>;
   /** Which repo path is active per workspace (index into ws.paths) */
   activePathIndex: Record<string, number>;
   layouts: Record<string, WorkspaceLayout>;
@@ -215,10 +225,30 @@ interface WorkspaceState {
   loading: boolean;
   /** Set of pane IDs with unsaved editor changes */
   dirtyPanes: Set<string>;
+  /** Workspace mode per workspace ID (product or dev) */
+  workspaceModes: Record<string, WorkspaceMode>;
+  /** PRD mode sessions keyed by workspace ID (in-memory only, not persisted) */
+  productSessions: Record<string, ProductSession>;
+  /** Bottom shell panel keyed by workspace ID (in-memory only) */
+  shellPanels: Record<string, ShellPanel>;
+  /** Cached RALLY.json configs per repo path (not persisted) */
+  rallyConfigs: Record<string, RallyConfig>;
 
   // Dirty pane tracking
   markPaneDirty: (paneId: string) => void;
   markPaneClean: (paneId: string) => void;
+
+  // Mode actions
+  setWorkspaceMode: (workspaceId: string, mode: WorkspaceMode) => void;
+  loadRallyConfig: (rootPath: string) => Promise<void>;
+
+  // Product session actions
+  setProductSession: (workspaceId: string, session: ProductSession) => void;
+  clearProductSession: (workspaceId: string) => void;
+
+  // Shell panel actions
+  toggleShellPanel: (workspaceId: string, rootPath: string) => Promise<void>;
+  hideShellPanel: (workspaceId: string) => void;
 
   // Workspace actions
   loadWorkspaces: (options?: { keepNullActive?: boolean }) => Promise<void>;
@@ -553,6 +583,8 @@ function gitStatusEqual(a: GitStatus, b: GitStatus): boolean {
     a.dirty === b.dirty &&
     a.ahead === b.ahead &&
     a.behind === b.behind &&
+    a.tracking_ahead === b.tracking_ahead &&
+    a.tracking_behind === b.tracking_behind &&
     arraysEqual(a.modified_files, b.modified_files) &&
     arraysEqual(a.untracked_files, b.untracked_files)
   );
@@ -580,6 +612,7 @@ export const useWorkspaceStore = create<WorkspaceState>()(
   activeWorkspaceId: null,
   gitStatuses: {},
   prStatuses: {},
+  prStatusFetchedAt: {},
   activePathIndex: {},
   layouts: {},
   activeGroupIds: {},
@@ -597,6 +630,10 @@ export const useWorkspaceStore = create<WorkspaceState>()(
   unifiedGitPanelTab: "changes" as const,
   loading: false,
   dirtyPanes: new Set(),
+  workspaceModes: {},
+  productSessions: {},
+  shellPanels: {},
+  rallyConfigs: {},
 
   markPaneDirty: (paneId) => {
     const s = get();
@@ -612,6 +649,72 @@ export const useWorkspaceStore = create<WorkspaceState>()(
     const next = new Set(s.dirtyPanes);
     next.delete(paneId);
     set({ dirtyPanes: next });
+  },
+
+  // --- Mode actions ---
+
+  setWorkspaceMode: (workspaceId, mode) => {
+    set((s) => ({ workspaceModes: { ...s.workspaceModes, [workspaceId]: mode } }));
+  },
+
+  loadRallyConfig: async (rootPath) => {
+    try {
+      const config = await api.readRallyConfig(rootPath);
+      set((s) => ({ rallyConfigs: { ...s.rallyConfigs, [rootPath]: config } }));
+    } catch (e) {
+      console.error(`Failed to load RALLY.json for ${rootPath}:`, e);
+    }
+  },
+
+  // --- Product session actions ---
+
+  setProductSession: (workspaceId, session) => {
+    set((s) => ({
+      productSessions: { ...s.productSessions, [workspaceId]: session },
+    }));
+  },
+  clearProductSession: (workspaceId) => {
+    set((s) => {
+      const { [workspaceId]: _, ...rest } = s.productSessions;
+      return { productSessions: rest };
+    });
+  },
+
+  // --- Shell panel actions ---
+
+  toggleShellPanel: async (workspaceId, rootPath) => {
+    const s = get();
+    const existing = s.shellPanels[workspaceId];
+    if (existing) {
+      // Toggle visibility
+      set({
+        shellPanels: {
+          ...s.shellPanels,
+          [workspaceId]: { ...existing, visible: !existing.visible },
+        },
+      });
+      return;
+    }
+    // Spawn a new shell PTY
+    const ptyId = await api.spawnPty(rootPath, null, 80, 24);
+    set({
+      shellPanels: {
+        ...get().shellPanels,
+        [workspaceId]: { ptyId, visible: true },
+      },
+    });
+  },
+  hideShellPanel: (workspaceId) => {
+    const s = get();
+    const existing = s.shellPanels[workspaceId];
+    if (existing) {
+      set({
+        shellPanels: {
+          ...s.shellPanels,
+          [workspaceId]: { ...existing, visible: false },
+        },
+      });
+    }
   },
 
   // --- Workspace actions ---
@@ -735,13 +838,22 @@ export const useWorkspaceStore = create<WorkspaceState>()(
   removeWorkspace: async (id) => {
     await api.removeWorkspace(id);
     const remaining = get().workspaces.filter((w) => w.id !== id);
-    const { layouts, ...rest } = get();
+    const { layouts, workspaceModes, productSessions, shellPanels, ...rest } = get();
     const newLayouts = { ...layouts };
     delete newLayouts[id];
+    const newModes = { ...workspaceModes };
+    delete newModes[id];
+    const newSessions = { ...productSessions };
+    delete newSessions[id];
+    const newShells = { ...shellPanels };
+    delete newShells[id];
     set({
       ...rest,
       workspaces: remaining,
       layouts: newLayouts,
+      workspaceModes: newModes,
+      productSessions: newSessions,
+      shellPanels: newShells,
       activeWorkspaceId:
         get().activeWorkspaceId === id
           ? remaining[0]?.id ?? null
@@ -845,11 +957,19 @@ export const useWorkspaceStore = create<WorkspaceState>()(
       const prStatus = await api.gitPrStatus(path);
       // Skip update if nothing changed — prevents unnecessary re-renders
       const prev = get().prStatuses[path];
-      if (prStatusEqual(prev ?? null, prStatus)) return;
-      set((s) => ({ prStatuses: { ...s.prStatuses, [path]: prStatus } }));
+      if (prStatusEqual(prev ?? null, prStatus)) {
+        set((s) => ({ prStatusFetchedAt: { ...s.prStatusFetchedAt, [path]: Date.now() } }));
+        return;
+      }
+      set((s) => ({
+        prStatuses: { ...s.prStatuses, [path]: prStatus },
+        prStatusFetchedAt: { ...s.prStatusFetchedAt, [path]: Date.now() },
+      }));
     } catch {
+      // Keep existing PR status on error (e.g. rate limit, network blip).
+      // Only clear if there was no previous status at all.
       const prev = get().prStatuses[path];
-      if (prev === null) return;
+      if (prev !== undefined) return;
       set((s) => ({ prStatuses: { ...s.prStatuses, [path]: null } }));
     }
   },
@@ -878,19 +998,25 @@ export const useWorkspaceStore = create<WorkspaceState>()(
     set((s) => {
       let changed = false;
       const next = { ...s.prStatuses };
+      const nextFetchedAt = { ...s.prStatusFetchedAt };
       for (const result of results) {
         if (result.error) {
-          if (s.prStatuses[result.path] === null) continue;
+          // Keep existing PR status on error (e.g. rate limit, network blip).
+          // Only clear if there was no previous status at all.
+          if (s.prStatuses[result.path] !== undefined) continue;
           next[result.path] = null;
           changed = true;
           continue;
         }
         const prev = s.prStatuses[result.path];
+        nextFetchedAt[result.path] = Date.now();
         if (prStatusEqual(prev ?? null, result.prStatus)) continue;
         next[result.path] = result.prStatus;
         changed = true;
       }
-      return changed ? { prStatuses: next } : s;
+      return changed
+        ? { prStatuses: next, prStatusFetchedAt: nextFetchedAt }
+        : { prStatusFetchedAt: nextFetchedAt };
     });
   },
 
@@ -2268,8 +2394,9 @@ export const useWorkspaceStore = create<WorkspaceState>()(
       // Only change tab if explicitly provided; otherwise keep current tab
       unifiedGitPanelTab: tab ?? prev.unifiedGitPanelTab,
     }));
-    // Eagerly refresh PR status so the PR tab shows fresh data
-    if (tab === "pr") {
+    // Refresh PR status only if stale (>60s since last successful fetch)
+    const lastFetch = get().prStatusFetchedAt[rootPath] ?? 0;
+    if (Date.now() - lastFetch > 60_000) {
       get().refreshPrStatusForPath(rootPath).catch(() => {});
     }
   },
@@ -2494,6 +2621,7 @@ export const useWorkspaceStore = create<WorkspaceState>()(
         unifiedGitPanelOpen: state.unifiedGitPanelOpen,
         unifiedGitPanelPath: state.unifiedGitPanelPath,
         unifiedGitPanelTab: state.unifiedGitPanelTab,
+        workspaceModes: state.workspaceModes,
       }),
       merge: (persisted, current) => {
         const p = persisted as Partial<WorkspaceState> | undefined;
@@ -2509,6 +2637,7 @@ export const useWorkspaceStore = create<WorkspaceState>()(
           unifiedGitPanelOpen: p?.unifiedGitPanelOpen ?? false,
           unifiedGitPanelPath: p?.unifiedGitPanelPath ?? null,
           unifiedGitPanelTab: (p?.unifiedGitPanelTab === "pr" ? "pr" : "changes") as "changes" | "pr",
+          workspaceModes: (p?.workspaceModes && typeof p.workspaceModes === "object") ? p.workspaceModes as Record<string, WorkspaceMode> : {},
         };
       },
     }

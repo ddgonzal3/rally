@@ -8,6 +8,72 @@ import { renderMarkdown, markdownStyles } from "../lib/markdown";
 import type { PrDetails, PrComment, PrReview } from "../lib/types";
 import { relativeTime } from "../lib/time";
 
+const PR_SIDEBAR_MIN = 165;
+const PR_SIDEBAR_MAX = 320;
+
+
+// ---------------------------------------------------------------------------
+// File tree structure for PR sidebar
+// ---------------------------------------------------------------------------
+
+interface FileTreeNode {
+  name: string;
+  path: string; // full relative path for this segment
+  children: FileTreeNode[];
+  file?: DiffFile; // only set on leaf nodes
+}
+
+function buildFileTree(files: DiffFile[]): FileTreeNode[] {
+  const root: FileTreeNode[] = [];
+
+  for (const file of files) {
+    const fp = file.newPath || file.oldPath;
+    const parts = fp.split("/");
+    let current = root;
+
+    for (let i = 0; i < parts.length; i++) {
+      const part = parts[i];
+      const pathSoFar = parts.slice(0, i + 1).join("/");
+      const isLeaf = i === parts.length - 1;
+      let existing = current.find((n) => n.name === part && n.path === pathSoFar);
+
+      if (!existing) {
+        existing = { name: part, path: pathSoFar, children: [] };
+        if (isLeaf) existing.file = file;
+        current.push(existing);
+      }
+      current = existing.children;
+    }
+  }
+
+  // Collapse single-child directories: src/components → src/components
+  function collapse(nodes: FileTreeNode[]): FileTreeNode[] {
+    return nodes.map((node) => {
+      node.children = collapse(node.children);
+      if (node.children.length === 1 && !node.file && !node.children[0].file) {
+        const child = node.children[0];
+        return { ...child, name: `${node.name}/${child.name}` };
+      }
+      return node;
+    });
+  }
+
+  // Sort: directories first, then files, both alphabetical
+  function sortTree(nodes: FileTreeNode[]): FileTreeNode[] {
+    nodes.sort((a, b) => {
+      const aIsDir = a.children.length > 0 || !a.file;
+      const bIsDir = b.children.length > 0 || !b.file;
+      if (aIsDir && !bIsDir) return -1;
+      if (!aIsDir && bIsDir) return 1;
+      return a.name.localeCompare(b.name);
+    });
+    for (const n of nodes) sortTree(n.children);
+    return nodes;
+  }
+
+  return sortTree(collapse(root));
+}
+
 // Merge comments and reviews into a single chronological timeline
 type TimelineItem =
   | { kind: "comment"; data: PrComment }
@@ -35,7 +101,7 @@ function reviewStateBadge(state: string): { label: string; color: string; bg: st
     case "CHANGES_REQUESTED":
       return { label: "Changes requested", color: "#f85149", bg: "rgba(248, 81, 73, 0.12)" };
     case "DISMISSED":
-      return { label: "Dismissed", color: "#888", bg: "rgba(136, 136, 136, 0.12)" };
+      return { label: "Dismissed", color: "#e0e0e0", bg: "rgba(136, 136, 136, 0.12)" };
     default:
       return null;
   }
@@ -75,6 +141,28 @@ export function PrReviewContent({
   const titleInputRef = useRef<HTMLInputElement>(null);
 
   const fileListRef = useRef<HTMLDivElement>(null);
+  const fileTreeContainerRef = useRef<HTMLDivElement>(null);
+  const prSidebarRef = useRef<HTMLDivElement>(null);
+  const [prSidebarWidth, setPrSidebarWidth] = useState<number | null>(null);
+  const [prUserResized, setPrUserResized] = useState(false);
+  const [selectedPath, setSelectedPath] = useState<string | null>(null);
+  const [collapsedDirs, setCollapsedDirs] = useState<Set<string>>(new Set());
+  const lastPrFileFingerprint = useRef<string>("");
+
+  // Manage selected-path highlight imperatively (avoids re-rendering entire tree)
+  useEffect(() => {
+    const container = fileTreeContainerRef.current;
+    if (!container) return;
+    container.querySelectorAll(".file-list-item-selected").forEach((el) =>
+      el.classList.remove("file-list-item-selected"),
+    );
+    if (selectedPath) {
+      const sel = container.querySelector(
+        `[data-pr-path="${CSS.escape(selectedPath)}"]`,
+      );
+      sel?.classList.add("file-list-item-selected");
+    }
+  }, [selectedPath]);
 
   // When scrollToFile changes, switch to changes tab and set scroll target
   useEffect(() => {
@@ -84,24 +172,24 @@ export function PrReviewContent({
     }
   }, [scrollToFile]);
 
-  // Scroll to target file after diffs load
+  // Select target file after diffs load
   useEffect(() => {
-    if (!scrollTarget || !fileListRef.current) return;
-    requestAnimationFrame(() => {
-      const container = fileListRef.current;
-      const el = container?.querySelector(
-        `[data-filepath="${CSS.escape(scrollTarget)}"]`,
-      ) as HTMLElement | null;
-      if (el && container) {
-        const containerRect = container.getBoundingClientRect();
-        const elRect = el.getBoundingClientRect();
-        const distance = Math.abs(elRect.top - containerRect.top - container.scrollTop);
-        const behavior = distance > container.clientHeight * 2 ? "instant" : "smooth";
-        el.scrollIntoView({ behavior, block: "start" });
-        setScrollTarget(null);
-      }
-    });
+    if (!scrollTarget) return;
+    setSelectedPath(scrollTarget);
+    setScrollTarget(null);
   }, [scrollTarget, diffFiles]);
+
+  // Select a file to show its diff (toggle: click again to deselect → show all)
+  const handleSelectFile = useCallback((filePath: string) => {
+    setSelectedPath((prev) => (prev === filePath ? null : filePath));
+    fileListRef.current?.scrollTo(0, 0);
+  }, []);
+
+  // Select a directory to show all diffs under it (toggle: click again to deselect)
+  const handleSelectDir = useCallback((dirPath: string) => {
+    setSelectedPath((prev) => (prev === dirPath ? null : dirPath));
+    fileListRef.current?.scrollTo(0, 0);
+  }, []);
 
   // Fetch details and diff
   const [refreshing, setRefreshing] = useState(false);
@@ -213,7 +301,6 @@ export function PrReviewContent({
   const prState = details?.state ?? cachedPr?.state ?? "OPEN";
   const prMergeable = details?.mergeable ?? cachedPr?.mergeable ?? "UNKNOWN";
   const prReviewDecision = details?.review_decision ?? cachedPr?.review_decision;
-  const prChecksStatus = details?.checks_status ?? cachedPr?.checks_status;
   const prIsDraft = details?.is_draft ?? cachedPr?.is_draft ?? false;
 
   const startEditTitle = useCallback(() => {
@@ -269,16 +356,49 @@ export function PrReviewContent({
     }
   }, [closeArmed, rootPath, prNumber, onClose, refreshPrStatusForPath]);
 
+  // --- PR sidebar resize ---
+  const handlePrSidebarResize = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    const startX = e.clientX;
+    const startWidth = prSidebarRef.current?.offsetWidth ?? 180;
+    let raf = 0;
+    let finalWidth = startWidth;
+
+    const onMouseMove = (ev: MouseEvent) => {
+      finalWidth = Math.max(PR_SIDEBAR_MIN, Math.min(PR_SIDEBAR_MAX, startWidth + (ev.clientX - startX)));
+      cancelAnimationFrame(raf);
+      raf = requestAnimationFrame(() => {
+        if (prSidebarRef.current) {
+          prSidebarRef.current.style.width = finalWidth + "px";
+        }
+      });
+    };
+    const onMouseUp = () => {
+      cancelAnimationFrame(raf);
+      setPrSidebarWidth(finalWidth);
+      setPrUserResized(true);
+      document.removeEventListener("mousemove", onMouseMove);
+      document.removeEventListener("mouseup", onMouseUp);
+    };
+    document.addEventListener("mousemove", onMouseMove);
+    document.addEventListener("mouseup", onMouseUp);
+  }, []);
+
   const mergeDisabled = useMemo(() => {
     if (merging) return true;
     if (prMergeable === "CONFLICTING") return true;
     if (prState !== "OPEN") return true;
+    if (prReviewDecision === "CHANGES_REQUESTED") return true;
+    if (prReviewDecision === "REVIEW_REQUIRED") return true;
     return false;
-  }, [merging, prMergeable, prState]);
+  }, [merging, prMergeable, prState, prReviewDecision]);
 
-  const checksColor = prChecksStatus === "pass" ? "#7ddf7d"
-    : prChecksStatus === "fail" ? "#df7d7d"
-    : prChecksStatus === "pending" ? "#dfc97d" : "#666";
+  const mergeDisabledReason = useMemo(() => {
+    if (prMergeable === "CONFLICTING") return "Conflicts";
+    if (prReviewDecision === "CHANGES_REQUESTED") return "Changes requested";
+    if (prReviewDecision === "REVIEW_REQUIRED") return "Needs approval";
+    return null;
+  }, [prMergeable, prReviewDecision]);
 
   // Render PR body as markdown
   const bodyHtml = useMemo(() => {
@@ -287,11 +407,60 @@ export function PrReviewContent({
     return renderMarkdown(body);
   }, [details?.body]);
 
+  // Auto-size PR sidebar based on longest file name
+  const prAutoWidth = useMemo(() => {
+    if (diffFiles.length === 0) return PR_SIDEBAR_MIN;
+    const longestName = diffFiles.reduce((max, f) => {
+      const name = (f.newPath || f.oldPath).split("/").pop() ?? "";
+      return name.length > max ? name.length : max;
+    }, 0);
+    const estimated = Math.round(longestName * 7.5) + 76;
+    return Math.max(PR_SIDEBAR_MIN, Math.min(PR_SIDEBAR_MAX, estimated));
+  }, [diffFiles]);
+
+  const effectivePrSidebarWidth = prUserResized && prSidebarWidth !== null ? prSidebarWidth : prAutoWidth;
+
+  const fileTree = useMemo(() => buildFileTree(diffFiles), [diffFiles]);
+
+  // Compute which diff files to show based on selectedPath
+  const filesToShow = useMemo(() => {
+    if (!selectedPath) return diffFiles; // show all
+    // Check exact file match
+    const exactMatch = diffFiles.find((f) => (f.newPath || f.oldPath) === selectedPath);
+    if (exactMatch) return [exactMatch];
+    // Directory prefix match
+    const prefix = selectedPath + "/";
+    return diffFiles.filter((f) => (f.newPath || f.oldPath).startsWith(prefix));
+  }, [diffFiles, selectedPath]);
+
+  const toggleDir = useCallback((dirPath: string) => {
+    setCollapsedDirs((prev) => {
+      const next = new Set(prev);
+      if (next.has(dirPath)) next.delete(dirPath);
+      else next.add(dirPath);
+      return next;
+    });
+  }, []);
+
+  // Reset sidebar width when file list changes
+  const prFileFingerprint = diffFiles.map(f => f.newPath || f.oldPath).sort().join("\n");
+  useEffect(() => {
+    if (!prFileFingerprint) return;
+    if (lastPrFileFingerprint.current && prFileFingerprint !== lastPrFileFingerprint.current) {
+      setPrUserResized(false);
+      setPrSidebarWidth(null);
+    }
+    lastPrFileFingerprint.current = prFileFingerprint;
+  }, [prFileFingerprint]);
+
   const timeline = useMemo(
     () => details ? buildTimeline(details.comments, details.reviews) : [],
     [details],
   );
   const conversationCount = timeline.length + (details?.body?.trim() ? 1 : 0);
+
+  const totalAdditions = useMemo(() => diffFiles.reduce((sum, f) => sum + f.additions, 0), [diffFiles]);
+  const totalDeletions = useMemo(() => diffFiles.reduce((sum, f) => sum + f.deletions, 0), [diffFiles]);
 
   return (
     <>
@@ -306,7 +475,7 @@ export function PrReviewContent({
               style={st.githubBtn}
               title="Open on GitHub"
             >
-              <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
                 <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z" />
               </svg>
             </button>
@@ -317,8 +486,8 @@ export function PrReviewContent({
             title="Refresh PR"
           >
             <svg
-              width="16"
-              height="16"
+              width="14"
+              height="14"
               viewBox="0 0 16 16"
               fill="none"
               style={{
@@ -363,7 +532,7 @@ export function PrReviewContent({
                   style={st.editBtn}
                   title="Edit title"
                 >
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none">
                     <path d="M16.474 5.408l2.118 2.117m-.756-3.982L12.109 9.27a2.118 2.118 0 0 0-.58 1.082L11 13l2.648-.53c.41-.082.786-.283 1.082-.579l5.727-5.727a1.853 1.853 0 1 0-2.621-2.621z" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
                     <path d="M19 15v3a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h3" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
                   </svg>
@@ -373,29 +542,18 @@ export function PrReviewContent({
           )}
         </div>
 
-        <div style={{ flex: 1 }} />
-
-        <div style={st.headerRight}>
-          {prState === "OPEN" && prNumber != null && (
-            <button
-              data-close-btn
-              onClick={handleClosePr}
-              disabled={closing}
-              style={{
-                ...st.closeBtn,
-                ...(closeArmed ? st.closeBtnArmed : {}),
-                opacity: closing ? 0.4 : 1,
-              }}
-              title="Close PR without merging"
-            >
-              {closing ? "Closing..." : closeArmed ? "Confirm close?" : "Close"}
-            </button>
-          )}
-        </div>
+        {(totalAdditions > 0 || totalDeletions > 0) && (
+          <span style={st.diffStats}>
+            {totalAdditions > 0 && <span style={{ color: "#5a9a5a" }}>+{totalAdditions}</span>}
+            {totalDeletions > 0 && (
+              <span style={{ color: "#b35650", marginLeft: totalAdditions > 0 ? 4 : 0 }}>-{totalDeletions}</span>
+            )}
+          </span>
+        )}
       </div>
 
-      {/* Tabs */}
-      <div style={st.tabBar}>
+      {/* Sub-header: tabs + status pills + action pills */}
+      <div style={st.subHeader}>
         <button
           onClick={() => setActiveTab("conversation")}
           style={activeTab === "conversation" ? st.tabActive : st.tab}
@@ -416,104 +574,140 @@ export function PrReviewContent({
         </button>
         <div style={{ flex: 1 }} />
 
-        {/* Status badges */}
+        {/* Status pills */}
         {prNumber != null && (
-          <div style={st.statusBadges}>
-            {prMergeable === "MERGEABLE" ? (
-              <span style={st.mergeStatus}>
-                <span style={st.mergeCheckCircle}>
-                  <svg width="10" height="10" viewBox="0 0 16 16" fill="none">
-                    <path d="M4 8.5l3 3 5-6" stroke="#fff" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
-                  </svg>
-                </span>
-                <span style={st.mergeStatusText}>No conflicts</span>
-              </span>
-            ) : prMergeable === "CONFLICTING" ? (
-              <span style={{ ...st.statusTag, color: "#f85149" }}>Conflicts</span>
-            ) : null}
+          <>
+            {prMergeable === "MERGEABLE" && (
+              <span style={{ ...st.statusPill, color: "#7ddf7d" }}>No conflicts</span>
+            )}
+            {prMergeable === "CONFLICTING" && (
+              <span style={{ ...st.statusPill, color: "#f85149" }}>Conflicts</span>
+            )}
             {prReviewDecision === "APPROVED" && (
-              <span style={{ ...st.statusTag, color: "#7ddf7d" }}>Approved</span>
+              <span style={{ ...st.statusPill, color: "#7ddf7d" }}>Approved</span>
             )}
             {prReviewDecision === "CHANGES_REQUESTED" && (
-              <span style={{ ...st.statusTag, color: "#f85149" }}>Changes Req</span>
+              <span style={{ ...st.statusPill, color: "#f85149" }}>Changes requested</span>
             )}
-            {prChecksStatus && (
-              <span style={{ ...st.statusTag, color: checksColor }}>
-                Checks {prChecksStatus}
-              </span>
-            )}
-          </div>
+          </>
         )}
 
-        {/* Ship + Merge buttons */}
+        {/* Action pills */}
         {prState === "OPEN" && prNumber != null && (
-          <div style={st.actionButtons}>
+          <>
+            {(prNumber != null) && (
+              <div style={{ width: 1, height: 12, background: "#333" }} />
+            )}
             <button
-              onClick={handleShip}
-              disabled={!activeWorkspaceId}
+              data-close-btn
+              onClick={handleClosePr}
+              disabled={closing}
               style={{
-                ...st.shipBtn,
-                opacity: activeWorkspaceId ? 1 : 0.4,
+                ...st.actionBtn,
+                ...(closeArmed ? st.actionBtnDanger : {}),
+                opacity: closing ? 0.4 : 1,
               }}
-              title="Run /ship — review and merge via Claude"
+              title="Close PR without merging"
             >
-              Ship
+              {closing ? "Closing..." : closeArmed ? "Confirm close?" : "Close"}
             </button>
             <button
               data-merge-btn
               onClick={handleMerge}
               disabled={mergeDisabled}
               style={{
-                ...st.mergeBtn,
-                ...(mergeArmed ? st.mergeBtnArmed : {}),
+                ...st.actionBtn,
+                ...(mergeArmed ? st.actionBtnDanger : {}),
                 opacity: mergeDisabled ? 0.4 : 1,
               }}
             >
               {merging ? "Merging..." : mergeArmed ? "Confirm merge?" : "Squash & merge"}
             </button>
-          </div>
+            {mergeDisabledReason && !merging && (
+              <span style={st.mergeNote}>{mergeDisabledReason}</span>
+            )}
+          </>
         )}
       </div>
 
       {/* Content */}
-      <div ref={fileListRef} style={st.content}>
-        {error ? (
-          <div style={st.empty}>
-            <span style={{ color: "#f85149" }}>Failed to load PR</span>
-            <br />
-            <span style={{ fontSize: 12, color: "#888", marginTop: 8, display: "block" }}>{error}</span>
+      {activeTab === "changes" && !error && !diffLoading && diffFiles.length > 0 ? (
+        <div style={{ flex: 1, display: "flex", overflow: "hidden" }}>
+          {/* File tree sidebar */}
+          <div ref={prSidebarRef} style={{ ...st.prSidebar, width: effectivePrSidebarWidth }}>
+            <div ref={fileTreeContainerRef} style={st.prFileList}>
+              <FileTreeView
+                nodes={fileTree}
+                depth={0}
+                collapsedDirs={collapsedDirs}
+                onToggleDir={toggleDir}
+                onSelectFile={handleSelectFile}
+                onSelectDir={handleSelectDir}
+              />
+            </div>
           </div>
-        ) : activeTab === "conversation" ? (
-          <ConversationTab
-            details={details}
-            loading={detailsLoading}
-            timeline={timeline}
-            bodyHtml={bodyHtml}
-          />
-        ) : activeTab === "changes" ? (
-          diffLoading ? (
-            <div style={st.empty}>Loading diff...</div>
-          ) : diffFiles.length === 0 ? (
-            <div style={st.empty}>No file changes</div>
+
+          {/* Resize handle */}
+          <div onMouseDown={handlePrSidebarResize} style={st.prResizeHandle}>
+            <div style={st.prResizeLine} />
+          </div>
+
+          {/* Diff viewer — render filtered files */}
+          <div ref={fileListRef} style={st.prDiffViewer}>
+            {filesToShow.length > 0 ? (
+              filesToShow.map((file) => (
+                <div
+                  key={file.newPath || file.oldPath}
+                  data-filepath={file.newPath || file.oldPath}
+                >
+                  <DiffFileSection
+                    file={file}
+                    defaultExpanded={true}
+                    maxLinesBeforeCollapse={300}
+                    tab="pr"
+                  />
+                </div>
+              ))
+            ) : (
+              <div style={st.empty}>No files match the selection</div>
+            )}
+          </div>
+        </div>
+      ) : (
+        <div ref={activeTab !== "changes" ? fileListRef : undefined} style={st.content}>
+          {error ? (
+            <div style={st.empty}>
+              {error.includes("no pull requests found") ? (
+                <span style={{ fontSize: 13, color: "#e0e0e0" }}>No open PR for this branch</span>
+              ) : (
+                <>
+                  <span style={{ color: "#f85149" }}>Failed to load PR</span>
+                  <br />
+                  <span style={{ fontSize: 12, color: "#e0e0e0", marginTop: 8, display: "block" }}>{error}</span>
+                </>
+              )}
+            </div>
+          ) : activeTab === "conversation" ? (
+            <ConversationTab
+              details={details}
+              loading={detailsLoading}
+              timeline={timeline}
+              bodyHtml={bodyHtml}
+            />
+          ) : activeTab === "changes" ? (
+            diffLoading ? (
+              <div style={st.empty}>Loading diff...</div>
+            ) : (
+              <div style={st.empty}>No file changes</div>
+            )
           ) : (
-            diffFiles.map((file) => (
-              <div key={file.newPath || file.oldPath} data-filepath={file.newPath || file.oldPath}>
-                <DiffFileSection
-                  file={file}
-                  defaultExpanded={true}
-                  tab="pr"
-                />
-              </div>
-            ))
-          )
-        ) : (
-          /* Commits tab */
-          detailsLoading ? (
-            <div style={st.empty}>Loading commits...</div>
-          ) : (
-            <div style={st.commitList}>
-              {details?.commits.length === 0 ? (
-                <div style={st.empty}>No commits</div>
+            /* Commits tab */
+            detailsLoading ? (
+              <div style={st.empty}>Loading commits...</div>
+            ) : (
+              <div style={st.commitList}>
+                {details?.commits.length === 0 ? (
+                  <div style={st.empty}>No commits</div>
               ) : (
                 details?.commits.map((commit, i) => (
                   <div key={commit.sha || i} style={st.commitItem}>
@@ -544,9 +738,119 @@ export function PrReviewContent({
           )
         )}
       </div>
+      )}
     </>
   );
 }
+
+// --- File Tree View ---
+
+// Pre-computed style caches to avoid inline object allocation during render
+const chevronExpanded: React.CSSProperties = { transform: "rotate(90deg)", flexShrink: 0 };
+const chevronCollapsed: React.CSSProperties = { flexShrink: 0 };
+const folderIconStyle: React.CSSProperties = { flexShrink: 0 };
+
+const statusColors: Record<string, string> = {
+  new: "#7ddf7d",
+  deleted: "#f85149",
+  renamed: "#d2a8ff",
+  modified: "#e3b341",
+};
+function getStatusColor(file: DiffFile): string {
+  return file.isNew ? statusColors.new
+    : file.isDeleted ? statusColors.deleted
+    : file.isRenamed ? statusColors.renamed
+    : statusColors.modified;
+}
+function getStatusLetter(file: DiffFile): string {
+  return file.isNew ? "A" : file.isDeleted ? "D" : file.isRenamed ? "R" : "M";
+}
+
+const FileTreeView = React.memo(function FileTreeView({
+  nodes,
+  depth,
+  collapsedDirs,
+  onToggleDir,
+  onSelectFile,
+  onSelectDir,
+}: {
+  nodes: FileTreeNode[];
+  depth: number;
+  collapsedDirs: Set<string>;
+  onToggleDir: (path: string) => void;
+  onSelectFile: (path: string) => void;
+  onSelectDir: (path: string) => void;
+}) {
+  const pl = 10 + depth * 16;
+
+  return (
+    <>
+      {nodes.map((node) => {
+        const isDir = node.children.length > 0;
+        const isCollapsed = collapsedDirs.has(node.path);
+
+        if (isDir) {
+          return (
+            <React.Fragment key={node.path}>
+              <div
+                data-pr-path={node.path}
+                style={{ ...st.treeDir, paddingLeft: pl }}
+                className="file-list-item"
+              >
+                <span
+                  onClick={(e) => { e.stopPropagation(); onToggleDir(node.path); }}
+                  style={st.treeDirChevron}
+                >
+                  <svg width="10" height="10" viewBox="0 0 12 12" fill="none" style={isCollapsed ? chevronCollapsed : chevronExpanded}>
+                    <path d="M4 2.4L8 6L4 9.6" stroke="#888" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
+                  </svg>
+                </span>
+                <span
+                  onClick={() => onSelectDir(node.path)}
+                  style={st.treeDirLabel}
+                >
+                  <svg width="14" height="14" viewBox="0 0 16 16" fill="none" style={folderIconStyle}>
+                    <path d="M1.5 3.5v9c0 .55.45 1 1 1h11c.55 0 1-.45 1-1v-7c0-.55-.45-1-1-1H7.5l-2-2h-3c-.55 0-1 .45-1 1z" stroke="#888" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" />
+                  </svg>
+                  <span style={st.treeDirName}>{node.name}</span>
+                </span>
+              </div>
+              {!isCollapsed && (
+                <FileTreeView
+                  nodes={node.children}
+                  depth={depth + 1}
+                  collapsedDirs={collapsedDirs}
+                  onToggleDir={onToggleDir}
+                  onSelectFile={onSelectFile}
+                  onSelectDir={onSelectDir}
+                />
+              )}
+            </React.Fragment>
+          );
+        }
+
+        // Leaf file node
+        const file = node.file!;
+        const fp = file.newPath || file.oldPath;
+
+        return (
+          <button
+            key={fp}
+            data-pr-path={fp}
+            onClick={() => onSelectFile(fp)}
+            style={{ ...st.prFileItem, paddingLeft: pl }}
+            className="file-list-item"
+          >
+            <span style={{ ...st.prFileStatus, color: getStatusColor(file) }}>
+              {getStatusLetter(file)}
+            </span>
+            <span style={st.prFileItemName}>{node.name}</span>
+          </button>
+        );
+      })}
+    </>
+  );
+});
 
 // --- Conversation Tab ---
 
@@ -652,23 +956,27 @@ const st: Record<string, React.CSSProperties> = {
   header: {
     display: "flex",
     alignItems: "center",
-    padding: "0 16px",
-    minHeight: 40,
+    gap: 4,
+    padding: "0 12px",
+    minHeight: 29,
+    maxHeight: 29,
+    background: "#1a1a1a",
     borderBottom: "1px solid #2a2a2a",
     flexShrink: 0,
-    position: "relative",
   },
   headerLeft: {
     display: "flex",
     alignItems: "center",
     gap: 6,
     minWidth: 0,
+    flex: 1,
   },
-  headerRight: {
-    display: "flex",
-    alignItems: "center",
-    gap: 8,
+  diffStats: {
+    fontSize: 12,
+    fontFamily: "'SF Mono', 'Menlo', monospace",
+    fontWeight: 600,
     flexShrink: 0,
+    letterSpacing: "-0.01em",
   },
   refreshBtn: {
     background: "none",
@@ -686,13 +994,13 @@ const st: Record<string, React.CSSProperties> = {
   prNumber: {
     fontSize: 13,
     fontWeight: 600,
-    color: "#888",
+    color: "#e0e0e0",
     fontFamily: "'SF Mono', 'Menlo', monospace",
     flexShrink: 0,
     lineHeight: "20px",
   },
   prTitle: {
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: 600,
     color: "#e6edf3",
     overflow: "hidden",
@@ -704,13 +1012,13 @@ const st: Record<string, React.CSSProperties> = {
     lineHeight: "20px",
   },
   titleInput: {
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: 600,
     color: "#e6edf3",
     background: "#2a2a2a",
     border: "1px solid #444",
     borderRadius: 6,
-    padding: "3px 8px",
+    padding: "2px 8px",
     outline: "none",
     minWidth: 200,
     flex: 1,
@@ -742,121 +1050,68 @@ const st: Record<string, React.CSSProperties> = {
     transition: "color 150ms",
     flexShrink: 0,
   },
-  closeBtn: {
-    padding: "4px 12px",
-    borderRadius: 8,
-    border: "1px solid rgba(220, 80, 60, 0.4)",
-    background: "transparent",
-    color: "#dc503c",
-    fontSize: 12,
-    fontWeight: 600,
-    cursor: "pointer",
-    flexShrink: 0,
-    letterSpacing: "-0.01em",
-    transition: "opacity 150ms, background 150ms, color 150ms, border-color 150ms",
-    lineHeight: "16px",
-  },
-  closeBtnArmed: {
-    borderColor: "#dc503c",
-    background: "rgba(220, 80, 60, 0.15)",
-    color: "#f06050",
-  },
-  tabBar: {
+  subHeader: {
     display: "flex",
     alignItems: "center",
     gap: 4,
-    padding: "0 16px",
+    padding: "0 12px",
+    background: "#1a1a1a",
     borderBottom: "1px solid #2a2a2a",
     flexShrink: 0,
   },
   tab: {
-    padding: "10px 12px",
+    padding: "8px 8px",
     background: "none",
     border: "none",
     borderBottom: "2px solid transparent",
-    color: "#999",
-    fontSize: 13,
+    color: "#888",
+    fontSize: 12,
     cursor: "pointer",
     fontWeight: 500,
     transition: "color 150ms",
+    flexShrink: 0,
   },
   tabActive: {
-    padding: "10px 12px",
+    padding: "8px 8px",
     background: "none",
     border: "none",
-    borderBottom: "2px solid #e6edf3",
-    color: "#e6edf3",
-    fontSize: 13,
+    borderBottom: "2px solid #e0e0e0",
+    color: "#e0e0e0",
+    fontSize: 12,
     cursor: "pointer",
     fontWeight: 600,
+    flexShrink: 0,
   },
-  statusBadges: {
-    display: "flex",
-    alignItems: "center",
-    gap: 8,
-    marginRight: 12,
-  },
-  actionButtons: {
-    display: "flex",
-    alignItems: "center",
-    gap: 8,
-  },
-  statusTag: {
-    fontSize: 12,
+  statusPill: {
+    fontSize: 11,
     fontWeight: 600,
     letterSpacing: "-0.01em",
+    flexShrink: 0,
   },
-  mergeStatus: {
+  actionBtn: {
     display: "inline-flex",
     alignItems: "center",
-    gap: 6,
-  },
-  mergeCheckCircle: {
-    width: 16,
-    height: 16,
-    borderRadius: "50%",
-    background: "#238636",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    flexShrink: 0,
-  },
-  mergeStatusText: {
-    fontSize: 12,
-    fontWeight: 600,
-    color: "#7ddf7d",
-    letterSpacing: "-0.01em",
-  },
-  shipBtn: {
-    padding: "5px 16px",
-    borderRadius: 8,
-    border: "1px solid #238636",
-    background: "transparent",
-    color: "#7ddf7d",
-    fontSize: 12,
-    fontWeight: 600,
-    cursor: "pointer",
-    flexShrink: 0,
-    letterSpacing: "-0.01em",
-    transition: "opacity 150ms, background 150ms",
-    lineHeight: "16px",
-  },
-  mergeBtn: {
-    padding: "5px 16px",
-    borderRadius: 8,
+    background: "#2a2a2a",
     border: "none",
-    background: "#238636",
-    color: "#fff",
-    fontSize: 12,
+    color: "#ddd",
+    fontSize: 11,
     fontWeight: 600,
     cursor: "pointer",
-    flexShrink: 0,
-    letterSpacing: "-0.01em",
-    transition: "opacity 150ms, background 150ms",
+    padding: "3px 8px",
+    borderRadius: 20,
     lineHeight: "16px",
+    transition: "background 150ms",
+    flexShrink: 0,
   },
-  mergeBtnArmed: {
-    background: "#8b3a3a",
+  actionBtnDanger: {
+    background: "rgba(248, 81, 73, 0.15)",
+    color: "#f85149",
+  },
+  mergeNote: {
+    fontSize: 10,
+    color: "#e0e0e0",
+    fontWeight: 500,
+    flexShrink: 0,
   },
   content: {
     flex: 1,
@@ -864,11 +1119,109 @@ const st: Record<string, React.CSSProperties> = {
     padding: "16px 20px",
   },
   empty: {
-    color: "#888",
+    color: "#e0e0e0",
     fontSize: 13,
     textAlign: "center",
     padding: 48,
     fontWeight: 500,
+  },
+  // PR file sidebar
+  prSidebar: {
+    display: "flex",
+    flexDirection: "column",
+    flexShrink: 0,
+    overflow: "hidden",
+  },
+  prFileList: {
+    flex: 1,
+    overflow: "auto",
+    paddingTop: 6,
+  },
+  prFileItem: {
+    display: "flex",
+    alignItems: "center",
+    gap: 6,
+    width: "100%",
+    padding: "5px 10px",
+    border: "none",
+    background: "transparent",
+    color: "inherit",
+    cursor: "pointer",
+    fontSize: 12,
+    textAlign: "left" as const,
+  },
+  prFileStatus: {
+    width: 14,
+    fontSize: 11,
+    fontWeight: 700,
+    fontFamily: "'SF Mono', 'Menlo', monospace",
+    textAlign: "center" as const,
+    flexShrink: 0,
+  },
+  prFileItemName: {
+    flex: 1,
+    minWidth: 0,
+    overflow: "hidden",
+    textOverflow: "ellipsis",
+    whiteSpace: "nowrap" as const,
+    color: "#e6edf3",
+    fontWeight: 500,
+  },
+  treeDir: {
+    display: "flex",
+    alignItems: "center",
+    gap: 5,
+    width: "100%",
+    padding: "4px 10px",
+    border: "none",
+    background: "transparent",
+    color: "inherit",
+    cursor: "pointer",
+    fontSize: 12,
+    textAlign: "left" as const,
+  },
+  treeDirChevron: {
+    display: "flex",
+    alignItems: "center",
+    cursor: "pointer",
+    padding: 2,
+    flexShrink: 0,
+  },
+  treeDirLabel: {
+    display: "flex",
+    alignItems: "center",
+    gap: 5,
+    cursor: "pointer",
+    flex: 1,
+    minWidth: 0,
+  },
+  treeDirName: {
+    flex: 1,
+    minWidth: 0,
+    overflow: "hidden",
+    textOverflow: "ellipsis",
+    whiteSpace: "nowrap" as const,
+    color: "#e0e0e0",
+    fontWeight: 500,
+  },
+  prResizeHandle: {
+    width: 6,
+    minWidth: 6,
+    cursor: "col-resize",
+    display: "flex",
+    alignItems: "stretch",
+    justifyContent: "center",
+    flexShrink: 0,
+  },
+  prResizeLine: {
+    width: 1,
+    background: "#2a2a2a",
+    pointerEvents: "none" as const,
+  },
+  prDiffViewer: {
+    flex: 1,
+    overflow: "auto",
+    padding: "12px 10px",
   },
   // Commits tab
   commitList: {
@@ -907,11 +1260,11 @@ const st: Record<string, React.CSSProperties> = {
     fontSize: 12,
   },
   commitAuthor: {
-    color: "#bbb",
+    color: "#e0e0e0",
     fontWeight: 500,
   },
   commitDate: {
-    color: "#666",
+    color: "#e0e0e0",
   },
   commitSha: {
     fontSize: 12,
@@ -957,13 +1310,13 @@ const st: Record<string, React.CSSProperties> = {
     padding: "2px 7px",
     borderRadius: 10,
     background: "rgba(136, 136, 136, 0.12)",
-    color: "#888",
+    color: "#e0e0e0",
     textTransform: "uppercase" as const,
     letterSpacing: "0.03em",
   },
   conversationDate: {
     fontSize: 12,
-    color: "#666",
+    color: "#e0e0e0",
     marginLeft: "auto",
   },
   conversationBody: {
