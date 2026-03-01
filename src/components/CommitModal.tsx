@@ -205,7 +205,7 @@ export function CommitModal({
       >
         {/* Top row: icon + close */}
         <div style={st.topRow}>
-          <svg width="20" height="20" viewBox="0 0 16 16" fill="none" style={{ color: "#e0e0e0" }}>
+          <svg width="20" height="20" viewBox="0 0 16 16" fill="none" style={{ color: "var(--text-primary)" }}>
             <circle cx="8" cy="8" r="3" stroke="currentColor" strokeWidth="1.5"/>
             <line x1="0" y1="8" x2="5" y2="8" stroke="currentColor" strokeWidth="1.5"/>
             <line x1="11" y1="8" x2="16" y2="8" stroke="currentColor" strokeWidth="1.5"/>
@@ -255,7 +255,7 @@ export function CommitModal({
               onClick={() => setIncludeUnstaged((v) => !v)}
               style={{
                 ...st.toggle,
-                background: includeUnstaged ? "#3b82f6" : "#3a3a3a",
+                background: includeUnstaged ? "#3b82f6" : "var(--border)",
                 justifyContent: includeUnstaged ? "flex-end" : "flex-start",
               }}
             >
@@ -305,7 +305,7 @@ export function CommitModal({
                     {opt.sub && <span style={st.radioSub}>{opt.sub}</span>}
                   </span>
                   {nextStep === opt.value && (
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" style={{ marginLeft: "auto", color: "#e0e0e0", flexShrink: 0 }}>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" style={{ marginLeft: "auto", color: "var(--text-primary)", flexShrink: 0 }}>
                       <path d="M5 13l5 5L20 7" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/>
                     </svg>
                   )}
@@ -349,14 +349,14 @@ const st: Record<string, React.CSSProperties> = {
   card: {
     width: 360,
     maxWidth: "90vw",
-    background: "#222222",
+    background: "var(--bg-elevated)",
     borderRadius: 14,
-    border: "0.5px solid rgba(255,255,255,0.08)",
+    border: "0.5px solid var(--border-subtle)",
     display: "flex",
     flexDirection: "column",
     transition: "transform 100ms ease",
     overflow: "hidden",
-    boxShadow: "0 8px 32px rgba(0, 0, 0, 0.4)",
+    boxShadow: "0 8px 32px var(--shadow)",
   },
   topRow: {
     display: "flex",
@@ -366,7 +366,7 @@ const st: Record<string, React.CSSProperties> = {
   closeBtn: {
     background: "none",
     border: "none",
-    color: "#888",
+    color: "var(--text-dim)",
     cursor: "pointer",
     padding: 4,
     display: "flex",
@@ -376,7 +376,7 @@ const st: Record<string, React.CSSProperties> = {
   title: {
     fontSize: 17,
     fontWeight: 700,
-    color: "#fff",
+    color: "var(--text-primary)",
     padding: "14px 16px 0 16px",
     letterSpacing: "-0.03em",
     lineHeight: "1.2",
@@ -395,13 +395,13 @@ const st: Record<string, React.CSSProperties> = {
   infoLabel: {
     fontSize: 13,
     fontWeight: 600,
-    color: "#fff",
+    color: "var(--text-primary)",
     letterSpacing: "-0.01em",
   },
   infoValue: {
     fontSize: 13,
     fontWeight: 600,
-    color: "#fff",
+    color: "var(--text-primary)",
     display: "flex",
     alignItems: "center",
     gap: 5,
@@ -437,7 +437,7 @@ const st: Record<string, React.CSSProperties> = {
   toggleLabel: {
     fontSize: 13,
     fontWeight: 600,
-    color: "#fff",
+    color: "var(--text-primary)",
     cursor: "pointer",
     userSelect: "none" as const,
     letterSpacing: "-0.01em",
@@ -451,16 +451,16 @@ const st: Record<string, React.CSSProperties> = {
   sectionLabel: {
     fontSize: 13,
     fontWeight: 600,
-    color: "#fff",
+    color: "var(--text-primary)",
     letterSpacing: "-0.01em",
   },
   textarea: {
     width: "100%",
     padding: "10px 12px",
     borderRadius: 8,
-    border: "1px solid rgba(255,255,255,0.06)",
-    background: "#1e1e1e",
-    color: "#e0e0e0",
+    border: "1px solid var(--border-subtle)",
+    background: "var(--bg-surface)",
+    color: "var(--text-primary)",
     fontSize: 13,
     fontFamily: "inherit",
     outline: "none",
@@ -471,7 +471,7 @@ const st: Record<string, React.CSSProperties> = {
   radioGroup: {
     display: "flex",
     flexDirection: "column",
-    background: "#1e1e1e",
+    background: "var(--bg-surface)",
     borderRadius: 8,
     overflow: "hidden",
   },
@@ -488,7 +488,7 @@ const st: Record<string, React.CSSProperties> = {
   },
   radioSeparator: {
     height: 1,
-    background: "rgba(255,255,255,0.07)",
+    background: "var(--bg-hover)",
     margin: "0 10px",
   },
   radioIcon: {
@@ -497,7 +497,7 @@ const st: Record<string, React.CSSProperties> = {
     justifyContent: "center",
     width: 18,
     flexShrink: 0,
-    color: "#e0e0e0",
+    color: "var(--text-primary)",
   },
   radioContent: {
     display: "flex",
@@ -508,12 +508,12 @@ const st: Record<string, React.CSSProperties> = {
   radioLabel: {
     fontSize: 13,
     fontWeight: 600,
-    color: "#fff",
+    color: "var(--text-primary)",
     letterSpacing: "-0.01em",
   },
   radioSub: {
     fontSize: 11,
-    color: "#707070",
+    color: "var(--text-dim)",
     fontWeight: 400,
   },
   btnContainer: {
@@ -524,8 +524,8 @@ const st: Record<string, React.CSSProperties> = {
     padding: "9px 0",
     borderRadius: 8,
     border: "none",
-    background: "#fff",
-    color: "#1a1a1a",
+    background: "var(--text-primary)",
+    color: "var(--bg-app)",
     fontSize: 13,
     fontWeight: 600,
     cursor: "pointer",

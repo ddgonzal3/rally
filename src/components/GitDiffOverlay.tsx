@@ -129,7 +129,7 @@ export function GitDiffContent({ rootPath }: GitDiffContentProps) {
         {/* Commit / Create PR — inline in tab header */}
         {(hasStaged || unstagedCount > 0 || createPrVisible) && (
           <>
-            <div style={{ width: 1, height: 14, background: "#333", margin: "0 2px" }} />
+            <div style={{ width: 1, height: 14, background: "var(--border)", margin: "0 2px" }} />
             <button
               ref={commitBtnRef}
               onClick={() => setCommitModalOpen(true)}
@@ -253,7 +253,7 @@ const cs: Record<string, React.CSSProperties> = {
     alignItems: "center",
     gap: 6,
     padding: "0 8px",
-    borderBottom: "1px solid #2a2a2a",
+    borderBottom: "1px solid var(--border)",
     flexShrink: 0,
     position: "relative",
   },
@@ -262,7 +262,7 @@ const cs: Record<string, React.CSSProperties> = {
     background: "none",
     border: "none",
     borderBottom: "2px solid transparent",
-    color: "#999",
+    color: "var(--text-dim)",
     fontSize: 12,
     cursor: "pointer",
     fontWeight: 500,
@@ -273,8 +273,8 @@ const cs: Record<string, React.CSSProperties> = {
     padding: "10px 8px",
     background: "none",
     border: "none",
-    borderBottom: "2px solid #e6edf3",
-    color: "#e6edf3",
+    borderBottom: "2px solid var(--text-primary)",
+    color: "var(--text-primary)",
     fontSize: 12,
     cursor: "pointer",
     fontWeight: 600,
@@ -287,7 +287,7 @@ const cs: Record<string, React.CSSProperties> = {
     scrollPaddingTop: 8,
   },
   empty: {
-    color: "#888",
+    color: "var(--text-dim)",
     fontSize: 13,
     textAlign: "center",
     padding: 48,
@@ -296,9 +296,9 @@ const cs: Record<string, React.CSSProperties> = {
   bulkActionBtn: {
     display: "inline-flex",
     alignItems: "center",
-    background: "#2a2a2a",
+    background: "var(--bg-elevated)",
     border: "none",
-    color: "#ddd",
+    color: "var(--text-primary)",
     fontSize: 11,
     fontWeight: 600,
     cursor: "pointer",
@@ -326,7 +326,7 @@ const cs: Record<string, React.CSSProperties> = {
   commitsSection: {
     marginBottom: 16,
     borderRadius: 8,
-    border: "1px solid #2a2a2a",
+    border: "1px solid var(--border)",
     overflow: "hidden",
   },
   commitsSectionHeader: {
@@ -336,12 +336,12 @@ const cs: Record<string, React.CSSProperties> = {
     gap: 6,
     padding: "8px 12px",
     border: "none",
-    background: "#222",
+    background: "var(--bg-elevated)",
     cursor: "pointer",
     textAlign: "left" as const,
     fontSize: 12,
     fontWeight: 600,
-    color: "#e6edf3",
+    color: "var(--text-primary)",
   },
   commitsSectionTitle: {
     flex: 1,
@@ -351,8 +351,8 @@ const cs: Record<string, React.CSSProperties> = {
     height: 16,
     padding: "0 5px",
     borderRadius: 8,
-    background: "#404040",
-    color: "#fff",
+    background: "var(--border)",
+    color: "var(--text-primary)",
     fontSize: 11,
     fontWeight: 600,
     lineHeight: "16px",
@@ -360,7 +360,7 @@ const cs: Record<string, React.CSSProperties> = {
     boxSizing: "border-box" as const,
   },
   commitsBody: {
-    borderTop: "1px solid #2a2a2a",
+    borderTop: "1px solid var(--border)",
   },
   commitRow: {
     display: "flex",
@@ -368,7 +368,7 @@ const cs: Record<string, React.CSSProperties> = {
     gap: 8,
     padding: "6px 12px",
     fontSize: 12,
-    borderBottom: "1px solid #222",
+    borderBottom: "1px solid var(--bg-elevated)",
   },
   commitSha: {
     fontFamily: "'SF Mono', 'Menlo', monospace",
@@ -383,12 +383,12 @@ const cs: Record<string, React.CSSProperties> = {
     overflow: "hidden",
     textOverflow: "ellipsis",
     whiteSpace: "nowrap" as const,
-    color: "#e6edf3",
+    color: "var(--text-primary)",
     fontWeight: 500,
   },
   commitDate: {
     fontSize: 11,
-    color: "#666",
+    color: "var(--text-dim)",
     flexShrink: 0,
     fontWeight: 500,
   },
@@ -406,7 +406,7 @@ const cs: Record<string, React.CSSProperties> = {
     width: 6,
     height: 6,
     borderRadius: "50%",
-    background: "#555",
+    background: "var(--text-dim)",
     animation: "claude-dot 1.4s ease-in-out infinite",
   },
 };

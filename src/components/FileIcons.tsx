@@ -10,7 +10,7 @@ export function ChevronIcon({ open }: { open: boolean }) {
       fill="currentColor"
       style={{
         flexShrink: 0,
-        color: "#888",
+        color: "var(--text-dim)",
         transform: open ? "rotate(90deg)" : "rotate(0deg)",
         transition: "transform 0.1s ease",
       }}
@@ -73,7 +73,7 @@ function getFileTypeInfo(name: string): FileTypeInfo | null {
 
 function getFileColor(name: string): string {
   const info = getFileTypeInfo(name);
-  return info?.color ?? "#888888";
+  return info?.color ?? "var(--text-dim)";
 }
 
 // ─── Shared text-label icon (used for both tabs and file explorer) ──────
@@ -125,7 +125,7 @@ export function FileIcon({
   if (isScriptFile(name)) return <TerminalPromptIcon size={16} />;
   const info = getFileTypeInfo(name);
   if (info) return <FileTypeLabel info={info} size={16} />;
-  return <DocumentIcon color="#888888" />;
+  return <DocumentIcon color="var(--text-dim)" />;
 }
 
 function FolderIcon({ open }: { open?: boolean }) {
@@ -137,7 +137,7 @@ function FolderIcon({ open }: { open?: boolean }) {
     <svg width="16" height="16" viewBox="0 0 16 16" fill="none" style={svgIconStyle}>
       <path
         d={d}
-        stroke="#999"
+        stroke="var(--text-dim)"
         strokeWidth="1.3"
         strokeLinejoin="round"
         strokeLinecap="round"
@@ -220,7 +220,7 @@ export function PaneTabIcon({
     if (info) return <FileTypeLabel info={info} size={16} />;
     return <SmallDocIcon color={getFileColor(fileName)} />;
   }
-  return <SmallDocIcon color="#888" />;
+  return <SmallDocIcon color="var(--text-dim)" />;
 }
 
 export const CLAUDE_PATH =

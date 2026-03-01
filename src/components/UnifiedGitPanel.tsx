@@ -415,12 +415,12 @@ export function UnifiedGitPanel() {
           bottom: 0,
           width: panelWidth != null ? panelWidth : "55vw",
           minWidth: 500,
-          background: "#1a1a1a",
+          background: "var(--bg-surface)",
           display: "flex",
           flexDirection: "row",
           overflow: "hidden",
           pointerEvents: "auto",
-          boxShadow: "-4px 0 16px rgba(0,0,0,0.25)",
+          boxShadow: "-4px 0 16px var(--shadow)",
           transform: expanded ? "translateX(0)" : "translateX(100%)",
           transition: expanded
             ? "transform 200ms ease-out"
@@ -482,7 +482,7 @@ export function UnifiedGitPanel() {
                   style={{
                     width: 1,
                     height: 14,
-                    background: "#333",
+                    background: "var(--border)",
                     margin: "0 4px",
                   }}
                 />
@@ -545,9 +545,9 @@ export function UnifiedGitPanel() {
                       display: "inline-flex",
                       alignItems: "center",
                       gap: 3,
-                      background: "#2a2a2a",
+                      background: "var(--bg-elevated)",
                       border: "none",
-                      color: "#ddd",
+                      color: "var(--text-primary)",
                       fontSize: 11,
                       fontWeight: 600,
                       cursor: pulling ? "default" : "pointer",
@@ -558,7 +558,7 @@ export function UnifiedGitPanel() {
                       flexShrink: 0,
                     }}
                   >
-                    <svg width={12} height={12} viewBox="0 -960 960 960" fill="#ddd" style={{ flexShrink: 0 }}>
+                    <svg width={12} height={12} viewBox="0 -960 960 960" fill="var(--text-primary)" style={{ flexShrink: 0 }}>
                       <path d="M440-800v487L216-537l-56 57 320 320 320-320-56-57-224 224v-487h-80Z" />
                     </svg>
                     {gitStatus!.tracking_behind}
@@ -600,8 +600,8 @@ export function UnifiedGitPanel() {
                       onClick={() => setForcePullConfirm(false)}
                       style={{
                         background: "transparent",
-                        border: "1px solid rgba(255,255,255,0.2)",
-                        color: "#ddd",
+                        border: "1px solid var(--border-subtle)",
+                        color: "var(--text-primary)",
                         fontSize: 11,
                         cursor: "pointer",
                         padding: "2px 8px",
@@ -673,7 +673,7 @@ export function UnifiedGitPanel() {
                   {(diffTab === "unstaged"
                     ? unstagedCount > 0
                     : stagedCount > 0) && (
-                    <div style={{ width: 1, height: 12, background: "#333" }} />
+                    <div style={{ width: 1, height: 12, background: "var(--border)" }} />
                   )}
                   <button
                     ref={commitBtnRef}
@@ -708,15 +708,15 @@ export function UnifiedGitPanel() {
                 alignItems: "center",
                 gap: 6,
                 padding: "4px 12px",
-                background: "#1a1a1a",
-                borderBottom: "1px solid #2a2a2a",
+                background: "var(--bg-surface)",
+                borderBottom: "1px solid var(--border)",
                 flexShrink: 0,
               }}
             >
               <span
                 style={{
                   fontSize: 11,
-                  color: "#e6edf3",
+                  color: "var(--text-primary)",
                   fontWeight: 500,
                   flex: 1,
                   minWidth: 0,
@@ -863,7 +863,7 @@ export function UnifiedGitPanel() {
                           style={{
                             height: 1,
                             width: "100%",
-                            background: "#2a2a2a",
+                            background: "var(--border)",
                           }}
                         />
                       </div>
@@ -891,7 +891,7 @@ export function UnifiedGitPanel() {
                               cursor: "pointer",
                               fontSize: 11,
                               fontWeight: 600,
-                              color: "#e6edf3",
+                              color: "var(--text-primary)",
                               textAlign: "left",
                             }}
                             className="changes-section-btn"
@@ -932,7 +932,7 @@ export function UnifiedGitPanel() {
                               height: 20,
                               border: "none",
                               background: "transparent",
-                              color: "#888",
+                              color: "var(--text-dim)",
                               cursor: "pointer",
                               padding: 0,
                               flexShrink: 0,
@@ -1066,7 +1066,7 @@ export function UnifiedGitPanel() {
                                       style={{
                                         padding: "8px 20px",
                                         fontSize: 11,
-                                        color: "#666",
+                                        color: "var(--text-dim)",
                                       }}
                                     >
                                       Loading...
@@ -1175,13 +1175,13 @@ const ms: Record<string, React.CSSProperties> = {
     padding: "0 12px",
     minHeight: 29,
     maxHeight: 29,
-    background: "#1a1a1a",
-    borderBottom: "1px solid #2a2a2a",
+    background: "var(--bg-surface)",
+    borderBottom: "1px solid var(--border)",
     flexShrink: 0,
   },
   repoName: {
     fontSize: 13,
-    color: "#e6edf3",
+    color: "var(--text-primary)",
     fontWeight: 600,
     pointerEvents: "none",
     whiteSpace: "nowrap",
@@ -1194,7 +1194,7 @@ const ms: Record<string, React.CSSProperties> = {
     background: "none",
     border: "none",
     borderBottom: "2px solid transparent",
-    color: "#888",
+    color: "var(--text-dim)",
     fontSize: 12,
     cursor: "pointer",
     fontWeight: 500,
@@ -1204,8 +1204,8 @@ const ms: Record<string, React.CSSProperties> = {
     padding: "8px 10px",
     background: "none",
     border: "none",
-    borderBottom: "2px solid #e0e0e0",
-    color: "#e0e0e0",
+    borderBottom: "2px solid var(--text-primary)",
+    color: "var(--text-primary)",
     fontSize: 12,
     cursor: "pointer",
     fontWeight: 600,
@@ -1214,8 +1214,8 @@ const ms: Record<string, React.CSSProperties> = {
     marginLeft: 6,
     fontSize: 11,
     fontWeight: 600,
-    color: "#999",
-    background: "rgba(255,255,255,0.08)",
+    color: "var(--text-dim)",
+    background: "var(--bg-hover)",
     borderRadius: 8,
     padding: "1px 6px",
     verticalAlign: "middle",
@@ -1225,8 +1225,8 @@ const ms: Record<string, React.CSSProperties> = {
     alignItems: "center",
     gap: 4,
     padding: "0 12px",
-    background: "#1a1a1a",
-    borderBottom: "1px solid #2a2a2a",
+    background: "var(--bg-surface)",
+    borderBottom: "1px solid var(--border)",
     flexShrink: 0,
   },
   sidebar: {
@@ -1246,7 +1246,7 @@ const ms: Record<string, React.CSSProperties> = {
   },
   resizeLine: {
     width: 1,
-    background: "#2a2a2a",
+    background: "var(--border)",
     pointerEvents: "none" as const,
   },
   sideTab: {
@@ -1254,7 +1254,7 @@ const ms: Record<string, React.CSSProperties> = {
     background: "none",
     border: "none",
     borderBottom: "2px solid transparent",
-    color: "#888",
+    color: "var(--text-dim)",
     fontSize: 12,
     cursor: "pointer",
     fontWeight: 500,
@@ -1264,8 +1264,8 @@ const ms: Record<string, React.CSSProperties> = {
     padding: "8px 8px",
     background: "none",
     border: "none",
-    borderBottom: "2px solid #e0e0e0",
-    color: "#e0e0e0",
+    borderBottom: "2px solid var(--text-primary)",
+    color: "var(--text-primary)",
     fontSize: 12,
     cursor: "pointer",
     fontWeight: 600,
@@ -1274,9 +1274,9 @@ const ms: Record<string, React.CSSProperties> = {
   actionBtn: {
     display: "inline-flex",
     alignItems: "center",
-    background: "#2a2a2a",
+    background: "var(--bg-elevated)",
     border: "none",
-    color: "#ddd",
+    color: "var(--text-primary)",
     fontSize: 11,
     fontWeight: 600,
     cursor: "pointer",
@@ -1302,7 +1302,7 @@ const ms: Record<string, React.CSSProperties> = {
     flexShrink: 0,
   },
   commitsSection: {
-    borderTop: "1px solid #2a2a2a",
+    borderTop: "1px solid var(--border)",
     display: "flex",
     flexDirection: "column",
     overflow: "hidden",
@@ -1313,7 +1313,7 @@ const ms: Record<string, React.CSSProperties> = {
     alignItems: "center",
     gap: 6,
     padding: "6px 10px",
-    background: "#222",
+    background: "var(--bg-elevated)",
     flexShrink: 0,
   },
   badge: {
@@ -1321,8 +1321,8 @@ const ms: Record<string, React.CSSProperties> = {
     height: 14,
     padding: "0 4px",
     borderRadius: 7,
-    background: "#404040",
-    color: "#fff",
+    background: "var(--border)",
+    color: "var(--text-primary)",
     fontSize: 10,
     fontWeight: 600,
     lineHeight: "14px",
@@ -1335,7 +1335,7 @@ const ms: Record<string, React.CSSProperties> = {
     gap: 6,
     padding: "4px 10px",
     fontSize: 11,
-    borderBottom: "1px solid #222",
+    borderBottom: "1px solid var(--bg-elevated)",
     width: "100%",
     border: "none",
     cursor: "pointer",
@@ -1344,7 +1344,7 @@ const ms: Record<string, React.CSSProperties> = {
   },
   commitTime: {
     fontSize: 10,
-    color: "#666",
+    color: "var(--text-dim)",
     flexShrink: 0,
     whiteSpace: "nowrap" as const,
   },
@@ -1354,7 +1354,7 @@ const ms: Record<string, React.CSSProperties> = {
     overflow: "hidden",
     textOverflow: "ellipsis",
     whiteSpace: "nowrap" as const,
-    color: "#e6edf3",
+    color: "var(--text-primary)",
     fontWeight: 500,
   },
   fileList: {
@@ -1388,12 +1388,12 @@ const ms: Record<string, React.CSSProperties> = {
     overflow: "hidden",
     textOverflow: "ellipsis",
     whiteSpace: "nowrap" as const,
-    color: "#e6edf3",
+    color: "var(--text-primary)",
     fontWeight: 500,
   },
   fileDir: {
     fontSize: 10,
-    color: "#666",
+    color: "var(--text-dim)",
     flexShrink: 0,
     maxWidth: 120,
     overflow: "hidden",
@@ -1414,13 +1414,13 @@ const ms: Record<string, React.CSSProperties> = {
   emptyDiff: {
     padding: 48,
     textAlign: "center" as const,
-    color: "#666",
+    color: "var(--text-dim)",
     fontSize: 13,
   },
   emptyFiles: {
     padding: 24,
     textAlign: "center" as const,
-    color: "#666",
+    color: "var(--text-dim)",
     fontSize: 12,
   },
   loadingContainer: {
@@ -1437,7 +1437,7 @@ const ms: Record<string, React.CSSProperties> = {
     width: 5,
     height: 5,
     borderRadius: "50%",
-    background: "#555",
+    background: "var(--text-dim)",
     animation: "claude-dot 1.4s ease-in-out infinite",
   },
 };

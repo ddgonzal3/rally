@@ -167,7 +167,7 @@ export function DiffView({
 
   if (loading) {
     return (
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100%", color: "#999", fontSize: 13 }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100%", color: "var(--text-dim)", fontSize: 13 }}>
         Loading diff...
       </div>
     );
@@ -261,15 +261,15 @@ const styles: Record<string, React.CSSProperties> = {
     alignItems: "center",
     gap: 6,
     padding: "4px 8px",
-    borderBottom: "1px solid #2a2a2a",
+    borderBottom: "1px solid var(--border)",
     flexShrink: 0,
-    background: "#1a1a1a",
+    background: "var(--bg-surface)",
   },
   actionBtn: {
-    background: "#2d2d2d",
-    border: "1px solid #3f3f3f",
+    background: "var(--bg-elevated)",
+    border: "1px solid var(--border)",
     borderRadius: 4,
-    color: "#cfcfcf",
+    color: "var(--text-secondary)",
     fontSize: 11,
     lineHeight: 1.2,
     padding: "3px 8px",

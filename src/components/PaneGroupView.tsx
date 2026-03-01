@@ -463,10 +463,10 @@ export function PaneGroupView({
                     onClick={(e) => e.stopPropagation()}
                     size={Math.max(renameValue.length, 4)}
                     style={{
-                      background: "rgba(255,255,255,0.08)",
-                      border: "1px solid rgba(255,255,255,0.2)",
+                      background: "var(--bg-hover)",
+                      border: "1px solid var(--border-subtle)",
                       borderRadius: 3,
-                      color: "#ddd",
+                      color: "var(--text-primary)",
                       outline: "none",
                       padding: "0 4px",
                       margin: "-1px 0",
@@ -523,7 +523,7 @@ export function PaneGroupView({
                           style={{
                             ...styles.mdTabBtn,
                             ...styles.tabActionActive,
-                            ...(mode === "split" ? { color: "#fff" } : {}),
+                            ...(mode === "split" ? { color: "var(--text-primary)" } : {}),
                           }}
                           onClick={(e) => {
                             e.stopPropagation();
@@ -726,7 +726,7 @@ function BreadcrumbBar({
       >
         <path
           d="M1.5 3C1.5 2.17 2.17 1.5 3 1.5H6.5L8.5 3.5H14.5C15.33 3.5 16 4.17 16 5V11C16 11.83 15.33 12.5 14.5 12.5H3C2.17 12.5 1.5 11.83 1.5 11Z"
-          stroke="#a1a1a1"
+          stroke="var(--text-secondary)"
           strokeWidth="1.2"
           strokeLinejoin="round"
           fill="none"
@@ -774,20 +774,20 @@ const bcStyles: Record<string, React.CSSProperties> = {
     minHeight: 22,
     maxHeight: 22,
     padding: "0 8px",
-    background: "#1b1b1b",
+    background: "var(--bg-app)",
     overflow: "hidden",
     flexShrink: 0,
   },
   segment: {
     fontSize: 13,
     fontWeight: 560,
-    color: "rgba(167, 165, 165, 1)",
+    color: "var(--text-secondary)",
     whiteSpace: "nowrap" as const,
     cursor: "default",
   },
   activeSegment: {},
   chevron: {
-    color: "#555",
+    color: "var(--text-dim)",
     flexShrink: 0,
     margin: "0 1px",
   },
@@ -982,7 +982,7 @@ const styles: Record<string, React.CSSProperties> = {
   tabBar: {
     display: "flex",
     alignItems: "stretch",
-    background: "#1a1a1a",
+    background: "var(--bg-surface)",
     minHeight: 29,
     maxHeight: 29,
     overflow: "hidden",
@@ -992,7 +992,7 @@ const styles: Record<string, React.CSSProperties> = {
     display: "flex",
     flex: 1,
     overflow: "hidden",
-    boxShadow: "inset 0 -1px 0 #2d2d2d",
+    boxShadow: "inset 0 -1px 0 var(--bg-elevated)",
   },
   tab: {
     display: "flex",
@@ -1001,20 +1001,20 @@ const styles: Record<string, React.CSSProperties> = {
     padding: "0 2px 0 8px",
     fontSize: 14,
     fontWeight: 500,
-    color: "#999",
+    color: "var(--text-dim)",
     cursor: "pointer",
-    background: "#1a1a1a",
+    background: "var(--bg-surface)",
     border: "none",
-    borderRight: "1px solid #2d2d2d",
-    boxShadow: "inset 0 -1px 0 #2d2d2d",
+    borderRight: "1px solid var(--bg-elevated)",
+    boxShadow: "inset 0 -1px 0 var(--bg-elevated)",
     whiteSpace: "nowrap" as const,
     userSelect: "none" as const,
     minWidth: 0,
     transition: "background 0.1s, color 0.1s",
   },
   tabActive: {
-    color: "#ddd",
-    background: "#1b1b1b",
+    color: "var(--text-primary)",
+    background: "var(--bg-app)",
     boxShadow: "inset 0 1px 0 #4191e0",
     marginBottom: -1,
     paddingBottom: 1,
@@ -1039,7 +1039,7 @@ const styles: Record<string, React.CSSProperties> = {
     height: 24,
     background: "none",
     border: "none",
-    color: "#b6b6b6",
+    color: "var(--text-secondary)",
     cursor: "pointer",
     borderRadius: 4,
     flexShrink: 0,
@@ -1055,7 +1055,7 @@ const styles: Record<string, React.CSSProperties> = {
     height: 21,
     background: "none",
     border: "none",
-    color: "#b2b2b2",
+    color: "var(--text-secondary)",
     cursor: "pointer",
     borderRadius: 4,
     flexShrink: 0,
@@ -1064,7 +1064,7 @@ const styles: Record<string, React.CSSProperties> = {
     transition: "background 0.06s, color 0.06s",
   },
   tabActionActive: {
-    color: "#f1f1f1",
+    color: "var(--text-primary)",
   },
   actions: {
     display: "flex",
@@ -1072,7 +1072,7 @@ const styles: Record<string, React.CSSProperties> = {
     gap: 0,
     padding: "0 4px",
     flexShrink: 0,
-    boxShadow: "inset 0 -1px 0 #2d2d2d",
+    boxShadow: "inset 0 -1px 0 var(--bg-elevated)",
   },
   actionBtn: {
     display: "flex",
@@ -1082,7 +1082,7 @@ const styles: Record<string, React.CSSProperties> = {
     height: 26,
     background: "none",
     border: "none",
-    color: "#aaa",
+    color: "var(--text-dim)",
     cursor: "pointer",
     fontSize: 12,
     borderRadius: 4,

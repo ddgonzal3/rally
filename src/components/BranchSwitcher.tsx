@@ -175,7 +175,7 @@ export function BranchSwitcher({
                 alignItems: "center",
                 gap: 5,
                 fontSize: 13,
-                color: "#e6edf3",
+                color: "var(--text-primary)",
                 fontWeight: 600,
                 cursor: "pointer",
                 border: "none",
@@ -186,27 +186,27 @@ export function BranchSwitcher({
                 overflow: "hidden",
                 whiteSpace: "nowrap",
                 textOverflow: "ellipsis",
-                background: open ? "rgba(255,255,255,0.12)" : "none",
+                background: open ? "var(--bg-active)" : "none",
               }
             : {
                 display: "inline-flex",
                 alignItems: "center",
                 gap: 5,
                 fontSize: 11,
-                color: "#bbb",
+                color: "var(--text-secondary)",
                 fontWeight: 400,
                 cursor: "pointer",
                 border: "none",
                 borderRadius: 4,
                 padding: "1px 4px",
-                background: open ? "rgba(255,255,255,0.08)" : "none",
+                background: open ? "var(--bg-hover)" : "none",
                 marginLeft: 8,
               }
         }
         onMouseEnter={(e) => {
           if (!open)
             (e.currentTarget as HTMLElement).style.background =
-              isPill ? "rgba(255,255,255,0.08)" : "rgba(255,255,255,0.06)";
+              isPill ? "var(--bg-hover)" : "var(--bg-hover)";
         }}
         onMouseLeave={(e) => {
           if (!open)
@@ -219,7 +219,7 @@ export function BranchSwitcher({
             height="15"
             viewBox="0 0 16 16"
             fill="none"
-            stroke="#e6edf3"
+            stroke="var(--text-primary)"
             strokeWidth="1.5"
             strokeLinecap="round"
             strokeLinejoin="round"
@@ -234,13 +234,13 @@ export function BranchSwitcher({
           <svg width="12" height="12" viewBox="0 0 16 16" fill="none" style={{ flexShrink: 0, position: "relative", top: 1, left: 1 }}>
             <path
               d="M5 3v6.5a2.5 2.5 0 005 0V3"
-              stroke="#bbb"
+              stroke="var(--text-secondary)"
               strokeWidth="1.1"
               strokeLinecap="round"
             />
-            <circle cx="5" cy="3" r="1.3" stroke="#bbb" strokeWidth="1.0" />
-            <circle cx="10" cy="3" r="1.3" stroke="#bbb" strokeWidth="1.0" />
-            <circle cx="10" cy="12" r="1.3" stroke="#bbb" strokeWidth="1.0" />
+            <circle cx="5" cy="3" r="1.3" stroke="var(--text-secondary)" strokeWidth="1.0" />
+            <circle cx="10" cy="3" r="1.3" stroke="var(--text-secondary)" strokeWidth="1.0" />
+            <circle cx="10" cy="12" r="1.3" stroke="var(--text-secondary)" strokeWidth="1.0" />
           </svg>
         )}
         {branchName}
@@ -249,7 +249,7 @@ export function BranchSwitcher({
           height={isPill ? 10 : 8}
           viewBox="0 0 10 10"
           fill="none"
-          stroke={isPill ? "#999" : "#888"}
+          stroke="var(--text-dim)"
           strokeWidth="1.5"
           strokeLinecap="round"
           strokeLinejoin="round"
@@ -268,12 +268,12 @@ export function BranchSwitcher({
             right: dropdownPos.right,
             minWidth: 240,
             maxWidth: 360,
-            background: "rgba(36, 36, 36, 0.78)",
+            background: "var(--frosted-bg)",
             backdropFilter: "blur(20px) saturate(180%)",
             WebkitBackdropFilter: "blur(20px) saturate(180%)",
-            border: "1px solid rgba(255, 255, 255, 0.12)",
+            border: "1px solid var(--border-subtle)",
             borderRadius: 8,
-            boxShadow: "0 8px 32px rgba(0,0,0,0.4)",
+            boxShadow: "0 8px 32px var(--shadow)",
             zIndex: 10000,
             display: "flex",
             flexDirection: "column" as const,
@@ -298,9 +298,9 @@ export function BranchSwitcher({
                 width: "100%",
                 padding: "5px 8px",
                 fontSize: 13,
-                color: "#e0e0e0",
-                background: "rgba(255,255,255,0.08)",
-                border: "1px solid rgba(255,255,255,0.12)",
+                color: "var(--text-primary)",
+                background: "var(--bg-hover)",
+                border: "1px solid var(--border-subtle)",
                 borderRadius: 5,
                 outline: "none",
                 boxSizing: "border-box" as const,
@@ -311,7 +311,7 @@ export function BranchSwitcher({
           {/* Branch list */}
           <div style={{ maxHeight: 300, overflowY: "auto", padding: "4px 0" }}>
             {filtered.length === 0 && (
-              <div style={{ padding: "8px 12px", fontSize: 12, color: "#999" }}>
+              <div style={{ padding: "8px 12px", fontSize: 12, color: "var(--text-dim)" }}>
                 No branches found
               </div>
             )}
@@ -325,7 +325,7 @@ export function BranchSwitcher({
                 }}
                 onMouseEnter={(e) => {
                   (e.currentTarget as HTMLElement).style.background =
-                    "rgba(255,255,255,0.08)";
+                    "var(--bg-hover)";
                 }}
                 onMouseLeave={(e) => {
                   (e.currentTarget as HTMLElement).style.background = "none";
@@ -343,7 +343,7 @@ export function BranchSwitcher({
                       fontSize: 12,
                     }}
                   >
-                    <span style={{ color: forceDeleteMode ? "#e8a838" : "#e0e0e0", flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    <span style={{ color: forceDeleteMode ? "#e8a838" : "var(--text-primary)", flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                       {forceDeleteMode
                         ? <>Unmerged commits will be lost!</>
                         : <>Delete <strong>{b.name}</strong>?</>}
@@ -369,9 +369,9 @@ export function BranchSwitcher({
                       style={{
                         padding: "2px 8px",
                         fontSize: 11,
-                        color: "#e0e0e0",
-                        background: "rgba(255,255,255,0.08)",
-                        border: "1px solid rgba(255,255,255,0.12)",
+                        color: "var(--text-primary)",
+                        background: "var(--bg-hover)",
+                        border: "1px solid var(--border-subtle)",
                         borderRadius: 4,
                         cursor: "pointer",
                         flexShrink: 0,
@@ -394,7 +394,7 @@ export function BranchSwitcher({
                         flex: 1,
                         padding: "5px 12px",
                         fontSize: 13,
-                        color: b.is_current ? "#fff" : "#e0e0e0",
+                        color: "var(--text-primary)",
                         fontWeight: b.is_current ? 600 : 400,
                         background: "none",
                         border: "none",
@@ -457,7 +457,7 @@ export function BranchSwitcher({
                         <svg width="12" height="12" viewBox="0 0 16 16" fill="none">
                           <path
                             d="M4.5 3V2.5a1 1 0 011-1h5a1 1 0 011 1V3M3 3.5h10M6 6.5v4M10 6.5v4M3.5 3.5l.5 9a1 1 0 001 1h6a1 1 0 001-1l.5-9"
-                            stroke="#999"
+                            stroke="var(--text-dim)"
                             strokeWidth="1.1"
                             strokeLinecap="round"
                             strokeLinejoin="round"
@@ -472,7 +472,7 @@ export function BranchSwitcher({
           </div>
 
           {/* Divider + Create branch */}
-          <div style={{ borderTop: "1px solid rgba(255,255,255,0.08)", padding: "4px 0" }}>
+          <div style={{ borderTop: "1px solid var(--bg-hover)", padding: "4px 0" }}>
             {!creatingBranch ? (
               <button
                 onClick={() => {
@@ -492,7 +492,7 @@ export function BranchSwitcher({
                   width: "100%",
                   padding: "5px 12px",
                   fontSize: 13,
-                  color: "#e0e0e0",
+                  color: "var(--text-primary)",
                   background: "none",
                   border: "none",
                   cursor: "pointer",
@@ -500,7 +500,7 @@ export function BranchSwitcher({
                 }}
                 onMouseEnter={(e) =>
                   ((e.currentTarget as HTMLElement).style.background =
-                    "rgba(255,255,255,0.08)")
+                    "var(--bg-hover)")
                 }
                 onMouseLeave={(e) =>
                   ((e.currentTarget as HTMLElement).style.background = "none")
@@ -539,9 +539,9 @@ export function BranchSwitcher({
                     flex: 1,
                     padding: "4px 8px",
                     fontSize: 13,
-                    color: "#e0e0e0",
-                    background: "rgba(255,255,255,0.08)",
-                    border: "1px solid rgba(255,255,255,0.12)",
+                    color: "var(--text-primary)",
+                    background: "var(--bg-hover)",
+                    border: "1px solid var(--border-subtle)",
                     borderRadius: 5,
                     outline: "none",
                     minWidth: 0,
@@ -553,9 +553,9 @@ export function BranchSwitcher({
                   style={{
                     padding: "4px 10px",
                     fontSize: 12,
-                    color: "#e0e0e0",
-                    background: "rgba(255,255,255,0.1)",
-                    border: "1px solid rgba(255,255,255,0.12)",
+                    color: "var(--text-primary)",
+                    background: "var(--bg-active)",
+                    border: "1px solid var(--border-subtle)",
                     borderRadius: 5,
                     cursor:
                       newBranchName.trim() && !switching ? "pointer" : "default",

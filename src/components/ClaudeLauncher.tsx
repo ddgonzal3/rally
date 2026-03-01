@@ -45,7 +45,7 @@ export const ClaudeLauncher = React.memo(function ClaudeLauncher({
           width="32"
           height="32"
           viewBox="0 0 24 24"
-          fill="#c5c5c5ff"
+          fill="var(--text-secondary)"
           fillRule="evenodd"
           xmlns="http://www.w3.org/2000/svg"
         >
@@ -120,7 +120,7 @@ const styles: Record<string, React.CSSProperties> = {
     alignItems: "center",
     justifyContent: "center",
     paddingBottom: "21%",
-    background: "#1b1b1b",
+    background: "var(--bg-app)",
     minHeight: 0,
     minWidth: 0,
     gap: 0,
@@ -138,13 +138,13 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: 20,
     fontFamily: "Georgia, 'Times New Roman', serif",
     fontWeight: 400,
-    color: "#ffffffff",
+    color: "var(--text-primary)",
     letterSpacing: "0.01em",
     lineHeight: 1,
   },
   path: {
     fontSize: 12,
-    color: "#ccccccff",
+    color: "var(--text-secondary)",
     fontWeight: 600,
     letterSpacing: "0.02em",
   },
@@ -156,7 +156,7 @@ const styles: Record<string, React.CSSProperties> = {
   trigger: {
     fontSize: 13,
     fontWeight: 600,
-    color: "#888",
+    color: "var(--text-dim)",
     cursor: "pointer",
     letterSpacing: "0.02em",
   },
@@ -165,27 +165,27 @@ const styles: Record<string, React.CSSProperties> = {
     bottom: "calc(100% + 4px)",
     left: "50%",
     transform: "translateX(-50%)",
-    background: "rgba(36, 36, 36, 0.78)",
+    background: "var(--frosted-bg)",
     backdropFilter: "blur(20px) saturate(180%)",
     WebkitBackdropFilter: "blur(20px) saturate(180%)",
-    border: "1px solid rgba(255, 255, 255, 0.12)",
+    border: "1px solid var(--border-subtle)",
     borderRadius: 6,
     padding: "4px 0",
     minWidth: 180,
     zIndex: 20,
-    boxShadow: "0 4px 16px rgba(0,0,0,0.4)",
+    boxShadow: "0 4px 16px var(--shadow)",
   },
   menuSection: {
     padding: "5px 12px 3px",
     fontSize: 10,
     fontWeight: 600,
-    color: "#fff",
+    color: "var(--text-primary)",
     textTransform: "uppercase" as const,
     letterSpacing: "0.04em",
   },
   menuDivider: {
     height: 1,
-    background: "rgba(255, 255, 255, 0.1)",
+    background: "var(--bg-hover)",
     margin: "4px 0",
   },
   menuItem: {
@@ -194,7 +194,7 @@ const styles: Record<string, React.CSSProperties> = {
     gap: 8,
     padding: "5px 12px",
     fontSize: 12,
-    color: "#ddd",
+    color: "var(--text-primary)",
     cursor: "pointer",
     whiteSpace: "nowrap" as const,
     background: "none",
@@ -207,7 +207,7 @@ const styles: Record<string, React.CSSProperties> = {
   },
   menuItemPath: {
     fontSize: 11,
-    color: "#888",
+    color: "var(--text-dim)",
     marginLeft: "auto",
     paddingLeft: 8,
   },

@@ -351,9 +351,9 @@ function EyeOpenIcon() {
 function EyeClosedIcon() {
   return (
     <svg width="15" height="15" viewBox="0 0 24 24" fill="none" style={{ flexShrink: 0 }}>
-      <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94" stroke="#777" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
-      <path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19" stroke="#777" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
-      <path d="M1 1l22 22" stroke="#777" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94" stroke="var(--text-dim)" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19" stroke="var(--text-dim)" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M1 1l22 22" stroke="var(--text-dim)" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   );
 }
@@ -440,7 +440,7 @@ function RenameInput({
         background: "transparent",
         border: "1px solid #007acc",
         borderRadius: 2,
-        color: "#e0e0e0",
+        color: "var(--text-primary)",
         fontSize: 12,
         fontWeight: 600,
         fontFamily: "inherit",
@@ -610,10 +610,10 @@ function FloatingTerminal({
         top: pos.y,
         width: 700,
         zIndex: 2000,
-        background: "#1a1a1a",
-        border: "1px solid #444",
+        background: "var(--bg-app)",
+        border: "1px solid var(--border)",
         borderRadius: 8,
-        boxShadow: "0 8px 32px rgba(0,0,0,0.5)",
+        boxShadow: "0 8px 32px var(--shadow)",
         display: "flex",
         flexDirection: "column",
         overflow: "hidden",
@@ -625,10 +625,10 @@ function FloatingTerminal({
           display: "flex",
           alignItems: "center",
           padding: "4px 10px",
-          background: "#252525",
+          background: "var(--bg-elevated)",
           cursor: "default",
           userSelect: "none",
-          borderBottom: "1px solid #333",
+          borderBottom: "1px solid var(--border)",
           gap: 8,
         }}
       >
@@ -637,7 +637,7 @@ function FloatingTerminal({
           style={{
             background: "none",
             border: "none",
-            color: "#666",
+            color: "var(--text-dim)",
             cursor: "default",
             fontSize: 13,
             padding: "0 2px",
@@ -646,7 +646,7 @@ function FloatingTerminal({
         >
           ✕
         </button>
-        <span style={{ fontSize: 11, fontWeight: 600, color: "#999" }}>
+        <span style={{ fontSize: 11, fontWeight: 600, color: "var(--text-dim)" }}>
           {run.scriptName}
         </span>
       </div>
@@ -673,7 +673,7 @@ const styles: Record<string, React.CSSProperties> = {
     textOverflow: "ellipsis",
     whiteSpace: "nowrap" as const,
     fontWeight: 600,
-    color: "#ddd",
+    color: "var(--text-primary)",
   },
   actionBtn: {
     display: "flex",
@@ -683,7 +683,7 @@ const styles: Record<string, React.CSSProperties> = {
     height: 20,
     background: "none",
     border: "none",
-    color: "#888",
+    color: "var(--text-dim)",
     cursor: "pointer",
     padding: 0,
     borderRadius: 3,
@@ -701,7 +701,7 @@ const styles: Record<string, React.CSSProperties> = {
     justifyContent: "center",
     background: "none",
     border: "none",
-    color: "#888",
+    color: "var(--text-dim)",
     cursor: "pointer",
     padding: 0,
     borderRadius: 3,
