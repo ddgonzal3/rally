@@ -1,4 +1,5 @@
 import React, { useState, useCallback, useRef, useEffect, useMemo } from "react";
+import { createPortal } from "react-dom";
 import { api } from "../lib/tauri";
 import { addToast } from "./ToastContainer";
 import type { BranchInfo } from "../lib/types";
@@ -27,10 +28,21 @@ export function BranchSwitcher({
   const [switching, setSwitching] = useState(false);
   const [confirmingDelete, setConfirmingDelete] = useState<string | null>(null);
   const [forceDeleteMode, setForceDeleteMode] = useState(false);
+  const [dropdownPos, setDropdownPos] = useState<{ top: number; left: number; right: number } | null>(null);
+  const buttonRef = useRef<HTMLButtonElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
 
   const openDropdown = useCallback(async () => {
+    // Calculate position from button before opening
+    if (buttonRef.current) {
+      const rect = buttonRef.current.getBoundingClientRect();
+      setDropdownPos({
+        top: rect.bottom + 4,
+        left: rect.left,
+        right: window.innerWidth - rect.right,
+      });
+    }
     setOpen(true);
     setFilter("");
     setCreatingBranch(false);
@@ -107,11 +119,15 @@ export function BranchSwitcher({
     [rootPath, switching],
   );
 
-  // Click-outside to close
+  // Click-outside to close — check both button and portal dropdown
   useEffect(() => {
     if (!open) return;
     const handler = (e: MouseEvent) => {
-      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
+      const target = e.target as Node;
+      if (
+        buttonRef.current && !buttonRef.current.contains(target) &&
+        dropdownRef.current && !dropdownRef.current.contains(target)
+      ) {
         setOpen(false);
       }
     };
@@ -148,8 +164,9 @@ export function BranchSwitcher({
   const isPill = variant === "pill";
 
   return (
-    <div ref={dropdownRef} style={{ position: "relative" }}>
+    <>
       <button
+        ref={buttonRef}
         onClick={() => (open ? setOpen(false) : openDropdown())}
         style={
           isPill
@@ -242,12 +259,13 @@ export function BranchSwitcher({
         </svg>
       </button>
 
-      {open && (
+      {open && dropdownPos && createPortal(
         <div
+          ref={dropdownRef}
           style={{
-            position: "absolute",
-            top: "calc(100% + 4px)",
-            ...(isPill ? { right: 0 } : { left: 0 }),
+            position: "fixed",
+            top: dropdownPos.top,
+            right: dropdownPos.right,
             minWidth: 240,
             maxWidth: 360,
             background: "rgba(36, 36, 36, 0.78)",
@@ -256,7 +274,7 @@ export function BranchSwitcher({
             border: "1px solid rgba(255, 255, 255, 0.12)",
             borderRadius: 8,
             boxShadow: "0 8px 32px rgba(0,0,0,0.4)",
-            zIndex: 1000,
+            zIndex: 10000,
             display: "flex",
             flexDirection: "column" as const,
             overflow: "hidden",
@@ -550,8 +568,9 @@ export function BranchSwitcher({
               </div>
             )}
           </div>
-        </div>
+        </div>,
+        document.body,
       )}
-    </div>
+    </>
   );
 }

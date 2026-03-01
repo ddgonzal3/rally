@@ -280,6 +280,7 @@ interface WorkspaceState {
   fetchAllRepos: () => Promise<void>;
   /** Rebase a repo path onto origin/<mainBranch>, then refresh git status */
   rebaseOnMain: (path: string, mainBranch: string) => Promise<void>;
+  syncBranch: (path: string, mainBranch: string) => Promise<string>;
   // Layout actions
   getOrCreateLayout: (workspaceId: string) => WorkspaceLayout;
   splitGroup: (
@@ -1041,6 +1042,28 @@ export const useWorkspaceStore = create<WorkspaceState>()(
       }
       if (msg.includes("CONFLICT") || msg.includes("conflict")) {
         throw new Error("Rebase had conflicts — aborted automatically. Resolve conflicts manually or merge via PR.");
+      }
+      throw e;
+    }
+  },
+
+  syncBranch: async (path, mainBranch) => {
+    try {
+      const result = await api.gitSync(path, mainBranch);
+      await get().refreshGitStatusForPath(path, mainBranch);
+      return result;
+    } catch (e) {
+      // Refresh status even on failure
+      get().refreshGitStatusForPath(path, mainBranch).catch(() => {});
+      const msg = String(e);
+      if (msg.includes("dirty")) {
+        throw new Error("Commit or stash changes first");
+      }
+      if (msg.includes("CONFLICT") || msg.includes("conflict")) {
+        throw new Error("Rebase had conflicts — aborted automatically");
+      }
+      if (msg.includes("Already on main")) {
+        throw new Error("Already on main branch");
       }
       throw e;
     }

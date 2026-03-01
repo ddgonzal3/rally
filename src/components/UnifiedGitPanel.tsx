@@ -92,6 +92,8 @@ export function UnifiedGitPanel() {
   );
   const [pulling, setPulling] = useState(false);
   const [forcePullConfirm, setForcePullConfirm] = useState(false);
+  const [stashCount, setStashCount] = useState(0);
+  const [stashing, setStashing] = useState(false);
   const lastFileFingerprint = useRef<string>("");
 
   // Mount/unmount lifecycle — slide in on open, slide out on close
@@ -108,6 +110,12 @@ export function UnifiedGitPanel() {
       return () => clearTimeout(timer);
     }
   }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Fetch stash count when panel opens or git status changes
+  useEffect(() => {
+    if (!rootPath || !open) return;
+    api.gitStashCount(rootPath).then(setStashCount).catch(() => setStashCount(0));
+  }, [rootPath, open, gitStatus]);
 
   // Escape key to close (but not if commit modal is open)
   useEffect(() => {
@@ -350,6 +358,36 @@ export function UnifiedGitPanel() {
     document.addEventListener("mousedown", handleMouseDown);
     return () => document.removeEventListener("mousedown", handleMouseDown);
   }, [expanded, closePanel]);
+
+  const handleStash = useCallback(async () => {
+    if (!rootPath) return;
+    setStashing(true);
+    try {
+      await api.gitStash(rootPath);
+      addToast({ type: "success", title: "Stashed", message: "Changes stashed" });
+      fetchDiffs();
+      api.gitStashCount(rootPath).then(setStashCount).catch(() => {});
+    } catch (e) {
+      addToast({ type: "warning", title: "Stash failed", message: String(e) });
+    } finally {
+      setStashing(false);
+    }
+  }, [rootPath, fetchDiffs]);
+
+  const handleStashPop = useCallback(async () => {
+    if (!rootPath) return;
+    setStashing(true);
+    try {
+      await api.gitStashPop(rootPath);
+      addToast({ type: "success", title: "Popped", message: "Stash restored" });
+      fetchDiffs();
+      api.gitStashCount(rootPath).then(setStashCount).catch(() => {});
+    } catch (e) {
+      addToast({ type: "warning", title: "Pop failed", message: String(e) });
+    } finally {
+      setStashing(false);
+    }
+  }, [rootPath, fetchDiffs]);
 
   if (!mounted) return null;
 
@@ -594,6 +632,24 @@ export function UnifiedGitPanel() {
                 Staged{changes ? ` \u00B7 ${stagedCount}` : ""}
               </button>
               <div style={{ flex: 1 }} />
+              {gitStatus?.dirty && (
+                <button
+                  onClick={handleStash}
+                  disabled={stashing}
+                  style={{ ...ms.actionBtn, opacity: stashing ? 0.5 : 1 }}
+                >
+                  {stashing ? "Stashing..." : "Stash"}
+                </button>
+              )}
+              {!gitStatus?.dirty && stashCount > 0 && (
+                <button
+                  onClick={handleStashPop}
+                  disabled={stashing}
+                  style={{ ...ms.actionBtn, opacity: stashing ? 0.5 : 1 }}
+                >
+                  Pop
+                </button>
+              )}
               {diffTab === "unstaged" && unstagedCount > 0 && (
                 <>
                   <button

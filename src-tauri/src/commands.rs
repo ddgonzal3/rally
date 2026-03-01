@@ -490,6 +490,26 @@ pub async fn git_rebase_on_main(workspace_path: String, main_branch: String) -> 
 }
 
 #[tauri::command]
+pub async fn git_sync(workspace_path: String, main_branch: String) -> Result<String, String> {
+    git_ops::sync_branch(&workspace_path, &main_branch).await
+}
+
+#[tauri::command]
+pub async fn git_stash(workspace_path: String) -> Result<String, String> {
+    git_ops::stash(&workspace_path).await
+}
+
+#[tauri::command]
+pub async fn git_stash_pop(workspace_path: String) -> Result<String, String> {
+    git_ops::stash_pop(&workspace_path).await
+}
+
+#[tauri::command]
+pub async fn git_stash_count(workspace_path: String) -> Result<u32, String> {
+    git_ops::stash_count(&workspace_path).await
+}
+
+#[tauri::command]
 pub async fn git_list_branches(workspace_path: String) -> Result<Vec<git_ops::BranchInfo>, String> {
     git_ops::list_branches(&workspace_path).await
 }
