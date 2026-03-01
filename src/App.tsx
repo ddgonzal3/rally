@@ -52,7 +52,7 @@ function WorkspacePicker({ onSelect }: { onSelect: (id: string) => void }) {
                 padding: "8px 12px",
                 border: "none",
                 background: isActive ? "var(--bg-hover)" : "transparent",
-                color: isActive ? "#fff" : "var(--text-secondary)",
+                color: isActive ? "var(--text-primary)" : "var(--text-secondary)",
                 fontSize: 13,
                 fontWeight: isActive ? 600 : 500,
                 cursor: "pointer",
