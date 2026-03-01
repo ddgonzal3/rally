@@ -4,25 +4,105 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Workbench</title>
+    <script>
+      (function() {
+        var theme = localStorage.getItem('rally:theme') || 'dark';
+        document.documentElement.setAttribute('data-theme', theme);
+      })();
+    </script>
     <style>
+      /* === Theme Variables === */
+      :root,
+      [data-theme="dark"] {
+        --bg-app: #1a1a1a;
+        --bg-surface: #161616;
+        --bg-elevated: #252525;
+        --bg-input: #2a2a2a;
+        --bg-hover: rgba(255, 255, 255, 0.08);
+        --bg-active: rgba(255, 255, 255, 0.12);
+        --text-primary: #e0e0e0;
+        --text-secondary: #bbb;
+        --text-dim: #888;
+        --border: #2a2a2a;
+        --border-subtle: rgba(255, 255, 255, 0.12);
+        --terminal-bg: #1b1b1b;
+        --terminal-fg: #d4d4d4;
+        --terminal-cursor: #aeafad;
+        --terminal-selection: #5a5a5aaa;
+        --frosted-bg: rgba(36, 36, 36, 0.78);
+        --frosted-border: rgba(255, 255, 255, 0.12);
+        --frosted-blur: blur(20px) saturate(180%);
+        --scrollbar-thumb: rgba(255, 255, 255, 0.08);
+        --scrollbar-thumb-hover: rgba(255, 255, 255, 0.15);
+        --shadow: rgba(0, 0, 0, 0.4);
+      }
+
+      [data-theme="dimmed"] {
+        --bg-app: #232328;
+        --bg-surface: #1e1e22;
+        --bg-elevated: #2a2a2e;
+        --bg-input: #333338;
+        --bg-hover: rgba(255, 255, 255, 0.06);
+        --bg-active: rgba(255, 255, 255, 0.10);
+        --text-primary: #d0d0d4;
+        --text-secondary: #a0a0a8;
+        --text-dim: #707078;
+        --border: #333338;
+        --border-subtle: rgba(255, 255, 255, 0.08);
+        --terminal-bg: #1e1e22;
+        --terminal-fg: #c8c8d0;
+        --terminal-cursor: #9a9aa0;
+        --terminal-selection: #4a4a5aaa;
+        --frosted-bg: rgba(40, 40, 44, 0.78);
+        --frosted-border: rgba(255, 255, 255, 0.08);
+        --frosted-blur: blur(20px) saturate(180%);
+        --scrollbar-thumb: rgba(255, 255, 255, 0.06);
+        --scrollbar-thumb-hover: rgba(255, 255, 255, 0.12);
+        --shadow: rgba(0, 0, 0, 0.3);
+      }
+
+      [data-theme="light"] {
+        --bg-app: #f0f0f0;
+        --bg-surface: #e8e8e8;
+        --bg-elevated: #ffffff;
+        --bg-input: #e0e0e0;
+        --bg-hover: rgba(0, 0, 0, 0.06);
+        --bg-active: rgba(0, 0, 0, 0.10);
+        --text-primary: #1a1a1a;
+        --text-secondary: #555;
+        --text-dim: #888;
+        --border: #d0d0d0;
+        --border-subtle: rgba(0, 0, 0, 0.08);
+        --terminal-bg: #fafafa;
+        --terminal-fg: #1a1a1a;
+        --terminal-cursor: #333;
+        --terminal-selection: #add6ff88;
+        --frosted-bg: rgba(255, 255, 255, 0.82);
+        --frosted-border: rgba(0, 0, 0, 0.08);
+        --frosted-blur: blur(20px) saturate(180%);
+        --scrollbar-thumb: rgba(0, 0, 0, 0.12);
+        --scrollbar-thumb-hover: rgba(0, 0, 0, 0.22);
+        --shadow: rgba(0, 0, 0, 0.15);
+      }
+
       * { margin: 0; padding: 0; box-sizing: border-box; }
       html, body, #root { height: 100%; width: 100%; overflow: hidden; }
       body {
         font-family: -apple-system, BlinkMacSystemFont, sans-serif;
-        background: #1a1a1a;
-        color: #e0e0e0;
+        background: var(--bg-app);
+        color: var(--text-primary);
         -webkit-font-smoothing: antialiased;
       }
       .xterm { -webkit-font-smoothing: subpixel-antialiased; }
       @keyframes spin { to { transform: rotate(360deg); } }
-      .file-node:hover { background: #2d2d2d !important; }
-      .file-node-active { background: #2a2a2a !important; color: #ddd !important; }
+      .file-node:hover { background: var(--bg-elevated) !important; }
+      .file-node-active { background: var(--bg-input) !important; color: var(--text-primary) !important; }
       .tab-close { opacity: 0; }
-      .tab-close-active { opacity: 1; color: #c8c8c8 !important; }
+      .tab-close-active { opacity: 1; color: var(--text-secondary) !important; }
       .pane-tab:hover .tab-close { opacity: 1; }
-      .tab-close:hover { background: rgba(255, 255, 255, 0.08) !important; color: #f0f0f0 !important; }
-      .tab-action:hover { background: rgba(255, 255, 255, 0.12) !important; color: #ccc !important; }
-      .pane-tab:not(.pane-tab-active):hover { background: #222 !important; }
+      .tab-close:hover { background: var(--bg-hover) !important; color: var(--text-primary) !important; }
+      .tab-action:hover { background: var(--bg-active) !important; color: var(--text-secondary) !important; }
+      .pane-tab:not(.pane-tab-active):hover { background: var(--bg-hover) !important; }
       .no-select, .no-select * { -webkit-user-select: none; user-select: none; }
       .no-select ::selection { background: transparent; }
       .no-select input.rename-input { -webkit-user-select: text !important; user-select: text !important; }
@@ -30,33 +110,33 @@
       .inline-edit-input, .inline-edit-input * { -webkit-user-select: text !important; user-select: text !important; }
       .inline-edit-input ::selection { background: rgba(0, 122, 204, 0.4) !important; }
       .launch-btn { cursor: pointer !important; }
-      .launch-btn:hover span { color: #ddd !important; }
-      .launch-btn:hover svg path { fill: #aaa !important; }
+      .launch-btn:hover span { color: var(--text-primary) !important; }
+      .launch-btn:hover svg path { fill: var(--text-secondary) !important; }
       .sidebar-item { cursor: pointer; }
-      .sidebar-item:not(.sidebar-item-active):hover { background: #222 !important; }
-      .sidebar-btn:hover { background: #222 !important; }
+      .sidebar-item:not(.sidebar-item-active):hover { background: var(--bg-hover) !important; }
+      .sidebar-btn:hover { background: var(--bg-hover) !important; }
       .hover-brighten { opacity: 0.6; transition: opacity 0.15s, filter 0.15s; }
       .hover-brighten:hover { opacity: 1 !important; filter: brightness(1.5); }
       .git-status-btn { cursor: pointer; }
       .git-status-btn svg { opacity: 0.7; transition: opacity 0.15s; will-change: opacity; }
       .git-status-btn:hover svg { opacity: 1 !important; }
       .repo-action-btn { transition: color 0.12s; }
-      .repo-action-btn:hover { color: #ddd !important; }
+      .repo-action-btn:hover { color: var(--text-primary) !important; }
       .script-play-btn { opacity: 0 !important; transition: opacity 0.1s; }
       .file-node:hover .script-play-btn { opacity: 1 !important; }
       .change-item { cursor: pointer; }
-      .change-item:not(.change-item-selected):hover { background: #2d2d2d !important; }
+      .change-item:not(.change-item-selected):hover { background: var(--bg-elevated) !important; }
       .change-item .change-action-btn { display: none; transition: color 0.12s; }
       .change-item:hover .change-action-btn,
       .change-item-selected .change-action-btn { display: inline-flex; }
-      .change-item .change-action-btn:hover { color: #ddd !important; }
-      .changes-section-btn:hover { color: #fff !important; }
+      .change-item .change-action-btn:hover { color: var(--text-primary) !important; }
+      .changes-section-btn:hover { color: var(--text-primary) !important; }
       .repo-card:hover .repo-terminal-btn { opacity: 1 !important; }
-      .repo-terminal-btn:hover { background: rgba(255, 255, 255, 0.08) !important; }
-      .repo-terminal-btn:hover svg path { stroke: #ddd !important; }
-      .layout-preset-row:hover { background: rgba(255, 255, 255, 0.08); }
+      .repo-terminal-btn:hover { background: var(--bg-hover) !important; }
+      .repo-terminal-btn:hover svg path { stroke: var(--text-primary) !important; }
+      .layout-preset-row:hover { background: var(--bg-hover); }
       .layout-preset-row:hover .layout-preset-delete { opacity: 1 !important; }
-      .layout-preset-delete:hover { color: #ddd !important; background: rgba(255, 255, 255, 0.1); }
+      .layout-preset-delete:hover { color: var(--text-primary) !important; background: var(--bg-hover); }
       .hide-native-scrollbar::-webkit-scrollbar { display: none !important; }
       .hide-native-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
       /* Fix Monaco find widget close button — it's the only absolutely-positioned button;
@@ -72,9 +152,9 @@
       .monaco-editor .find-widget .codicon-find-selection {
         display: none !important;
       }
-      .activity-btn:hover { background: rgba(255, 255, 255, 0.08) !important; }
-      .activity-btn-active { background: rgba(255, 255, 255, 0.068) !important; }
-      .dropdown-item:hover { background: rgba(255, 255, 255, 0.08) !important; }
+      .activity-btn:hover { background: var(--bg-hover) !important; }
+      .activity-btn-active { background: var(--bg-hover) !important; }
+      .dropdown-item:hover { background: var(--bg-hover) !important; }
       @keyframes claude-dot {
         0%, 80%, 100% { opacity: 0.15; transform: scale(0.8); }
         40% { opacity: 1; transform: scale(1.2); }
