@@ -25,6 +25,7 @@ import type {
   WorkspaceMode,
   ProductSession,
   ShellPanel,
+  ThemeName,
 } from "../lib/types";
 import {
   createDefaultLayout,
@@ -233,6 +234,9 @@ interface WorkspaceState {
   shellPanels: Record<string, ShellPanel>;
   /** Cached RALLY.json configs per repo path (not persisted) */
   rallyConfigs: Record<string, RallyConfig>;
+  /** Current UI theme */
+  theme: ThemeName;
+  setTheme: (theme: ThemeName) => void;
 
   // Dirty pane tracking
   markPaneDirty: (paneId: string) => void;
@@ -635,6 +639,12 @@ export const useWorkspaceStore = create<WorkspaceState>()(
   productSessions: {},
   shellPanels: {},
   rallyConfigs: {},
+  theme: (localStorage.getItem('rally:theme') as ThemeName) || 'dark',
+  setTheme: (theme) => {
+    localStorage.setItem('rally:theme', theme);
+    document.documentElement.setAttribute('data-theme', theme);
+    set({ theme });
+  },
 
   markPaneDirty: (paneId) => {
     const s = get();
