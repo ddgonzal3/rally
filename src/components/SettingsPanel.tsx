@@ -5,6 +5,7 @@ import { api } from "../lib/tauri";
 import { showContextMenu } from "../lib/contextMenu";
 import { ChevronIcon, FileIcon } from "./FileIcons";
 import { ScrollArea } from "./ScrollArea";
+import type { ThemeName } from "../lib/types";
 
 interface FileEntry {
   name: string;
@@ -221,6 +222,95 @@ function InlineNameInput({
   );
 }
 
+// --- Theme Picker ---
+
+const themeOptions: { id: ThemeName; label: string; colors: [string, string, string] }[] = [
+  { id: "light", label: "Light", colors: ["#f0f0f0", "#e8e8e8", "#ffffff"] },
+  { id: "dimmed", label: "Dimmed", colors: ["#232328", "#1e1e22", "#2a2a2e"] },
+  { id: "dark", label: "Dark", colors: ["#1a1a1a", "#161616", "#252525"] },
+];
+
+function ThemePicker() {
+  const theme = useWorkspaceStore((s) => s.theme);
+  const setTheme = useWorkspaceStore((s) => s.setTheme);
+
+  return (
+    <div style={themePickerStyles.section}>
+      <span style={themePickerStyles.label}>Theme</span>
+      <div style={themePickerStyles.cards}>
+        {themeOptions.map((t) => {
+          const active = theme === t.id;
+          return (
+            <button
+              key={t.id}
+              onClick={() => setTheme(t.id)}
+              style={{
+                ...themePickerStyles.card,
+                border: `1px solid ${active ? "var(--text-secondary)" : "var(--border)"}`,
+              }}
+            >
+              <div style={themePickerStyles.swatches}>
+                {t.colors.map((c, i) => (
+                  <div
+                    key={i}
+                    style={{
+                      width: 14,
+                      height: 14,
+                      borderRadius: 3,
+                      background: c,
+                      border: "1px solid rgba(128,128,128,0.3)",
+                    }}
+                  />
+                ))}
+              </div>
+              <span style={{ fontSize: 11, color: "var(--text-primary)", fontWeight: active ? 600 : 400 }}>
+                {t.label}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+const themePickerStyles: Record<string, React.CSSProperties> = {
+  section: {
+    padding: "10px 12px",
+    borderBottom: "1px solid var(--border)",
+    flexShrink: 0,
+  },
+  label: {
+    fontSize: 11,
+    fontWeight: 700,
+    textTransform: "uppercase",
+    letterSpacing: "0.05em",
+    color: "var(--text-primary)",
+    display: "block",
+    marginBottom: 8,
+  },
+  cards: {
+    display: "flex",
+    gap: 6,
+  },
+  card: {
+    flex: 1,
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "center",
+    gap: 6,
+    padding: "8px 4px",
+    borderRadius: 6,
+    background: "var(--bg-elevated)",
+    cursor: "pointer",
+    outline: "none",
+  },
+  swatches: {
+    display: "flex",
+    gap: 3,
+  },
+};
+
 // --- Main component ---
 
 export function GlobalConfigExplorer() {
@@ -367,6 +457,7 @@ export function GlobalConfigExplorer() {
 
   return (
     <div style={styles.container} onContextMenu={handleRootContextMenu}>
+      <ThemePicker />
       <div style={styles.header}>
         <span style={styles.headerText}>Claude Config</span>
       </div>
@@ -400,7 +491,7 @@ const styles: Record<string, React.CSSProperties> = {
     flexDirection: "column",
     height: "100%",
     minHeight: 0,
-    background: "#1a1a1a",
+    background: "var(--bg-app)",
     overflow: "hidden",
     userSelect: "none",
   },
@@ -411,7 +502,7 @@ const styles: Record<string, React.CSSProperties> = {
     padding: "0 8px 0 12px",
     minHeight: 29,
     maxHeight: 29,
-    borderBottom: "1px solid #333",
+    borderBottom: "1px solid var(--border)",
     flexShrink: 0,
   },
   headerText: {
@@ -419,11 +510,11 @@ const styles: Record<string, React.CSSProperties> = {
     fontWeight: 700,
     textTransform: "uppercase" as const,
     letterSpacing: "0.05em",
-    color: "#fff",
+    color: "var(--text-primary)",
   },
   emptyMsg: {
     padding: "8px 12px",
-    color: "#888",
+    color: "var(--text-dim)",
     fontSize: 11,
   },
   node: {
@@ -434,7 +525,7 @@ const styles: Record<string, React.CSSProperties> = {
     padding: "2px 2px",
     background: "none",
     border: "none",
-    color: "#ddd",
+    color: "var(--text-primary)",
     fontSize: 12,
     textAlign: "left" as const,
     lineHeight: 1.4,
@@ -458,10 +549,10 @@ const styles: Record<string, React.CSSProperties> = {
     margin: "2px 8px",
     padding: "2px 6px",
     fontSize: 12,
-    background: "#2a2a2a",
-    border: "1px solid #555",
+    background: "var(--bg-input)",
+    border: "1px solid var(--border)",
     borderRadius: 3,
-    color: "#eee",
+    color: "var(--text-primary)",
     outline: "none",
   },
 };
