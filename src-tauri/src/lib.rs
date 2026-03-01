@@ -1,4 +1,3 @@
-pub mod chat_manager;
 pub mod commands;
 pub mod config_ops;
 pub mod git_ops;

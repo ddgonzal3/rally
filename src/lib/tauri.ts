@@ -231,20 +231,4 @@ export const api = {
   checkWorkspaceReady: (rootPath: string) =>
     invoke<WorkspaceReadiness>("check_workspace_ready", { rootPath }),
 
-  // --- Chat Manager (Product Mode) ---
-
-  startChatSession: (cwd: string, prompt: string) =>
-    invoke<string>("start_chat_session", { cwd, prompt }),
-
-  sendChatMessage: (sessionId: string, text: string) =>
-    invoke<void>("send_chat_message", { sessionId, text }),
-
-  respondToPermission: (sessionId: string, requestId: string, decision: "allow" | "deny", message?: string) =>
-    invoke<void>("respond_to_permission", { sessionId, requestId, decision, message: message ?? null }),
-
-  cancelChatSession: (sessionId: string) =>
-    invoke<void>("cancel_chat_session", { sessionId }),
-
-  endChatSession: (sessionId: string) =>
-    invoke<void>("end_chat_session", { sessionId }),
 };

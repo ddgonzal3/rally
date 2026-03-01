@@ -190,44 +190,11 @@ export interface ProductSession {
   state: "idle" | "active";
   ptyId: string | undefined;
   prompt: string;
-  chatSessionId?: string;  // sidecar session ID for chat mode
 }
 
 export interface ShellPanel {
   ptyId: string;
   visible: boolean;
-}
-
-// --- Chat UI Types (Product Mode) ---
-
-export type ChatContentBlock =
-  | { type: 'text'; text: string }
-  | { type: 'tool_use'; id: string; name: string; input: unknown }
-  | { type: 'tool_result'; tool_use_id: string; content: string; is_error?: boolean }
-  | { type: 'thinking'; text: string };
-
-export interface ChatMessage {
-  id: string;
-  role: 'assistant' | 'user';
-  content: ChatContentBlock[];
-  timestamp: number;
-}
-
-export interface PermissionRequest {
-  request_id: string;
-  tool_name: string;
-  tool_input: unknown;
-}
-
-export interface ChatSession {
-  sessionId: string;
-  status: 'idle' | 'streaming' | 'waiting_permission' | 'complete' | 'error';
-  messages: ChatMessage[];
-  streamingText: string;
-  pendingPermission: PermissionRequest | null;
-  costUsd: number;
-  numTurns: number;
-  errorMessage?: string;
 }
 
 // --- Rally Script Editor Types ---
