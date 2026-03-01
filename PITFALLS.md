@@ -56,6 +56,12 @@ When a zustand selector returns a fallback empty array (`[]`) for missing data, 
 
 Rally uses native macOS context menus via Tauri's `showContextMenu()` for all right-click and dropdown interactions. Never build custom HTML dropdown menus with manual hover styling — they look different from native menus and break UI consistency. Use `showContextMenu()` from `src/lib/contextMenu.ts`. The only exception is when you need inline input (e.g. a text field for naming) — in that case, show a minimal frosted popover just for the input, and use native menus for the action list.
 
+## Mode Switching: Use `display: none`, Never Unmount Terminal Components
+
+When toggling between product mode and dev mode, **never use a conditional ternary** that unmounts one view and mounts the other. Unmounting a Terminal component destroys its xterm.js instance. When remounting, the Terminal must replay the PTY output buffer into a fresh xterm — but TUI apps like Claude Code use the alternate screen buffer, cursor positioning, and other stateful escape sequences. The replayed buffer either causes doubled content (full replay + SIGWINCH redraw) or garbled output (cleared buffer loses terminal state).
+
+**Fix:** Keep both `ProductChatPanel` and `PaneLayout` always mounted, toggling `display: none` / `display: flex`. This matches the pattern that already works for workspace switching (PaneLayout uses `display: none` for inactive workspaces). The ResizeObserver fires when the container goes from 0 to real dimensions, triggering SIGWINCH → TUI redraws correctly.
+
 ## Context Menu: Always `stopPropagation()` in Nested Handlers
 
 When a component tree has `onContextMenu` handlers at multiple levels (e.g. a tree node AND its container), the child handler **must** call `e.stopPropagation()` in addition to `e.preventDefault()`. Without it, the event bubbles to the parent, which fires a second `showContextMenu()` call. That second call clears the ghost-event suppression flag, so when the user clicks elsewhere to dismiss, macOS dispatches a ghost `contextmenu` event that opens yet another menu. Symptom: dismissing a right-click menu by clicking elsewhere opens a new menu at the click location.

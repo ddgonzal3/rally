@@ -1364,14 +1364,17 @@ export function App() {
         )}
         <div style={styles.main}>
           <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", position: "relative" }}>
-            {isProductMode && activeWorkspaceId && activeRootPath ? (
-              <ProductChatPanel
-                rootPath={activeRootPath}
-                workspaceId={activeWorkspaceId}
-              />
-            ) : (
-              <PaneLayout />
+            {activeWorkspaceId && activeRootPath && (
+              <div style={{ display: isProductMode ? "flex" : "none", flex: 1, flexDirection: "column" as const, minWidth: 0, minHeight: 0 }}>
+                <ProductChatPanel
+                  rootPath={activeRootPath}
+                  workspaceId={activeWorkspaceId}
+                />
+              </div>
             )}
+            <div style={{ display: isProductMode ? "none" : "flex", flex: 1, flexDirection: "column" as const, minWidth: 0, minHeight: 0 }}>
+              <PaneLayout />
+            </div>
           </div>
         </div>
         <UnifiedGitPanel />

@@ -252,6 +252,7 @@ export interface Pane {
   initialLine?: number;  // Jump to this line on editor mount (from Cmd+click)
   initialCol?: number;   // Jump to this column on editor mount (from Cmd+click)
   editorViewMode?: EditorViewMode;
+  customTitle?: string;  // User-set tab name — takes priority over auto-generated label
 }
 
 export type SplitDirection = "horizontal" | "vertical";
