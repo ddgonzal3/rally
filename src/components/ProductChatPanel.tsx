@@ -1,6 +1,5 @@
 import React, { useState, useCallback, useRef, useEffect } from "react";
-import { listen, type UnlistenFn } from "@tauri-apps/api/event";
-import { ClaudeTerminalWrapper } from "./ClaudeTerminalWrapper";
+import { ChatView } from "./ChatView";
 import { Terminal } from "./Terminal";
 import { useWorkspaceStore } from "../stores/workspaceStore";
 import { api } from "../lib/tauri";
@@ -24,18 +23,14 @@ export function ProductChatPanel({ rootPath, workspaceId }: ProductChatPanelProp
   );
   const setProductSession = useWorkspaceStore((s) => s.setProductSession);
   const clearProductSession = useWorkspaceStore((s) => s.clearProductSession);
+  const startChatSession = useWorkspaceStore((s) => s.startChatSession);
+  const clearChatSession = useWorkspaceStore((s) => s.clearChatSession);
 
-  const { state, ptyId, prompt } = session;
+  const { state, prompt } = session;
 
   const [inputFocused, setInputFocused] = useState(false);
   const [readiness, setReadiness] = useState<{ ready: boolean; issues: string[] } | null>(null);
-  const ptyIdRef = useRef<string | undefined>(undefined);
-  const unlistenExitRef = useRef<UnlistenFn | null>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
-
-  useEffect(() => {
-    ptyIdRef.current = ptyId;
-  }, [ptyId]);
 
   const openFile = useWorkspaceStore((s) => s.openFile);
   const gitStatus = useWorkspaceStore((s) => s.gitStatuses[rootPath]);
@@ -111,46 +106,15 @@ export function ProductChatPanel({ rootPath, workspaceId }: ProductChatPanelProp
     [workspaceId, openFile],
   );
 
-  const handlePtySpawned = useCallback((id: string) => {
-    ptyIdRef.current = id;
-    setProductSession(workspaceId, { state: "active", ptyId: id, prompt });
-  }, [workspaceId, prompt, setProductSession]);
-
-  // Listen for PTY exit to transition back to idle
-  useEffect(() => {
-    if (!ptyId) return;
-
-    let cancelled = false;
-    listen<{ code: number | null }>(`pty-exit-${ptyId}`, () => {
-      if (cancelled) return;
-      // Small delay so user can see the exit message
-      setTimeout(() => {
-        if (!cancelled) {
-          ptyIdRef.current = undefined;
-          clearProductSession(workspaceId);
-          setReadiness(null);
-        }
-      }, 2000);
-    }).then((unlisten) => {
-      if (cancelled) {
-        unlisten();
-      } else {
-        unlistenExitRef.current = unlisten;
-      }
-    });
-
-    return () => {
-      cancelled = true;
-      unlistenExitRef.current?.();
-      unlistenExitRef.current = null;
-    };
-  }, [ptyId, workspaceId, clearProductSession]);
-
   const handleSubmit = useCallback(() => {
     const trimmed = prompt.trim();
     if (!trimmed) return;
-    setProductSession(workspaceId, { state: "active", ptyId: undefined, prompt: trimmed });
-  }, [prompt, workspaceId, setProductSession]);
+    startChatSession(workspaceId, rootPath, trimmed).catch((e) => {
+      console.error("Failed to start chat session:", e);
+      // Fallback: still show as active to not lose the prompt
+      setProductSession(workspaceId, { state: "active", ptyId: undefined, prompt: trimmed });
+    });
+  }, [prompt, workspaceId, rootPath, startChatSession, setProductSession]);
 
   // Auto-resize textarea to fit content
   const autoResize = useCallback(() => {
@@ -176,14 +140,15 @@ export function ProductChatPanel({ rootPath, workspaceId }: ProductChatPanelProp
   );
 
   const handleNewSession = useCallback(() => {
-    if (ptyIdRef.current) {
-      api.killPty(ptyIdRef.current);
-    }
-    unlistenExitRef.current?.();
-    unlistenExitRef.current = null;
-    ptyIdRef.current = undefined;
-    clearProductSession(workspaceId);
-  }, [workspaceId, clearProductSession]);
+    // Clean up chat session
+    clearChatSession(workspaceId).then(() => {
+      clearProductSession(workspaceId);
+      setReadiness(null);
+    }).catch(() => {
+      clearProductSession(workspaceId);
+      setReadiness(null);
+    });
+  }, [workspaceId, clearChatSession, clearProductSession]);
 
   // Focus input when returning to idle
   useEffect(() => {
@@ -370,16 +335,7 @@ export function ProductChatPanel({ rootPath, workspaceId }: ProductChatPanelProp
           </button>
         </div>
       </div>
-      <div style={styles.terminalArea}>
-        <ClaudeTerminalWrapper
-          key={ptyId ?? "fresh"}
-          cwd={rootPath}
-          command={ptyId ? undefined : `claude --dangerously-skip-permissions '${prompt.replace(/'/g, "'\\''")}'`}
-          ptyId={ptyId}
-          onPtySpawned={handlePtySpawned}
-          onFileOpen={handleFileOpen}
-        />
-      </div>
+      <ChatView workspaceId={workspaceId} rootPath={rootPath} />
     </div>
     {shellPanel?.visible && (
       <div style={{ height: `${shellHeight}%`, minHeight: 80, display: "flex", flexDirection: "column", zIndex: 2, flexShrink: 0 }}>
