@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useLayoutEffect, useRef } from "react";
+import React, { useCallback, useRef } from "react";
 import type { SplitDirection } from "../lib/types";
 
 interface ResizeHandleProps {
@@ -7,83 +7,11 @@ interface ResizeHandleProps {
   onResize: (ratio: number) => void;
 }
 
-// --- Row overlay helpers ---
-// Row (vertical) resize handles use a full-width overlay line so the separator
-// visually spans all columns as one continuous line.
-
-function highlightRowOverlays() {
-  document
-    .querySelectorAll<HTMLDivElement>("[data-row-overlay] > div")
-    .forEach((el) => {
-      el.style.background = "var(--border)";
-    });
-}
-
-function unhighlightRowOverlays() {
-  document
-    .querySelectorAll<HTMLDivElement>("[data-row-overlay] > div")
-    .forEach((el) => {
-      el.style.background = "var(--border)";
-    });
-}
-
 export function ResizeHandle({ direction, ratio, onResize }: ResizeHandleProps) {
   const handleRef = useRef<HTMLDivElement>(null);
-  const overlayRef = useRef<HTMLDivElement | null>(null);
   const dragging = useRef(false);
 
   const isRowHandle = direction === "vertical";
-
-  // Create/destroy a full-width overlay line for row handles.
-  // The overlay is appended to the nearest [data-pane-area] ancestor
-  // (the PaneLayout container) so it spans the pane area, not the full viewport.
-  useEffect(() => {
-    if (!isRowHandle || !handleRef.current) return;
-
-    const paneArea = handleRef.current.closest("[data-pane-area]");
-    if (!paneArea) return;
-
-    const overlay = document.createElement("div");
-    overlay.setAttribute("data-row-overlay", "");
-    overlay.style.cssText = `
-      position: absolute; left: 0; right: 0; height: 1px;
-      pointer-events: none; z-index: 100;
-    `;
-    const line = document.createElement("div");
-    line.style.cssText = `
-      width: 100%; height: 1px; background: var(--border);
-      transition: background 0.15s; opacity: 0.8;
-    `;
-    overlay.appendChild(line);
-    paneArea.appendChild(overlay);
-    overlayRef.current = overlay;
-
-    // Reposition on window resize
-    const onWindowResize = () => {
-      if (handleRef.current && overlay) {
-        const handleRect = handleRef.current.getBoundingClientRect();
-        const areaRect = paneArea.getBoundingClientRect();
-        overlay.style.top = `${handleRect.bottom - 1 - areaRect.top}px`;
-      }
-    };
-    window.addEventListener("resize", onWindowResize);
-
-    return () => {
-      window.removeEventListener("resize", onWindowResize);
-      overlay.remove();
-      overlayRef.current = null;
-    };
-  }, [isRowHandle]);
-
-  // Keep overlay positioned at the handle's bottom edge (relative to pane area)
-  useLayoutEffect(() => {
-    if (!isRowHandle || !overlayRef.current || !handleRef.current) return;
-    const paneArea = handleRef.current.closest("[data-pane-area]");
-    if (!paneArea) return;
-    const handleRect = handleRef.current.getBoundingClientRect();
-    const areaRect = paneArea.getBoundingClientRect();
-    overlayRef.current.style.top = `${handleRect.bottom - 1 - areaRect.top}px`;
-  });
 
   const onMouseDown = useCallback(
     (e: React.MouseEvent) => {
@@ -104,8 +32,6 @@ export function ResizeHandle({ direction, ratio, onResize }: ResizeHandleProps) 
       const handleSize = isVertical ? handleRect.height : handleRect.width;
       const usable = Math.max(1, total - handleSize);
 
-      if (isVertical) highlightRowOverlays();
-
       const onMouseMove = (ev: MouseEvent) => {
         if (!dragging.current) return;
         const pointer = isVertical ? ev.clientY : ev.clientX;
@@ -116,7 +42,6 @@ export function ResizeHandle({ direction, ratio, onResize }: ResizeHandleProps) 
       const onMouseUp = () => {
         dragging.current = false;
         document.documentElement.style.removeProperty("--split-transition");
-        if (isVertical) unhighlightRowOverlays();
         document.removeEventListener("mousemove", onMouseMove);
         document.removeEventListener("mouseup", onMouseUp);
         document.body.style.cursor = "";
@@ -175,8 +100,7 @@ export function ResizeHandle({ direction, ratio, onResize }: ResizeHandleProps) 
     );
   }
 
-  // Row separator (vertical direction) — visible line comes from the overlay;
-  // this div is just the invisible grab handle
+  // Row separator (vertical direction) — local line within this column only
   return (
     <div
       ref={handleRef}
@@ -188,11 +112,30 @@ export function ResizeHandle({ direction, ratio, onResize }: ResizeHandleProps) 
         cursor: "row-resize",
         background: "var(--bg-app)",
         zIndex: 10,
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
       }}
-      onMouseEnter={() => highlightRowOverlays()}
-      onMouseLeave={() => {
-        if (!dragging.current) unhighlightRowOverlays();
+      onMouseEnter={(e) => {
+        const line = e.currentTarget.firstElementChild as HTMLDivElement;
+        if (line) line.style.background = "var(--border)";
       }}
-    />
+      onMouseLeave={(e) => {
+        if (!dragging.current) {
+          const line = e.currentTarget.firstElementChild as HTMLDivElement;
+          if (line) line.style.background = "var(--border)";
+        }
+      }}
+    >
+      <div
+        style={{
+          width: "100%",
+          height: 1,
+          background: "var(--border)",
+          transition: "background 0.15s",
+          pointerEvents: "none",
+        }}
+      />
+    </div>
   );
 }

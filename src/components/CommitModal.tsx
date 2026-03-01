@@ -429,7 +429,7 @@ const st: Record<string, React.CSSProperties> = {
     width: 14,
     height: 14,
     borderRadius: "50%",
-    background: "#fff",
+    background: "var(--bg-elevated)",
     display: "block",
     transition: "transform 200ms",
     boxShadow: "0 1px 3px rgba(0,0,0,0.3)",

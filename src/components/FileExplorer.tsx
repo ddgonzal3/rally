@@ -2959,13 +2959,13 @@ const styles: Record<string, React.CSSProperties> = {
     fontWeight: 600,
   },
   aheadCount: {
-    color: "#e5a63a",
+    color: "var(--status-amber)",
     marginLeft: 4,
     fontSize: 11,
     fontWeight: 600,
   },
   behindCount: {
-    color: "#e8b930",
+    color: "var(--status-amber)",
     marginLeft: 4,
     fontSize: 11,
     fontWeight: 600,

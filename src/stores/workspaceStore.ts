@@ -1511,7 +1511,7 @@ export const useWorkspaceStore = create<WorkspaceState>()(
       layouts: {
         ...s.layouts,
         [workspaceId]: {
-          root: newRoot,
+          root: normalizeLayoutTree(newRoot),
           groups: { ...layout.groups, [newGroup.id]: newGroup },
         },
       },
@@ -1771,7 +1771,18 @@ export const useWorkspaceStore = create<WorkspaceState>()(
 
   getOrCreateLayout: (workspaceId) => {
     const existing = get().layouts[workspaceId];
-    if (existing) return existing;
+    if (existing) {
+      // Normalize persisted layouts so H(V,V) becomes V(H,H)
+      const normalized = normalizeLayoutTree(existing.root);
+      if (normalized !== existing.root) {
+        const updated = { ...existing, root: normalized };
+        set((s) => ({
+          layouts: { ...s.layouts, [workspaceId]: updated },
+        }));
+        return updated;
+      }
+      return existing;
+    }
     const layout = createDefaultLayout();
     set((s) => ({
       layouts: { ...s.layouts, [workspaceId]: layout },
@@ -1810,7 +1821,7 @@ export const useWorkspaceStore = create<WorkspaceState>()(
       layouts: {
         ...s.layouts,
         [workspaceId]: {
-          root: newRoot,
+          root: normalizeLayoutTree(newRoot),
           groups: { ...layout.groups, [newGroup.id]: newGroup },
         },
       },
@@ -1996,7 +2007,7 @@ export const useWorkspaceStore = create<WorkspaceState>()(
     set((s) => ({
       layouts: {
         ...s.layouts,
-        [workspaceId]: { root: newRoot, groups: newGroups },
+        [workspaceId]: { root: normalizeLayoutTree(newRoot), groups: newGroups },
       },
     }));
   },
@@ -2088,14 +2099,19 @@ export const useWorkspaceStore = create<WorkspaceState>()(
 
   updateSplitRatio: (workspaceId, splitId, ratio) => {
     const layout = get().getOrCreateLayout(workspaceId);
-    const clamped = Math.max(0.15, Math.min(0.85, ratio));
+    let clamped = Math.max(0.15, Math.min(0.85, ratio));
     const targetSplit = findSplitById(layout.root, splitId);
     if (!targetSplit) return;
+    // Snap column dividers to peer positions in adjacent rows
+    if (targetSplit.direction === "horizontal") {
+      clamped = snapToPeerRatio(layout.root, splitId, clamped);
+    }
     let newRoot = replaceNode(layout.root, splitId, {
       ...targetSplit,
       ratio: clamped,
     });
-    // Sync sibling vertical splits so row dividers stay aligned across columns
+    // Sync row dividers across columns so heights stay aligned.
+    // Column dividers (horizontal splits) are always independent per row.
     if (targetSplit.direction === "vertical") {
       newRoot = syncPeerVerticalSplits(newRoot, splitId, clamped);
     }
@@ -2533,7 +2549,7 @@ export const useWorkspaceStore = create<WorkspaceState>()(
       set((s) => ({
         layouts: {
           ...s.layouts,
-          [workspaceId]: { root: newRoot, groups: newGroups },
+          [workspaceId]: { root: normalizeLayoutTree(newRoot), groups: newGroups },
         },
       }));
       return;
@@ -2570,7 +2586,7 @@ export const useWorkspaceStore = create<WorkspaceState>()(
     set((s) => ({
       layouts: {
         ...s.layouts,
-        [workspaceId]: { root: newRoot, groups: newGroups },
+        [workspaceId]: { root: normalizeLayoutTree(newRoot), groups: newGroups },
       },
     }));
   },
@@ -2639,7 +2655,7 @@ export const useWorkspaceStore = create<WorkspaceState>()(
       layouts: {
         ...s.layouts,
         [workspaceId]: {
-          root: newRoot,
+          root: normalizeLayoutTree(newRoot),
           groups: { ...layout.groups, [newGroup.id]: newGroup },
         },
       },
@@ -2686,6 +2702,58 @@ export const useWorkspaceStore = create<WorkspaceState>()(
 // Expose store accessor globally for the test bridge (only used when RALLY_TEST_MODE=1)
 (window as any).__rallyStoreAccessor = () => useWorkspaceStore.getState();
 
+/**
+ * Normalize layout tree so column dividers are independent per row.
+ * Transforms H(V(A,C), V(B,D)) → V(H(A,B), H(C,D)) recursively.
+ * After normalization, row heights are controlled by a single V-split (inherently linked)
+ * and column widths are separate H-splits per row (inherently independent).
+ */
+function normalizeLayoutTree(node: LayoutNode): LayoutNode {
+  if (node.type === "group") return node;
+
+  // Recursively normalize children first
+  const c0 = normalizeLayoutTree(node.children[0]);
+  const c1 = normalizeLayoutTree(node.children[1]);
+
+  // Check for H(V, V) pattern
+  if (
+    node.direction === "horizontal" &&
+    c0.type === "split" && c0.direction === "vertical" &&
+    c1.type === "split" && c1.direction === "vertical"
+  ) {
+    // H(r_h, V(r_v1, A, C), V(r_v2, B, D))
+    // → V(r_v1, H(r_h, A, B), H(r_h, C, D))
+    return {
+      type: "split",
+      id: c0.id,
+      direction: "vertical",
+      ratio: c0.ratio,
+      children: [
+        {
+          type: "split",
+          id: node.id,
+          direction: "horizontal",
+          ratio: node.ratio,
+          children: [c0.children[0], c1.children[0]],
+        },
+        {
+          type: "split",
+          id: c1.id,
+          direction: "horizontal",
+          ratio: node.ratio,
+          children: [c0.children[1], c1.children[1]],
+        },
+      ],
+    };
+  }
+
+  // No transformation needed, but children may have changed
+  if (c0 !== node.children[0] || c1 !== node.children[1]) {
+    return { ...node, children: [c0, c1] };
+  }
+  return node;
+}
+
 /** Helper to find a split node by ID in the tree */
 function findSplitById(
   node: LayoutNode,
@@ -2708,7 +2776,6 @@ function findSplitById(
 function collectPeerVerticalSplits(node: LayoutNode): string[] {
   if (node.type === "group") return [];
   if (node.direction === "vertical") return [node.id];
-  // Horizontal split: recurse to find vertical splits in both branches
   return [
     ...collectPeerVerticalSplits(node.children[0]),
     ...collectPeerVerticalSplits(node.children[1]),
@@ -2716,32 +2783,84 @@ function collectPeerVerticalSplits(node: LayoutNode): string[] {
 }
 
 /**
- * When a vertical split ratio changes, sync all sibling vertical splits
- * under the nearest horizontal ancestor so row dividers stay aligned.
+ * Collect all horizontal split IDs reachable from a node by walking through
+ * vertical splits. Stops at the first horizontal split on each branch.
  */
-function syncPeerVerticalSplits(
+function collectPeerHorizontalSplits(node: LayoutNode): string[] {
+  if (node.type === "group") return [];
+  if (node.direction === "horizontal") return [node.id];
+  return [
+    ...collectPeerHorizontalSplits(node.children[0]),
+    ...collectPeerHorizontalSplits(node.children[1]),
+  ];
+}
+
+/** Snap threshold — ratio difference within which column dividers snap to peer positions */
+const SNAP_THRESHOLD = 0.01;
+
+/**
+ * Find peer horizontal splits and snap to their ratio if close enough.
+ */
+function snapToPeerRatio(
   root: LayoutNode,
-  changedSplitId: string,
+  splitId: string,
   ratio: number
-): LayoutNode {
-  // Walk up to find the nearest horizontal ancestor
-  let currentId = changedSplitId;
-  let horizontalAncestor: Extract<LayoutNode, { type: "split" }> | null = null;
+): number {
+  // Walk up to find the nearest vertical ancestor
+  let currentId = splitId;
+  let ancestor: Extract<LayoutNode, { type: "split" }> | null = null;
   while (true) {
     const parentInfo = findParent(root, currentId);
     if (!parentInfo) break;
-    if (parentInfo.parent.direction === "horizontal") {
-      horizontalAncestor = parentInfo.parent;
+    if (parentInfo.parent.direction === "vertical") {
+      ancestor = parentInfo.parent;
       break;
     }
     currentId = parentInfo.parent.id;
   }
-  if (!horizontalAncestor) return root;
+  if (!ancestor) return ratio;
 
-  // Find all peer vertical splits under this horizontal ancestor
-  const peerIds = collectPeerVerticalSplits(horizontalAncestor);
+  const peerIds = collectPeerHorizontalSplits(ancestor);
+  for (const peerId of peerIds) {
+    if (peerId === splitId) continue;
+    const peer = findSplitById(root, peerId);
+    if (peer && Math.abs(ratio - peer.ratio) < SNAP_THRESHOLD) {
+      return peer.ratio;
+    }
+  }
+  return ratio;
+}
 
-  // Update all peers except the one already updated
+/**
+ * Sync peer splits so dividers stay aligned.
+ * Vertical splits sync under the nearest horizontal ancestor (row dividers align across columns).
+ * Horizontal splits sync under the nearest vertical ancestor (column dividers align across rows).
+ */
+function syncPeers(
+  root: LayoutNode,
+  changedSplitId: string,
+  ratio: number,
+  direction: "vertical" | "horizontal"
+): LayoutNode {
+  const oppositeDirection = direction === "vertical" ? "horizontal" : "vertical";
+  const collectPeers = direction === "vertical" ? collectPeerVerticalSplits : collectPeerHorizontalSplits;
+
+  // Walk up to find the nearest opposite-direction ancestor
+  let currentId = changedSplitId;
+  let ancestor: Extract<LayoutNode, { type: "split" }> | null = null;
+  while (true) {
+    const parentInfo = findParent(root, currentId);
+    if (!parentInfo) break;
+    if (parentInfo.parent.direction === oppositeDirection) {
+      ancestor = parentInfo.parent;
+      break;
+    }
+    currentId = parentInfo.parent.id;
+  }
+  if (!ancestor) return root;
+
+  const peerIds = collectPeers(ancestor);
+
   let result = root;
   for (const peerId of peerIds) {
     if (peerId === changedSplitId) continue;
@@ -2751,4 +2870,16 @@ function syncPeerVerticalSplits(
     }
   }
   return result;
+}
+
+function syncPeerVerticalSplits(
+  root: LayoutNode, changedSplitId: string, ratio: number
+): LayoutNode {
+  return syncPeers(root, changedSplitId, ratio, "vertical");
+}
+
+function syncPeerHorizontalSplits(
+  root: LayoutNode, changedSplitId: string, ratio: number
+): LayoutNode {
+  return syncPeers(root, changedSplitId, ratio, "horizontal");
 }

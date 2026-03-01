@@ -194,7 +194,7 @@ export function BranchSwitcher({
                 gap: 5,
                 fontSize: 11,
                 color: "var(--text-secondary)",
-                fontWeight: 400,
+                fontWeight: 600,
                 cursor: "pointer",
                 border: "none",
                 borderRadius: 4,

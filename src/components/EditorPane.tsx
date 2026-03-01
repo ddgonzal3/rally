@@ -169,6 +169,7 @@ function TextEditor({ filePath, paneId }: { filePath: string; paneId: string }) 
   const language = getLanguageFromPath(filePath);
   const markDirty = useWorkspaceStore((s) => s.markPaneDirty);
   const markClean = useWorkspaceStore((s) => s.markPaneClean);
+  const appTheme = useWorkspaceStore((s) => s.theme);
 
   // Subscribe to initialLine/initialCol from pane data (set via Cmd+click)
   const initialLine = useWorkspaceStore((s) => {
@@ -256,6 +257,58 @@ function TextEditor({ filePath, paneId }: { filePath: string; paneId: string }) 
         "editor.background": "#1b1b1b",
       },
     });
+
+    monaco.editor.defineTheme("rally-dimmed", {
+      base: "vs-dark",
+      inherit: true,
+      rules: [
+        { token: "comment.shell", foreground: "6a9955", fontStyle: "italic" },
+        { token: "keyword.shell", foreground: "c586c0" },
+        { token: "string.shell", foreground: "ce9178" },
+        { token: "string.escape.shell", foreground: "d7ba7d" },
+        { token: "variable.shell", foreground: "9cdcfe" },
+        { token: "variable.special.shell", foreground: "4fc1ff" },
+        { token: "number.shell", foreground: "b5cea8" },
+        { token: "operator.shell", foreground: "d4d4d4" },
+        { token: "delimiter.shell", foreground: "d4d4d4" },
+        { token: "builtin.shell", foreground: "dcdcaa" },
+        { token: "command.shell", foreground: "4ec9b0" },
+        { token: "flag.shell", foreground: "9cdcfe" },
+        { token: "shebang.shell", foreground: "6a9955", fontStyle: "italic" },
+      ],
+      colors: {
+        "editor.background": "#202020",
+      },
+    });
+
+    monaco.editor.defineTheme("rally-light", {
+      base: "vs",
+      inherit: true,
+      rules: [
+        { token: "comment.shell", foreground: "4e7a3e", fontStyle: "italic" },
+        { token: "keyword.shell", foreground: "8b2e8b" },
+        { token: "string.shell", foreground: "a44a1f" },
+        { token: "string.escape.shell", foreground: "8a6914" },
+        { token: "variable.shell", foreground: "1a6090" },
+        { token: "variable.special.shell", foreground: "0070a0" },
+        { token: "number.shell", foreground: "4a7030" },
+        { token: "operator.shell", foreground: "333333" },
+        { token: "delimiter.shell", foreground: "333333" },
+        { token: "builtin.shell", foreground: "795e26" },
+        { token: "command.shell", foreground: "267f6e" },
+        { token: "flag.shell", foreground: "1a6090" },
+        { token: "shebang.shell", foreground: "4e7a3e", fontStyle: "italic" },
+      ],
+      colors: {
+        "editor.background": "#c4c4c4",
+        "editor.foreground": "#111111",
+        "editorLineNumber.foreground": "#666666",
+        "editorCursor.foreground": "#333333",
+        "editor.selectionBackground": "#8ab4d866",
+        "editor.lineHighlightBackground": "#00000008",
+        "editorWidget.background": "#bfbfbf",
+      },
+    });
   }, []);
 
   const handleMount: OnMount = useCallback(
@@ -337,7 +390,7 @@ function TextEditor({ filePath, paneId }: { filePath: string; paneId: string }) 
       height="100%"
       path={filePath}
       language={language}
-      theme="rally-dark"
+      theme={`rally-${appTheme}`}
       defaultValue={content}
       onChange={(value) => {
         contentRef.current = value ?? "";

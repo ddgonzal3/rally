@@ -1485,7 +1485,6 @@ const styles: Record<string, React.CSSProperties> = {
     borderBottom: "1px solid var(--border)",
     userSelect: "none",
     position: "relative",
-    zIndex: 100,
     paddingLeft: 70,
   },
   titlebarLeft: {

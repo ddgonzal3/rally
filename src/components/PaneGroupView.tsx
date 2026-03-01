@@ -227,7 +227,7 @@ export function PaneGroupView({
     // Drop indicator line (VS Code style)
     const indicator = document.createElement("div");
     indicator.style.cssText =
-      "position:fixed;width:2px;background:#fff;border-radius:1px;pointer-events:none;z-index:100;display:none;will-change:left;";
+      "position:fixed;width:2px;background:var(--text-primary);border-radius:1px;pointer-events:none;z-index:100;display:none;will-change:left;";
 
     const onMouseMove = (ev: MouseEvent) => {
       ev.preventDefault();
@@ -1004,7 +1004,9 @@ const styles: Record<string, React.CSSProperties> = {
     color: "var(--text-dim)",
     cursor: "pointer",
     background: "var(--bg-surface)",
-    border: "none",
+    borderTop: "1px solid transparent",
+    borderBottom: "none",
+    borderLeft: "none",
     borderRight: "1px solid var(--bg-elevated)",
     boxShadow: "inset 0 -1px 0 var(--bg-elevated)",
     whiteSpace: "nowrap" as const,
@@ -1015,7 +1017,8 @@ const styles: Record<string, React.CSSProperties> = {
   tabActive: {
     color: "var(--text-primary)",
     background: "var(--bg-app)",
-    boxShadow: "inset 0 1px 0 #4191e0",
+    borderTop: "1px solid var(--tab-indicator)",
+    boxShadow: "none",
     marginBottom: -1,
     paddingBottom: 1,
   },

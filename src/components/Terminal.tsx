@@ -9,9 +9,17 @@ import { showContextMenu } from "../lib/contextMenu";
 import type { ThemeName } from "../lib/types";
 import "@xterm/xterm/css/xterm.css";
 
+// Terminal background per theme — matches --bg-app so terminals and
+// Claude panels share the same surface color.
+const TERMINAL_BG: Record<ThemeName, string> = {
+  dark: '#1a1a1a',
+  dimmed: '#252525',
+  light: '#c8c8c8',
+};
+
 const xtermThemes: Record<ThemeName, Record<string, string>> = {
   dark: {
-    background: '#1b1b1b',
+    background: TERMINAL_BG.dark,
     foreground: '#d4d4d4',
     cursor: '#aeafad',
     selectionBackground: '#5a5a5aaa',
@@ -25,11 +33,11 @@ const xtermThemes: Record<ThemeName, Record<string, string>> = {
     white: '#e0e0e0',
   },
   dimmed: {
-    background: '#202020',
+    background: TERMINAL_BG.dimmed,
     foreground: '#cacaca',
     cursor: '#9c9c9c',
     selectionBackground: '#4a4a4aaa',
-    black: '#202020',
+    black: '#252525',
     red: '#c87070',
     green: '#70c870',
     yellow: '#c8c870',
@@ -39,18 +47,20 @@ const xtermThemes: Record<ThemeName, Record<string, string>> = {
     white: '#d2d2d2',
   },
   light: {
-    background: '#fafafa',
-    foreground: '#1a1a1a',
+    background: TERMINAL_BG.light,
+    foreground: '#111',
     cursor: '#333',
-    selectionBackground: '#add6ff88',
-    black: '#1a1a1a',
-    red: '#c0392b',
-    green: '#27ae60',
-    yellow: '#f39c12',
-    blue: '#2980b9',
-    magenta: '#8e44ad',
-    cyan: '#16a085',
-    white: '#f0f0f0',
+    selectionBackground: '#8ab4d8aa',
+    black: '#111',
+    red: '#a83224',
+    green: '#1f8c4e',
+    yellow: '#c47e0e',
+    blue: '#20659a',
+    magenta: '#73388e',
+    cyan: '#128268',
+    white: '#555',
+    brightBlack: '#666',
+    brightWhite: '#333',
   },
 };
 

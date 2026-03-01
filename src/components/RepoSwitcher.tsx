@@ -80,7 +80,7 @@ export function RepoSwitcher({ workspaceId, rootPath }: RepoSwitcherProps) {
             fill="none"
           />
         </svg>
-        <span style={{ fontSize: 11, color: "var(--text-secondary)", fontWeight: 400 }}>{currentBasename}</span>
+        <span style={{ fontSize: 11, color: "var(--text-secondary)", fontWeight: 600 }}>{currentBasename}</span>
         <svg width="8" height="8" viewBox="0 0 16 16" fill="none" style={{ flexShrink: 0, marginLeft: -1 }}>
           <path d="M4 6l4 4 4-4" stroke="var(--text-dim)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
         </svg>

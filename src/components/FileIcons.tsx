@@ -153,7 +153,7 @@ function isScriptFile(name: string): boolean {
 }
 
 /** Terminal prompt icon (>_) for script files. Shared by file explorer, tabs, and TaskPanel. */
-export function TerminalPromptIcon({ size, color = "#89E051" }: { size: number; color?: string }) {
+export function TerminalPromptIcon({ size, color = "var(--status-green)" }: { size: number; color?: string }) {
   return (
     <svg width={size} height={size} viewBox="0 0 16 16" fill="none" style={{ flexShrink: 0 }}>
       <path
@@ -244,7 +244,7 @@ function TerminalTabIcon() {
     <svg width="16" height="16" viewBox="0 0 14 14" style={{ flexShrink: 0 }}>
       <path
         d="M2.5 3.5L6 7L2.5 10.5"
-        stroke="#89E051"
+        stroke="var(--status-green)"
         strokeWidth="1.5"
         strokeLinecap="round"
         strokeLinejoin="round"
@@ -252,7 +252,7 @@ function TerminalTabIcon() {
       />
       <path
         d="M7.5 10.5H11.5"
-        stroke="#89E051"
+        stroke="var(--status-green)"
         strokeWidth="1.5"
         strokeLinecap="round"
       />

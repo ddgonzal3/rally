@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { DiffEditor } from "@monaco-editor/react";
 import { api } from "../lib/tauri";
+import { useWorkspaceStore } from "../stores/workspaceStore";
 import { addToast } from "./ToastContainer";
 
 function getLanguageFromPath(path: string): string {
@@ -43,6 +44,7 @@ export function DiffView({
   isUntracked,
   isActive = true,
 }: DiffViewProps) {
+  const appTheme = useWorkspaceStore((s) => s.theme);
   const [original, setOriginal] = useState("");
   const [modified, setModified] = useState("");
   const [loading, setLoading] = useState(true);
@@ -227,7 +229,7 @@ export function DiffView({
           original={original}
           modified={modified}
           language={getLanguageFromPath(filePath)}
-          theme="vs-dark"
+          theme={appTheme === "light" ? "vs" : "vs-dark"}
           options={{
             readOnly: true,
             renderSideBySide: true,
@@ -276,9 +278,9 @@ const styles: Record<string, React.CSSProperties> = {
     cursor: "pointer",
   },
   dangerBtn: {
-    color: "#d5b5b5",
-    borderColor: "#5a3a3a",
-    background: "#332424",
+    color: "#f85149",
+    borderColor: "rgba(248, 81, 73, 0.3)",
+    background: "rgba(248, 81, 73, 0.1)",
   },
   editorWrap: {
     flex: 1,

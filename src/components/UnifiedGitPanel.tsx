@@ -792,7 +792,7 @@ export function UnifiedGitPanel() {
                             style={{
                               ...ms.fileItem,
                               background: isSelected
-                                ? "rgba(255,255,255,0.08)"
+                                ? "var(--bg-active)"
                                 : "transparent",
                             }}
                             className="file-list-item"
@@ -801,12 +801,12 @@ export function UnifiedGitPanel() {
                               style={{
                                 ...ms.fileStatus,
                                 color: file.isNew
-                                  ? "#7ddf7d"
+                                  ? "var(--status-green)"
                                   : file.isDeleted
-                                    ? "#f85149"
+                                    ? "var(--status-red)"
                                     : file.isRenamed
                                       ? "#d2a8ff"
-                                      : "#e3b341",
+                                      : "var(--status-amber)",
                               }}
                             >
                               {file.isNew
@@ -823,14 +823,14 @@ export function UnifiedGitPanel() {
                             )}
                             <span style={ms.fileStats}>
                               {file.additions > 0 && (
-                                <span style={{ color: "#7ddf7d" }}>
+                                <span style={{ color: "var(--status-green)" }}>
                                   +{file.additions}
                                 </span>
                               )}
                               {file.deletions > 0 && (
                                 <span
                                   style={{
-                                    color: "#f85149",
+                                    color: "var(--status-red)",
                                     marginLeft: file.additions > 0 ? 3 : 0,
                                   }}
                                 >
@@ -988,7 +988,7 @@ export function UnifiedGitPanel() {
                                     style={{
                                       ...ms.commitRow,
                                       background: isSelected
-                                        ? "rgba(255,255,255,0.08)"
+                                        ? "var(--bg-active)"
                                         : "transparent",
                                     }}
                                     className="file-list-item"
@@ -1025,7 +1025,7 @@ export function UnifiedGitPanel() {
                                             ...ms.fileItem,
                                             paddingLeft: 20,
                                             background: isFileSelected
-                                              ? "rgba(255,255,255,0.08)"
+                                              ? "var(--bg-active)"
                                               : "transparent",
                                           }}
                                           className="file-list-item"
@@ -1034,12 +1034,12 @@ export function UnifiedGitPanel() {
                                             style={{
                                               ...ms.fileStatus,
                                               color: file.isNew
-                                                ? "#7ddf7d"
+                                                ? "var(--status-green)"
                                                 : file.isDeleted
-                                                  ? "#f85149"
+                                                  ? "var(--status-red)"
                                                   : file.isRenamed
                                                     ? "#d2a8ff"
-                                                    : "#e3b341",
+                                                    : "var(--status-amber)",
                                             }}
                                           >
                                             {file.isNew
@@ -1291,7 +1291,7 @@ const ms: Record<string, React.CSSProperties> = {
     alignItems: "center",
     background: "rgba(248, 81, 73, 0.15)",
     border: "none",
-    color: "#f85149",
+    color: "var(--status-red)",
     fontSize: 11,
     fontWeight: 600,
     cursor: "pointer",
@@ -1321,7 +1321,7 @@ const ms: Record<string, React.CSSProperties> = {
     height: 14,
     padding: "0 4px",
     borderRadius: 7,
-    background: "var(--border)",
+    background: "var(--bg-hover)",
     color: "var(--text-primary)",
     fontSize: 10,
     fontWeight: 600,
