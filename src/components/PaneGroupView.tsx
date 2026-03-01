@@ -39,6 +39,10 @@ function isClaudeCodeTitle(title: string): boolean {
 }
 
 function paneLabel(pane: Pane, isDirty: boolean, workspacePath?: string): string {
+  // User-set custom title always takes priority for renamable pane types
+  if (pane.customTitle && (pane.type === "terminal" || pane.type === "claude" || pane.type === "claude-launcher")) {
+    return pane.customTitle;
+  }
   if (pane.type === "claude-launcher") {
     const cwd = pane.cwd || workspacePath || "";
     return cwd.split("/").pop() || "Claude Code";
@@ -117,6 +121,37 @@ export function PaneGroupView({
   const dragStartRef = useRef<{ x: number; y: number; paneId: string } | null>(
     null,
   );
+
+  // Inline tab rename state
+  const [renamingPaneId, setRenamingPaneId] = React.useState<string | null>(null);
+  const [renameValue, setRenameValue] = React.useState("");
+  const renameInputRef = useRef<HTMLInputElement>(null);
+
+  function startRename(pane: Pane) {
+    if (pane.type !== "terminal" && pane.type !== "claude" && pane.type !== "claude-launcher") return;
+    setRenamingPaneId(pane.id);
+    setRenameValue(pane.customTitle || paneLabel(pane, false, workspacePath));
+  }
+
+  function commitRename(paneId: string) {
+    const trimmed = renameValue.trim();
+    if (trimmed) {
+      transformPane(workspaceId, groupId, paneId, { customTitle: trimmed });
+    }
+    setRenamingPaneId(null);
+  }
+
+  function cancelRename() {
+    setRenamingPaneId(null);
+  }
+
+  // Focus and select text when entering rename mode
+  useEffect(() => {
+    if (renamingPaneId && renameInputRef.current) {
+      renameInputRef.current.focus();
+      renameInputRef.current.select();
+    }
+  }, [renamingPaneId]);
   function executeAction(actionType: PendingAction["type"], cwd: string) {
     if (actionType === "terminal") {
       const pane: Pane = {
@@ -355,7 +390,9 @@ export function PaneGroupView({
                 }}
                 onClick={() => setActivePane(workspaceId, groupId, pane.id)}
                 onDoubleClick={() => {
-                  if (pane.type === "editor" && pane.filePath) {
+                  if (pane.type === "terminal" || pane.type === "claude" || pane.type === "claude-launcher") {
+                    startRename(pane);
+                  } else if (pane.type === "editor" && pane.filePath) {
                     revealFileInExplorer(pane.filePath);
                   }
                 }}
@@ -377,24 +414,20 @@ export function PaneGroupView({
                       action: () => api.revealInFinder(pane.filePath!),
                     });
                   }
-                  if (items.length > 0 && (pane.type === "terminal" || pane.type === "claude" || (pane.type === "editor" && pane.filePath))) {
+                  if (items.length > 0 && (pane.type === "terminal" || pane.type === "claude" || pane.type === "claude-launcher" || (pane.type === "editor" && pane.filePath))) {
                     items.push("separator");
                   }
-                  if (pane.type === "terminal" || pane.type === "claude") {
+                  if (pane.type === "terminal" || pane.type === "claude" || pane.type === "claude-launcher") {
                     items.push({
                       label: "Rename Tab",
-                      action: () => {
-                        const name = window.prompt(
-                          "Tab name:",
-                          pane.title || "",
-                        );
-                        if (name !== null) {
-                          transformPane(workspaceId, groupId, pane.id, {
-                            title: name,
-                          });
-                        }
-                      },
+                      action: () => startRename(pane),
                     });
+                    if (pane.customTitle) {
+                      items.push({
+                        label: "Reset Tab Name",
+                        action: () => transformPane(workspaceId, groupId, pane.id, { customTitle: undefined }),
+                      });
+                    }
                     items.push("separator");
                   }
                   items.push({
@@ -410,9 +443,47 @@ export function PaneGroupView({
                   fileName={pane.title || pane.filePath?.split("/").pop()}
                   terminalTitle={pane.type === "terminal" ? pane.title : undefined}
                 />
-                <span style={styles.tabLabel}>
-                  {paneLabel(pane, dirtyPanes.has(pane.id), workspacePath)}
-                </span>
+                {renamingPaneId === pane.id ? (
+                  <input
+                    ref={renameInputRef}
+                    value={renameValue}
+                    onChange={(e) => setRenameValue(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        e.preventDefault();
+                        commitRename(pane.id);
+                      } else if (e.key === "Escape") {
+                        e.preventDefault();
+                        cancelRename();
+                      }
+                      e.stopPropagation();
+                    }}
+                    onBlur={() => commitRename(pane.id)}
+                    onMouseDown={(e) => e.stopPropagation()}
+                    onClick={(e) => e.stopPropagation()}
+                    size={Math.max(renameValue.length, 4)}
+                    style={{
+                      background: "rgba(255,255,255,0.08)",
+                      border: "1px solid rgba(255,255,255,0.2)",
+                      borderRadius: 3,
+                      color: "#ddd",
+                      outline: "none",
+                      padding: "0 4px",
+                      margin: "-1px 0",
+                      fontSize: "inherit",
+                      fontFamily: "inherit",
+                      fontWeight: "inherit",
+                      width: "auto",
+                      minWidth: 40,
+                      maxWidth: 160,
+                    }}
+                    autoFocus
+                  />
+                ) : (
+                  <span style={styles.tabLabel}>
+                    {paneLabel(pane, dirtyPanes.has(pane.id), workspacePath)}
+                  </span>
+                )}
                 <div style={styles.tabActions}>
                   {isActive && pane.type === "editor" && pane.filePath?.toLowerCase().endsWith(".md") && (() => {
                     const mode = pane.editorViewMode ?? "raw";
