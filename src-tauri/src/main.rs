@@ -120,6 +120,9 @@ fn emit_to_focused_window(app: &tauri::AppHandle, event: &str) {
 fn main() {
     let pty_state: pty_manager::PtyState = Arc::new(Mutex::new(PtyManager::new()));
     let pty_exit = pty_state.clone();
+    let chat_state: chat_manager::ChatManagerState =
+        Arc::new(Mutex::new(chat_manager::ChatManager::new()));
+    let chat_exit = chat_state.clone();
     let git_watch_state = GitWatchState::default();
     // Guard to prevent stacking multiple quit dialogs
     let quit_showing = Arc::new(AtomicBool::new(false));
@@ -134,9 +137,7 @@ fn main() {
         .plugin(tauri_plugin_window_state::Builder::new().build())
         .manage(pty_state)
         .manage(git_watch_state)
-        .manage(chat_manager::ChatManagerState(std::sync::Mutex::new(
-            chat_manager::ChatManager::new(),
-        )));
+        .manage(chat_state);
 
     // In test-bridge mode, create the shared result channels.
     #[cfg(feature = "test-bridge")]
@@ -472,9 +473,12 @@ fn main() {
                             api.prevent_exit();
                         }
                     }
-                    // Kill all PTY processes on app exit to prevent orphaned shells
+                    // Kill all PTY and sidecar processes on app exit to prevent orphans
                     tauri::RunEvent::Exit => {
                         if let Ok(mut manager) = pty_exit.lock() {
+                            manager.kill_all();
+                        }
+                        if let Ok(mut manager) = chat_exit.lock() {
                             manager.kill_all();
                         }
                     }

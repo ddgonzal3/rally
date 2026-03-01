@@ -35,24 +35,25 @@ function renderMarkdown(text: string): string {
 // Tool‑use summary helper
 // ---------------------------------------------------------------------------
 
-function toolSummary(name: string, input: any): string {
-  if (!input) return "";
+function toolSummary(name: string, input: unknown): string {
+  if (!input || typeof input !== "object") return "";
+  const obj = input as Record<string, unknown>;
   switch (name) {
     case "Write":
     case "Read":
     case "Edit":
-      return input.file_path ?? input.filePath ?? "";
+      return String(obj.file_path ?? obj.filePath ?? "");
     case "Bash":
-      return typeof input.command === "string"
-        ? input.command.slice(0, 60)
+      return typeof obj.command === "string"
+        ? obj.command.slice(0, 60)
         : "";
     case "Glob":
-      return input.pattern ?? "";
+      return String(obj.pattern ?? "");
     case "Grep":
-      return input.pattern ?? "";
+      return String(obj.pattern ?? "");
     case "Task":
     case "TaskCreate":
-      return input.description ?? input.subject ?? "";
+      return String(obj.description ?? obj.subject ?? "");
     default:
       return "";
   }
@@ -98,7 +99,7 @@ function ToolUseBlock({
   input,
 }: {
   name: string;
-  input: any;
+  input: unknown;
 }) {
   const [expanded, setExpanded] = useState(false);
   const summary = toolSummary(name, input);
@@ -204,13 +205,11 @@ function MessageRow({ message }: { message: ChatMessage }) {
     return (
       <div style={styles.userRow}>
         <div style={styles.userBubble}>
-          {textBlocks.map((b, i) =>
-            b.type === "text" ? (
+          {textBlocks.map((b, i) => (
               <div key={i} style={styles.userText}>
                 {b.text}
               </div>
-            ) : null
-          )}
+          ))}
         </div>
       </div>
     );
@@ -268,10 +267,9 @@ function PermissionPrompt({
 
 interface ChatViewProps {
   workspaceId: string;
-  rootPath: string;
 }
 
-export function ChatView({ workspaceId, rootPath }: ChatViewProps) {
+export function ChatView({ workspaceId }: ChatViewProps) {
   const chatSession = useWorkspaceStore((s) => s.chatSessions[workspaceId]);
 
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -341,7 +339,7 @@ export function ChatView({ workspaceId, rootPath }: ChatViewProps) {
     [handleFollowUp]
   );
 
-  // ---- Memoize messages to avoid unnecessary re-renders ----
+  // ---- Destructure session state with defaults ----
 
   const messages = chatSession?.messages ?? [];
   const streamingText = chatSession?.streamingText ?? "";

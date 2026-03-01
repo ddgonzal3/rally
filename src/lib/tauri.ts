@@ -239,7 +239,7 @@ export const api = {
   sendChatMessage: (sessionId: string, text: string) =>
     invoke<void>("send_chat_message", { sessionId, text }),
 
-  respondToPermission: (sessionId: string, requestId: string, decision: string, message?: string) =>
+  respondToPermission: (sessionId: string, requestId: string, decision: "allow" | "deny", message?: string) =>
     invoke<void>("respond_to_permission", { sessionId, requestId, decision, message: message ?? null }),
 
   cancelChatSession: (sessionId: string) =>

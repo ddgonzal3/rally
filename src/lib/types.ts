@@ -202,13 +202,13 @@ export interface ShellPanel {
 
 export type ChatContentBlock =
   | { type: 'text'; text: string }
-  | { type: 'tool_use'; id: string; name: string; input: any }
+  | { type: 'tool_use'; id: string; name: string; input: unknown }
   | { type: 'tool_result'; tool_use_id: string; content: string; is_error?: boolean }
   | { type: 'thinking'; text: string };
 
 export interface ChatMessage {
   id: string;
-  role: 'assistant' | 'user' | 'system';
+  role: 'assistant' | 'user';
   content: ChatContentBlock[];
   timestamp: number;
 }
@@ -216,7 +216,7 @@ export interface ChatMessage {
 export interface PermissionRequest {
   request_id: string;
   tool_name: string;
-  tool_input: any;
+  tool_input: unknown;
 }
 
 export interface ChatSession {

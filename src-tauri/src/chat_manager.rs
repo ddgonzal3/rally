@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::io::{BufRead, BufReader, Write};
 use std::process::{Child, ChildStdin, Command, Stdio};
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use std::thread;
 
 use serde::Serialize;
@@ -23,7 +23,7 @@ pub struct ChatManager {
     sessions: HashMap<String, ChatSession>,
 }
 
-pub struct ChatManagerState(pub Mutex<ChatManager>);
+pub type ChatManagerState = Arc<Mutex<ChatManager>>;
 
 impl ChatManager {
     pub fn new() -> Self {
@@ -289,7 +289,7 @@ pub fn start_chat_session(
     cwd: String,
     prompt: String,
 ) -> Result<String, String> {
-    let mut manager = state.0.lock().map_err(|e| e.to_string())?;
+    let mut manager = state.lock().map_err(|e| e.to_string())?;
     manager.spawn(app_handle, cwd, prompt)
 }
 
@@ -299,7 +299,7 @@ pub fn send_chat_message(
     session_id: String,
     text: String,
 ) -> Result<(), String> {
-    let mut manager = state.0.lock().map_err(|e| e.to_string())?;
+    let mut manager = state.lock().map_err(|e| e.to_string())?;
     manager.send_message(&session_id, &text)
 }
 
@@ -311,7 +311,7 @@ pub fn respond_to_permission(
     decision: String,
     message: Option<String>,
 ) -> Result<(), String> {
-    let mut manager = state.0.lock().map_err(|e| e.to_string())?;
+    let mut manager = state.lock().map_err(|e| e.to_string())?;
     manager.respond_to_permission(
         &session_id,
         &request_id,
@@ -325,7 +325,7 @@ pub fn cancel_chat_session(
     state: tauri::State<'_, ChatManagerState>,
     session_id: String,
 ) -> Result<(), String> {
-    let mut manager = state.0.lock().map_err(|e| e.to_string())?;
+    let mut manager = state.lock().map_err(|e| e.to_string())?;
     manager.cancel(&session_id)
 }
 
@@ -334,6 +334,6 @@ pub fn end_chat_session(
     state: tauri::State<'_, ChatManagerState>,
     session_id: String,
 ) -> Result<(), String> {
-    let mut manager = state.0.lock().map_err(|e| e.to_string())?;
+    let mut manager = state.lock().map_err(|e| e.to_string())?;
     manager.end(&session_id)
 }
