@@ -6,7 +6,53 @@ import { api } from "../lib/tauri";
 import { TerminalLinkProvider, type OnFileOpen } from "../lib/terminalLinkProvider";
 import { useWorkspaceStore, shipOutputBuffer, scriptOutputBuffers, appendPtyBuffer, clearPtyBuffer, ptyOutputBuffers } from "../stores/workspaceStore";
 import { showContextMenu } from "../lib/contextMenu";
+import type { ThemeName } from "../lib/types";
 import "@xterm/xterm/css/xterm.css";
+
+const xtermThemes: Record<ThemeName, Record<string, string>> = {
+  dark: {
+    background: '#1b1b1b',
+    foreground: '#d4d4d4',
+    cursor: '#aeafad',
+    selectionBackground: '#5a5a5aaa',
+    black: '#1e1e1e',
+    red: '#df7d7d',
+    green: '#7ddf7d',
+    yellow: '#dfdf7d',
+    blue: '#7d7ddf',
+    magenta: '#df7ddf',
+    cyan: '#7ddfdf',
+    white: '#e0e0e0',
+  },
+  dimmed: {
+    background: '#1e1e22',
+    foreground: '#c8c8d0',
+    cursor: '#9a9aa0',
+    selectionBackground: '#4a4a5aaa',
+    black: '#1e1e22',
+    red: '#c87070',
+    green: '#70c870',
+    yellow: '#c8c870',
+    blue: '#7070c8',
+    magenta: '#c870c8',
+    cyan: '#70c8c8',
+    white: '#d0d0d4',
+  },
+  light: {
+    background: '#fafafa',
+    foreground: '#1a1a1a',
+    cursor: '#333',
+    selectionBackground: '#add6ff88',
+    black: '#1a1a1a',
+    red: '#c0392b',
+    green: '#27ae60',
+    yellow: '#f39c12',
+    blue: '#2980b9',
+    magenta: '#8e44ad',
+    cyan: '#16a085',
+    white: '#f0f0f0',
+  },
+};
 
 interface TerminalProps {
   cwd: string;
@@ -94,6 +140,9 @@ function safeFit(term: XTerminal, fitAddon: FitAddon): boolean {
 }
 
 export function Terminal({ cwd, command, initialInput, ptyId: existingPtyId, lockCols: lockColsProp, scriptBufferKey, onPtySpawned, onCwdChanged, onTitleChange, onFileOpen }: TerminalProps) {
+  const theme = useWorkspaceStore((s) => s.theme);
+  const themeRef = useRef<ThemeName>(theme);
+  themeRef.current = theme;
   const containerRef = useRef<HTMLDivElement>(null);
   const termRef = useRef<XTerminal | null>(null);
   const ptyIdRef = useRef<string | null>(null);
@@ -119,6 +168,13 @@ export function Terminal({ cwd, command, initialInput, ptyId: existingPtyId, loc
   useEffect(() => {
     lastCwdRef.current = cwd;
   }, [cwd]);
+
+  // Sync xterm theme when the app theme changes
+  useEffect(() => {
+    if (termRef.current) {
+      termRef.current.options.theme = xtermThemes[theme];
+    }
+  }, [theme]);
 
   // Poll foreground process to detect Claude Code (or other named processes).
   // Keep Claude "sticky" until several polls agree it is gone, so transient
@@ -262,20 +318,7 @@ export function Terminal({ cwd, command, initialInput, ptyId: existingPtyId, loc
       rows: 24,
       macOptionIsMeta: true,
       cursorInactiveStyle: "none",
-      theme: {
-        background: "#1b1b1b",
-        foreground: "#d4d4d4",
-        cursor: "#aeafad",
-        selectionBackground: "#5a5a5aaa",
-        black: "#1e1e1e",
-        red: "#df7d7d",
-        green: "#7ddf7d",
-        yellow: "#dfdf7d",
-        blue: "#7d7ddf",
-        magenta: "#df7ddf",
-        cyan: "#7ddfdf",
-        white: "#e0e0e0",
-      },
+      theme: xtermThemes[themeRef.current],
       fontSize: 13,
       fontWeight: "normal",
       fontFamily: "Menlo, Monaco, 'Courier New', monospace",
@@ -692,7 +735,7 @@ export function Terminal({ cwd, command, initialInput, ptyId: existingPtyId, loc
 
   return (
     <div
-      style={styles.container}
+      style={{ ...styles.container, background: xtermThemes[theme].background }}
       onMouseDown={handleMouseDown}
       onContextMenu={handleContextMenu}
     >
@@ -708,7 +751,6 @@ const styles: Record<string, React.CSSProperties> = {
     flex: 1,
     minWidth: 0,
     minHeight: 0,
-    background: "#1b1b1b",
     overflow: "hidden",
   },
   terminal: {

@@ -336,7 +336,7 @@ export function Sidebar() {
 
 const styles: Record<string, React.CSSProperties> = {
   sidebar: {
-    background: "#1a1a1a",
+    background: "var(--bg-app)",
     display: "flex",
     flexDirection: "column",
     paddingTop: 0,
@@ -352,7 +352,7 @@ const styles: Record<string, React.CSSProperties> = {
     padding: "0 8px 0 12px",
     minHeight: 29,
     maxHeight: 29,
-    borderBottom: "1px solid #333",
+    borderBottom: "1px solid var(--border)",
     flexShrink: 0,
   },
   title: {
@@ -360,7 +360,7 @@ const styles: Record<string, React.CSSProperties> = {
     fontWeight: 700,
     textTransform: "uppercase" as const,
     letterSpacing: "0.05em",
-    color: "#fff",
+    color: "var(--text-primary)",
   },
   headerAddBtn: {
     display: "flex",
@@ -370,7 +370,7 @@ const styles: Record<string, React.CSSProperties> = {
     height: 22,
     background: "none",
     border: "none",
-    color: "#aaa",
+    color: "var(--text-secondary)",
     cursor: "pointer",
     borderRadius: 4,
     padding: 0,
@@ -386,19 +386,19 @@ const styles: Record<string, React.CSSProperties> = {
     width: "100%",
     padding: "10px 20px 10px 16px",
     background: "none",
-    color: "#ddd",
+    color: "var(--text-primary)",
     textAlign: "left" as const,
     fontSize: 13,
     position: "relative",
     willChange: "transform",
   },
   itemActive: {
-    background: "#2a2a2a",
-    color: "#eee",
+    background: "var(--bg-input)",
+    color: "var(--text-primary)",
   },
   itemDragging: {
     zIndex: 4,
-    boxShadow: "0 8px 20px rgba(0, 0, 0, 0.38)",
+    boxShadow: "0 8px 20px var(--shadow)",
     opacity: 0.96,
   },
   itemName: {
@@ -407,10 +407,10 @@ const styles: Record<string, React.CSSProperties> = {
   },
   renameInput: {
     width: "100%",
-    background: "#2a2d2e",
+    background: "var(--bg-elevated)",
     border: "1px solid #007fd4",
     borderRadius: 2,
-    color: "#eee",
+    color: "var(--text-primary)",
     fontSize: 13,
     fontWeight: 600,
     fontFamily: "inherit",
