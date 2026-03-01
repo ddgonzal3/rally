@@ -120,6 +120,18 @@ export const api = {
   gitRebaseOnMain: (workspacePath: string, mainBranch: string) =>
     invoke<string>("git_rebase_on_main", { workspacePath, mainBranch }),
 
+  gitSync: (workspacePath: string, mainBranch: string) =>
+    invoke<string>("git_sync", { workspacePath, mainBranch }),
+
+  gitStash: (workspacePath: string) =>
+    invoke<string>("git_stash", { workspacePath }),
+
+  gitStashPop: (workspacePath: string) =>
+    invoke<string>("git_stash_pop", { workspacePath }),
+
+  gitStashCount: (workspacePath: string) =>
+    invoke<number>("git_stash_count", { workspacePath }),
+
   gitListBranches: (workspacePath: string) =>
     invoke<BranchInfo[]>("git_list_branches", { workspacePath }),
 

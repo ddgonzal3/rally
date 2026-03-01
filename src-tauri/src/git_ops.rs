@@ -109,6 +109,76 @@ pub async fn rebase_on_main(cwd: &str, main_branch: &str) -> Result<String, Stri
     }
 }
 
+/// Hard-reset + rebase onto main (mirrors gsync script).
+/// 1. Rejects if working tree is dirty or already on main
+/// 2. Fetches, checks out main, pulls, checks out branch
+/// 3. Hard-resets branch to main if it had commits ahead
+/// 4. Rebases onto main
+/// On rebase failure, auto-aborts to leave repo clean.
+pub async fn sync_branch(cwd: &str, main_branch: &str) -> Result<String, String> {
+    let branch = git_cmd(cwd, &["symbolic-ref", "--short", "HEAD"]).await?;
+
+    if branch == main_branch {
+        return Err("Already on main branch".to_string());
+    }
+
+    // Check for dirty working tree
+    let porcelain = git_cmd(cwd, &["status", "--porcelain"]).await?;
+    if !porcelain.is_empty() {
+        return Err("Working tree is dirty. Commit or stash your changes first.".to_string());
+    }
+
+    // Count commits ahead of main (to decide whether to hard-reset)
+    let ahead = git_cmd(cwd, &["rev-list", "--count", &format!("{}..{}", main_branch, branch)])
+        .await
+        .unwrap_or_else(|_| "0".to_string())
+        .parse::<u32>()
+        .unwrap_or(0);
+
+    // Fetch, checkout main, pull
+    fetch(cwd).await?;
+    git_cmd(cwd, &["checkout", main_branch]).await
+        .map_err(|e| format!("Failed to checkout {}: {}", main_branch, e))?;
+    git_cmd(cwd, &["pull"]).await
+        .map_err(|e| format!("Failed to pull {}: {}", main_branch, e))?;
+
+    // Back to feature branch
+    git_cmd(cwd, &["checkout", &branch]).await
+        .map_err(|e| format!("Failed to checkout {}: {}", branch, e))?;
+
+    // Hard-reset to main if branch had commits ahead
+    if ahead > 0 {
+        git_cmd(cwd, &["reset", "--hard", main_branch]).await
+            .map_err(|e| format!("Failed to reset {}: {}", branch, e))?;
+    }
+
+    // Rebase onto main
+    match git_cmd(cwd, &["rebase", main_branch]).await {
+        Ok(_) => Ok(format!("{} synced with {}", branch, main_branch)),
+        Err(e) => {
+            let _ = git_cmd(cwd, &["rebase", "--abort"]).await;
+            Err(e)
+        }
+    }
+}
+
+pub async fn stash(cwd: &str) -> Result<String, String> {
+    git_cmd(cwd, &["stash"]).await
+}
+
+pub async fn stash_pop(cwd: &str) -> Result<String, String> {
+    git_cmd(cwd, &["stash", "pop"]).await
+}
+
+pub async fn stash_count(cwd: &str) -> Result<u32, String> {
+    let output = git_cmd(cwd, &["stash", "list"]).await?;
+    if output.is_empty() {
+        Ok(0)
+    } else {
+        Ok(output.lines().count() as u32)
+    }
+}
+
 pub async fn status(cwd: &str, main_branch: &str) -> Result<GitStatus, String> {
     let branch = git_cmd(cwd, &["symbolic-ref", "--short", "HEAD"]).await?;
 

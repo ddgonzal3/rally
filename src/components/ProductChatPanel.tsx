@@ -6,6 +6,15 @@ import { useWorkspaceStore, clearPtyBuffer } from "../stores/workspaceStore";
 import { api } from "../lib/tauri";
 import type { OnFileOpen } from "../lib/terminalLinkProvider";
 import { BranchSwitcher } from "./BranchSwitcher";
+import { addToast } from "./ToastContainer";
+
+// Inject spin keyframe once
+if (typeof document !== "undefined" && !document.getElementById("rally-spin-keyframe")) {
+  const style = document.createElement("style");
+  style.id = "rally-spin-keyframe";
+  style.textContent = `@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }`;
+  document.head.appendChild(style);
+}
 
 interface ProductChatPanelProps {
   rootPath: string;
@@ -30,6 +39,8 @@ export function ProductChatPanel({ rootPath, workspaceId }: ProductChatPanelProp
   const [inputFocused, setInputFocused] = useState(false);
   const [readiness, setReadiness] = useState<{ ready: boolean; issues: string[] } | null>(null);
   const [dangerousMode, setDangerousMode] = useState(true);
+  const [syncing, setSyncing] = useState(false);
+  const syncBranch = useWorkspaceStore((s) => s.syncBranch);
   const ptyIdRef = useRef<string | undefined>(undefined);
   const unlistenExitRef = useRef<UnlistenFn | null>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -190,6 +201,18 @@ export function ProductChatPanel({ rootPath, workspaceId }: ProductChatPanelProp
     clearProductSession(workspaceId);
   }, [workspaceId, clearProductSession]);
 
+  const handleSync = useCallback(async () => {
+    setSyncing(true);
+    try {
+      await syncBranch(rootPath, mainBranch);
+      addToast({ type: "success", title: "Sync complete", message: `Synced ${branch} with ${mainBranch}` });
+    } catch (e) {
+      addToast({ type: "warning", title: "Sync failed", message: String(e instanceof Error ? e.message : e) });
+    } finally {
+      setSyncing(false);
+    }
+  }, [syncBranch, rootPath, mainBranch, branch]);
+
   useEffect(() => {
     if (state === "idle") {
       const t = setTimeout(() => inputRef.current?.focus(), 100);
@@ -210,6 +233,62 @@ export function ProductChatPanel({ rootPath, workspaceId }: ProductChatPanelProp
     return (
       <div style={styles.outerContainer} data-shell-container>
         <div style={styles.idleContainer} />
+        <div style={{ ...styles.activeHeader, position: "absolute", top: 0, left: 0, right: 0, zIndex: 10 }}>
+          <div />
+          <div style={styles.headerRight}>
+            <svg width="11" height="11" viewBox="0 0 16 16" fill="none" style={{ flexShrink: 0 }}>
+              <path
+                d="M2 4.5A1.5 1.5 0 013.5 3H6l1 1.5h5.5A1.5 1.5 0 0114 6v5.5a1.5 1.5 0 01-1.5 1.5h-9A1.5 1.5 0 012 11.5v-7z"
+                stroke="#bbb"
+                strokeWidth="1.1"
+                strokeLinejoin="round"
+                fill="none"
+              />
+            </svg>
+            <span style={styles.headerPathText}>{shortenPath(rootPath)}</span>
+            {branch && (
+              <BranchSwitcher
+                rootPath={rootPath}
+                branchName={branch}
+                mainBranch={mainBranch}
+                onBranchChanged={() => {
+                  refreshGitStatusForPath(rootPath, mainBranch).catch(() => {});
+                  refreshPrStatusForPath(rootPath).catch(() => {});
+                }}
+                variant="inline"
+              />
+            )}
+            {gitStatus && gitStatus.behind > 0 && branch !== mainBranch && (
+              <button
+                style={styles.syncBtn}
+                onClick={handleSync}
+                disabled={syncing}
+                title={`Sync ${branch} with ${mainBranch} (${gitStatus.behind} behind)`}
+              >
+                <svg
+                  width="12"
+                  height="12"
+                  viewBox="0 0 16 16"
+                  fill="none"
+                  style={syncing ? { animation: "spin 1s linear infinite" } : undefined}
+                >
+                  <path
+                    d="M2.5 8a5.5 5.5 0 0 1 9.3-3.95L10 6h5V1l-1.8 1.8A7.5 7.5 0 0 0 .5 8h2zm11 0a5.5 5.5 0 0 1-9.3 3.95L6 10H1v5l1.8-1.8A7.5 7.5 0 0 0 15.5 8h-2z"
+                    fill="#bbb"
+                  />
+                </svg>
+              </button>
+            )}
+            <button
+              className="sidebar-btn"
+              style={styles.shellToggleBtnHeader}
+              onClick={() => toggleShellPanel(workspaceId, rootPath)}
+              title="Toggle terminal (Ctrl+`)"
+            >
+              Terminal
+            </button>
+          </div>
+        </div>
         <div style={{ ...styles.idleContent, top: `${contentTop}%` }}>
           <svg
             width="36"
@@ -278,30 +357,8 @@ export function ProductChatPanel({ rootPath, workspaceId }: ProductChatPanelProp
             </div>
 
             <div style={styles.infoBar}>
-              <svg width="12" height="12" viewBox="0 0 16 16" fill="none" style={{ flexShrink: 0 }}>
-                <path
-                  d="M2 4.5A1.5 1.5 0 013.5 3H6l1 1.5h5.5A1.5 1.5 0 0114 6v5.5a1.5 1.5 0 01-1.5 1.5h-9A1.5 1.5 0 012 11.5v-7z"
-                  stroke="#bbb"
-                  strokeWidth="1.1"
-                  strokeLinejoin="round"
-                  fill="none"
-                />
-              </svg>
-              <span style={styles.infoText}>{shortenPath(rootPath)}</span>
-              {branch && (
-                <BranchSwitcher
-                  rootPath={rootPath}
-                  branchName={branch}
-                  mainBranch={mainBranch}
-                  onBranchChanged={() => {
-                    refreshGitStatusForPath(rootPath, mainBranch).catch(() => {});
-                    refreshPrStatusForPath(rootPath).catch(() => {});
-                  }}
-                  variant="inline"
-                />
-              )}
               <label
-                style={styles.toggleLabel}
+                style={{ ...styles.toggleLabel, marginLeft: 0 }}
                 title="Start Claude Code with --dangerously-skip-permissions"
                 onMouseDown={(e) => e.preventDefault()}
               >
@@ -321,13 +378,6 @@ export function ProductChatPanel({ rootPath, workspaceId }: ProductChatPanelProp
                 </div>
                 <span style={styles.toggleText}>Bypass permissions</span>
               </label>
-              <button
-                style={styles.shellToggleBtn}
-                onClick={() => toggleShellPanel(workspaceId, rootPath)}
-                title="Toggle terminal (Ctrl+`)"
-              >
-                Terminal
-              </button>
             </div>
           </div>
         </div>
@@ -362,7 +412,7 @@ export function ProductChatPanel({ rootPath, workspaceId }: ProductChatPanelProp
           <svg width="11" height="11" viewBox="0 0 16 16" fill="none" style={{ flexShrink: 0 }}>
             <path
               d="M2 4.5A1.5 1.5 0 013.5 3H6l1 1.5h5.5A1.5 1.5 0 0114 6v5.5a1.5 1.5 0 01-1.5 1.5h-9A1.5 1.5 0 012 11.5v-7z"
-              stroke="#777"
+              stroke="#bbb"
               strokeWidth="1.1"
               strokeLinejoin="round"
               fill="none"
@@ -380,6 +430,27 @@ export function ProductChatPanel({ rootPath, workspaceId }: ProductChatPanelProp
               }}
               variant="inline"
             />
+          )}
+          {gitStatus && gitStatus.behind > 0 && branch !== mainBranch && (
+            <button
+              style={styles.syncBtn}
+              onClick={handleSync}
+              disabled={syncing}
+              title={`Sync ${branch} with ${mainBranch} (${gitStatus.behind} behind)`}
+            >
+              <svg
+                width="12"
+                height="12"
+                viewBox="0 0 16 16"
+                fill="none"
+                style={syncing ? { animation: "spin 1s linear infinite" } : undefined}
+              >
+                <path
+                  d="M2.5 8a5.5 5.5 0 0 1 9.3-3.95L10 6h5V1l-1.8 1.8A7.5 7.5 0 0 0 .5 8h2zm11 0a5.5 5.5 0 0 1-9.3 3.95L6 10H1v5l1.8-1.8A7.5 7.5 0 0 0 15.5 8h-2z"
+                  fill="#bbb"
+                />
+              </svg>
+            </button>
           )}
           <button
             className="sidebar-btn"
@@ -578,7 +649,7 @@ const styles: Record<string, React.CSSProperties> = {
     cursor: "pointer",
     fontSize: 11,
     fontWeight: 500,
-    color: "#999",
+    color: "#bbb",
     padding: "0 6px",
     borderRadius: 4,
     height: 22,
@@ -593,11 +664,24 @@ const styles: Record<string, React.CSSProperties> = {
   },
   headerPathText: {
     fontSize: 11,
-    color: "#777",
+    color: "#bbb",
     fontWeight: 400,
     overflow: "hidden",
     textOverflow: "ellipsis",
     whiteSpace: "nowrap" as const,
+  },
+  syncBtn: {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    background: "none",
+    border: "none",
+    cursor: "pointer",
+    padding: 2,
+    borderRadius: 3,
+    flexShrink: 0,
+    opacity: 0.7,
+    transition: "opacity 0.15s ease",
   },
   terminalArea: {
     flex: 1,
@@ -638,7 +722,7 @@ const styles: Record<string, React.CSSProperties> = {
     padding: "0 6px",
     marginLeft: 6,
     fontSize: 11,
-    color: "#999",
+    color: "#bbb",
     fontWeight: 400,
     height: 22,
     letterSpacing: "0.01em",
