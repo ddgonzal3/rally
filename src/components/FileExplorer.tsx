@@ -284,7 +284,7 @@ function InlineInput({
             background: "transparent",
             border: "1px solid #007acc",
             borderRadius: 2,
-            color: "#e0e0e0",
+            color: "var(--text-primary)",
             fontSize: 12,
             fontWeight: 600,
             fontFamily: "inherit",
@@ -753,14 +753,14 @@ const FileTreeNode = React.memo(
 
 // --- Git status components ---
 
-function PrIcon({ color = "#999" }: { color?: string }) {
+function PrIcon({ color = "var(--text-dim)" }: { color?: string }) {
   return (
     <svg
       width="22"
       height="22"
       viewBox="0 0 24 24"
       fill="none"
-      style={{ flexShrink: 0 }}
+      style={{ flexShrink: 0, opacity: 0.82 }}
     >
       <path
         d="M9 6C9 7.65685 7.65685 9 6 9C4.34315 9 3 7.65685 3 6C3 4.34315 4.34315 3 6 3C7.65685 3 9 4.34315 9 6Z"
@@ -808,7 +808,7 @@ function PrBadge({
   onClick?: () => void;
 }) {
   if (!pr || pr.state !== "OPEN") return null;
-  const color = pr.is_draft ? "#e8b930" : "#999";
+  const color = pr.is_draft ? "#e8b930" : "var(--text-secondary)";
   return (
     <button
       onClick={(e) => {
@@ -853,7 +853,7 @@ function GitStatusIcon({
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
-        background: active ? "rgba(255, 255, 255, 0.1)" : "none",
+        background: active ? "var(--bg-active)" : "none",
         border: "none",
         padding: "4px",
         flexShrink: 0,
@@ -865,7 +865,7 @@ function GitStatusIcon({
         width="18"
         height="18"
         viewBox="0 0 24 24"
-        fill={active ? "#fff" : "#ddd"}
+        fill="var(--text-secondary)"
         shapeRendering="geometricPrecision"
         style={{ flexShrink: 0 }}
       >
@@ -947,7 +947,7 @@ function CloneRepoModal({
             height="20"
             viewBox="0 0 16 16"
             fill="none"
-            style={{ color: "#e0e0e0" }}
+            style={{ color: "var(--text-primary)" }}
           >
             <path
               d="M8 1v4M8 11v4M1 8h4M11 8h4"
@@ -1398,7 +1398,7 @@ function RootSection({
             ...(repoCollapsed
               ? {
                   borderRadius: 6,
-                  border: "1px solid #2e2e2e",
+                  border: "1px solid var(--border)",
                 }
               : {}),
           }}
@@ -1474,11 +1474,12 @@ function RootSection({
                       }
                     >
                       {isOnMain ? (
-                        <svg width="18" height="18" viewBox="0 -960 960 960" fill="#999" style={syncing ? { animation: "spin 1s linear infinite" } : undefined}>
-                          <path d="M440-800v487L216-537l-56 57 320 320 320-320-56-57-224 224v-487h-80Z" />
+                        <svg width="18" height="18" viewBox="3 2 18 20" fill="none" stroke="var(--text-secondary)" strokeLinecap="round" strokeLinejoin="round" style={{ opacity: 0.82, ...(syncing ? { animation: "spin 1s linear infinite" } : undefined) }}>
+                          <path d="M12 4v16" strokeWidth="1.75" />
+                          <path d="M5 13l7 7 7-7" strokeWidth="1.5" />
                         </svg>
                       ) : (
-                        <svg width="18" height="18" viewBox="60 -880 860 860" fill="#999" style={syncing ? { animation: "spin 1s linear infinite" } : undefined}>
+                        <svg width="18" height="18" viewBox="60 -880 860 860" fill="var(--text-secondary)" style={syncing ? { animation: "spin 1s linear infinite" } : undefined}>
                           <path d="m430-30-56-57 73-73H313q-13 35-43.5 57.5T200-80q-50 0-85-35t-35-85q0-39 22.5-69.5T160-313v-334q-35-13-57.5-43.5T80-760q0-50 35-85t85-35q39 0 69.5 22.5T313-800h134l-73-73 56-57 170 170-170 170-56-57 73-73H313q-9 26-28 45t-45 28v334q26 9 45 28t28 45h134l-73-73 56-57 170 170L430-30Zm245-85q-35-35-35-85 0-40 22.5-70.5T720-313v-334q-35-12-57.5-42.5T640-760q0-50 35-85t85-35q50 0 85 35t35 85q0 40-22.5 70.5T800-647v334q35 13 57.5 43.5T880-200q0 50-35 85t-85 35q-50 0-85-35Zm-475-45q17 0 28.5-11.5T240-200q0-17-11.5-28.5T200-240q-17 0-28.5 11.5T160-200q0 17 11.5 28.5T200-160Zm560 0q17 0 28.5-11.5T800-200q0-17-11.5-28.5T760-240q-17 0-28.5 11.5T720-200q0 17 11.5 28.5T760-160ZM200-720q17 0 28.5-11.5T240-760q0-17-11.5-28.5T200-800q-17 0-28.5 11.5T160-760q0 17 11.5 28.5T200-720Zm560 0q17 0 28.5-11.5T800-760q0-17-11.5-28.5T760-800q-17 0-28.5 11.5T720-760q0 17 11.5 28.5T760-720ZM200-200Zm560 0ZM200-760Zm560 0Z" />
                         </svg>
                       )}
@@ -1508,8 +1509,8 @@ function RootSection({
                         onClick={() => setForcePullConfirm(false)}
                         style={{
                           background: "transparent",
-                          border: "1px solid rgba(255,255,255,0.2)",
-                          color: "#ddd",
+                          border: "1px solid var(--border-subtle)",
+                          color: "var(--text-primary)",
                           fontSize: 10,
                           cursor: "pointer",
                           padding: "1px 6px",
@@ -2239,10 +2240,10 @@ function LayoutPresetsDropdown({ workspaceId }: { workspaceId: string }) {
         position: "fixed", top: pos.top,
         ...(pos.right >= 0 ? { right: pos.right } : { left: pos.left }),
         minWidth: DROPDOWN_MIN_WIDTH,
-        background: "rgba(36,36,36,0.78)", backdropFilter: "blur(20px) saturate(180%)",
+        background: "var(--frosted-bg)", backdropFilter: "blur(20px) saturate(180%)",
         WebkitBackdropFilter: "blur(20px) saturate(180%)",
-        border: "1px solid rgba(255,255,255,0.12)", borderRadius: 6, padding: "4px 0",
-        zIndex: 10000, boxShadow: "0 8px 24px rgba(0,0,0,0.4)",
+        border: "1px solid var(--border-subtle)", borderRadius: 6, padding: "4px 0",
+        zIndex: 10000, boxShadow: "0 8px 24px var(--shadow)",
       }}
     >
       {/* Saved layouts — click to restore, hover shows X to delete */}
@@ -2260,11 +2261,11 @@ function LayoutPresetsDropdown({ workspaceId }: { workspaceId: string }) {
           >
             <span style={{
               flex: 1, fontSize: 13, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
-              color: "#e0e0e0",
+              color: "var(--text-primary)",
             }}>{p.name}</span>
             <button
               className="layout-preset-delete"
-              style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 22, height: 22, background: "none", border: "none", color: "#e0e0e0", cursor: "pointer", borderRadius: 3, flexShrink: 0, opacity: 0 }}
+              style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 22, height: 22, background: "none", border: "none", color: "var(--text-primary)", cursor: "pointer", borderRadius: 3, flexShrink: 0, opacity: 0 }}
               onClick={(e) => doDelete(e, p.id)}
               title="Delete layout"
             >
@@ -2277,7 +2278,7 @@ function LayoutPresetsDropdown({ workspaceId }: { workspaceId: string }) {
       })}
 
       {presets.length > 0 && (
-        <div style={{ height: 1, background: "rgba(255,255,255,0.08)", margin: "4px 4px" }} />
+        <div style={{ height: 1, background: "var(--bg-hover)", margin: "4px 4px" }} />
       )}
 
       {/* Save as New Layout (safer action first) */}
@@ -2293,14 +2294,14 @@ function LayoutPresetsDropdown({ workspaceId }: { workspaceId: string }) {
             }}
             placeholder="Layout name..."
             style={{
-              flex: 1, background: "rgba(255,255,255,0.08)",
-              border: "1px solid rgba(255,255,255,0.15)", borderRadius: 4,
-              color: "#e0e0e0", fontSize: 13, fontWeight: 600, padding: "4px 8px", outline: "none",
+              flex: 1, background: "var(--bg-hover)",
+              border: "1px solid var(--border-subtle)", borderRadius: 4,
+              color: "var(--text-primary)", fontSize: 13, fontWeight: 600, padding: "4px 8px", outline: "none",
             }}
           />
           <button
             className="tab-action"
-            style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 24, height: 24, background: "none", border: "none", color: "#e0e0e0", cursor: "pointer", borderRadius: 4, flexShrink: 0 }}
+            style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 24, height: 24, background: "none", border: "none", color: "var(--text-primary)", cursor: "pointer", borderRadius: 4, flexShrink: 0 }}
             onClick={doSaveNew}
             title="Save"
           >
@@ -2315,7 +2316,7 @@ function LayoutPresetsDropdown({ workspaceId }: { workspaceId: string }) {
           style={{ display: "flex", alignItems: "center", padding: "0 10px", height: 28, cursor: "pointer", borderRadius: 4, margin: "0 4px" }}
           onClick={() => setSaving(true)}
         >
-          <span style={{ fontSize: 13, fontWeight: 600, color: "#e0e0e0" }}>Save as new layout...</span>
+          <span style={{ fontSize: 13, fontWeight: 600, color: "var(--text-primary)" }}>Save as new layout...</span>
         </div>
       )}
 
@@ -2326,7 +2327,7 @@ function LayoutPresetsDropdown({ workspaceId }: { workspaceId: string }) {
           style={{ display: "flex", alignItems: "center", padding: "0 10px", height: 28, cursor: "pointer", borderRadius: 4, margin: "0 4px" }}
           onClick={doSaveCurrent}
         >
-          <span style={{ fontSize: 13, fontWeight: 600, color: "#e0e0e0" }}>Update &lsquo;{activePreset.name}&rsquo;</span>
+          <span style={{ fontSize: 13, fontWeight: 600, color: "var(--text-primary)" }}>Update &lsquo;{activePreset.name}&rsquo;</span>
         </div>
       )}
     </div>,
@@ -2338,7 +2339,7 @@ function LayoutPresetsDropdown({ workspaceId }: { workspaceId: string }) {
       <button
         ref={btnRef}
         className="tab-action"
-        style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 22, height: 22, background: "none", border: "none", color: "#999", cursor: "pointer", borderRadius: 4 }}
+        style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 22, height: 22, background: "none", border: "none", color: "var(--text-dim)", cursor: "pointer", borderRadius: 4 }}
         onClick={handleToggle}
         title="Saved layouts"
       >
@@ -2732,7 +2733,7 @@ export function FileExplorer({ onCollapse, flushLeft }: FileExplorerProps) {
               justifyContent: "center",
               padding: "32px 16px",
               gap: 8,
-              color: "#666",
+              color: "var(--text-dim)",
               fontSize: 12,
               textAlign: "center",
               userSelect: "none",
@@ -2741,7 +2742,7 @@ export function FileExplorer({ onCollapse, flushLeft }: FileExplorerProps) {
             <span>No folders in this workspace</span>
             <span
               style={{
-                color: "#888",
+                color: "var(--text-dim)",
                 cursor: "pointer",
                 textDecoration: "underline",
                 textDecorationColor: "rgba(136,136,136,0.4)",
@@ -2823,7 +2824,7 @@ const styles: Record<string, React.CSSProperties> = {
     flexDirection: "column",
     height: "100%",
     minHeight: 0,
-    background: "#161616",
+    background: "var(--bg-surface)",
     overflow: "hidden",
     userSelect: "none",
   },
@@ -2837,17 +2838,17 @@ const styles: Record<string, React.CSSProperties> = {
   card: {
     position: "relative",
     zIndex: 0,
-    background: "#1b1b1b",
+    background: "var(--bg-app)",
     borderRadius: 6,
     border: "1px solid transparent",
-    borderBottomColor: "#2e2e2e",
+    borderBottomColor: "var(--border)",
     padding: 0,
     overflow: "hidden",
   },
   cardDragging: {
     zIndex: 120,
     background: "rgba(28, 34, 44, 0.78)",
-    boxShadow: "0 18px 40px rgba(0, 0, 0, 0.5)",
+    boxShadow: "0 18px 40px var(--shadow)",
     backdropFilter: "blur(20px) saturate(145%)",
     WebkitBackdropFilter: "blur(20px) saturate(145%)",
   },
@@ -2858,7 +2859,7 @@ const styles: Record<string, React.CSSProperties> = {
     padding: "0 8px 0 12px",
     minHeight: 29,
     maxHeight: 29,
-    borderBottom: "1px solid #333",
+    borderBottom: "1px solid var(--border)",
     flexShrink: 0,
   },
   explorerTitle: {
@@ -2866,7 +2867,7 @@ const styles: Record<string, React.CSSProperties> = {
     fontWeight: 700,
     textTransform: "uppercase" as const,
     letterSpacing: "0.05em",
-    color: "#fff",
+    color: "var(--text-primary)",
   },
   explorerAddBtn: {
     display: "flex",
@@ -2876,7 +2877,7 @@ const styles: Record<string, React.CSSProperties> = {
     height: 22,
     background: "none",
     border: "none",
-    color: "#999",
+    color: "var(--text-dim)",
     cursor: "pointer",
     borderRadius: 4,
   },
@@ -2900,7 +2901,7 @@ const styles: Record<string, React.CSSProperties> = {
     zIndex: 5,
     borderRadius: "6px 6px 0 0",
     overflow: "hidden",
-    border: "1px solid #2e2e2e",
+    border: "1px solid var(--border)",
     borderBottom: "none",
     margin: "-1px -1px 0 -1px",
   },
@@ -2910,7 +2911,7 @@ const styles: Record<string, React.CSSProperties> = {
     gap: 4,
     padding: "4px 6px",
     minHeight: 32,
-    background: "rgba(35, 35, 35, 0.82)",
+    background: "var(--frosted-bg)",
     cursor: "grab",
   },
   rootChevronBtn: {
@@ -2946,7 +2947,7 @@ const styles: Record<string, React.CSSProperties> = {
     whiteSpace: "nowrap" as const,
     fontSize: 14,
     fontWeight: 600,
-    color: "#eee",
+    color: "var(--text-primary)",
   },
   rootMeta: {
     display: "flex",
@@ -2955,17 +2956,17 @@ const styles: Record<string, React.CSSProperties> = {
   },
   rootBranch: {
     fontSize: 12,
-    color: "#bbb",
+    color: "var(--text-secondary)",
     fontWeight: 600,
   },
   aheadCount: {
-    color: "#e5a63a",
+    color: "var(--status-amber)",
     marginLeft: 4,
     fontSize: 11,
     fontWeight: 600,
   },
   behindCount: {
-    color: "#e8b930",
+    color: "var(--status-amber)",
     marginLeft: 4,
     fontSize: 11,
     fontWeight: 600,
@@ -2989,7 +2990,7 @@ const styles: Record<string, React.CSSProperties> = {
     padding: "2px 2px",
     background: "none",
     border: "none",
-    color: "#ddd",
+    color: "var(--text-primary)",
     fontSize: 12,
     textAlign: "left" as const,
     lineHeight: 1.4,
@@ -3008,11 +3009,11 @@ const styles: Record<string, React.CSSProperties> = {
     fontWeight: 600,
   },
   nodeHover: {
-    background: "#2d2d2d",
+    background: "var(--bg-elevated)",
   },
   emptyMsg: {
     padding: "8px 16px",
-    color: "#888",
+    color: "var(--text-dim)",
     fontSize: 11,
   },
   // Changes panel styles
@@ -3020,8 +3021,8 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: 11,
     padding: "1px 6px",
     borderRadius: 8,
-    background: "#404040",
-    color: "#fff",
+    background: "var(--border)",
+    color: "var(--text-primary)",
     fontWeight: 600,
     WebkitFontSmoothing: "antialiased" as const,
   },
@@ -3042,10 +3043,10 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: 11,
     fontWeight: 700,
     letterSpacing: "0.045em",
-    color: "#f0f0f0",
+    color: "var(--text-primary)",
   },
   sectionChevron: {
-    color: "#d4d4d4",
+    color: "var(--text-primary)",
     display: "flex",
     alignItems: "center",
     justifyContent: "center",
@@ -3053,7 +3054,7 @@ const styles: Record<string, React.CSSProperties> = {
     flexShrink: 0,
   },
   sectionTitle: {
-    color: "#f0f0f0",
+    color: "var(--text-primary)",
     fontWeight: 700,
   },
   sectionCountBadge: {
@@ -3061,8 +3062,8 @@ const styles: Record<string, React.CSSProperties> = {
     height: 16,
     padding: "0 5px",
     borderRadius: 8,
-    background: "#404040",
-    color: "#fff",
+    background: "var(--border)",
+    color: "var(--text-primary)",
     fontSize: 11,
     fontWeight: 600,
     lineHeight: "16px",
@@ -3082,11 +3083,11 @@ const styles: Record<string, React.CSSProperties> = {
     borderRadius: 4,
     cursor: "pointer",
     fontSize: 12,
-    color: "#ececec",
+    color: "var(--text-primary)",
     minHeight: 24,
   },
   changeItemSelected: {
-    background: "#2d2d2d",
+    background: "var(--bg-elevated)",
   },
   changeFileIcon: {
     display: "flex",
@@ -3102,11 +3103,11 @@ const styles: Record<string, React.CSSProperties> = {
   },
   changeFileName: {
     fontWeight: 500,
-    color: "#f2f2f2",
+    color: "var(--text-primary)",
   },
   changeFileDir: {
     fontSize: 11,
-    color: "#aeb3bb",
+    color: "var(--text-secondary)",
     marginLeft: 6,
   },
   changeRight: {
@@ -3140,7 +3141,7 @@ const styles: Record<string, React.CSSProperties> = {
     background: "none",
     border: "none",
     borderRadius: 3,
-    color: "#aeb2b8",
+    color: "var(--text-secondary)",
     cursor: "pointer",
     width: 18,
     height: 18,
@@ -3162,13 +3163,13 @@ const styles: Record<string, React.CSSProperties> = {
     top: "24%",
     width: 300,
     maxWidth: "90vw",
-    background: "#222222",
+    background: "var(--bg-elevated)",
     borderRadius: 14,
-    border: "0.5px solid rgba(255,255,255,0.08)",
+    border: "0.5px solid var(--border-subtle)",
     display: "flex",
     flexDirection: "column" as const,
     overflow: "hidden",
-    boxShadow: "0 8px 32px rgba(0, 0, 0, 0.4)",
+    boxShadow: "0 8px 32px var(--shadow)",
   },
   cloneModalTopRow: {
     display: "flex",
@@ -3178,7 +3179,7 @@ const styles: Record<string, React.CSSProperties> = {
   cloneModalCloseBtn: {
     background: "none",
     border: "none",
-    color: "#888",
+    color: "var(--text-dim)",
     cursor: "pointer",
     padding: 4,
     display: "flex",
@@ -3194,7 +3195,7 @@ const styles: Record<string, React.CSSProperties> = {
   cloneModalTitle: {
     fontSize: 16,
     fontWeight: 700,
-    color: "#fff",
+    color: "var(--text-primary)",
     letterSpacing: "-0.03em",
     lineHeight: "1.2",
     paddingTop: 12,
@@ -3202,16 +3203,16 @@ const styles: Record<string, React.CSSProperties> = {
   cloneModalLabel: {
     fontSize: 13,
     fontWeight: 600,
-    color: "#fff",
+    color: "var(--text-primary)",
     letterSpacing: "-0.01em",
   },
   cloneModalInput: {
     width: "100%",
     padding: "10px 12px",
     borderRadius: 10,
-    border: "1px solid rgba(255,255,255,0.06)",
-    background: "#1e1e1e",
-    color: "#e0e0e0",
+    border: "1px solid var(--border-subtle)",
+    background: "var(--bg-surface)",
+    color: "var(--text-primary)",
     fontSize: 13,
     fontFamily: "inherit",
     outline: "none",
@@ -3219,7 +3220,7 @@ const styles: Record<string, React.CSSProperties> = {
   },
   cloneModalPreview: {
     fontSize: 12,
-    color: "#888",
+    color: "var(--text-dim)",
     wordBreak: "break-all" as const,
     marginTop: -4,
   },
@@ -3233,8 +3234,8 @@ const styles: Record<string, React.CSSProperties> = {
     padding: "10px 0",
     borderRadius: 10,
     border: "none",
-    background: "#fff",
-    color: "#1a1a1a",
+    background: "var(--text-primary)",
+    color: "var(--bg-app)",
     fontSize: 13,
     fontWeight: 600,
     cursor: "pointer",

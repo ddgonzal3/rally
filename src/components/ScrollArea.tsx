@@ -177,7 +177,7 @@ export function ScrollArea({
             width: 5,
             height: 0,
             borderRadius: 3,
-            background: hovered ? "rgba(255, 255, 255, 0.22)" : "rgba(255, 255, 255, 0.12)",
+            background: hovered ? "var(--scrollbar-thumb-hover)" : "var(--scrollbar-thumb)",
             opacity: visible ? 1 : 0,
             transition: "opacity 0.25s, background 0.15s",
             cursor: "default",

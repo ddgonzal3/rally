@@ -186,6 +186,8 @@ export interface WorkspaceReadiness {
 
 export type WorkspaceMode = "product" | "dev";
 
+export type ThemeName = 'dark' | 'dimmed' | 'light';
+
 export interface ProductSession {
   state: "idle" | "active";
   ptyId: string | undefined;

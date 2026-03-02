@@ -91,7 +91,7 @@ const styles: Record<string, React.CSSProperties> = {
   overlay: {
     position: "absolute",
     inset: 0,
-    background: "#1a1a1a",
+    background: "var(--bg-surface)",
     display: "flex",
     alignItems: "center",
     justifyContent: "center",
@@ -112,12 +112,12 @@ const styles: Record<string, React.CSSProperties> = {
     width: 8,
     height: 8,
     borderRadius: "50%",
-    background: "#888",
+    background: "var(--text-dim)",
     animation: "claude-dot 1.4s ease-in-out infinite",
   },
   text: {
     fontSize: 13,
-    color: "#555",
+    color: "var(--text-dim)",
     fontWeight: 500,
     letterSpacing: "0.02em",
   },

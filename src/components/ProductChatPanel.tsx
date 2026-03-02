@@ -6,6 +6,7 @@ import { useWorkspaceStore, clearPtyBuffer } from "../stores/workspaceStore";
 import { api } from "../lib/tauri";
 import type { OnFileOpen } from "../lib/terminalLinkProvider";
 import { BranchSwitcher } from "./BranchSwitcher";
+import { RepoSwitcher } from "./RepoSwitcher";
 import { addToast } from "./ToastContainer";
 
 // Inject spin keyframe once
@@ -58,6 +59,7 @@ export function ProductChatPanel({ rootPath, workspaceId }: ProductChatPanelProp
   });
   const refreshGitStatusForPath = useWorkspaceStore((s) => s.refreshGitStatusForPath);
   const refreshPrStatusForPath = useWorkspaceStore((s) => s.refreshPrStatusForPath);
+  const workspace = useWorkspaceStore((s) => s.workspaces.find((w) => w.id === workspaceId));
 
   const shellPanel = useWorkspaceStore((s) => s.shellPanels[workspaceId]);
   const toggleShellPanel = useWorkspaceStore((s) => s.toggleShellPanel);
@@ -106,6 +108,20 @@ export function ProductChatPanel({ rootPath, workspaceId }: ProductChatPanelProp
     document.addEventListener("mouseup", cleanup);
     resizeCleanupRef.current = cleanup;
   }, [shellHeight]);
+
+  const prevRootPathRef = useRef(rootPath);
+  useEffect(() => {
+    if (prevRootPathRef.current !== rootPath) {
+      prevRootPathRef.current = rootPath;
+      if (state === "idle") {
+        // Clear auto-generated setup text from the previous repo
+        if (prompt.startsWith("Set up this project.")) {
+          setProductSession(workspaceId, { state: "idle", ptyId: undefined, prompt: "" });
+        }
+        setReadiness(null);
+      }
+    }
+  }, [rootPath, state, prompt, workspaceId, setProductSession]);
 
   useEffect(() => {
     if (state !== "idle") return;
@@ -236,16 +252,21 @@ export function ProductChatPanel({ rootPath, workspaceId }: ProductChatPanelProp
         <div style={{ ...styles.activeHeader, position: "absolute", top: 0, left: 0, right: 0, zIndex: 10 }}>
           <div />
           <div style={styles.headerRight}>
-            <svg width="11" height="11" viewBox="0 0 16 16" fill="none" style={{ flexShrink: 0 }}>
-              <path
-                d="M2 4.5A1.5 1.5 0 013.5 3H6l1 1.5h5.5A1.5 1.5 0 0114 6v5.5a1.5 1.5 0 01-1.5 1.5h-9A1.5 1.5 0 012 11.5v-7z"
-                stroke="#bbb"
-                strokeWidth="1.1"
-                strokeLinejoin="round"
-                fill="none"
-              />
-            </svg>
-            <span style={styles.headerPathText}>{shortenPath(rootPath)}</span>
+            <RepoSwitcher workspaceId={workspaceId} rootPath={rootPath} />
+            {(workspace?.paths.length ?? 0) <= 1 && (
+              <>
+                <svg width="11" height="11" viewBox="0 0 16 16" fill="none" style={{ flexShrink: 0 }}>
+                  <path
+                    d="M2 4.5A1.5 1.5 0 013.5 3H6l1 1.5h5.5A1.5 1.5 0 0114 6v5.5a1.5 1.5 0 01-1.5 1.5h-9A1.5 1.5 0 012 11.5v-7z"
+                    stroke="var(--text-secondary)"
+                    strokeWidth="1.1"
+                    strokeLinejoin="round"
+                    fill="none"
+                  />
+                </svg>
+                <span style={styles.headerPathText}>{shortenPath(rootPath)}</span>
+              </>
+            )}
             {branch && (
               <BranchSwitcher
                 rootPath={rootPath}
@@ -274,7 +295,7 @@ export function ProductChatPanel({ rootPath, workspaceId }: ProductChatPanelProp
                 >
                   <path
                     d="M2.5 8a5.5 5.5 0 0 1 9.3-3.95L10 6h5V1l-1.8 1.8A7.5 7.5 0 0 0 .5 8h2zm11 0a5.5 5.5 0 0 1-9.3 3.95L6 10H1v5l1.8-1.8A7.5 7.5 0 0 0 15.5 8h-2z"
-                    fill="#bbb"
+                    fill="var(--text-secondary)"
                   />
                 </svg>
               </button>
@@ -294,7 +315,7 @@ export function ProductChatPanel({ rootPath, workspaceId }: ProductChatPanelProp
             width="36"
             height="36"
             viewBox="0 0 24 24"
-            fill="#c5c5c5"
+            fill="var(--text-secondary)"
             fillRule="evenodd"
             xmlns="http://www.w3.org/2000/svg"
           >
@@ -311,8 +332,8 @@ export function ProductChatPanel({ rootPath, workspaceId }: ProductChatPanelProp
             style={{
               ...styles.inputCard,
               borderColor: inputFocused
-                ? "rgba(255,255,255,0.22)"
-                : "rgba(255,255,255,0.12)",
+                ? "var(--border)"
+                : "var(--border-subtle)",
             }}
             onFocus={() => setInputFocused(true)}
             onBlur={() => setInputFocused(false)}
@@ -347,7 +368,7 @@ export function ProductChatPanel({ rootPath, workspaceId }: ProductChatPanelProp
                 <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
                   <path
                     d="M8 12V4M5 5l3-3 3 3"
-                    stroke="#fff"
+                    stroke="var(--text-primary)"
                     strokeWidth="1.5"
                     strokeLinecap="round"
                     strokeLinejoin="round"
@@ -357,6 +378,34 @@ export function ProductChatPanel({ rootPath, workspaceId }: ProductChatPanelProp
             </div>
 
             <div style={styles.infoBar}>
+              <RepoSwitcher workspaceId={workspaceId} rootPath={rootPath} />
+              {(workspace?.paths.length ?? 0) <= 1 && (
+                <>
+                  <svg width="11" height="11" viewBox="0 0 16 16" fill="none" style={{ flexShrink: 0 }}>
+                    <path
+                      d="M2 4.5A1.5 1.5 0 013.5 3H6l1 1.5h5.5A1.5 1.5 0 0114 6v5.5a1.5 1.5 0 01-1.5 1.5h-9A1.5 1.5 0 012 11.5v-7z"
+                      stroke="var(--text-secondary)"
+                      strokeWidth="1.1"
+                      strokeLinejoin="round"
+                      fill="none"
+                    />
+                  </svg>
+                  <span style={styles.headerPathText}>{shortenPath(rootPath)}</span>
+                </>
+              )}
+              {branch && (
+                <BranchSwitcher
+                  rootPath={rootPath}
+                  branchName={branch}
+                  mainBranch={mainBranch}
+                  onBranchChanged={() => {
+                    refreshGitStatusForPath(rootPath, mainBranch).catch(() => {});
+                    refreshPrStatusForPath(rootPath).catch(() => {});
+                  }}
+                  variant="inline"
+                />
+              )}
+              <div style={{ flex: 1 }} />
               <label
                 style={{ ...styles.toggleLabel, marginLeft: 0 }}
                 title="Start Claude Code with --dangerously-skip-permissions"
@@ -386,7 +435,7 @@ export function ProductChatPanel({ rootPath, workspaceId }: ProductChatPanelProp
           <div style={styles.shellResizeHandle} onMouseDown={handleShellResize}>
             <div style={styles.shellResizeLine} />
           </div>
-          <div style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0, borderTop: "1px solid #333" }}>
+          <div style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0, borderTop: "1px solid var(--border)" }}>
             <Terminal cwd={rootPath} ptyId={shellPanel.ptyId} onFileOpen={handleFileOpen} />
           </div>
         </div>
@@ -412,7 +461,7 @@ export function ProductChatPanel({ rootPath, workspaceId }: ProductChatPanelProp
           <svg width="11" height="11" viewBox="0 0 16 16" fill="none" style={{ flexShrink: 0 }}>
             <path
               d="M2 4.5A1.5 1.5 0 013.5 3H6l1 1.5h5.5A1.5 1.5 0 0114 6v5.5a1.5 1.5 0 01-1.5 1.5h-9A1.5 1.5 0 012 11.5v-7z"
-              stroke="#bbb"
+              stroke="var(--text-secondary)"
               strokeWidth="1.1"
               strokeLinejoin="round"
               fill="none"
@@ -447,7 +496,7 @@ export function ProductChatPanel({ rootPath, workspaceId }: ProductChatPanelProp
               >
                 <path
                   d="M2.5 8a5.5 5.5 0 0 1 9.3-3.95L10 6h5V1l-1.8 1.8A7.5 7.5 0 0 0 .5 8h2zm11 0a5.5 5.5 0 0 1-9.3 3.95L6 10H1v5l1.8-1.8A7.5 7.5 0 0 0 15.5 8h-2z"
-                  fill="#bbb"
+                  fill="var(--text-secondary)"
                 />
               </svg>
             </button>
@@ -478,7 +527,7 @@ export function ProductChatPanel({ rootPath, workspaceId }: ProductChatPanelProp
         <div style={styles.shellResizeHandle} onMouseDown={handleShellResize}>
           <div style={styles.shellResizeLine} />
         </div>
-        <div style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0, borderTop: "1px solid #333" }}>
+        <div style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0, borderTop: "1px solid var(--border)" }}>
           <Terminal cwd={rootPath} ptyId={shellPanel.ptyId} onFileOpen={handleFileOpen} />
         </div>
       </div>
@@ -491,7 +540,7 @@ const styles: Record<string, React.CSSProperties> = {
   idleContainer: {
     position: "absolute",
     inset: 0,
-    background: "#1b1b1b",
+    background: "var(--bg-app)",
     backgroundImage: "radial-gradient(circle, rgba(255,255,255,0.04) 1px, transparent 1px)",
     backgroundSize: "16px 16px",
   },
@@ -514,7 +563,7 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: 20,
     fontFamily: "Georgia, 'Times New Roman', serif",
     fontWeight: 400,
-    color: "#fff",
+    color: "var(--text-primary)",
     letterSpacing: "0.01em",
     lineHeight: 1,
     marginTop: 2,
@@ -529,9 +578,9 @@ const styles: Record<string, React.CSSProperties> = {
     width: "100%",
     maxWidth: 600,
     marginTop: 20,
-    background: "rgba(40, 40, 40, 0.85)",
+    background: "var(--frosted-bg)",
     backdropFilter: "blur(20px) saturate(150%)",
-    border: "1px solid rgba(255,255,255,0.12)",
+    border: "1px solid var(--border-subtle)",
     borderRadius: 14,
     transition: "border-color 0.15s ease",
   },
@@ -546,7 +595,8 @@ const styles: Record<string, React.CSSProperties> = {
     border: "none",
     padding: "12px 44px 12px 16px",
     fontSize: 14,
-    color: "#e0e0e0",
+    fontWeight: 600,
+    color: "var(--text-primary)",
     fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
     outline: "none",
     resize: "none",
@@ -557,6 +607,7 @@ const styles: Record<string, React.CSSProperties> = {
   submitBtn: {
     position: "absolute",
     right: 8,
+    bottom: 6,
     display: "flex",
     alignItems: "center",
     justifyContent: "center",
@@ -573,11 +624,11 @@ const styles: Record<string, React.CSSProperties> = {
     alignItems: "center",
     gap: 6,
     padding: "7px 16px",
-    borderTop: "1px solid rgba(255,255,255,0.06)",
+    borderTop: "1px solid var(--border-subtle)",
   },
   infoText: {
     fontSize: 12,
-    color: "#bbb",
+    color: "var(--text-secondary)",
     fontWeight: 400,
     overflow: "hidden",
     textOverflow: "ellipsis",
@@ -605,7 +656,7 @@ const styles: Record<string, React.CSSProperties> = {
     width: 10,
     height: 10,
     borderRadius: "50%",
-    background: "#ddd",
+    background: "var(--text-primary)",
     position: "absolute" as const,
     top: 2,
     left: 2,
@@ -613,8 +664,8 @@ const styles: Record<string, React.CSSProperties> = {
   },
   toggleText: {
     fontSize: 12,
-    color: "#bbb",
-    fontWeight: 400,
+    color: "var(--text-secondary)",
+    fontWeight: 600,
     whiteSpace: "nowrap" as const,
     userSelect: "none" as const,
   },
@@ -635,8 +686,8 @@ const styles: Record<string, React.CSSProperties> = {
     padding: "0 10px",
     minHeight: 29,
     maxHeight: 29,
-    background: "#1e1e1e",
-    borderBottom: "1px solid #333",
+    background: "var(--bg-elevated)",
+    borderBottom: "1px solid var(--border)",
     zIndex: 10,
     position: "relative" as const,
     flexShrink: 0,
@@ -649,7 +700,7 @@ const styles: Record<string, React.CSSProperties> = {
     cursor: "pointer",
     fontSize: 11,
     fontWeight: 500,
-    color: "#bbb",
+    color: "var(--text-secondary)",
     padding: "0 6px",
     borderRadius: 4,
     height: 22,
@@ -664,8 +715,8 @@ const styles: Record<string, React.CSSProperties> = {
   },
   headerPathText: {
     fontSize: 11,
-    color: "#bbb",
-    fontWeight: 400,
+    color: "var(--text-secondary)",
+    fontWeight: 600,
     overflow: "hidden",
     textOverflow: "ellipsis",
     whiteSpace: "nowrap" as const,
@@ -709,7 +760,7 @@ const styles: Record<string, React.CSSProperties> = {
     cursor: "pointer",
     borderRadius: 3,
     fontSize: 12,
-    color: "#999",
+    color: "var(--text-dim)",
     fontWeight: 400,
     padding: "1px 4px",
     letterSpacing: "0.01em",
@@ -722,8 +773,8 @@ const styles: Record<string, React.CSSProperties> = {
     padding: "0 6px",
     marginLeft: 6,
     fontSize: 11,
-    color: "#bbb",
-    fontWeight: 400,
+    color: "var(--text-secondary)",
+    fontWeight: 600,
     height: 22,
     letterSpacing: "0.01em",
     whiteSpace: "nowrap" as const,
@@ -735,7 +786,7 @@ const styles: Record<string, React.CSSProperties> = {
     alignItems: "center",
     justifyContent: "center",
     flexShrink: 0,
-    background: "#1e1e1e",
+    background: "var(--bg-elevated)",
   },
   shellResizeLine: {
     width: 32,

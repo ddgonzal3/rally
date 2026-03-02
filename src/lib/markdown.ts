@@ -55,15 +55,15 @@ export const markdownStyles = `
   --markdown-font-size: 14px;
   --markdown-line-height: 22px;
   --vscode-editor-font-family: "SF Mono", Monaco, Menlo, Consolas, "Ubuntu Mono", "Liberation Mono", "DejaVu Sans Mono", "Courier New", monospace;
-  --vscode-editor-foreground: #D4D4D4;
+  --vscode-editor-foreground: var(--terminal-fg);
   --vscode-textLink-foreground: #3794FF;
   --vscode-textLink-activeForeground: #3794FF;
   --vscode-textPreformat-foreground: #D7BA7D;
   --vscode-textPreformat-background: #FFFFFF1A;
-  --vscode-textBlockQuote-background: #222222;
+  --vscode-textBlockQuote-background: var(--bg-elevated);
   --vscode-textBlockQuote-border: #007acc80;
-  --vscode-textCodeBlock-background: #262626;
-  --vscode-widget-border: #303031;
+  --vscode-textCodeBlock-background: var(--bg-elevated);
+  --vscode-widget-border: var(--border);
   --vscode-diffEditor-insertedTextBackground: #9ccc2c33;
   --vscode-diffEditor-removedTextBackground: #ff000033;
   color: var(--vscode-editor-foreground);
@@ -85,7 +85,7 @@ export const markdownStyles = `
 }
 
 .md-body h1, .md-body h2, .md-body h3, .md-body h4, .md-body h5, .md-body h6 {
-  color: #e6edf3;
+  color: var(--text-primary);
   font-weight: 600;
   margin-top: 24px;
   margin-bottom: 16px;
@@ -95,12 +95,12 @@ export const markdownStyles = `
   font-size: 2em;
   margin-top: 0;
   padding-bottom: 0.3em;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.18);
+  border-bottom: 1px solid var(--border-subtle);
 }
 .md-body h2 {
   font-size: 1.5em;
   padding-bottom: 0.3em;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.18);
+  border-bottom: 1px solid var(--border-subtle);
 }
 .md-body h3 { font-size: 1.25em; }
 .md-body h4 { font-size: 1em; }
@@ -191,12 +191,12 @@ export const markdownStyles = `
 }
 .md-body th, .md-body td { padding: 5px 10px; }
 .md-body table > tbody > tr + tr > td {
-  border-top: 1px solid rgba(255, 255, 255, 0.12);
+  border-top: 1px solid var(--border-subtle);
 }
 .md-body hr {
   border: 0;
   height: 1px;
-  border-top: 1px solid rgba(255, 255, 255, 0.18);
+  border-top: 1px solid var(--border-subtle);
   margin: 24px 0 16px;
 }
 .md-body input[type="checkbox"] {

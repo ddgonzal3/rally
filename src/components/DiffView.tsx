@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { DiffEditor } from "@monaco-editor/react";
 import { api } from "../lib/tauri";
+import { useWorkspaceStore } from "../stores/workspaceStore";
 import { addToast } from "./ToastContainer";
 
 function getLanguageFromPath(path: string): string {
@@ -43,6 +44,7 @@ export function DiffView({
   isUntracked,
   isActive = true,
 }: DiffViewProps) {
+  const appTheme = useWorkspaceStore((s) => s.theme);
   const [original, setOriginal] = useState("");
   const [modified, setModified] = useState("");
   const [loading, setLoading] = useState(true);
@@ -167,7 +169,7 @@ export function DiffView({
 
   if (loading) {
     return (
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100%", color: "#999", fontSize: 13 }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100%", color: "var(--text-dim)", fontSize: 13 }}>
         Loading diff...
       </div>
     );
@@ -227,7 +229,7 @@ export function DiffView({
           original={original}
           modified={modified}
           language={getLanguageFromPath(filePath)}
-          theme="vs-dark"
+          theme={appTheme === "light" ? "vs" : "vs-dark"}
           options={{
             readOnly: true,
             renderSideBySide: true,
@@ -261,24 +263,24 @@ const styles: Record<string, React.CSSProperties> = {
     alignItems: "center",
     gap: 6,
     padding: "4px 8px",
-    borderBottom: "1px solid #2a2a2a",
+    borderBottom: "1px solid var(--border)",
     flexShrink: 0,
-    background: "#1a1a1a",
+    background: "var(--bg-surface)",
   },
   actionBtn: {
-    background: "#2d2d2d",
-    border: "1px solid #3f3f3f",
+    background: "var(--bg-elevated)",
+    border: "1px solid var(--border)",
     borderRadius: 4,
-    color: "#cfcfcf",
+    color: "var(--text-secondary)",
     fontSize: 11,
     lineHeight: 1.2,
     padding: "3px 8px",
     cursor: "pointer",
   },
   dangerBtn: {
-    color: "#d5b5b5",
-    borderColor: "#5a3a3a",
-    background: "#332424",
+    color: "#f85149",
+    borderColor: "rgba(248, 81, 73, 0.3)",
+    background: "rgba(248, 81, 73, 0.1)",
   },
   editorWrap: {
     flex: 1,

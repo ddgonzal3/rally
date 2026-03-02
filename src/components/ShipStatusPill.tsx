@@ -156,7 +156,7 @@ export function ShipStatusPill() {
       <div
         style={{
           ...styles.footer,
-          borderTop: expanded ? "1px solid #333" : "none",
+          borderTop: expanded ? "1px solid var(--border)" : "none",
           cursor: session.ptyId ? "pointer" : "default",
         }}
         onClick={() => session.ptyId && setExpanded(!expanded)}
@@ -221,9 +221,9 @@ const styles: Record<string, React.CSSProperties> = {
     zIndex: 1001,
     minWidth: 280,
     maxWidth: 360,
-    background: "#2a2a2a",
+    background: "var(--bg-elevated)",
     borderRadius: 6,
-    boxShadow: "0 4px 20px rgba(0,0,0,0.5)",
+    boxShadow: "0 4px 20px var(--shadow)",
     overflow: "hidden",
     display: "flex",
     flexDirection: "column",
@@ -234,20 +234,20 @@ const styles: Record<string, React.CSSProperties> = {
     display: "flex",
     alignItems: "center",
     padding: "5px 10px",
-    background: "#252525",
-    borderBottom: "1px solid #333",
+    background: "var(--bg-elevated)",
+    borderBottom: "1px solid var(--border)",
     gap: 8,
     flexShrink: 0,
   },
   toolbarTitle: {
     fontSize: 11,
     fontWeight: 600,
-    color: "#999",
+    color: "var(--text-dim)",
   },
   dockBtn: {
-    background: "#333",
-    border: "1px solid #444",
-    color: "#ccc",
+    background: "var(--border)",
+    border: "1px solid var(--border)",
+    color: "var(--text-secondary)",
     fontSize: 11,
     padding: "2px 8px",
     borderRadius: 4,
@@ -256,7 +256,7 @@ const styles: Record<string, React.CSSProperties> = {
   collapseBtn: {
     background: "none",
     border: "none",
-    color: "#666",
+    color: "var(--text-dim)",
     cursor: "pointer",
     fontSize: 13,
     padding: "0 4px",
@@ -289,13 +289,13 @@ const styles: Record<string, React.CSSProperties> = {
   },
   subtitle: {
     fontSize: 11,
-    color: "#999",
+    color: "var(--text-dim)",
     marginTop: 3,
     lineHeight: "1.4",
   },
   extra: {
     fontSize: 10,
-    color: "#777",
+    color: "var(--text-dim)",
     marginTop: 2,
   },
   actions: {
@@ -304,9 +304,9 @@ const styles: Record<string, React.CSSProperties> = {
     marginTop: 6,
   },
   actionBtn: {
-    background: "#3a3a3a",
-    border: "1px solid #4a4a4a",
-    color: "#ccc",
+    background: "var(--bg-elevated)",
+    border: "1px solid var(--border)",
+    color: "var(--text-secondary)",
     fontSize: 11,
     padding: "3px 10px",
     borderRadius: 4,
@@ -325,7 +325,7 @@ const styles: Record<string, React.CSSProperties> = {
   dismiss: {
     background: "none",
     border: "none",
-    color: "#888",
+    color: "var(--text-dim)",
     cursor: "pointer",
     fontSize: 16,
     padding: "0 2px",
@@ -476,7 +476,7 @@ function ShipTerminalView({
         height: termHeight,
         overflow: "hidden",
         padding: 4,
-        background: "#1e1e1e",
+        background: "var(--bg-elevated)",
         ...(visible ? {} : {
           position: "fixed" as const,
           left: -9999,

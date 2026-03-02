@@ -185,8 +185,8 @@ const styles: Record<string, React.CSSProperties> = {
   },
   preview: {
     position: "absolute",
-    background: "rgba(255, 255, 255, 0.06)",
-    border: "1px solid rgba(255, 255, 255, 0.12)",
+    background: "var(--bg-hover)",
+    border: "1px solid var(--border-subtle)",
     borderRadius: 4,
     transition: "all 0.1s ease",
     pointerEvents: "none",

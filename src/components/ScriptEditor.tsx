@@ -140,7 +140,7 @@ const styles: Record<string, React.CSSProperties> = {
     display: "flex",
     flexDirection: "column",
     height: "100%",
-    background: "#1a1a1a",
+    background: "var(--bg-surface)",
     overflow: "hidden",
   },
   header: {
@@ -150,7 +150,7 @@ const styles: Record<string, React.CSSProperties> = {
     padding: "0 8px 0 12px",
     minHeight: 29,
     maxHeight: 29,
-    borderBottom: "1px solid #333",
+    borderBottom: "1px solid var(--border)",
     flexShrink: 0,
   },
   headerTitle: {
@@ -158,7 +158,7 @@ const styles: Record<string, React.CSSProperties> = {
     fontWeight: 700,
     textTransform: "uppercase" as const,
     letterSpacing: "0.05em",
-    color: "#fff",
+    color: "var(--text-primary)",
   },
   content: {
     flex: 1,
@@ -168,7 +168,7 @@ const styles: Record<string, React.CSSProperties> = {
   loading: {
     padding: "12px 16px",
     fontSize: 12,
-    color: "#777",
+    color: "var(--text-dim)",
   },
   section: {
     marginBottom: 8,
@@ -184,11 +184,11 @@ const styles: Record<string, React.CSSProperties> = {
     fontWeight: 700,
     textTransform: "uppercase" as const,
     letterSpacing: "0.06em",
-    color: "#888",
+    color: "var(--text-dim)",
   },
   sectionSubtitle: {
     fontSize: 10,
-    color: "#555",
+    color: "var(--text-dim)",
     fontFamily: "monospace",
   },
   row: {
@@ -205,14 +205,14 @@ const styles: Record<string, React.CSSProperties> = {
   rowName: {
     fontSize: 12,
     fontWeight: 600,
-    color: "#ddd",
+    color: "var(--text-primary)",
     display: "flex",
     alignItems: "center",
     gap: 5,
   },
   scriptIcon: {
     fontSize: 10,
-    color: "#666",
+    color: "var(--text-dim)",
     width: 12,
     textAlign: "center" as const,
     flexShrink: 0,
@@ -227,14 +227,14 @@ const styles: Record<string, React.CSSProperties> = {
   },
   rowDesc: {
     fontSize: 11,
-    color: "#777",
+    color: "var(--text-dim)",
     marginTop: 1,
     paddingLeft: 17,
   },
   restoreBtn: {
-    background: "#333",
-    border: "1px solid #444",
-    color: "#ccc",
+    background: "var(--border)",
+    border: "1px solid var(--bg-hover)",
+    color: "var(--text-secondary)",
     fontSize: 13,
     padding: "2px 6px",
     borderRadius: 4,

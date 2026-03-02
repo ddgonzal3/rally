@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useLayoutEffect, useRef } from "react";
+import React, { useCallback, useRef } from "react";
 import type { SplitDirection } from "../lib/types";
 
 interface ResizeHandleProps {
@@ -7,83 +7,20 @@ interface ResizeHandleProps {
   onResize: (ratio: number) => void;
 }
 
-// --- Row overlay helpers ---
-// Row (vertical) resize handles use a full-width overlay line so the separator
-// visually spans all columns as one continuous line.
-
-function highlightRowOverlays() {
-  document
-    .querySelectorAll<HTMLDivElement>("[data-row-overlay] > div")
-    .forEach((el) => {
-      el.style.background = "#444";
-    });
-}
-
-function unhighlightRowOverlays() {
-  document
-    .querySelectorAll<HTMLDivElement>("[data-row-overlay] > div")
-    .forEach((el) => {
-      el.style.background = "#2a2a2a";
-    });
-}
-
 export function ResizeHandle({ direction, ratio, onResize }: ResizeHandleProps) {
   const handleRef = useRef<HTMLDivElement>(null);
-  const overlayRef = useRef<HTMLDivElement | null>(null);
+  const lineRef = useRef<HTMLDivElement>(null);
   const dragging = useRef(false);
 
   const isRowHandle = direction === "vertical";
 
-  // Create/destroy a full-width overlay line for row handles.
-  // The overlay is appended to the nearest [data-pane-area] ancestor
-  // (the PaneLayout container) so it spans the pane area, not the full viewport.
-  useEffect(() => {
-    if (!isRowHandle || !handleRef.current) return;
+  const resetLine = useCallback(() => {
+    if (lineRef.current) lineRef.current.style.background = "var(--border)";
+  }, []);
 
-    const paneArea = handleRef.current.closest("[data-pane-area]");
-    if (!paneArea) return;
-
-    const overlay = document.createElement("div");
-    overlay.setAttribute("data-row-overlay", "");
-    overlay.style.cssText = `
-      position: absolute; left: 0; right: 0; height: 1px;
-      pointer-events: none; z-index: 100;
-    `;
-    const line = document.createElement("div");
-    line.style.cssText = `
-      width: 100%; height: 1px; background: #2a2a2a;
-      transition: background 0.15s; opacity: 0.8;
-    `;
-    overlay.appendChild(line);
-    paneArea.appendChild(overlay);
-    overlayRef.current = overlay;
-
-    // Reposition on window resize
-    const onWindowResize = () => {
-      if (handleRef.current && overlay) {
-        const handleRect = handleRef.current.getBoundingClientRect();
-        const areaRect = paneArea.getBoundingClientRect();
-        overlay.style.top = `${handleRect.bottom - 1 - areaRect.top}px`;
-      }
-    };
-    window.addEventListener("resize", onWindowResize);
-
-    return () => {
-      window.removeEventListener("resize", onWindowResize);
-      overlay.remove();
-      overlayRef.current = null;
-    };
-  }, [isRowHandle]);
-
-  // Keep overlay positioned at the handle's bottom edge (relative to pane area)
-  useLayoutEffect(() => {
-    if (!isRowHandle || !overlayRef.current || !handleRef.current) return;
-    const paneArea = handleRef.current.closest("[data-pane-area]");
-    if (!paneArea) return;
-    const handleRect = handleRef.current.getBoundingClientRect();
-    const areaRect = paneArea.getBoundingClientRect();
-    overlayRef.current.style.top = `${handleRect.bottom - 1 - areaRect.top}px`;
-  });
+  const highlightLine = useCallback(() => {
+    if (lineRef.current) lineRef.current.style.background = "var(--resize-hover)";
+  }, []);
 
   const onMouseDown = useCallback(
     (e: React.MouseEvent) => {
@@ -104,8 +41,6 @@ export function ResizeHandle({ direction, ratio, onResize }: ResizeHandleProps) 
       const handleSize = isVertical ? handleRect.height : handleRect.width;
       const usable = Math.max(1, total - handleSize);
 
-      if (isVertical) highlightRowOverlays();
-
       const onMouseMove = (ev: MouseEvent) => {
         if (!dragging.current) return;
         const pointer = isVertical ? ev.clientY : ev.clientX;
@@ -116,22 +51,45 @@ export function ResizeHandle({ direction, ratio, onResize }: ResizeHandleProps) 
       const onMouseUp = () => {
         dragging.current = false;
         document.documentElement.style.removeProperty("--split-transition");
-        if (isVertical) unhighlightRowOverlays();
         document.removeEventListener("mousemove", onMouseMove);
         document.removeEventListener("mouseup", onMouseUp);
         document.body.style.cursor = "";
         document.body.style.userSelect = "";
+
+        // Reset line if mouse is no longer over the handle
+        if (handleRef.current) {
+          const r = handleRef.current.getBoundingClientRect();
+          const mouseX = (window as any).__lastMouseX ?? -1;
+          const mouseY = (window as any).__lastMouseY ?? -1;
+          if (mouseX < r.left || mouseX > r.right || mouseY < r.top || mouseY > r.bottom) {
+            resetLine();
+          }
+        }
+      };
+
+      // Track mouse position for mouseup hit-test
+      const trackMouse = (ev: MouseEvent) => {
+        (window as any).__lastMouseX = ev.clientX;
+        (window as any).__lastMouseY = ev.clientY;
+      };
+      document.addEventListener("mousemove", trackMouse);
+      const origOnMouseUp = onMouseUp;
+      const wrappedMouseUp = () => {
+        origOnMouseUp();
+        document.removeEventListener("mousemove", trackMouse);
+        delete (window as any).__lastMouseX;
+        delete (window as any).__lastMouseY;
       };
 
       // Disable flex transition on ALL split containers during drag
       document.documentElement.style.setProperty("--split-transition", "none");
 
       document.addEventListener("mousemove", onMouseMove);
-      document.addEventListener("mouseup", onMouseUp);
+      document.addEventListener("mouseup", wrappedMouseUp, { once: true });
       document.body.style.cursor = isVertical ? "row-resize" : "col-resize";
       document.body.style.userSelect = "none";
     },
-    [direction, onResize, ratio],
+    [direction, onResize, ratio, resetLine],
   );
 
   // Column separator (horizontal direction)
@@ -145,28 +103,23 @@ export function ResizeHandle({ direction, ratio, onResize }: ResizeHandleProps) 
           width: 6,
           height: "100%",
           cursor: "col-resize",
-          background: "#1a1a1a",
+          background: "linear-gradient(to bottom, var(--bg-surface) 28px, var(--bg-elevated) 28px, var(--bg-elevated) 29px, var(--bg-app) 29px)",
           zIndex: 10,
           display: "flex",
           alignItems: "center",
-          justifyContent: "center",
+          justifyContent: "flex-end",
         }}
-        onMouseEnter={(e) => {
-          const line = e.currentTarget.firstElementChild as HTMLDivElement;
-          if (line) line.style.background = "#444";
-        }}
-        onMouseLeave={(e) => {
-          if (!dragging.current) {
-            const line = e.currentTarget.firstElementChild as HTMLDivElement;
-            if (line) line.style.background = "#2a2a2a";
-          }
+        onMouseEnter={() => highlightLine()}
+        onMouseLeave={() => {
+          if (!dragging.current) resetLine();
         }}
       >
         <div
+          ref={lineRef}
           style={{
             width: 1,
             height: "100%",
-            background: "#2a2a2a",
+            background: "var(--border)",
             transition: "background 0.15s",
             pointerEvents: "none",
           }}
@@ -175,8 +128,7 @@ export function ResizeHandle({ direction, ratio, onResize }: ResizeHandleProps) 
     );
   }
 
-  // Row separator (vertical direction) — visible line comes from the overlay;
-  // this div is just the invisible grab handle
+  // Row separator (vertical direction) — local line within this column only
   return (
     <div
       ref={handleRef}
@@ -186,13 +138,27 @@ export function ResizeHandle({ direction, ratio, onResize }: ResizeHandleProps) 
         width: "100%",
         height: 6,
         cursor: "row-resize",
-        background: "#1a1a1a",
+        background: "var(--bg-app)",
         zIndex: 10,
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
       }}
-      onMouseEnter={() => highlightRowOverlays()}
+      onMouseEnter={() => highlightLine()}
       onMouseLeave={() => {
-        if (!dragging.current) unhighlightRowOverlays();
+        if (!dragging.current) resetLine();
       }}
-    />
+    >
+      <div
+        ref={lineRef}
+        style={{
+          width: "100%",
+          height: 1,
+          background: "var(--border)",
+          transition: "background 0.15s",
+          pointerEvents: "none",
+        }}
+      />
+    </div>
   );
 }

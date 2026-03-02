@@ -9,7 +9,7 @@ import { ScriptEditor } from "./components/ScriptEditor";
 import { PaneLayout } from "./components/PaneLayout";
 import { useWorkspaceStore } from "./stores/workspaceStore";
 import { api } from "./lib/tauri";
-import { findFirstGroupInSubtree, findNeighborGroup, replaceNode, type LayoutNode, type NavigationDirection, type Pane } from "./lib/types";
+import { findFirstGroupInSubtree, findNeighborGroup, replaceNode, type LayoutNode, type NavigationDirection, type Pane, type ThemeName } from "./lib/types";
 import {
   startExternalFileDrag,
   updateDragPosition,
@@ -32,8 +32,8 @@ function WorkspacePicker({ onSelect }: { onSelect: (id: string) => void }) {
   const activeWorkspaceId = useWorkspaceStore((s) => s.activeWorkspaceId);
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", height: "100%", background: "#161616" }}>
-      <div style={{ padding: "8px 12px", fontSize: 11, fontWeight: 700, color: "#e0e0e0", textTransform: "uppercase" as const, letterSpacing: "0.06em" }}>
+    <div style={{ display: "flex", flexDirection: "column", height: "100%", background: "var(--bg-surface)" }}>
+      <div style={{ padding: "8px 12px", fontSize: 11, fontWeight: 700, color: "var(--text-primary)", textTransform: "uppercase" as const, letterSpacing: "0.06em" }}>
         Workspaces
       </div>
       <div style={{ flex: 1, overflow: "auto" }}>
@@ -51,8 +51,8 @@ function WorkspacePicker({ onSelect }: { onSelect: (id: string) => void }) {
                 width: "100%",
                 padding: "8px 12px",
                 border: "none",
-                background: isActive ? "rgba(255,255,255,0.08)" : "transparent",
-                color: isActive ? "#fff" : "#ccc",
+                background: isActive ? "var(--bg-hover)" : "transparent",
+                color: isActive ? "var(--text-primary)" : "var(--text-secondary)",
                 fontSize: 13,
                 fontWeight: isActive ? 600 : 500,
                 cursor: "pointer",
@@ -60,8 +60,8 @@ function WorkspacePicker({ onSelect }: { onSelect: (id: string) => void }) {
               }}
             >
               <svg width="14" height="14" viewBox="0 0 16 16" fill="none" style={{ flexShrink: 0 }}>
-                <rect x="1.5" y="3" width="13" height="10" rx="1.5" stroke={isActive ? "#ddd" : "#999"} strokeWidth="1.0" />
-                <path d="M1.5 5.5h13" stroke={isActive ? "#ddd" : "#999"} strokeWidth="1.0" />
+                <rect x="1.5" y="3" width="13" height="10" rx="1.5" stroke={isActive ? "var(--text-primary)" : "var(--text-dim)"} strokeWidth="1.0" />
+                <path d="M1.5 5.5h13" stroke={isActive ? "var(--text-primary)" : "var(--text-dim)"} strokeWidth="1.0" />
               </svg>
               {ws.name}
             </button>
@@ -114,8 +114,7 @@ export function App() {
   const loadRallyConfig = useWorkspaceStore((s) => s.loadRallyConfig);
   const isProductMode = workspaceMode === "product";
   const activeRootPath = useWorkspaceStore((s) => {
-    const ws = s.workspaces.find((w) => w.id === s.activeWorkspaceId);
-    return ws?.paths[0] ?? "";
+    return s.activeWorkspaceId ? (s.getActivePath(s.activeWorkspaceId) ?? "") : "";
   });
   const gitPanelOpen = useWorkspaceStore((s) => s.unifiedGitPanelOpen);
 
@@ -1216,10 +1215,10 @@ export function App() {
                 title: "Workspaces",
                 icon: (active: boolean) => (
                   <svg width="18" height="18" viewBox="0 0 16 16" fill="none">
-                    <rect x="1.5" y="1.5" width="5.5" height="5.5" rx="1.2" stroke={active ? "#ddd" : "#bbb"} strokeWidth="1.0" />
-                    <rect x="9" y="1.5" width="5.5" height="5.5" rx="1.2" stroke={active ? "#ddd" : "#bbb"} strokeWidth="1.0" />
-                    <rect x="1.5" y="9" width="5.5" height="5.5" rx="1.2" stroke={active ? "#ddd" : "#bbb"} strokeWidth="1.0" />
-                    <rect x="9" y="9" width="5.5" height="5.5" rx="1.2" stroke={active ? "#ddd" : "#bbb"} strokeWidth="1.0" />
+                    <rect x="1.5" y="1.5" width="5.5" height="5.5" rx="1.2" stroke={active ? "var(--text-primary)" : "var(--text-secondary)"} strokeWidth="1.0" />
+                    <rect x="9" y="1.5" width="5.5" height="5.5" rx="1.2" stroke={active ? "var(--text-primary)" : "var(--text-secondary)"} strokeWidth="1.0" />
+                    <rect x="1.5" y="9" width="5.5" height="5.5" rx="1.2" stroke={active ? "var(--text-primary)" : "var(--text-secondary)"} strokeWidth="1.0" />
+                    <rect x="9" y="9" width="5.5" height="5.5" rx="1.2" stroke={active ? "var(--text-primary)" : "var(--text-secondary)"} strokeWidth="1.0" />
                   </svg>
                 ),
               },
@@ -1227,7 +1226,7 @@ export function App() {
                 view: "files" as const,
                 title: "Files",
                 icon: (active: boolean) => (
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill={active ? "#ddd" : "#bbb"}>
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill={active ? "var(--text-primary)" : "var(--text-secondary)"}>
                     <path d="M17.5 0H8.5L7 1.5V6H2.5L1 7.5V22.5699L2.5 24H14.5699L16 22.5699V18H20.7L22 16.5699V4.5L17.5 0ZM17.5 2.12L19.88 4.5H17.5V2.12ZM14.5 22.5H2.5V7.5H7V16.5699L8.5 18H14.5V22.5ZM20.5 16.5H8.5V1.5H16V6H20.5V16.5Z" />
                   </svg>
                 ),
@@ -1237,8 +1236,8 @@ export function App() {
                 title: "Search",
                 icon: (active: boolean) => (
                   <svg width="18" height="18" viewBox="0 0 16 16" fill="none">
-                    <circle cx="7" cy="7" r="4.5" stroke={active ? "#ddd" : "#bbb"} strokeWidth="1.0" />
-                    <line x1="10.5" y1="10.5" x2="14" y2="14" stroke={active ? "#ddd" : "#bbb"} strokeWidth="1.0" strokeLinecap="round" />
+                    <circle cx="7" cy="7" r="4.5" stroke={active ? "var(--text-primary)" : "var(--text-secondary)"} strokeWidth="1.0" />
+                    <line x1="10.5" y1="10.5" x2="14" y2="14" stroke={active ? "var(--text-primary)" : "var(--text-secondary)"} strokeWidth="1.0" strokeLinecap="round" />
                   </svg>
                 ),
               },
@@ -1250,7 +1249,7 @@ export function App() {
                     width="17"
                     height="17"
                     viewBox="0 0 24 24"
-                    fill={active ? "#ddd" : "#bbb"}
+                    fill={active ? "var(--text-primary)" : "var(--text-secondary)"}
                     style={{ opacity: active ? 1 : 0.85 }}
                     aria-hidden="true"
                   >
@@ -1269,9 +1268,9 @@ export function App() {
                     fill="none"
                     aria-hidden="true"
                   >
-                    <path d="M2 3L6.5 8L2 13" stroke={active ? "#ddd" : "#bbb"} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" opacity="0.3" />
-                    <path d="M4.5 3L9 8L4.5 13" stroke={active ? "#ddd" : "#bbb"} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" opacity="0.6" />
-                    <path d="M7 3L11.5 8L7 13" stroke={active ? "#ddd" : "#bbb"} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                    <path d="M2 3L6.5 8L2 13" stroke={active ? "var(--text-primary)" : "var(--text-secondary)"} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" opacity="0.3" />
+                    <path d="M4.5 3L9 8L4.5 13" stroke={active ? "var(--text-primary)" : "var(--text-secondary)"} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" opacity="0.6" />
+                    <path d="M7 3L11.5 8L7 13" stroke={active ? "var(--text-primary)" : "var(--text-secondary)"} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
                   </svg>
                 ),
               },
@@ -1307,6 +1306,7 @@ export function App() {
             );
           })}
           <div style={{ flex: 1 }} />
+          <ThemeCycleButton />
         </div>
         {!fileExplorerCollapsed && (
           <div
@@ -1359,6 +1359,7 @@ export function App() {
               style={styles.explorerResizeHandle}
             >
               <div style={styles.resizeLine} />
+              <div style={styles.explorerResizeHeaderBorder} />
             </div>
           </div>
         )}
@@ -1393,16 +1394,16 @@ export function App() {
         .syn-keyword { color: #ff7b72; }
         .syn-literal { color: #79c0ff; }
         .syn-number { color: #d2a8ff; }
-        .repo-action-btn:hover { background: rgba(255,255,255,0.1) !important; }
-        .hunk-action-btn:hover { background: rgba(255,255,255,0.1) !important; color: #eee !important; }
-        .file-list-item:hover { background: rgba(255,255,255,0.05) !important; }
-        .file-list-item-selected { background: rgba(255,255,255,0.08) !important; }
+        .repo-action-btn:hover { background: var(--bg-active) !important; }
+        .hunk-action-btn:hover { background: var(--bg-active) !important; color: var(--text-primary) !important; }
+        .file-list-item:hover { background: var(--bg-hover) !important; }
+        .file-list-item-selected { background: var(--bg-hover) !important; }
         .git-diff-overlay { scrollbar-gutter: stable; }
         .git-diff-overlay ::-webkit-scrollbar { width: 6px; height: 0; }
         .git-diff-overlay ::-webkit-scrollbar-track { background: transparent; }
-        .git-diff-overlay ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.08); border-radius: 3px; transition: background 0.2s; }
+        .git-diff-overlay ::-webkit-scrollbar-thumb { background: var(--bg-hover); border-radius: 3px; transition: background 0.2s; }
         .git-diff-overlay :hover > ::-webkit-scrollbar-thumb,
-        .git-diff-overlay *:hover::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.15); }
+        .git-diff-overlay *:hover::-webkit-scrollbar-thumb { background: var(--border-subtle); }
         .git-diff-overlay *:hover::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.25); }
         .git-diff-overlay ::-webkit-scrollbar-corner { background: transparent; }
       `}</style>
@@ -1424,6 +1425,49 @@ export function App() {
   );
 }
 
+function ThemeCycleButton() {
+  const theme = useWorkspaceStore((s) => s.theme);
+  const setTheme = useWorkspaceStore((s) => s.setTheme);
+  const order: ThemeName[] = ["dark", "dimmed", "light"];
+  const next = order[(order.indexOf(theme) + 1) % order.length];
+  const label = theme === "dark" ? "Dark" : theme === "dimmed" ? "Dimmed" : "Light";
+  return (
+    <button
+      className="activity-btn"
+      style={{
+        background: "none",
+        border: "none",
+        cursor: "pointer",
+        width: 32,
+        height: 32,
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        borderRadius: 4,
+        marginBottom: 4,
+      }}
+      onClick={() => setTheme(next)}
+      title={`Theme: ${label} (click to switch)`}
+    >
+      {theme === "light" ? (
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+          <circle cx="12" cy="12" r="4" stroke="var(--text-secondary)" strokeWidth="1.5" />
+          <path d="M12 2v3M12 19v3M4.22 4.22l2.12 2.12M17.66 17.66l2.12 2.12M2 12h3M19 12h3M4.22 19.78l2.12-2.12M17.66 6.34l2.12-2.12" stroke="var(--text-secondary)" strokeWidth="1.5" strokeLinecap="round" />
+        </svg>
+      ) : theme === "dimmed" ? (
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+          <circle cx="12" cy="12" r="4" stroke="var(--text-secondary)" strokeWidth="1.5" />
+          <path d="M12 2v3M12 19v3M2 12h3M19 12h3" stroke="var(--text-secondary)" strokeWidth="1.5" strokeLinecap="round" />
+        </svg>
+      ) : (
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+          <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" stroke="var(--text-secondary)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      )}
+    </button>
+  );
+}
+
 const styles: Record<string, React.CSSProperties> = {
   app: {
     display: "flex",
@@ -1431,7 +1475,7 @@ const styles: Record<string, React.CSSProperties> = {
     height: "100vh",
     width: "100vw",
     overflow: "hidden",
-    background: "#1a1a1a",
+    background: "var(--bg-app)",
   },
   titlebar: {
     height: 34,
@@ -1439,10 +1483,9 @@ const styles: Record<string, React.CSSProperties> = {
     display: "flex",
     alignItems: "center",
     justifyContent: "center",
-    borderBottom: "1px solid #2a2a2a",
+    borderBottom: "1px solid var(--border)",
     userSelect: "none",
     position: "relative",
-    zIndex: 100,
     paddingLeft: 70,
   },
   titlebarLeft: {
@@ -1466,7 +1509,7 @@ const styles: Record<string, React.CSSProperties> = {
   },
   titlebarModeBtn: {
     background: "none",
-    border: "1px solid rgba(255,255,255,0.15)",
+    border: "1px solid var(--border-subtle)",
     cursor: "pointer",
     padding: "1px 6px",
     display: "flex",
@@ -1475,14 +1518,14 @@ const styles: Record<string, React.CSSProperties> = {
     borderRadius: 4,
     fontSize: 10,
     fontWeight: 600,
-    color: "#aaa",
+    color: "var(--text-secondary)",
     letterSpacing: "0.04em",
     lineHeight: "16px",
   },
   titleText: {
     fontSize: 13,
     fontWeight: 700,
-    color: "#d0d0d0",
+    color: "var(--text-primary)",
     letterSpacing: "0.01em",
     pointerEvents: "none" as const,
   },
@@ -1499,9 +1542,9 @@ const styles: Record<string, React.CSSProperties> = {
     display: "flex",
     flexDirection: "column",
     alignItems: "center",
-    background: "#1a1a1a",
-    borderRight: "1px solid #2a2a2a",
-    paddingTop: 0,
+    background: "var(--bg-app)",
+    borderRight: "1px solid var(--border)",
+    paddingTop: 2,
     gap: 2,
     flexShrink: 0,
   },
@@ -1528,16 +1571,26 @@ const styles: Record<string, React.CSSProperties> = {
     width: 8,
     minWidth: 8,
     cursor: "col-resize",
-    background: "transparent",
+    background: "linear-gradient(to bottom, var(--bg-surface) 28px, var(--bg-elevated) 28px, var(--bg-elevated) 29px, var(--bg-surface) 29px)",
     flexShrink: 0,
     zIndex: 10,
     display: "flex",
     alignItems: "stretch",
-    justifyContent: "center",
+    justifyContent: "flex-end",
+    position: "relative" as const,
   },
   resizeLine: {
     width: 1,
-    background: "#2a2a2a",
+    background: "var(--border)",
+    pointerEvents: "none" as const,
+  },
+  explorerResizeHeaderBorder: {
+    position: "absolute" as const,
+    top: 0,
+    left: 0,
+    width: "calc(100% - 1px)",
+    height: 29,
+    borderBottom: "1px solid var(--border)",
     pointerEvents: "none" as const,
   },
 };
