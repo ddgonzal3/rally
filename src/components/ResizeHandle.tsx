@@ -9,9 +9,18 @@ interface ResizeHandleProps {
 
 export function ResizeHandle({ direction, ratio, onResize }: ResizeHandleProps) {
   const handleRef = useRef<HTMLDivElement>(null);
+  const lineRef = useRef<HTMLDivElement>(null);
   const dragging = useRef(false);
 
   const isRowHandle = direction === "vertical";
+
+  const resetLine = useCallback(() => {
+    if (lineRef.current) lineRef.current.style.background = "var(--border)";
+  }, []);
+
+  const highlightLine = useCallback(() => {
+    if (lineRef.current) lineRef.current.style.background = "var(--resize-hover)";
+  }, []);
 
   const onMouseDown = useCallback(
     (e: React.MouseEvent) => {
@@ -46,17 +55,41 @@ export function ResizeHandle({ direction, ratio, onResize }: ResizeHandleProps) 
         document.removeEventListener("mouseup", onMouseUp);
         document.body.style.cursor = "";
         document.body.style.userSelect = "";
+
+        // Reset line if mouse is no longer over the handle
+        if (handleRef.current) {
+          const r = handleRef.current.getBoundingClientRect();
+          const mouseX = (window as any).__lastMouseX ?? -1;
+          const mouseY = (window as any).__lastMouseY ?? -1;
+          if (mouseX < r.left || mouseX > r.right || mouseY < r.top || mouseY > r.bottom) {
+            resetLine();
+          }
+        }
+      };
+
+      // Track mouse position for mouseup hit-test
+      const trackMouse = (ev: MouseEvent) => {
+        (window as any).__lastMouseX = ev.clientX;
+        (window as any).__lastMouseY = ev.clientY;
+      };
+      document.addEventListener("mousemove", trackMouse);
+      const origOnMouseUp = onMouseUp;
+      const wrappedMouseUp = () => {
+        origOnMouseUp();
+        document.removeEventListener("mousemove", trackMouse);
+        delete (window as any).__lastMouseX;
+        delete (window as any).__lastMouseY;
       };
 
       // Disable flex transition on ALL split containers during drag
       document.documentElement.style.setProperty("--split-transition", "none");
 
       document.addEventListener("mousemove", onMouseMove);
-      document.addEventListener("mouseup", onMouseUp);
+      document.addEventListener("mouseup", wrappedMouseUp, { once: true });
       document.body.style.cursor = isVertical ? "row-resize" : "col-resize";
       document.body.style.userSelect = "none";
     },
-    [direction, onResize, ratio],
+    [direction, onResize, ratio, resetLine],
   );
 
   // Column separator (horizontal direction)
@@ -70,24 +103,19 @@ export function ResizeHandle({ direction, ratio, onResize }: ResizeHandleProps) 
           width: 6,
           height: "100%",
           cursor: "col-resize",
-          background: "var(--bg-app)",
+          background: "linear-gradient(to bottom, var(--bg-surface) 28px, var(--bg-elevated) 28px, var(--bg-elevated) 29px, var(--bg-app) 29px)",
           zIndex: 10,
           display: "flex",
           alignItems: "center",
-          justifyContent: "center",
+          justifyContent: "flex-end",
         }}
-        onMouseEnter={(e) => {
-          const line = e.currentTarget.firstElementChild as HTMLDivElement;
-          if (line) line.style.background = "var(--text-dim)";
-        }}
-        onMouseLeave={(e) => {
-          if (!dragging.current) {
-            const line = e.currentTarget.firstElementChild as HTMLDivElement;
-            if (line) line.style.background = "var(--border)";
-          }
+        onMouseEnter={() => highlightLine()}
+        onMouseLeave={() => {
+          if (!dragging.current) resetLine();
         }}
       >
         <div
+          ref={lineRef}
           style={{
             width: 1,
             height: "100%",
@@ -116,18 +144,13 @@ export function ResizeHandle({ direction, ratio, onResize }: ResizeHandleProps) 
         alignItems: "center",
         justifyContent: "center",
       }}
-      onMouseEnter={(e) => {
-        const line = e.currentTarget.firstElementChild as HTMLDivElement;
-        if (line) line.style.background = "var(--text-dim)";
-      }}
-      onMouseLeave={(e) => {
-        if (!dragging.current) {
-          const line = e.currentTarget.firstElementChild as HTMLDivElement;
-          if (line) line.style.background = "var(--border)";
-        }
+      onMouseEnter={() => highlightLine()}
+      onMouseLeave={() => {
+        if (!dragging.current) resetLine();
       }}
     >
       <div
+        ref={lineRef}
         style={{
           width: "100%",
           height: 1,

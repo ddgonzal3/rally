@@ -760,7 +760,7 @@ function PrIcon({ color = "var(--text-dim)" }: { color?: string }) {
       height="22"
       viewBox="0 0 24 24"
       fill="none"
-      style={{ flexShrink: 0 }}
+      style={{ flexShrink: 0, opacity: 0.82 }}
     >
       <path
         d="M9 6C9 7.65685 7.65685 9 6 9C4.34315 9 3 7.65685 3 6C3 4.34315 4.34315 3 6 3C7.65685 3 9 4.34315 9 6Z"
@@ -808,7 +808,7 @@ function PrBadge({
   onClick?: () => void;
 }) {
   if (!pr || pr.state !== "OPEN") return null;
-  const color = pr.is_draft ? "#e8b930" : "var(--text-dim)";
+  const color = pr.is_draft ? "#e8b930" : "var(--text-secondary)";
   return (
     <button
       onClick={(e) => {
@@ -865,7 +865,7 @@ function GitStatusIcon({
         width="18"
         height="18"
         viewBox="0 0 24 24"
-        fill="var(--text-primary)"
+        fill="var(--text-secondary)"
         shapeRendering="geometricPrecision"
         style={{ flexShrink: 0 }}
       >
@@ -1474,11 +1474,12 @@ function RootSection({
                       }
                     >
                       {isOnMain ? (
-                        <svg width="18" height="18" viewBox="0 -960 960 960" fill="var(--text-dim)" style={syncing ? { animation: "spin 1s linear infinite" } : undefined}>
-                          <path d="M440-800v487L216-537l-56 57 320 320 320-320-56-57-224 224v-487h-80Z" />
+                        <svg width="18" height="18" viewBox="3 2 18 20" fill="none" stroke="var(--text-secondary)" strokeLinecap="round" strokeLinejoin="round" style={{ opacity: 0.82, ...(syncing ? { animation: "spin 1s linear infinite" } : undefined) }}>
+                          <path d="M12 4v16" strokeWidth="1.75" />
+                          <path d="M5 13l7 7 7-7" strokeWidth="1.5" />
                         </svg>
                       ) : (
-                        <svg width="18" height="18" viewBox="60 -880 860 860" fill="var(--text-dim)" style={syncing ? { animation: "spin 1s linear infinite" } : undefined}>
+                        <svg width="18" height="18" viewBox="60 -880 860 860" fill="var(--text-secondary)" style={syncing ? { animation: "spin 1s linear infinite" } : undefined}>
                           <path d="m430-30-56-57 73-73H313q-13 35-43.5 57.5T200-80q-50 0-85-35t-35-85q0-39 22.5-69.5T160-313v-334q-35-13-57.5-43.5T80-760q0-50 35-85t85-35q39 0 69.5 22.5T313-800h134l-73-73 56-57 170 170-170 170-56-57 73-73H313q-9 26-28 45t-45 28v334q26 9 45 28t28 45h134l-73-73 56-57 170 170L430-30Zm245-85q-35-35-35-85 0-40 22.5-70.5T720-313v-334q-35-12-57.5-42.5T640-760q0-50 35-85t85-35q50 0 85 35t35 85q0 40-22.5 70.5T800-647v334q35 13 57.5 43.5T880-200q0 50-35 85t-85 35q-50 0-85-35Zm-475-45q17 0 28.5-11.5T240-200q0-17-11.5-28.5T200-240q-17 0-28.5 11.5T160-200q0 17 11.5 28.5T200-160Zm560 0q17 0 28.5-11.5T800-200q0-17-11.5-28.5T760-240q-17 0-28.5 11.5T720-200q0 17 11.5 28.5T760-160ZM200-720q17 0 28.5-11.5T240-760q0-17-11.5-28.5T200-800q-17 0-28.5 11.5T160-760q0 17 11.5 28.5T200-720Zm560 0q17 0 28.5-11.5T800-760q0-17-11.5-28.5T760-800q-17 0-28.5 11.5T720-760q0 17 11.5 28.5T760-720ZM200-200Zm560 0ZM200-760Zm560 0Z" />
                         </svg>
                       )}

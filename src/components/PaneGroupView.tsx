@@ -38,9 +38,18 @@ function isClaudeCodeTitle(title: string): boolean {
   return lower === "claude" || lower.startsWith("claude ");
 }
 
-function paneLabel(pane: Pane, isDirty: boolean, workspacePath?: string): string {
+function paneLabel(
+  pane: Pane,
+  isDirty: boolean,
+  workspacePath?: string,
+): string {
   // User-set custom title always takes priority for renamable pane types
-  if (pane.customTitle && (pane.type === "terminal" || pane.type === "claude" || pane.type === "claude-launcher")) {
+  if (
+    pane.customTitle &&
+    (pane.type === "terminal" ||
+      pane.type === "claude" ||
+      pane.type === "claude-launcher")
+  ) {
     return pane.customTitle;
   }
   if (pane.type === "claude-launcher") {
@@ -111,9 +120,12 @@ export function PaneGroupView({
 
   // Close pane directly (X button) — no confirmation needed.
   // Cmd+W confirmation is handled in App.tsx separately.
-  const handleClosePane = useCallback((paneId: string) => {
-    closePane(workspaceId, groupId, paneId);
-  }, [closePane, workspaceId, groupId]);
+  const handleClosePane = useCallback(
+    (paneId: string) => {
+      closePane(workspaceId, groupId, paneId);
+    },
+    [closePane, workspaceId, groupId],
+  );
 
   if (!group) return null;
 
@@ -123,12 +135,19 @@ export function PaneGroupView({
   );
 
   // Inline tab rename state
-  const [renamingPaneId, setRenamingPaneId] = React.useState<string | null>(null);
+  const [renamingPaneId, setRenamingPaneId] = React.useState<string | null>(
+    null,
+  );
   const [renameValue, setRenameValue] = React.useState("");
   const renameInputRef = useRef<HTMLInputElement>(null);
 
   function startRename(pane: Pane) {
-    if (pane.type !== "terminal" && pane.type !== "claude" && pane.type !== "claude-launcher") return;
+    if (
+      pane.type !== "terminal" &&
+      pane.type !== "claude" &&
+      pane.type !== "claude-launcher"
+    )
+      return;
     setRenamingPaneId(pane.id);
     setRenameValue(pane.customTitle || paneLabel(pane, false, workspacePath));
   }
@@ -373,7 +392,11 @@ export function PaneGroupView({
   }, [workspaceId, groupId]);
 
   return (
-    <div style={styles.container} onMouseDown={focusGroup} data-group-id={groupId}>
+    <div
+      style={styles.container}
+      onMouseDown={focusGroup}
+      data-group-id={groupId}
+    >
       {/* Tab bar */}
       <div style={styles.tabBar}>
         <div style={styles.tabs}>
@@ -390,7 +413,11 @@ export function PaneGroupView({
                 }}
                 onClick={() => setActivePane(workspaceId, groupId, pane.id)}
                 onDoubleClick={() => {
-                  if (pane.type === "terminal" || pane.type === "claude" || pane.type === "claude-launcher") {
+                  if (
+                    pane.type === "terminal" ||
+                    pane.type === "claude" ||
+                    pane.type === "claude-launcher"
+                  ) {
                     startRename(pane);
                   } else if (pane.type === "editor" && pane.filePath) {
                     revealFileInExplorer(pane.filePath);
@@ -414,10 +441,20 @@ export function PaneGroupView({
                       action: () => api.revealInFinder(pane.filePath!),
                     });
                   }
-                  if (items.length > 0 && (pane.type === "terminal" || pane.type === "claude" || pane.type === "claude-launcher" || (pane.type === "editor" && pane.filePath))) {
+                  if (
+                    items.length > 0 &&
+                    (pane.type === "terminal" ||
+                      pane.type === "claude" ||
+                      pane.type === "claude-launcher" ||
+                      (pane.type === "editor" && pane.filePath))
+                  ) {
                     items.push("separator");
                   }
-                  if (pane.type === "terminal" || pane.type === "claude" || pane.type === "claude-launcher") {
+                  if (
+                    pane.type === "terminal" ||
+                    pane.type === "claude" ||
+                    pane.type === "claude-launcher"
+                  ) {
                     items.push({
                       label: "Rename Tab",
                       action: () => startRename(pane),
@@ -425,7 +462,10 @@ export function PaneGroupView({
                     if (pane.customTitle) {
                       items.push({
                         label: "Reset Tab Name",
-                        action: () => transformPane(workspaceId, groupId, pane.id, { customTitle: undefined }),
+                        action: () =>
+                          transformPane(workspaceId, groupId, pane.id, {
+                            customTitle: undefined,
+                          }),
                       });
                     }
                     items.push("separator");
@@ -441,7 +481,9 @@ export function PaneGroupView({
                 <PaneTabIcon
                   type={pane.type}
                   fileName={pane.title || pane.filePath?.split("/").pop()}
-                  terminalTitle={pane.type === "terminal" ? pane.title : undefined}
+                  terminalTitle={
+                    pane.type === "terminal" ? pane.title : undefined
+                  }
                 />
                 {renamingPaneId === pane.id ? (
                   <input
@@ -485,67 +527,110 @@ export function PaneGroupView({
                   </span>
                 )}
                 <div style={styles.tabActions}>
-                  {isActive && pane.type === "editor" && pane.filePath?.toLowerCase().endsWith(".md") && (() => {
-                    const mode = pane.editorViewMode ?? "raw";
-                    return (
-                      <>
-                        <button
-                          data-close
-                          className="tab-close tab-close-active"
-                          style={{
-                            ...styles.mdTabBtn,
-                            ...styles.tabActionActive,
-                            marginLeft: 2,
-                          }}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setEditorViewMode(
-                              workspaceId, groupId, pane.id,
-                              mode === "raw" ? "preview" : "raw",
-                            );
-                          }}
-                          title={mode === "raw" ? "Preview" : "Raw editor"}
-                        >
-                          {mode === "raw" ? (
-                            <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
-                              <path d="M1 8s2.5-5 7-5 7 5 7 5-2.5 5-7 5-7-5-7-5z" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round" />
-                              <circle cx="8" cy="8" r="2" stroke="currentColor" strokeWidth="1.3" />
+                  {isActive &&
+                    pane.type === "editor" &&
+                    pane.filePath?.toLowerCase().endsWith(".md") &&
+                    (() => {
+                      const mode = pane.editorViewMode ?? "raw";
+                      return (
+                        <>
+                          <button
+                            data-close
+                            className="tab-close tab-close-active"
+                            style={{
+                              ...styles.mdTabBtn,
+                              ...styles.tabActionActive,
+                              marginLeft: 2,
+                            }}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setEditorViewMode(
+                                workspaceId,
+                                groupId,
+                                pane.id,
+                                mode === "raw" ? "preview" : "raw",
+                              );
+                            }}
+                            title={mode === "raw" ? "Preview" : "Raw editor"}
+                          >
+                            {mode === "raw" ? (
+                              <svg
+                                width="14"
+                                height="14"
+                                viewBox="0 0 16 16"
+                                fill="none"
+                              >
+                                <path
+                                  d="M1 8s2.5-5 7-5 7 5 7 5-2.5 5-7 5-7-5-7-5z"
+                                  stroke="currentColor"
+                                  strokeWidth="1.3"
+                                  strokeLinejoin="round"
+                                />
+                                <circle
+                                  cx="8"
+                                  cy="8"
+                                  r="2"
+                                  stroke="currentColor"
+                                  strokeWidth="1.3"
+                                />
+                              </svg>
+                            ) : (
+                              <svg
+                                width="14"
+                                height="14"
+                                viewBox="0 0 16 16"
+                                fill="none"
+                              >
+                                <path
+                                  d="M5.5 3L1.5 8l4 5M10.5 3l4 5-4 5"
+                                  stroke="currentColor"
+                                  strokeWidth="1.3"
+                                  strokeLinecap="round"
+                                  strokeLinejoin="round"
+                                />
+                              </svg>
+                            )}
+                          </button>
+                          <button
+                            data-close
+                            className="tab-close tab-close-active"
+                            style={{
+                              ...styles.mdTabBtn,
+                              ...styles.tabActionActive,
+                              ...(mode === "split"
+                                ? { color: "var(--text-primary)" }
+                                : {}),
+                            }}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setEditorViewMode(
+                                workspaceId,
+                                groupId,
+                                pane.id,
+                                mode === "split" ? "raw" : "split",
+                              );
+                            }}
+                            title={
+                              mode === "split" ? "Exit split" : "Split view"
+                            }
+                          >
+                            <svg
+                              width="13"
+                              height="13"
+                              viewBox="0 0 16 16"
+                              fill="none"
+                            >
+                              <path
+                                fillRule="evenodd"
+                                clipRule="evenodd"
+                                d="M3 1h11l1 1v5.3a3.21 3.21 0 0 0-1-.3V2H9v10.88L7.88 14H3l-1-1V2l1-1zm0 12h5V2H3v11zm10.379-4.998a2.53 2.53 0 0 0-1.19.348h-.03a2.51 2.51 0 0 0-.799 3.53L9 14.23l.71.71 2.35-2.36c.325.22.7.358 1.09.4a2.47 2.47 0 0 0 1.14-.13 2.51 2.51 0 0 0 1-.63 2.46 2.46 0 0 0 .58-1 2.63 2.63 0 0 0 .07-1.15 2.53 2.53 0 0 0-1.35-1.81 2.53 2.53 0 0 0-1.211-.258zm.24 3.992a1.5 1.5 0 0 1-.979-.244 1.55 1.55 0 0 1-.56-.68 1.49 1.49 0 0 1-.08-.86 1.49 1.49 0 0 1 1.18-1.18 1.49 1.49 0 0 1 .86.08c.276.117.512.311.68.56a1.5 1.5 0 0 1-1.1 2.324z"
+                                fill="currentColor"
+                              />
                             </svg>
-                          ) : (
-                            <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
-                              <path d="M5.5 3L1.5 8l4 5M10.5 3l4 5-4 5" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
-                            </svg>
-                          )}
-                        </button>
-                        <button
-                          data-close
-                          className="tab-close tab-close-active"
-                          style={{
-                            ...styles.mdTabBtn,
-                            ...styles.tabActionActive,
-                            ...(mode === "split" ? { color: "var(--text-primary)" } : {}),
-                          }}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setEditorViewMode(
-                              workspaceId, groupId, pane.id,
-                              mode === "split" ? "raw" : "split",
-                            );
-                          }}
-                          title={mode === "split" ? "Exit split" : "Split view"}
-                        >
-                          <svg width="13" height="13" viewBox="0 0 16 16" fill="none">
-                            <path
-                              fillRule="evenodd"
-                              clipRule="evenodd"
-                              d="M3 1h11l1 1v5.3a3.21 3.21 0 0 0-1-.3V2H9v10.88L7.88 14H3l-1-1V2l1-1zm0 12h5V2H3v11zm10.379-4.998a2.53 2.53 0 0 0-1.19.348h-.03a2.51 2.51 0 0 0-.799 3.53L9 14.23l.71.71 2.35-2.36c.325.22.7.358 1.09.4a2.47 2.47 0 0 0 1.14-.13 2.51 2.51 0 0 0 1-.63 2.46 2.46 0 0 0 .58-1 2.63 2.63 0 0 0 .07-1.15 2.53 2.53 0 0 0-1.35-1.81 2.53 2.53 0 0 0-1.211-.258zm.24 3.992a1.5 1.5 0 0 1-.979-.244 1.55 1.55 0 0 1-.56-.68 1.49 1.49 0 0 1-.08-.86 1.49 1.49 0 0 1 1.18-1.18 1.49 1.49 0 0 1 .86.08c.276.117.512.311.68.56a1.5 1.5 0 0 1-1.1 2.324z"
-                              fill="currentColor"
-                            />
-                          </svg>
-                        </button>
-                      </>
-                    );
-                  })()}
+                          </button>
+                        </>
+                      );
+                    })()}
                   <button
                     data-close
                     className={`tab-close${isActive ? " tab-close-active" : ""}`}
@@ -661,8 +746,12 @@ export function PaneGroupView({
         transformPane={transformPane}
         handleLaunchClaude={handleLaunchClaude}
         handleLaunchTerminal={handleLaunchTerminal}
-        onLaunchTerminalAt={(cwd?: string) => executeAction("terminal", cwd || workspacePath)}
-        onLaunchClaudeAt={(cwd?: string) => executeAction("claude", cwd || workspacePath)}
+        onLaunchTerminalAt={(cwd?: string) =>
+          executeAction("terminal", cwd || workspacePath)
+        }
+        onLaunchClaudeAt={(cwd?: string) =>
+          executeAction("claude", cwd || workspacePath)
+        }
         handleFileOpen={useCallback<OnFileOpen>(
           (path, line, col) => {
             useWorkspaceStore
@@ -679,7 +768,10 @@ export function PaneGroupView({
         paneCount={group.panes.length}
         activeIsTerminal={(() => {
           const ap = group.panes.find((p) => p.id === activePaneId);
-          return !!(ap?.ptyId && (ap.type === "terminal" || ap.type === "claude"));
+          return !!(
+            ap?.ptyId &&
+            (ap.type === "terminal" || ap.type === "claude")
+          );
         })()}
         onDrop={handleDrop}
         onFileDrop={handleFileDrop}
@@ -849,7 +941,7 @@ function PaneContent({
     if (panes.length < prevCount && activePaneId && contentRef.current) {
       requestAnimationFrame(() => {
         const textarea = contentRef.current?.querySelector(
-          "textarea.xterm-helper-textarea"
+          "textarea.xterm-helper-textarea",
         ) as HTMLTextAreaElement | null;
         textarea?.focus();
       });
@@ -863,14 +955,15 @@ function PaneContent({
       if (targetId === groupId && contentRef.current) {
         requestAnimationFrame(() => {
           const textarea = contentRef.current?.querySelector(
-            "textarea.xterm-helper-textarea"
+            "textarea.xterm-helper-textarea",
           ) as HTMLTextAreaElement | null;
           textarea?.focus();
         });
       }
     }
     window.addEventListener("rally-focus-group", handleFocusGroup);
-    return () => window.removeEventListener("rally-focus-group", handleFocusGroup);
+    return () =>
+      window.removeEventListener("rally-focus-group", handleFocusGroup);
   }, [groupId]);
 
   // Determine which panes to mount: active + LRU cache, filtered to existing panes
@@ -884,7 +977,16 @@ function PaneContent({
   return (
     <div ref={contentRef} style={styles.content}>
       {panes.length === 0 && (
-        <div style={{ position: "absolute", top: 0, left: 0, right: 0, bottom: 0, display: "flex" }}>
+        <div
+          style={{
+            position: "absolute",
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            display: "flex",
+          }}
+        >
           <TerminalLauncher
             workspacePath={workspacePath}
             workspacePaths={paths}
@@ -998,7 +1100,7 @@ const styles: Record<string, React.CSSProperties> = {
     display: "flex",
     alignItems: "center",
     gap: 5,
-    padding: "0 2px 0 8px",
+    padding: "0 2px 0 6px",
     fontSize: 14,
     fontWeight: 500,
     color: "var(--text-dim)",

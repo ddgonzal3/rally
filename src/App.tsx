@@ -1359,6 +1359,7 @@ export function App() {
               style={styles.explorerResizeHandle}
             >
               <div style={styles.resizeLine} />
+              <div style={styles.explorerResizeHeaderBorder} />
             </div>
           </div>
         )}
@@ -1543,7 +1544,7 @@ const styles: Record<string, React.CSSProperties> = {
     alignItems: "center",
     background: "var(--bg-app)",
     borderRight: "1px solid var(--border)",
-    paddingTop: 0,
+    paddingTop: 2,
     gap: 2,
     flexShrink: 0,
   },
@@ -1570,16 +1571,26 @@ const styles: Record<string, React.CSSProperties> = {
     width: 8,
     minWidth: 8,
     cursor: "col-resize",
-    background: "transparent",
+    background: "linear-gradient(to bottom, var(--bg-surface) 28px, var(--bg-elevated) 28px, var(--bg-elevated) 29px, var(--bg-surface) 29px)",
     flexShrink: 0,
     zIndex: 10,
     display: "flex",
     alignItems: "stretch",
-    justifyContent: "center",
+    justifyContent: "flex-end",
+    position: "relative" as const,
   },
   resizeLine: {
     width: 1,
     background: "var(--border)",
+    pointerEvents: "none" as const,
+  },
+  explorerResizeHeaderBorder: {
+    position: "absolute" as const,
+    top: 0,
+    left: 0,
+    width: "calc(100% - 1px)",
+    height: 29,
+    borderBottom: "1px solid var(--border)",
     pointerEvents: "none" as const,
   },
 };
