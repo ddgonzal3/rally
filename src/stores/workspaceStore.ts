@@ -2878,8 +2878,3 @@ function syncPeerVerticalSplits(
   return syncPeers(root, changedSplitId, ratio, "vertical");
 }
 
-function syncPeerHorizontalSplits(
-  root: LayoutNode, changedSplitId: string, ratio: number
-): LayoutNode {
-  return syncPeers(root, changedSplitId, ratio, "horizontal");
-}

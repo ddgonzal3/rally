@@ -78,7 +78,7 @@ export function ResizeHandle({ direction, ratio, onResize }: ResizeHandleProps) 
         }}
         onMouseEnter={(e) => {
           const line = e.currentTarget.firstElementChild as HTMLDivElement;
-          if (line) line.style.background = "var(--border)";
+          if (line) line.style.background = "var(--text-dim)";
         }}
         onMouseLeave={(e) => {
           if (!dragging.current) {
@@ -118,7 +118,7 @@ export function ResizeHandle({ direction, ratio, onResize }: ResizeHandleProps) 
       }}
       onMouseEnter={(e) => {
         const line = e.currentTarget.firstElementChild as HTMLDivElement;
-        if (line) line.style.background = "var(--border)";
+        if (line) line.style.background = "var(--text-dim)";
       }}
       onMouseLeave={(e) => {
         if (!dragging.current) {

@@ -205,8 +205,7 @@ export function BranchSwitcher({
         }
         onMouseEnter={(e) => {
           if (!open)
-            (e.currentTarget as HTMLElement).style.background =
-              isPill ? "var(--bg-hover)" : "var(--bg-hover)";
+            (e.currentTarget as HTMLElement).style.background = "var(--bg-hover)";
         }}
         onMouseLeave={(e) => {
           if (!open)

@@ -11,8 +11,8 @@
   --vscode-toolbar-hoverBackground: var(--bg-hover);
   --vscode-toolbar-activeBackground: var(--bg-active);
   --vscode-inputOption-hoverBackground: var(--bg-hover);
-  --vscode-inputOption-activeBackground: var(--bg-active);
-  --vscode-inputOption-activeBorder: var(--border);
+  --vscode-inputOption-activeBackground: #2489db82;
+  --vscode-inputOption-activeBorder: #2488db;
   --vscode-inputOption-activeForeground: var(--text-primary);
   --vscode-search-resultsInfoForeground: var(--text-dim);
   --vscode-list-hoverBackground: var(--bg-elevated);
