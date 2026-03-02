@@ -9,20 +9,11 @@ import { showContextMenu } from "../lib/contextMenu";
 import type { ThemeName } from "../lib/types";
 import "@xterm/xterm/css/xterm.css";
 
-// Terminal background per theme — matches --bg-app so terminals and
-// Claude panels share the same surface color.
-const TERMINAL_BG: Record<ThemeName, string> = {
-  dark: '#1a1a1a',
-  dimmed: '#252525',
-  light: '#c8c8c8',
-};
-
-const xtermThemes: Record<ThemeName, Record<string, string>> = {
+// ANSI colors per theme — these have no CSS variable equivalents.
+// Background/foreground/cursor/selection are read from CSS variables
+// so theme tweaks in index.html automatically apply everywhere.
+const xtermAnsiColors: Record<ThemeName, Record<string, string>> = {
   dark: {
-    background: TERMINAL_BG.dark,
-    foreground: '#d4d4d4',
-    cursor: '#aeafad',
-    selectionBackground: '#5a5a5aaa',
     black: '#1e1e1e',
     red: '#df7d7d',
     green: '#7ddf7d',
@@ -33,10 +24,6 @@ const xtermThemes: Record<ThemeName, Record<string, string>> = {
     white: '#e0e0e0',
   },
   dimmed: {
-    background: TERMINAL_BG.dimmed,
-    foreground: '#cacaca',
-    cursor: '#9c9c9c',
-    selectionBackground: '#4a4a4aaa',
     black: '#252525',
     red: '#c87070',
     green: '#70c870',
@@ -47,10 +34,6 @@ const xtermThemes: Record<ThemeName, Record<string, string>> = {
     white: '#d2d2d2',
   },
   light: {
-    background: TERMINAL_BG.light,
-    foreground: '#111',
-    cursor: '#333',
-    selectionBackground: '#8ab4d8aa',
     black: '#111',
     red: '#a83224',
     green: '#1f8c4e',
@@ -63,6 +46,20 @@ const xtermThemes: Record<ThemeName, Record<string, string>> = {
     brightWhite: '#333',
   },
 };
+
+function getCssVar(name: string): string {
+  return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+}
+
+function getXtermTheme(theme: ThemeName): Record<string, string> {
+  return {
+    background: getCssVar('--terminal-bg'),
+    foreground: getCssVar('--terminal-fg'),
+    cursor: getCssVar('--terminal-cursor'),
+    selectionBackground: getCssVar('--terminal-selection'),
+    ...xtermAnsiColors[theme],
+  };
+}
 
 interface TerminalProps {
   cwd: string;
@@ -182,7 +179,7 @@ export function Terminal({ cwd, command, initialInput, ptyId: existingPtyId, loc
   // Sync xterm theme when the app theme changes
   useEffect(() => {
     if (termRef.current) {
-      termRef.current.options.theme = xtermThemes[theme];
+      termRef.current.options.theme = getXtermTheme(theme);
     }
   }, [theme]);
 
@@ -328,7 +325,7 @@ export function Terminal({ cwd, command, initialInput, ptyId: existingPtyId, loc
       rows: 24,
       macOptionIsMeta: true,
       cursorInactiveStyle: "none",
-      theme: xtermThemes[themeRef.current],
+      theme: getXtermTheme(themeRef.current),
       fontSize: 13,
       fontWeight: "normal",
       fontFamily: "Menlo, Monaco, 'Courier New', monospace",
@@ -745,7 +742,7 @@ export function Terminal({ cwd, command, initialInput, ptyId: existingPtyId, loc
 
   return (
     <div
-      style={{ ...styles.container, background: xtermThemes[theme].background }}
+      style={{ ...styles.container, background: 'var(--terminal-bg)' }}
       onMouseDown={handleMouseDown}
       onContextMenu={handleContextMenu}
     >
