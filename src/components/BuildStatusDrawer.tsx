@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { Terminal as XTerminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { useWorkspaceStore, scriptOutputBuffers } from "../stores/workspaceStore";
@@ -45,6 +45,35 @@ export function BuildStatusDrawer() {
   const termRef = useRef<HTMLDivElement>(null);
   const xtermRef = useRef<XTerminal | null>(null);
   const fitAddonRef = useRef<FitAddon | null>(null);
+  const [height, setHeight] = useState(233);
+  const dragging = useRef(false);
+
+  const onHandleMouseDown = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    dragging.current = true;
+    const startY = e.clientY;
+    const startHeight = height;
+
+    const onMouseMove = (ev: MouseEvent) => {
+      if (!dragging.current) return;
+      const delta = startY - ev.clientY;
+      const newHeight = Math.max(100, Math.min(500, startHeight + delta));
+      setHeight(newHeight);
+    };
+
+    const onMouseUp = () => {
+      dragging.current = false;
+      document.removeEventListener("mousemove", onMouseMove);
+      document.removeEventListener("mouseup", onMouseUp);
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+    };
+
+    document.addEventListener("mousemove", onMouseMove);
+    document.addEventListener("mouseup", onMouseUp);
+    document.body.style.cursor = "row-resize";
+    document.body.style.userSelect = "none";
+  }, [height]);
 
   // Escape to close + click outside to close
   useEffect(() => {
@@ -145,54 +174,40 @@ export function BuildStatusDrawer() {
 
   if (!drawer) return null;
 
-  const displayName = drawer.scriptName.replace(/\.(sh|bash)$/, "");
-
   return (
     <div ref={panelRef} style={{
       position: "absolute" as const,
-      bottom: 34,
+      bottom: 28,
       left: 0,
       right: 0,
-      height: "20%",
-      minHeight: 120,
-      maxHeight: 300,
-      background: "var(--bg-surface)",
-      borderTop: "1px solid var(--border)",
-      boxShadow: "0 -4px 16px var(--shadow)",
+      height,
+      background: "var(--terminal-bg)",
       zIndex: 100,
       display: "flex",
       flexDirection: "column" as const,
     }}>
-      {/* Header */}
-      <div style={{
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "space-between",
-        padding: "4px 8px",
-        borderBottom: "1px solid var(--border)",
-        flexShrink: 0,
-      }}>
-        <span style={{ fontSize: 12, color: "var(--text-primary)" }}>{displayName}</span>
-        <button
-          onClick={closeStatusBarDrawer}
-          style={{
-            background: "none",
-            border: "none",
-            cursor: "pointer",
-            color: "var(--text-dim)",
-            padding: 2,
-            display: "flex",
-            alignItems: "center",
-          }}
-        >
-          <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
-            <path d="M2.5 2.5L9.5 9.5M9.5 2.5L2.5 9.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-          </svg>
-        </button>
+      {/* Resize handle */}
+      <div
+        onMouseDown={onHandleMouseDown}
+        style={{
+          height: 8,
+          cursor: "row-resize",
+          flexShrink: 0,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          borderTop: "1px solid var(--border)",
+        }}
+      >
+        <div style={{
+          width: 32,
+          height: 3,
+          borderRadius: 2,
+          background: "var(--text-dim)",
+          opacity: 0.4,
+        }} />
       </div>
-
-      {/* Terminal container */}
-      <div ref={termRef} style={{ flex: 1, overflow: "hidden", background: "var(--terminal-bg)" }} />
+      <div ref={termRef} style={{ flex: 1, overflow: "hidden" }} />
     </div>
   );
 }

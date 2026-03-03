@@ -355,15 +355,21 @@ export function BuildStatusBar() {
                     <div style={{ width: 1, height: 14, background: "var(--border)", flexShrink: 0 }} />
                   )}
                   <div
-                    onClick={() => openStatusBarDrawer(repoPath, scriptName)}
+                    onClick={() => {
+                      // Start the script if idle, then open the drawer
+                      if (!isRunning && buildStatus === "idle") {
+                        runScript(repoPath, scriptName, command);
+                      }
+                      openStatusBarDrawer(repoPath, scriptName);
+                    }}
                     style={{
                       display: "flex",
                       alignItems: "center",
                       gap: 5,
                       padding: "2px 6px",
-                      borderRadius: 3,
+                      borderRadius: isDrawerOpen ? "3px 3px 0 0" : 3,
                       cursor: "pointer",
-                      background: isDrawerOpen ? "var(--bg-hover)" : "transparent",
+                      background: isDrawerOpen ? "var(--terminal-bg)" : "transparent",
                     }}
                   >
                     {/* Status dot */}

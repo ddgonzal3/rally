@@ -852,7 +852,7 @@ export function App() {
 
           // Animate: slide up from collapsed (0.8) to target ratio
           requestAnimationFrame(() => {
-            const targetRatio = 0.5;
+            const targetRatio = 0.618;
             const storageKey = `rally:bottomPanelRatio:${wsId}`;
             localStorage.setItem(storageKey, String(targetRatio));
             const cur = useWorkspaceStore.getState();
@@ -930,7 +930,7 @@ export function App() {
         }
 
         const newRatio = isCollapsed
-          ? Number(localStorage.getItem(storageKey)) || 0.5
+          ? Number(localStorage.getItem(storageKey)) || 0.618
           : (localStorage.setItem(storageKey, String(vertSplits[0].ratio)), 0.8);
         // Update all vertical splits to the same ratio
         let newRoot = layout.root;
@@ -1377,8 +1377,8 @@ export function App() {
             )}
             <div style={{ display: isProductMode ? "none" : "flex", flex: 1, flexDirection: "column" as const, minWidth: 0, minHeight: 0, position: "relative" as const }}>
               <PaneLayout />
-              <BuildStatusBar />
               <BuildStatusDrawer />
+              <BuildStatusBar />
             </div>
           </div>
         </div>
