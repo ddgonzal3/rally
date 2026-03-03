@@ -1341,12 +1341,12 @@ export function App() {
                   }}
                 />
               )}
-              {explorerView === "search" && (
+              <div style={{ display: explorerView === "search" ? undefined : "none", height: "100%" }}>
                 <SearchPanel
                   onCollapse={() => setFileExplorerCollapsed(true)}
                   flushLeft
                 />
-              )}
+              </div>
               {explorerView === "claude" && <GlobalConfigExplorer />}
               {explorerView === "scripts" && <ScriptEditor />}
               <div style={{ display: explorerView === "files" ? undefined : "none", height: "100%" }}>

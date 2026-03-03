@@ -326,12 +326,7 @@ export function UnifiedGitPanel() {
     lastFileFingerprint.current = fileFingerprint;
   }, [fileFingerprint]);
 
-  // Auto-select first file when list populates
-  useEffect(() => {
-    if (activeFiles.length > 0 && !selectedFile) {
-      setSelectedFile(activeFiles[0].newPath || activeFiles[0].oldPath);
-    }
-  }, [activeFiles, selectedFile]);
+  // Don't auto-select — null means show all files diff
 
   // Reset selection when switching unstaged/staged
   useEffect(() => {
@@ -391,9 +386,9 @@ export function UnifiedGitPanel() {
 
   if (!mounted) return null;
 
-  const selectedDiffFile = activeFiles.find(
-    (f) => (f.newPath || f.oldPath) === selectedFile,
-  );
+  const displayFiles = selectedFile
+    ? activeFiles.filter((f) => (f.newPath || f.oldPath) === selectedFile)
+    : activeFiles;
 
   return (
     <div
@@ -788,7 +783,7 @@ export function UnifiedGitPanel() {
                         return (
                           <button
                             key={fp}
-                            onClick={() => setSelectedFile(fp)}
+                            onClick={() => setSelectedFile(selectedFile === fp ? null : fp)}
                             style={{
                               ...ms.fileItem,
                               background: isSelected
@@ -1103,18 +1098,21 @@ export function UnifiedGitPanel() {
                         />
                       ) : null;
                     })()
-                  ) : selectedDiffFile ? (
-                    <DiffFileSection
-                      file={selectedDiffFile}
-                      defaultExpanded={true}
-                      tab={diffTab}
-                      onStage={handleStage}
-                      onUnstage={handleUnstage}
-                      onDiscard={handleDiscard}
-                    />
+                  ) : displayFiles.length > 0 ? (
+                    displayFiles.map((file) => (
+                      <DiffFileSection
+                        key={file.newPath || file.oldPath}
+                        file={file}
+                        defaultExpanded={true}
+                        tab={diffTab}
+                        onStage={handleStage}
+                        onUnstage={handleUnstage}
+                        onDiscard={handleDiscard}
+                      />
+                    ))
                   ) : !diffLoading ? (
                     <div style={ms.emptyDiff}>
-                      Select a file to view its diff
+                      No changes to display
                     </div>
                   ) : null}
                 </div>

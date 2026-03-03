@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from "react";
+import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { useWorkspaceStore } from "../stores/workspaceStore";
 import { api } from "../lib/tauri";
 import type { SearchMatch, ReplaceOp } from "../lib/types";
@@ -123,6 +124,19 @@ export function SearchPanel({ onCollapse, flushLeft }: SearchPanelProps) {
     }, 300);
     return () => clearTimeout(debounceRef.current);
   }, [query, caseSensitive, wholeWord, useRegex, doSearch]);
+
+  // Re-run search when files are modified (detected via git watcher)
+  useEffect(() => {
+    if (!query.trim() || !hasSearched) return;
+    let unlisten: UnlistenFn | null = null;
+    listen("git-changes-updated", () => {
+      clearTimeout(debounceRef.current);
+      debounceRef.current = setTimeout(() => {
+        doSearch(query, caseSensitive, wholeWord, useRegex);
+      }, 500);
+    }).then((fn) => { unlisten = fn; });
+    return () => { unlisten?.(); };
+  }, [query, caseSensitive, wholeWord, useRegex, hasSearched, doSearch]);
 
   const repoGroups = useMemo((): RepoGroup[] => {
     const rootsBySpecificity = [...paths].sort((a, b) => b.length - a.length);

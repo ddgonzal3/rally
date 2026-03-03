@@ -354,7 +354,7 @@ interface WorkspaceState {
   /** Delete a saved layout preset */
   deleteLayoutPreset: (workspaceId: string, presetId: string) => void;
   /** Open a file in an editor pane in the top area of the layout */
-  openFile: (workspaceId: string, filePath: string, options?: { line?: number; col?: number }) => void;
+  openFile: (workspaceId: string, filePath: string, options?: { line?: number; col?: number; skipReveal?: boolean }) => void;
   /** Reveal a file in the explorer (expand ancestors + highlight) */
   revealFileInExplorer: (filePath: string) => void;
   /** Set the active tab in the git diff panel */
@@ -2482,9 +2482,11 @@ export const useWorkspaceStore = create<WorkspaceState>()(
     get().addPaneToGroup(workspaceId, targetGroupId, pane);
 
     // Reveal the file in the explorer (expand ancestors, scroll into view)
-    // and ensure the explorer panel is visible
-    get().revealFileInExplorer(filePath);
-    document.dispatchEvent(new Event("rally-ensure-explorer-visible"));
+    // and ensure the explorer panel is visible — skip when opened directly from the explorer
+    if (!options?.skipReveal) {
+      get().revealFileInExplorer(filePath);
+      document.dispatchEvent(new Event("rally-ensure-explorer-visible"));
+    }
   },
 
   revealFileInExplorer: (filePath) => {
