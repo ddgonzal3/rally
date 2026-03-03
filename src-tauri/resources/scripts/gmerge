@@ -50,7 +50,7 @@ fi
 
 # Squash merge
 echo "Squash merging PR..."
-gh pr merge --squash || { echo "Merge failed."; exit 1; }
+gh pr merge --squash --admin || { echo "Merge failed."; exit 1; }
 
 # Sync local branch with main
 echo "Syncing $branch with $main_branch..."
