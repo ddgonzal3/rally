@@ -343,6 +343,7 @@ function fileContextMenu(
     onNewFolder?: (parentPath: string) => void;
     onAddToStatusBar?: () => void;
     onRemoveFromStatusBar?: () => void;
+    onOpenInWebView?: (filePath: string) => void;
   },
 ) {
   const targetDir = isDir ? filePath : parentDir(filePath);
@@ -367,6 +368,13 @@ function fileContextMenu(
     },
     "separator" as const,
     { label: "Reveal in Finder", action: () => api.revealInFinder(filePath) },
+    ...(!isDir && /\.(html?|svg)$/i.test(filePath) ? [
+      "separator" as const,
+      {
+        label: "Open in WebView",
+        action: () => callbacks.onOpenInWebView?.(filePath),
+      },
+    ] : []),
     ...((!isDir && filePath.endsWith(".sh")) ? [
       "separator" as const,
       callbacks.onRemoveFromStatusBar
@@ -542,7 +550,11 @@ const FileTreeNode = React.memo(
               setInlineEdit({ type: "rename", path: entry.path });
             }, 350);
           } else if (activeWorkspaceId) {
-            onOpenFile(activeWorkspaceId, entry.path, { skipReveal: true });
+            if (/\.(html?)$/i.test(entry.path)) {
+              useWorkspaceStore.getState().openWebView(activeWorkspaceId, entry.path);
+            } else {
+              onOpenFile(activeWorkspaceId, entry.path, { skipReveal: true });
+            }
             clearSelectedFilePaths(); // Clear selection — activeFile highlight takes over
           }
         }
@@ -751,6 +763,12 @@ const FileTreeNode = React.memo(
                   onRemoveFromStatusBar: (!entry.is_dir && entry.path.endsWith(".sh") && isInStatusBar)
                     ? () => useWorkspaceStore.getState().removeFromStatusBar(rootPath, scriptName)
                     : undefined,
+                    onOpenInWebView: (fp) => {
+                      const store = useWorkspaceStore.getState();
+                      if (activeWorkspaceId) {
+                        store.openWebView(activeWorkspaceId, fp);
+                      }
+                    },
                 }),
               );
             }}

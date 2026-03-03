@@ -240,7 +240,7 @@ export interface ScriptRun {
 
 export type EditorViewMode = "raw" | "split" | "preview";
 
-export type PaneType = "claude" | "terminal" | "claude-launcher" | "editor" | "diff";
+export type PaneType = "claude" | "terminal" | "claude-launcher" | "editor" | "diff" | "webview";
 
 export interface Pane {
   id: string;
@@ -256,6 +256,7 @@ export interface Pane {
   initialCol?: number;   // Jump to this column on editor mount (from Cmd+click)
   editorViewMode?: EditorViewMode;
   customTitle?: string;  // User-set tab name — takes priority over auto-generated label
+  webviewUrl?: string;  // URL or file path for webview pane
 }
 
 export type SplitDirection = "horizontal" | "vertical";

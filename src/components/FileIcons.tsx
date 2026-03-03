@@ -194,6 +194,16 @@ const svgIconStyle: React.CSSProperties = {
 
 // ─── Tab icons (14×14) ────────────────────────────────────────
 
+function GlobeTabIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" style={{ flexShrink: 0 }}>
+      <circle cx="8" cy="8" r="5.5" stroke="var(--text-dim)" strokeWidth="1.2" fill="none" />
+      <ellipse cx="8" cy="8" rx="2.8" ry="5.5" stroke="var(--text-dim)" strokeWidth="1.2" fill="none" />
+      <line x1="2.5" y1="8" x2="13.5" y2="8" stroke="var(--text-dim)" strokeWidth="1.2" />
+    </svg>
+  );
+}
+
 /** Returns the appropriate tab icon for a given pane type and filename. */
 export function PaneTabIcon({
   type,
@@ -213,6 +223,7 @@ export function PaneTabIcon({
     }
     return <TerminalTabIcon />;
   }
+  if (type === "webview") return <GlobeTabIcon />;
   if (type === "diff") return <DiffTabIcon />;
   if (type === "editor" && fileName) {
     if (isScriptFile(fileName)) return <TerminalPromptIcon size={16} />;
