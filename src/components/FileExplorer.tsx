@@ -2836,8 +2836,7 @@ export function FileExplorer({ onCollapse, flushLeft }: FileExplorerProps) {
       <ScrollArea
         style={{
           flex: 1,
-          padding: "4px 3px",
-          paddingLeft: flushLeft ? 7 : undefined,
+          padding: flushLeft ? "6px 0 6px 6px" : "6px 0 6px 3px",
         }}
         onContextMenu={(e: React.MouseEvent) => {
           // Only show menu when clicking empty space, not on a repo card
