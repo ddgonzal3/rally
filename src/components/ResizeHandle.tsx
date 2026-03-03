@@ -136,12 +136,12 @@ export function ResizeHandle({ direction, ratio, onResize }: ResizeHandleProps) 
       style={{
         flexShrink: 0,
         width: "100%",
-        height: 6,
+        height: 5,
         cursor: "row-resize",
-        background: "var(--bg-app)",
+        background: "transparent",
         zIndex: 10,
         display: "flex",
-        alignItems: "center",
+        alignItems: "flex-end",
         justifyContent: "center",
       }}
       onMouseEnter={() => highlightLine()}

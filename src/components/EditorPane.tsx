@@ -171,34 +171,29 @@ function TextEditor({ filePath, paneId }: { filePath: string; paneId: string }) 
   const markClean = useWorkspaceStore((s) => s.markPaneClean);
   const appTheme = useWorkspaceStore((s) => s.theme);
 
-  // Subscribe to initialLine/initialCol from pane data (set via Cmd+click)
-  const initialLine = useWorkspaceStore((s) => {
+  // Subscribe to initialLine/initialCol/editorViewMode from pane data (set via Cmd+click)
+  // Combined into a single selector with referential stability to avoid 3x iteration and unnecessary re-renders
+  const paneDataRef = useRef<{ initialLine?: number; initialCol?: number; editorViewMode?: string }>({});
+  const paneData = useWorkspaceStore((s) => {
     for (const layout of Object.values(s.layouts)) {
       for (const group of Object.values(layout.groups)) {
         const pane = group.panes.find((p) => p.id === paneId);
-        if (pane) return pane.initialLine;
+        if (pane) {
+          const next = { initialLine: pane.initialLine, initialCol: pane.initialCol, editorViewMode: pane.editorViewMode };
+          const prev = paneDataRef.current;
+          if (prev.initialLine === next.initialLine && prev.initialCol === next.initialCol && prev.editorViewMode === next.editorViewMode) {
+            return prev;
+          }
+          paneDataRef.current = next;
+          return next;
+        }
       }
     }
-    return undefined;
+    return paneDataRef.current;
   });
-  const initialCol = useWorkspaceStore((s) => {
-    for (const layout of Object.values(s.layouts)) {
-      for (const group of Object.values(layout.groups)) {
-        const pane = group.panes.find((p) => p.id === paneId);
-        if (pane) return pane.initialCol;
-      }
-    }
-    return undefined;
-  });
-  const editorViewMode = useWorkspaceStore((s) => {
-    for (const layout of Object.values(s.layouts)) {
-      for (const group of Object.values(layout.groups)) {
-        const pane = group.panes.find((p) => p.id === paneId);
-        if (pane) return pane.editorViewMode;
-      }
-    }
-    return undefined;
-  });
+  const initialLine = paneData?.initialLine;
+  const initialCol = paneData?.initialCol;
+  const editorViewMode = paneData?.editorViewMode;
 
   useEffect(() => {
     setContent(null);
@@ -421,6 +416,7 @@ function TextEditor({ filePath, paneId }: { filePath: string; paneId: string }) 
         renderLineHighlight: "line",
         smoothScrolling: false,
         cursorSmoothCaretAnimation: "off",
+        scrollbar: { verticalScrollbarSize: 10, horizontalScrollbarSize: 10 },
       }}
     />
   );

@@ -32,6 +32,7 @@ fn show_close_window_dialog(
     let s = close_window_showing.clone();
     let label = window.label().to_string();
     window
+        .app_handle()
         .dialog()
         .message("Are you sure you want to close this window?")
         .title("Close Window")
@@ -79,6 +80,7 @@ fn show_quit_dialog(app: tauri::AppHandle, quit_showing: Arc<AtomicBool>) {
 
     if let Some(window) = parent_window {
         window
+            .app_handle()
             .dialog()
             .message("Are you sure you want to quit Rally?")
             .title("Quit Rally")
@@ -191,6 +193,7 @@ fn main() {
         commands::reveal_in_finder,
         commands::list_scripts,
         commands::read_rally_config,
+        commands::update_rally_config_status_bar,
         commands::check_workspace_ready,
         commands::file_exists,
         commands::read_clipboard_text,

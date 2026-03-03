@@ -234,6 +234,10 @@ interface WorkspaceState {
   shellPanels: Record<string, ShellPanel>;
   /** Cached RALLY.json configs per repo path (not persisted) */
   rallyConfigs: Record<string, RallyConfig>;
+  /** Per-repo collapse state for status bar tabs (in-memory only) */
+  statusBarCollapsed: Record<string, boolean>;
+  /** Which script's drawer is currently open, or null */
+  statusBarDrawer: { repoPath: string; scriptName: string } | null;
   /** Current UI theme */
   theme: ThemeName;
   setTheme: (theme: ThemeName) => void;
@@ -245,6 +249,13 @@ interface WorkspaceState {
   // Mode actions
   setWorkspaceMode: (workspaceId: string, mode: WorkspaceMode) => void;
   loadRallyConfig: (rootPath: string) => Promise<void>;
+
+  // Status bar actions
+  toggleStatusBarCollapsed: (repoPath: string) => void;
+  openStatusBarDrawer: (repoPath: string, scriptName: string) => void;
+  closeStatusBarDrawer: () => void;
+  addToStatusBar: (rootPath: string, scriptName: string) => Promise<void>;
+  removeFromStatusBar: (rootPath: string, scriptName: string) => Promise<void>;
 
   // Product session actions
   setProductSession: (workspaceId: string, session: ProductSession) => void;
@@ -343,7 +354,7 @@ interface WorkspaceState {
   /** Delete a saved layout preset */
   deleteLayoutPreset: (workspaceId: string, presetId: string) => void;
   /** Open a file in an editor pane in the top area of the layout */
-  openFile: (workspaceId: string, filePath: string, options?: { line?: number; col?: number }) => void;
+  openFile: (workspaceId: string, filePath: string, options?: { line?: number; col?: number; skipReveal?: boolean }) => void;
   /** Reveal a file in the explorer (expand ancestors + highlight) */
   revealFileInExplorer: (filePath: string) => void;
   /** Set the active tab in the git diff panel */
@@ -639,6 +650,8 @@ export const useWorkspaceStore = create<WorkspaceState>()(
   productSessions: {},
   shellPanels: {},
   rallyConfigs: {},
+  statusBarCollapsed: {},
+  statusBarDrawer: null,
   theme: (localStorage.getItem('rally:theme') as ThemeName) || 'dark',
   setTheme: (theme) => {
     localStorage.setItem('rally:theme', theme);
@@ -675,6 +688,48 @@ export const useWorkspaceStore = create<WorkspaceState>()(
     } catch (e) {
       console.error(`Failed to load RALLY.json for ${rootPath}:`, e);
     }
+  },
+
+  // --- Status bar actions ---
+
+  toggleStatusBarCollapsed: (repoPath) => {
+    set((s) => ({
+      statusBarCollapsed: {
+        ...s.statusBarCollapsed,
+        [repoPath]: !s.statusBarCollapsed[repoPath],
+      },
+    }));
+  },
+
+  openStatusBarDrawer: (repoPath, scriptName) => {
+    const current = get().statusBarDrawer;
+    if (current?.repoPath === repoPath && current?.scriptName === scriptName) {
+      set({ statusBarDrawer: null }); // toggle off if same
+    } else {
+      set({ statusBarDrawer: { repoPath, scriptName } });
+    }
+  },
+
+  closeStatusBarDrawer: () => {
+    set({ statusBarDrawer: null });
+  },
+
+  addToStatusBar: async (rootPath, scriptName) => {
+    const config = get().rallyConfigs[rootPath];
+    const current = config?.statusBar ?? [];
+    if (current.includes(scriptName)) return;
+    const updated = [...current, scriptName];
+    await api.updateRallyConfigStatusBar(rootPath, updated);
+    // Refresh cached config
+    await get().loadRallyConfig(rootPath);
+  },
+
+  removeFromStatusBar: async (rootPath, scriptName) => {
+    const config = get().rallyConfigs[rootPath];
+    const current = config?.statusBar ?? [];
+    const updated = current.filter((s: string) => s !== scriptName);
+    await api.updateRallyConfigStatusBar(rootPath, updated);
+    await get().loadRallyConfig(rootPath);
   },
 
   // --- Product session actions ---
@@ -2427,9 +2482,11 @@ export const useWorkspaceStore = create<WorkspaceState>()(
     get().addPaneToGroup(workspaceId, targetGroupId, pane);
 
     // Reveal the file in the explorer (expand ancestors, scroll into view)
-    // and ensure the explorer panel is visible
-    get().revealFileInExplorer(filePath);
-    document.dispatchEvent(new Event("rally-ensure-explorer-visible"));
+    // and ensure the explorer panel is visible — skip when opened directly from the explorer
+    if (!options?.skipReveal) {
+      get().revealFileInExplorer(filePath);
+      document.dispatchEvent(new Event("rally-ensure-explorer-visible"));
+    }
   },
 
   revealFileInExplorer: (filePath) => {

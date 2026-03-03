@@ -25,7 +25,12 @@ import { ShipStatusPill } from "./components/ShipStatusPill";
 import { UnifiedGitPanel } from "./components/UnifiedGitPanel";
 import { SearchPanel } from "./components/SearchPanel";
 import { ProductChatPanel } from "./components/ProductChatPanel";
+import { BuildStatusBar } from "./components/BuildStatusBar";
+import { BuildStatusDrawer } from "./components/BuildStatusDrawer";
 import QuickOpen from "./components/QuickOpen";
+
+/** Default vertical split ratio — golden ratio gives top 61.8%, bottom 38.2% */
+const GOLDEN_RATIO = 0.618;
 
 function WorkspacePicker({ onSelect }: { onSelect: (id: string) => void }) {
   const workspaces = useWorkspaceStore((s) => s.workspaces);
@@ -850,7 +855,7 @@ export function App() {
 
           // Animate: slide up from collapsed (0.8) to target ratio
           requestAnimationFrame(() => {
-            const targetRatio = 0.5;
+            const targetRatio = GOLDEN_RATIO;
             const storageKey = `rally:bottomPanelRatio:${wsId}`;
             localStorage.setItem(storageKey, String(targetRatio));
             const cur = useWorkspaceStore.getState();
@@ -928,7 +933,7 @@ export function App() {
         }
 
         const newRatio = isCollapsed
-          ? Number(localStorage.getItem(storageKey)) || 0.5
+          ? Number(localStorage.getItem(storageKey)) || GOLDEN_RATIO
           : (localStorage.setItem(storageKey, String(vertSplits[0].ratio)), 0.8);
         // Update all vertical splits to the same ratio
         let newRoot = layout.root;
@@ -1339,12 +1344,12 @@ export function App() {
                   }}
                 />
               )}
-              {explorerView === "search" && (
+              <div style={{ display: explorerView === "search" ? undefined : "none", height: "100%" }}>
                 <SearchPanel
                   onCollapse={() => setFileExplorerCollapsed(true)}
                   flushLeft
                 />
-              )}
+              </div>
               {explorerView === "claude" && <GlobalConfigExplorer />}
               {explorerView === "scripts" && <ScriptEditor />}
               <div style={{ display: explorerView === "files" ? undefined : "none", height: "100%" }}>
@@ -1373,8 +1378,10 @@ export function App() {
                 />
               </div>
             )}
-            <div style={{ display: isProductMode ? "none" : "flex", flex: 1, flexDirection: "column" as const, minWidth: 0, minHeight: 0 }}>
+            <div style={{ display: isProductMode ? "none" : "flex", flex: 1, flexDirection: "column" as const, minWidth: 0, minHeight: 0, position: "relative" as const }}>
               <PaneLayout />
+              <BuildStatusDrawer />
+              <BuildStatusBar />
             </div>
           </div>
         </div>

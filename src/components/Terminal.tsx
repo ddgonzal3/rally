@@ -199,10 +199,13 @@ export function Terminal({ cwd, command, initialInput, ptyId: existingPtyId, loc
           claudeLikelyActiveRef.current = true;
           claudeLostPollCountRef.current = 0;
           emptyCount = 0;
-          // Hide blinking cursor while Claude Code manages the TUI
+          // Hide cursor entirely while Claude Code manages the TUI
           const term = termRef.current;
-          if (term && term.options.cursorBlink) {
-            term.options.cursorBlink = false;
+          if (term) {
+            if (term.options.cursorBlink) term.options.cursorBlink = false;
+            if (term.options.theme?.cursor !== 'transparent') {
+              term.options.theme = { ...term.options.theme, cursor: 'transparent' };
+            }
           }
           emitTitle("claude");
           return;
@@ -217,10 +220,14 @@ export function Terminal({ cwd, command, initialInput, ptyId: existingPtyId, loc
           }
           claudeLikelyActiveRef.current = false;
           claudeLostPollCountRef.current = 0;
-          // Restore blinking cursor now that Claude is gone
+          // Restore blinking cursor and visible cursor color now that Claude is gone
           const term = termRef.current;
-          if (term && !term.options.cursorBlink) {
-            term.options.cursorBlink = true;
+          if (term) {
+            if (!term.options.cursorBlink) term.options.cursorBlink = true;
+            const cursorColor = getCssVar('--terminal-cursor');
+            if (cursorColor) {
+              term.options.theme = { ...term.options.theme, cursor: cursorColor };
+            }
           }
         }
 
@@ -359,9 +366,12 @@ export function Terminal({ cwd, command, initialInput, ptyId: existingPtyId, loc
       if (isClaudeCodeTitle(normalized)) {
         claudeLikelyActiveRef.current = true;
         claudeLostPollCountRef.current = 0;
-        // Hide blinking cursor immediately when Claude sets the title
+        // Hide cursor entirely when Claude sets the title
         if (term.options.cursorBlink) {
           term.options.cursorBlink = false;
+        }
+        if (term.options.theme?.cursor !== 'transparent') {
+          term.options.theme = { ...term.options.theme, cursor: 'transparent' };
         }
         emitTitle("claude");
         return;
@@ -762,7 +772,7 @@ const styles: Record<string, React.CSSProperties> = {
   },
   terminal: {
     flex: 1,
-    padding: 4,
+    padding: '4px 4px 0 4px',
     overflow: "hidden",
   },
 };

@@ -8,7 +8,7 @@ import { api } from "../lib/tauri";
 import { showContextMenu, type MenuAction } from "../lib/contextMenu";
 import { startFileDrag } from "../lib/dragContext";
 import { ChevronIcon, FileIcon } from "./FileIcons";
-import { TaskPanel } from "./TaskPanel";
+// TaskPanel removed — scripts now shown in BuildStatusBar
 import { ScrollArea } from "./ScrollArea";
 import { addToast, useToastStore } from "./ToastContainer";
 import { parseUnifiedDiff, type DiffFile } from "../lib/diffParser";
@@ -124,15 +124,30 @@ function fetchGitIgnored(dirPath: string) {
     });
 }
 
-/** Currently selected path in the file tree (for Enter-to-rename) */
-let selectedFilePath: string | null = null;
+/** Currently selected paths in the file tree (supports Cmd+click multi-select) */
+let selectedFilePaths = new Set<string>();
 
-function setSelectedFilePath(path: string | null) {
-  selectedFilePath = path;
+function toggleSelectedFilePath(path: string, additive: boolean) {
+  if (additive) {
+    const next = new Set(selectedFilePaths);
+    if (next.has(path)) {
+      next.delete(path);
+    } else {
+      next.add(path);
+    }
+    selectedFilePaths = next;
+  } else {
+    selectedFilePaths = new Set([path]);
+  }
   document.dispatchEvent(new Event("rally:selection-change"));
 }
 
-function useSelectedFilePath() {
+function clearSelectedFilePaths() {
+  selectedFilePaths = new Set();
+  document.dispatchEvent(new Event("rally:selection-change"));
+}
+
+function useSelectedFilePaths() {
   const [, setTick] = useState(0);
   useEffect(() => {
     const handler = () => setTick((t) => t + 1);
@@ -140,7 +155,7 @@ function useSelectedFilePath() {
     return () =>
       document.removeEventListener("rally:selection-change", handler);
   }, []);
-  return selectedFilePath;
+  return selectedFilePaths;
 }
 
 interface FileEntry {
@@ -149,6 +164,9 @@ interface FileEntry {
   is_dir: boolean;
   children?: FileEntry[];
 }
+
+/** Files hidden from the explorer (system junk the user never wants to see) */
+const HIDDEN_FILES = new Set([".DS_Store", "Thumbs.db"]);
 
 // --- Inline edit state (module-level, shared across tree nodes) ---
 
@@ -323,6 +341,8 @@ function fileContextMenu(
     onRename?: () => void;
     onNewFile?: (parentPath: string) => void;
     onNewFolder?: (parentPath: string) => void;
+    onAddToStatusBar?: () => void;
+    onRemoveFromStatusBar?: () => void;
   },
 ) {
   const targetDir = isDir ? filePath : parentDir(filePath);
@@ -347,6 +367,12 @@ function fileContextMenu(
     },
     "separator" as const,
     { label: "Reveal in Finder", action: () => api.revealInFinder(filePath) },
+    ...((!isDir && filePath.endsWith(".sh")) ? [
+      "separator" as const,
+      callbacks.onRemoveFromStatusBar
+        ? { label: "Remove from Status Bar", action: callbacks.onRemoveFromStatusBar }
+        : { label: "Add to Status Bar", action: () => callbacks.onAddToStatusBar?.() },
+    ] : []),
     "separator" as const,
     {
       label: "Rename",
@@ -382,7 +408,7 @@ const FileTreeNode = React.memo(
     activeWorkspaceId: string | null;
     /** Path of the file currently open in the active editor pane */
     activeFilePath: string | null;
-    onOpenFile: (workspaceId: string, filePath: string) => void;
+    onOpenFile: (workspaceId: string, filePath: string, options?: { skipReveal?: boolean }) => void;
     /** Called by parent to remove a child by path after trash */
     removeChild?: (path: string) => void;
   }) {
@@ -406,8 +432,8 @@ const FileTreeNode = React.memo(
       editState?.type === "rename" && editState.path === entry.path;
     const isCreatingHere =
       editState?.type === "create" && editState.parentPath === entry.path;
-    const selected = useSelectedFilePath();
-    const isSelected = entry.path === selected;
+    const selectedPaths = useSelectedFilePaths();
+    const isSelected = selectedPaths.has(entry.path);
 
     // Check if this entry is gitignored (by checking parent directory's cache)
     const parentPath = entry.path.replace(/\/[^/]+$/, "");
@@ -473,12 +499,14 @@ const FileTreeNode = React.memo(
           clearTimeout(renameTimerRef.current);
           renameTimerRef.current = null;
         }
-        const wasSelected = selectedFilePath === entry.path;
         // Only trigger rename if click was on the text label, not chevron/icon
         const clickedOnText =
           (e.target as HTMLElement).closest("[data-file-name]") !== null;
-        setSelectedFilePath(entry.path);
+
         if (entry.is_dir) {
+          // Directories: always single-select, clear multi-select
+          clearSelectedFilePaths();
+          toggleSelectedFilePath(entry.path, false);
           if (!loaded) {
             try {
               const entries = await invoke<FileEntry[]>("list_directory", {
@@ -499,14 +527,24 @@ const FileTreeNode = React.memo(
             saveExpandedPaths();
             return next;
           });
-        } else if (wasSelected && clickedOnText) {
-          // Already selected file, clicked on text — start rename after delay
-          renameTimerRef.current = setTimeout(() => {
-            renameTimerRef.current = null;
-            setInlineEdit({ type: "rename", path: entry.path });
-          }, 350);
-        } else if (activeWorkspaceId) {
-          onOpenFile(activeWorkspaceId, entry.path);
+        } else if (e.metaKey) {
+          // Cmd+click on file: toggle in multi-select (don't open)
+          toggleSelectedFilePath(entry.path, true);
+        } else {
+          // Regular click on file
+          const wasSelected = selectedFilePaths.has(entry.path) && selectedFilePaths.size === 1;
+          clearSelectedFilePaths();
+          toggleSelectedFilePath(entry.path, false);
+          if (wasSelected && clickedOnText) {
+            // Already sole-selected file, clicked on text — start rename after delay
+            renameTimerRef.current = setTimeout(() => {
+              renameTimerRef.current = null;
+              setInlineEdit({ type: "rename", path: entry.path });
+            }, 350);
+          } else if (activeWorkspaceId) {
+            onOpenFile(activeWorkspaceId, entry.path, { skipReveal: true });
+            clearSelectedFilePaths(); // Clear selection — activeFile highlight takes over
+          }
         }
       },
       [entry, loaded, activeWorkspaceId, onOpenFile],
@@ -641,7 +679,7 @@ const FileTreeNode = React.memo(
         ) : (
           <button
             ref={btnRef}
-            className={`file-node${isActiveFile || isRevealTarget || isSelected ? " file-node-active" : ""}`}
+            className={`file-node${(isActiveFile || isRevealTarget || (isSelected && !entry.is_dir)) ? " file-node-active" : ""}`}
             onClick={handleClick}
             onDoubleClick={() => {
               if (renameTimerRef.current) {
@@ -652,7 +690,42 @@ const FileTreeNode = React.memo(
             onMouseDown={handleMouseDown}
             onContextMenu={(e) => {
               e.preventDefault();
-              setSelectedFilePath(entry.path);
+              // If right-clicked item isn't in current multi-selection, start fresh
+              if (!selectedFilePaths.has(entry.path)) {
+                toggleSelectedFilePath(entry.path, false);
+              }
+
+              if (selectedFilePaths.size > 1) {
+                // Multi-select context menu — bulk operations only
+                const paths = [...selectedFilePaths];
+                showContextMenu(
+                  [
+                    {
+                      label: `Move ${paths.length} Items to Trash`,
+                      action: async () => {
+                        for (const p of paths) {
+                          try {
+                            await api.trashFile(p);
+                          } catch (err) {
+                            console.error("Failed to trash file:", err);
+                          }
+                        }
+                        clearSelectedFilePaths();
+                        document.dispatchEvent(
+                          new CustomEvent(FS_CHANGED_EVENT, { detail: { rootPath } }),
+                        );
+                      },
+                    },
+                  ],
+                  { x: e.clientX, y: e.clientY },
+                );
+                return;
+              }
+
+              // Single-file context menu
+              const scriptName = entry.path.split("/").pop() || "";
+              const statusBarScripts = useWorkspaceStore.getState().rallyConfigs[rootPath]?.statusBar ?? [];
+              const isInStatusBar = statusBarScripts.includes(scriptName);
               showContextMenu(
                 fileContextMenu(entry.path, rootPath, entry.is_dir, {
                   onTrash: removeChild
@@ -672,6 +745,12 @@ const FileTreeNode = React.memo(
                       parentPath: p,
                       isDir: true,
                     }),
+                  onAddToStatusBar: (!entry.is_dir && entry.path.endsWith(".sh") && !isInStatusBar)
+                    ? () => useWorkspaceStore.getState().addToStatusBar(rootPath, scriptName)
+                    : undefined,
+                  onRemoveFromStatusBar: (!entry.is_dir && entry.path.endsWith(".sh") && isInStatusBar)
+                    ? () => useWorkspaceStore.getState().removeFromStatusBar(rootPath, scriptName)
+                    : undefined,
                 }),
               );
             }}
@@ -714,7 +793,7 @@ const FileTreeNode = React.memo(
           />
         )}
         {expanded &&
-          children.map((c) => (
+          children.filter((c) => !HIDDEN_FILES.has(c.name)).map((c) => (
             <FileTreeNode
               key={c.path}
               entry={c}
@@ -1479,7 +1558,7 @@ function RootSection({
                           <path d="M5 13l7 7 7-7" strokeWidth="1.5" />
                         </svg>
                       ) : (
-                        <svg width="18" height="18" viewBox="60 -880 860 860" fill="var(--text-secondary)" style={syncing ? { animation: "spin 1s linear infinite" } : undefined}>
+                        <svg width="18" height="18" viewBox="60 -880 860 860" fill="var(--text-secondary)" style={{ opacity: 0.82, ...(syncing ? { animation: "spin 1s linear infinite" } : undefined) }}>
                           <path d="m430-30-56-57 73-73H313q-13 35-43.5 57.5T200-80q-50 0-85-35t-35-85q0-39 22.5-69.5T160-313v-334q-35-13-57.5-43.5T80-760q0-50 35-85t85-35q39 0 69.5 22.5T313-800h134l-73-73 56-57 170 170-170 170-56-57 73-73H313q-9 26-28 45t-45 28v334q26 9 45 28t28 45h134l-73-73 56-57 170 170L430-30Zm245-85q-35-35-35-85 0-40 22.5-70.5T720-313v-334q-35-12-57.5-42.5T640-760q0-50 35-85t85-35q50 0 85 35t35 85q0 40-22.5 70.5T800-647v334q35 13 57.5 43.5T880-200q0 50-35 85t-85 35q-50 0-85-35Zm-475-45q17 0 28.5-11.5T240-200q0-17-11.5-28.5T200-240q-17 0-28.5 11.5T160-200q0 17 11.5 28.5T200-160Zm560 0q17 0 28.5-11.5T800-200q0-17-11.5-28.5T760-240q-17 0-28.5 11.5T720-200q0 17 11.5 28.5T760-160ZM200-720q17 0 28.5-11.5T240-760q0-17-11.5-28.5T200-800q-17 0-28.5 11.5T160-760q0 17 11.5 28.5T200-720Zm560 0q17 0 28.5-11.5T800-760q0-17-11.5-28.5T760-800q-17 0-28.5 11.5T720-760q0 17 11.5 28.5T760-720ZM200-200Zm560 0ZM200-760Zm560 0Z" />
                         </svg>
                       )}
@@ -1578,7 +1657,7 @@ function RootSection({
                 )}
               {filesExpanded &&
                 fsLoaded &&
-                fsEntries.map((e) => (
+                fsEntries.filter((e) => !HIDDEN_FILES.has(e.name)).map((e) => (
                   <FileTreeNode
                     key={e.path}
                     entry={e}
@@ -1590,12 +1669,6 @@ function RootSection({
                     removeChild={handleRemoveRootChild}
                   />
                 ))}
-              {activeWorkspaceId && (
-                <TaskPanel
-                  rootPath={rootPath}
-                  workspaceId={activeWorkspaceId}
-                />
-              )}
             </div>
             {/* Changes/PR panels — absolutely positioned over hidden file tree */}
             {showChanges && (
@@ -2405,14 +2478,14 @@ export function FileExplorer({ onCollapse, flushLeft }: FileExplorerProps) {
     const handler = () => {
       // Determine parent directory: use selected file's parent, or first workspace path
       let parentPath: string | null = null;
-      if (selectedFilePath) {
+      const firstSelected = selectedFilePaths.size > 0 ? [...selectedFilePaths][0] : null;
+      if (firstSelected) {
         // If selected item is a directory, create inside it; otherwise use its parent
-        const stat = directoryCache.get(selectedFilePath);
-        // Check if selectedFilePath is a directory by checking if it has a cache entry
+        // Check if firstSelected is a directory by checking if it has a cache entry
         // or is in the workspace paths list
-        const isDir = directoryCache.has(selectedFilePath) ||
-          (ws?.paths ?? []).includes(selectedFilePath);
-        parentPath = isDir ? selectedFilePath : selectedFilePath.replace(/\/[^/]+$/, "");
+        const isDir = directoryCache.has(firstSelected) ||
+          (ws?.paths ?? []).includes(firstSelected);
+        parentPath = isDir ? firstSelected : firstSelected.replace(/\/[^/]+$/, "");
       } else if (ws?.paths?.[0]) {
         parentPath = ws.paths[0];
       }
@@ -2437,13 +2510,49 @@ export function FileExplorer({ onCollapse, flushLeft }: FileExplorerProps) {
           (active as HTMLElement).isContentEditable)
       )
         return;
-      if (!selectedFilePath || inlineEdit || inlineEditCooldown) return;
+      // Only rename in single-select mode
+      if (selectedFilePaths.size !== 1 || inlineEdit || inlineEditCooldown) return;
+      const singlePath = [...selectedFilePaths][0];
       e.preventDefault();
-      setInlineEdit({ type: "rename", path: selectedFilePath });
+      setInlineEdit({ type: "rename", path: singlePath });
     };
     document.addEventListener("keydown", handler);
     return () => document.removeEventListener("keydown", handler);
   }, []);
+
+  // Delete/Backspace → trash selected files
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.key !== "Delete" && e.key !== "Backspace") return;
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+      // Don't trigger if focus is in an input, textarea, or contentEditable
+      const active = document.activeElement;
+      if (
+        active &&
+        (active.tagName === "INPUT" ||
+          active.tagName === "TEXTAREA" ||
+          (active as HTMLElement).isContentEditable)
+      )
+        return;
+      if (selectedFilePaths.size === 0 || inlineEdit) return;
+      e.preventDefault();
+      const paths = [...selectedFilePaths];
+      // Find rootPath for fs-changed event from the first selected path
+      const firstPath = paths[0];
+      const roots = ws?.paths ?? [];
+      const matchedRoot = roots.find((r) => firstPath.startsWith(r + "/") || firstPath === r) ?? firstPath.replace(/\/[^/]+$/, "");
+      Promise.all(
+        paths.map((p) => api.trashFile(p).catch((err) => console.error("Failed to trash file:", err))),
+      ).then(() => {
+        clearSelectedFilePaths();
+        document.dispatchEvent(
+          new CustomEvent(FS_CHANGED_EVENT, { detail: { rootPath: matchedRoot } }),
+        );
+      });
+    };
+    document.addEventListener("keydown", handler);
+    return () => document.removeEventListener("keydown", handler);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleAddFolder = useCallback(async () => {
     if (!ws) {
