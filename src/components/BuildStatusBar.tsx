@@ -36,17 +36,19 @@ function getWatcherBuildStatus(bufferKey: string): WatcherBuildStatus {
   return currentStatus;
 }
 
-// --- Relative timestamps ---
+// --- Timestamps ---
 
 const lastBuildTimes = new Map<string, number>();
+const lastBuildTimeStrings = new Map<string, string>();
 const prevStatuses = new Map<string, WatcherBuildStatus>();
 
-function formatRelativeTime(timestamp: number): string {
-  const seconds = Math.floor((Date.now() - timestamp) / 1000);
-  if (seconds < 5) return "just now";
-  if (seconds < 60) return `${seconds}s ago`;
-  if (seconds < 3600) return `${Math.floor(seconds / 60)}m ago`;
-  return `${Math.floor(seconds / 3600)}h ago`;
+function formatAbsoluteTime(timestamp: number): string {
+  const d = new Date(timestamp);
+  const h = d.getHours();
+  const m = d.getMinutes().toString().padStart(2, "0");
+  const ampm = h >= 12 ? "PM" : "AM";
+  const h12 = h % 12 || 12;
+  return `${h12}:${m} ${ampm}`;
 }
 
 // --- Last line preview from output buffer ---
@@ -78,9 +80,9 @@ function getDisplayName(scriptName: string): string {
 
 function getStatusColor(status: WatcherBuildStatus): string {
   switch (status) {
-    case "error": return "#e06c75";
-    case "success": return "#4caf50";
-    case "building": return "#e8b930";
+    case "error": return "var(--status-red)";
+    case "success": return "var(--status-green)";
+    case "building": return "var(--status-amber)";
     case "idle": return "var(--text-dim)";
   }
 }
@@ -101,8 +103,8 @@ const svgAlign: React.CSSProperties = { flexShrink: 0, display: "block" };
 function EyeOpenIcon() {
   return (
     <svg width="13" height="13" viewBox="0 0 24 24" fill="none" style={svgAlign}>
-      <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8S1 12 1 12z" stroke="#5b9e6f" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
-      <circle cx="12" cy="12" r="3.5" stroke="#5b9e6f" strokeWidth="1.8" />
+      <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8S1 12 1 12z" stroke="var(--status-green)" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+      <circle cx="12" cy="12" r="3.5" stroke="var(--status-green)" strokeWidth="1.8" />
     </svg>
   );
 }
@@ -125,7 +127,7 @@ function PlayIcon() {
 
 function StopIcon() {
   return (
-    <svg width="12" height="12" viewBox="0 0 10 10" fill="none" style={svgAlign}><rect x="2" y="2" width="6" height="6" rx="1" fill="#e06c75" /></svg>
+    <svg width="12" height="12" viewBox="0 0 10 10" fill="none" style={svgAlign}><rect x="2" y="2" width="6" height="6" rx="1" fill="var(--status-red)" /></svg>
   );
 }
 
@@ -170,12 +172,6 @@ export function BuildStatusBar() {
     };
   }, []);
 
-  // 10-second interval for relative timestamps
-  useEffect(() => {
-    const interval = setInterval(() => setTick((t) => t + 1), 10000);
-    return () => clearInterval(interval);
-  }, []);
-
   // Load RALLY.json configs and scripts for ALL repo paths in the workspace
   const loadRallyConfig = useWorkspaceStore((s) => s.loadRallyConfig);
   useEffect(() => {
@@ -218,18 +214,23 @@ export function BuildStatusBar() {
         const prev = prevStatuses.get(key);
         // Update timestamp on transition to success/error
         if ((status === "success" || status === "error") && prev === "building") {
-          lastBuildTimes.set(key, Date.now());
+          const now = Date.now();
+          lastBuildTimes.set(key, now);
+          lastBuildTimeStrings.set(key, formatAbsoluteTime(now));
         }
         prevStatuses.set(key, status);
       } else if (!isRunning && run?.status === "success") {
-        // One-shot script finished — mark timestamp if not already set
         if (!lastBuildTimes.has(key)) {
-          lastBuildTimes.set(key, Date.now());
+          const now = Date.now();
+          lastBuildTimes.set(key, now);
+          lastBuildTimeStrings.set(key, formatAbsoluteTime(now));
         }
         prevStatuses.set(key, "success");
       } else if (!isRunning && run?.status === "error") {
         if (!lastBuildTimes.has(key)) {
-          lastBuildTimes.set(key, Date.now());
+          const now = Date.now();
+          lastBuildTimes.set(key, now);
+          lastBuildTimeStrings.set(key, formatAbsoluteTime(now));
         }
         prevStatuses.set(key, "error");
       }
@@ -237,17 +238,19 @@ export function BuildStatusBar() {
   }
 
   return (
-    <div style={{
-      height: 34,
+    <div data-statusbar="" style={{
+      height: 28,
       background: "var(--bg-surface)",
       borderTop: "1px solid var(--border)",
       display: "flex",
       alignItems: "center",
       gap: 0,
-      paddingLeft: 10,
+      paddingLeft: 4,
       paddingRight: 10,
+      paddingBottom: 2,
       flexShrink: 0,
       overflow: "hidden",
+      userSelect: "none" as const,
     }}>
       {reposWithStatusBar.map(({ repoPath, repoName, scripts }, repoIdx) => {
         const collapsed = !!statusBarCollapsed[repoPath];
@@ -267,49 +270,61 @@ export function BuildStatusBar() {
             key={repoPath}
             style={{
               display: "flex",
-              alignItems: "center",
-              gap: 6,
-              background: "var(--bg-elevated)",
-              borderRadius: 6,
-              padding: "3px 8px",
+              alignItems: "stretch",
+              height: 22,
+              background: "transparent",
+              borderRadius: 0,
               marginRight: repoIdx < reposWithStatusBar.length - 1 ? 6 : 0,
             }}
           >
-            {/* Repo tab label — click to collapse/expand */}
-            <span
+            {/* Repo name — arrow/chevron tab */}
+            <div
               onClick={() => toggleStatusBarCollapsed(repoPath)}
               style={{
+                display: "flex",
+                alignItems: "center",
                 cursor: "pointer",
-                fontSize: 13,
-                color: "var(--text-primary)",
-                userSelect: "none",
-                whiteSpace: "nowrap",
-                fontWeight: 500,
-                lineHeight: 1,
+                flexShrink: 0,
               }}
             >
-              {repoName}
-            </span>
-
-            {/* Collapsed: aggregate dot */}
-            {collapsed && (() => {
-              const worstStatus = getWorstStatus(scriptStatuses);
-              return (
+              <div style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 5,
+                padding: "0 2px 0 8px",
+                background: "var(--pill-bg)",
+                borderRadius: "4px 0 0 4px",
+                height: 22,
+              }}>
                 <span
                   style={{
-                    width: 7,
-                    height: 7,
-                    borderRadius: "50%",
-                    background: getStatusColor(worstStatus),
-                    flexShrink: 0,
-                    ...(worstStatus === "building" ? { animation: "pulse-glow 1.5s ease-in-out infinite" } : {}),
+                    fontSize: 13,
+                    color: "var(--text-primary)",
+                    userSelect: "none",
+                    whiteSpace: "nowrap",
+                    fontWeight: 600,
+                    lineHeight: 1,
                   }}
-                />
-              );
-            })()}
+                >
+                  {repoName}
+                </span>
+
+              </div>
+              {/* Arrow point triangle */}
+              <div style={{
+                width: 0,
+                height: 0,
+                borderTop: "11px solid transparent",
+                borderBottom: "11px solid transparent",
+                borderLeft: "10px solid var(--pill-bg)",
+                flexShrink: 0,
+              }} />
+            </div>
 
             {/* Expanded: individual script slots */}
-            {!collapsed && scripts.map((scriptName, scriptIdx) => {
+            {!collapsed && (
+              <div style={{ display: "flex", alignItems: "center", gap: 6, padding: "0 8px 0 4px" }}>
+                {scripts.map((scriptName, scriptIdx) => {
               const key = `${repoPath}:${scriptName}`;
               const run = scriptRuns[key];
               const isRunning = run?.status === "running";
@@ -327,6 +342,7 @@ export function BuildStatusBar() {
               }
               const displayName = getDisplayName(scriptName);
               const timestamp = lastBuildTimes.get(key);
+              const timeStr = lastBuildTimeStrings.get(key);
               const isDrawerOpen = statusBarDrawer?.repoPath === repoPath && statusBarDrawer?.scriptName === scriptName;
 
               // Find the command for this script
@@ -357,6 +373,7 @@ export function BuildStatusBar() {
                         height: 7,
                         borderRadius: "50%",
                         background: getStatusColor(buildStatus),
+                        opacity: 0.6,
                         flexShrink: 0,
                         ...(buildStatus === "building" ? { animation: "pulse-glow 1.5s ease-in-out infinite" } : {}),
                       }}
@@ -366,7 +383,8 @@ export function BuildStatusBar() {
                     <span
                       style={{
                         fontSize: 13,
-                        color: "var(--text-primary)",
+                        fontWeight: 500,
+                        color: "var(--text-secondary)",
                         whiteSpace: "nowrap",
                         userSelect: "none",
                         lineHeight: 1,
@@ -375,15 +393,17 @@ export function BuildStatusBar() {
                       {displayName}
                     </span>
 
-                    {/* Status text: live preview when building, timestamp when done, nothing when idle */}
+                    {/* Status text: live preview when building, static time when done, nothing when idle */}
                     {buildStatus === "building" ? (
                       <span style={{
                         fontSize: 12,
-                        color: "var(--text-primary)",
+                        fontWeight: 500,
+                        color: "var(--text-secondary)",
                         whiteSpace: "nowrap",
                         overflow: "hidden",
                         textOverflow: "ellipsis",
-                        maxWidth: 300,
+                        width: 200,
+                        maxWidth: 200,
                         lineHeight: 1,
                       }}>
                         {getLastLine(key) || "building\u2026"}
@@ -392,17 +412,18 @@ export function BuildStatusBar() {
                       <span
                         style={{
                           fontSize: 12,
-                          color: buildStatus === "error" ? "#e06c75" : "var(--text-primary)",
+                          fontWeight: 500,
+                          color: buildStatus === "error" ? "var(--status-red)" : "var(--text-secondary)",
                           whiteSpace: "nowrap",
                           overflow: "hidden",
                           textOverflow: "ellipsis",
-                          maxWidth: buildStatus === "error" ? 300 : undefined,
+                          maxWidth: 200,
                           lineHeight: 1,
                         }}
                       >
-                        {buildStatus === "error" ? (getLastLine(key) || "error") + (timestamp ? " \u00B7 " + formatRelativeTime(timestamp) : "")
-                          : timestamp ? "built " + formatRelativeTime(timestamp)
-                          : ""}
+                        {buildStatus === "error"
+                          ? (getLastLine(key) || "error") + (timeStr ? " \u00B7 " + timeStr : "")
+                          : timeStr ? "built " + timeStr : "built"}
                       </span>
                     ) : null}
 
@@ -441,7 +462,9 @@ export function BuildStatusBar() {
                   </div>
                 </React.Fragment>
               );
-            })}
+                })}
+              </div>
+            )}
           </div>
         );
       })}

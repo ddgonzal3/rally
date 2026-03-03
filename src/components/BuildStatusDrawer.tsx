@@ -53,7 +53,10 @@ export function BuildStatusDrawer() {
       if (e.key === "Escape") closeStatusBarDrawer();
     };
     const onClick = (e: MouseEvent) => {
-      if (panelRef.current && !panelRef.current.contains(e.target as Node)) {
+      const target = e.target as Node;
+      // Don't close if clicking inside the drawer or the status bar (status bar handles its own toggle)
+      if (panelRef.current && !panelRef.current.contains(target)
+        && !(target instanceof Element && target.closest("[data-statusbar]"))) {
         closeStatusBarDrawer();
       }
     };
