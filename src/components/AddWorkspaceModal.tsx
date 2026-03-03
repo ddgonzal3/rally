@@ -178,7 +178,7 @@ const styles: Record<string, React.CSSProperties> = {
     maxWidth: "calc(100vw - 28px)",
     maxHeight: "calc(100vh - 110px)",
     background:
-      "linear-gradient(180deg, rgba(37,39,44,0.95) 0%, rgba(30,33,38,0.96) 100%)",
+      "linear-gradient(180deg, #25272c 0%, #1e2126 100%)",
     borderRadius: 10,
     border: "1px solid var(--border)",
     boxShadow: "0 24px 60px var(--shadow), 0 0 0 1px rgba(255,255,255,0.03)",

@@ -9,6 +9,8 @@ import { ScriptEditor } from "./components/ScriptEditor";
 import { PaneLayout } from "./components/PaneLayout";
 import { useWorkspaceStore } from "./stores/workspaceStore";
 import { api } from "./lib/tauri";
+import { showContextMenu } from "./lib/contextMenu";
+import { AddWorkspaceModal } from "./components/AddWorkspaceModal";
 import { findFirstGroupInSubtree, findNeighborGroup, replaceNode, type LayoutNode, type NavigationDirection, type Pane, type ThemeName } from "./lib/types";
 import {
   startExternalFileDrag,
@@ -32,48 +34,277 @@ import QuickOpen from "./components/QuickOpen";
 /** Default vertical split ratio — golden ratio gives top 61.8%, bottom 38.2% */
 const GOLDEN_RATIO = 0.618;
 
+const WS_DRAG_THRESHOLD = 4;
+const WS_DRAG_SCROLL_EDGE = 28;
+const WS_DRAG_MAX_SCROLL_STEP = 14;
+const WS_REORDER_TRANSITION = "transform 170ms cubic-bezier(0.2, 0, 0, 1)";
+
+function wsClamp(v: number, lo: number, hi: number) { return Math.max(lo, Math.min(hi, v)); }
+
+function wsAutoScroll(listEl: HTMLElement | null, pointerY: number) {
+  if (!listEl) return;
+  const r = listEl.getBoundingClientRect();
+  if (pointerY < r.top + WS_DRAG_SCROLL_EDGE) {
+    const s = (r.top + WS_DRAG_SCROLL_EDGE - pointerY) / WS_DRAG_SCROLL_EDGE;
+    listEl.scrollTop -= Math.ceil(s * WS_DRAG_MAX_SCROLL_STEP);
+  } else if (pointerY > r.bottom - WS_DRAG_SCROLL_EDGE) {
+    const s = (pointerY - (r.bottom - WS_DRAG_SCROLL_EDGE)) / WS_DRAG_SCROLL_EDGE;
+    listEl.scrollTop += Math.ceil(s * WS_DRAG_MAX_SCROLL_STEP);
+  }
+}
+
+function wsInsertIndex(ids: string[], dragId: string, refs: Map<string, HTMLDivElement>, pointerY: number) {
+  if (ids.length <= 1) return 0;
+  let idx = 0;
+  for (const id of ids) {
+    if (id === dragId) continue;
+    const el = refs.get(id);
+    if (!el) continue;
+    const r = el.getBoundingClientRect();
+    if (pointerY > r.top + r.height / 2) idx++;
+  }
+  return wsClamp(idx, 0, ids.length - 1);
+}
+
 function WorkspacePicker({ onSelect }: { onSelect: (id: string) => void }) {
   const workspaces = useWorkspaceStore((s) => s.workspaces);
   const activeWorkspaceId = useWorkspaceStore((s) => s.activeWorkspaceId);
+  const renameWorkspace = useWorkspaceStore((s) => s.renameWorkspace);
+  const removeWorkspace = useWorkspaceStore((s) => s.removeWorkspace);
+  const reorderWorkspace = useWorkspaceStore((s) => s.reorderWorkspace);
+  const [showAddModal, setShowAddModal] = useState(false);
+  const [renamingId, setRenamingId] = useState<string | null>(null);
+  const [renameValue, setRenameValue] = useState("");
+  const renameInputRef = useRef<HTMLInputElement>(null);
+
+  // Drag reorder state
+  const [draggingId, setDraggingId] = useState<string | null>(null);
+  const [dragToIndex, setDragToIndex] = useState<number | null>(null);
+  const [dragOffsetY, setDragOffsetY] = useState(0);
+  const [dragItemHeight, setDragItemHeight] = useState(0);
+  const listRef = useRef<HTMLDivElement>(null);
+  const itemRefs = useRef<Map<string, HTMLDivElement>>(new Map());
+  const suppressClickRef = useRef(false);
+
+  useEffect(() => {
+    if (renamingId && renameInputRef.current) {
+      renameInputRef.current.focus();
+      renameInputRef.current.select();
+    }
+  }, [renamingId]);
+
+  const commitRename = useCallback(() => {
+    if (!renamingId) return;
+    const trimmed = renameValue.trim();
+    if (trimmed && trimmed !== workspaces.find((w) => w.id === renamingId)?.name) {
+      renameWorkspace(renamingId, trimmed);
+    }
+    setRenamingId(null);
+  }, [renamingId, renameValue, workspaces, renameWorkspace]);
+
+  const startRename = useCallback((id: string, currentName: string) => {
+    setRenamingId(id);
+    setRenameValue(currentName);
+  }, []);
+
+  const handleMouseDown = useCallback(
+    (e: React.MouseEvent<HTMLDivElement>, wsId: string) => {
+      if (e.button !== 0 || renamingId) return;
+      if ((e.target as HTMLElement).closest("input,button")) return;
+
+      const fromIndex = workspaces.findIndex((w) => w.id === wsId);
+      if (fromIndex < 0) return;
+      const row = itemRefs.current.get(wsId);
+      if (!row) return;
+
+      const orderedIds = workspaces.map((w) => w.id);
+      const startY = e.clientY;
+      const rowHeight = row.getBoundingClientRect().height;
+      let dragging = false;
+      let dropIndex = fromIndex;
+
+      const onMove = (ev: MouseEvent) => {
+        const dy = ev.clientY - startY;
+        if (!dragging && Math.abs(dy) > WS_DRAG_THRESHOLD) {
+          dragging = true;
+          setDraggingId(wsId);
+          setDragToIndex(fromIndex);
+          setDragItemHeight(rowHeight);
+        }
+        if (!dragging) return;
+        ev.preventDefault();
+        wsAutoScroll(listRef.current, ev.clientY);
+        dropIndex = wsInsertIndex(orderedIds, wsId, itemRefs.current, ev.clientY);
+        setDragOffsetY(dy);
+        setDragToIndex(dropIndex);
+      };
+
+      const onUp = () => {
+        document.removeEventListener("mousemove", onMove);
+        if (!dragging) return;
+        suppressClickRef.current = true;
+        setDraggingId(null);
+        setDragToIndex(null);
+        setDragOffsetY(0);
+        setDragItemHeight(0);
+        if (dropIndex !== fromIndex) {
+          reorderWorkspace(wsId, dropIndex).catch((err) =>
+            console.error("Failed to reorder workspaces:", err),
+          );
+        }
+        setTimeout(() => { suppressClickRef.current = false; }, 0);
+      };
+
+      document.addEventListener("mousemove", onMove);
+      document.addEventListener("mouseup", onUp, { once: true });
+    },
+    [workspaces, renamingId, reorderWorkspace],
+  );
+
+  const draggingFromIndex = draggingId ? workspaces.findIndex((w) => w.id === draggingId) : -1;
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", height: "100%", background: "var(--bg-surface)" }}>
-      <div style={{ padding: "8px 12px", fontSize: 11, fontWeight: 700, color: "var(--text-primary)", textTransform: "uppercase" as const, letterSpacing: "0.06em" }}>
-        Workspaces
+    <>
+      <div className="no-select" style={{ display: "flex", flexDirection: "column", height: "100%", background: "var(--bg-surface)" }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "8px 8px 8px 12px" }}>
+          <span style={{ fontSize: 11, fontWeight: 700, color: "var(--text-primary)", textTransform: "uppercase" as const, letterSpacing: "0.06em" }}>
+            Workspaces
+          </span>
+          <button
+            className="sidebar-btn"
+            onClick={() => setShowAddModal(true)}
+            title="Add workspace"
+            style={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              width: 22,
+              height: 22,
+              background: "none",
+              border: "none",
+              color: "var(--text-secondary)",
+              cursor: "pointer",
+              borderRadius: 4,
+              padding: 0,
+            }}
+          >
+            <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+              <path d="M6 2v8M2 6h8" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+            </svg>
+          </button>
+        </div>
+        <div
+          ref={listRef}
+          style={{ flex: 1, overflow: "auto", position: "relative" }}
+          onContextMenu={(e) => {
+            if ((e.target as HTMLElement).closest(".ws-item")) return;
+            e.preventDefault();
+            showContextMenu([
+              { label: "New Workspace...", action: () => setShowAddModal(true) },
+            ]);
+          }}
+        >
+          {workspaces.map((ws, index) => {
+            const isActive = ws.id === activeWorkspaceId;
+            const isRenaming = renamingId === ws.id;
+            const isDragging = ws.id === draggingId;
+
+            let transform: string | undefined;
+            if (draggingId && dragToIndex !== null && draggingFromIndex >= 0) {
+              if (isDragging) {
+                transform = `translateY(${dragOffsetY}px)`;
+              } else if (draggingFromIndex < dragToIndex && index > draggingFromIndex && index <= dragToIndex) {
+                transform = `translateY(${-dragItemHeight}px)`;
+              } else if (draggingFromIndex > dragToIndex && index >= dragToIndex && index < draggingFromIndex) {
+                transform = `translateY(${dragItemHeight}px)`;
+              }
+            }
+
+            return (
+              <div
+                key={ws.id}
+                ref={(node) => { if (node) itemRefs.current.set(ws.id, node); else itemRefs.current.delete(ws.id); }}
+                className={`ws-item sidebar-btn`}
+                onMouseDown={(e) => handleMouseDown(e, ws.id)}
+                onClick={() => {
+                  if (suppressClickRef.current || isRenaming) return;
+                  onSelect(ws.id);
+                }}
+                onContextMenu={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  showContextMenu([
+                    { label: "Rename", action: () => startRename(ws.id, ws.name) },
+                    "separator",
+                    { label: "Remove Workspace", action: () => removeWorkspace(ws.id) },
+                  ]);
+                }}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 8,
+                  width: "100%",
+                  padding: "8px 12px",
+                  border: "none",
+                  background: isActive ? "var(--bg-hover)" : "transparent",
+                  color: isActive ? "var(--text-primary)" : "var(--text-secondary)",
+                  fontSize: 13,
+                  fontWeight: isActive ? 600 : 500,
+                  cursor: isRenaming ? "text" : isDragging ? "grabbing" : "pointer",
+                  textAlign: "left" as const,
+                  position: "relative" as const,
+                  willChange: "transform",
+                  transform,
+                  transition: isDragging
+                    ? "box-shadow 120ms, background-color 120ms"
+                    : `${WS_REORDER_TRANSITION}, background-color 120ms`,
+                  ...(isDragging ? { zIndex: 4, boxShadow: "0 8px 20px var(--shadow)", opacity: 0.96 } : {}),
+                }}
+              >
+                <svg width="14" height="14" viewBox="0 0 16 16" fill="none" style={{ flexShrink: 0 }}>
+                  <rect x="1.5" y="3" width="13" height="10" rx="1.5" stroke={isActive ? "var(--text-primary)" : "var(--text-dim)"} strokeWidth="1.0" />
+                  <path d="M1.5 5.5h13" stroke={isActive ? "var(--text-primary)" : "var(--text-dim)"} strokeWidth="1.0" />
+                </svg>
+                {isRenaming ? (
+                  <input
+                    ref={renameInputRef}
+                    className="rename-input"
+                    value={renameValue}
+                    onChange={(e) => setRenameValue(e.target.value)}
+                    onBlur={commitRename}
+                    onClick={(e) => e.stopPropagation()}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") { e.preventDefault(); commitRename(); }
+                      else if (e.key === "Escape") setRenamingId(null);
+                    }}
+                    style={{
+                      flex: 1,
+                      minWidth: 0,
+                      background: "var(--bg-elevated)",
+                      border: "1px solid #007fd4",
+                      borderRadius: 2,
+                      color: "var(--text-primary)",
+                      fontSize: 13,
+                      fontWeight: 600,
+                      fontFamily: "inherit",
+                      padding: "1px 4px",
+                      margin: 0,
+                      outline: "none",
+                      boxSizing: "border-box" as const,
+                    }}
+                  />
+                ) : (
+                  ws.name
+                )}
+              </div>
+            );
+          })}
+        </div>
       </div>
-      <div style={{ flex: 1, overflow: "auto" }}>
-        {workspaces.map((ws) => {
-          const isActive = ws.id === activeWorkspaceId;
-          return (
-            <button
-              key={ws.id}
-              className="sidebar-btn"
-              onClick={() => onSelect(ws.id)}
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 8,
-                width: "100%",
-                padding: "8px 12px",
-                border: "none",
-                background: isActive ? "var(--bg-hover)" : "transparent",
-                color: isActive ? "var(--text-primary)" : "var(--text-secondary)",
-                fontSize: 13,
-                fontWeight: isActive ? 600 : 500,
-                cursor: "pointer",
-                textAlign: "left" as const,
-              }}
-            >
-              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" style={{ flexShrink: 0 }}>
-                <rect x="1.5" y="3" width="13" height="10" rx="1.5" stroke={isActive ? "var(--text-primary)" : "var(--text-dim)"} strokeWidth="1.0" />
-                <path d="M1.5 5.5h13" stroke={isActive ? "var(--text-primary)" : "var(--text-dim)"} strokeWidth="1.0" />
-              </svg>
-              {ws.name}
-            </button>
-          );
-        })}
-      </div>
-    </div>
+      {showAddModal && (
+        <AddWorkspaceModal onClose={() => setShowAddModal(false)} />
+      )}
+    </>
   );
 }
 
@@ -163,6 +394,7 @@ export function App() {
   const hoverCloseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const preHoverRef = useRef<{ collapsed: boolean; view: typeof explorerView } | null>(null);
   const [wsHoverAnim, setWsHoverAnim] = useState<"in" | "out" | null>(null);
+  const [showAddWorkspaceModal, setShowAddWorkspaceModal] = useState(false);
 
   // Auto-shrink explorer (and collapse sidebar as last resort) to keep main area usable
   const MIN_MAIN_WIDTH = 600;
@@ -486,7 +718,7 @@ export function App() {
 
     listen("rally-menu-new-workspace", () => {
       requestAnimationFrame(() => {
-        document.dispatchEvent(new Event("rally-open-add-workspace"));
+        setShowAddWorkspaceModal(true);
       });
     })
       .then((fn) => {
@@ -1428,6 +1660,9 @@ export function App() {
       />
       <ShipStatusPill />
       <ToastContainer />
+      {showAddWorkspaceModal && (
+        <AddWorkspaceModal onClose={() => setShowAddWorkspaceModal(false)} />
+      )}
     </div>
   );
 }
