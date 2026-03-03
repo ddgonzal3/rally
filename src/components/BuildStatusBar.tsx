@@ -281,6 +281,9 @@ export function BuildStatusBar() {
               if (isRunning) {
                 // Use output-based status detection for all scripts, not just watchers
                 buildStatus = getWatcherBuildStatus(key);
+              } else if (isWatcher && run?.status === "success") {
+                // Watcher stopped (Ctrl+C) — back to idle, not "success"
+                buildStatus = "idle";
               } else if (run?.status === "success") {
                 buildStatus = "success";
               } else if (run?.status === "error") {

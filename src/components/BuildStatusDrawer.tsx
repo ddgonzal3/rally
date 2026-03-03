@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 import { Terminal as XTerminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { useWorkspaceStore, scriptOutputBuffers } from "../stores/workspaceStore";
+import { api } from "../lib/tauri";
 import type { ThemeName } from "../lib/types";
 
 // Read CSS variables at call time (after theme class is applied to :root)
@@ -104,8 +105,8 @@ export function BuildStatusDrawer() {
 
     const term = new XTerminal({
       scrollback: 5000,
-      disableStdin: true,
-      cursorBlink: false,
+      disableStdin: false,
+      cursorBlink: true,
       fontSize: 12,
       fontFamily: "'SF Mono', 'Menlo', 'Monaco', monospace",
       theme: getXtermTheme(theme),
@@ -119,8 +120,21 @@ export function BuildStatusDrawer() {
     xtermRef.current = term;
     fitAddonRef.current = fitAddon;
 
-    // Replay buffered output — raw Uint8Array, never TextDecoder
+    // Wire input to PTY (Ctrl+C, typing, etc.)
+    // Read ptyId from store at send-time so it's always fresh
     const bufferKey = `${drawer.repoPath}:${drawer.scriptName}`;
+    const encoder = new TextEncoder();
+    const onDataDisposable = term.onData((data) => {
+      const currentRun = useWorkspaceStore.getState().scriptRuns[bufferKey];
+      if (currentRun?.ptyId) {
+        api.writePty(currentRun.ptyId, Array.from(encoder.encode(data))).catch(() => {});
+      }
+    });
+
+    // Focus the terminal so it captures keyboard input (Ctrl+C, etc.)
+    requestAnimationFrame(() => term.focus());
+
+    // Replay buffered output — raw Uint8Array, never TextDecoder
     const buf = scriptOutputBuffers.get(bufferKey);
     if (buf) {
       for (const chunk of buf) {
@@ -147,6 +161,7 @@ export function BuildStatusDrawer() {
     document.addEventListener("rally:watcher-output", handler);
 
     return () => {
+      onDataDisposable.dispose();
       document.removeEventListener("rally:watcher-output", handler);
       term.dispose();
       xtermRef.current = null;
