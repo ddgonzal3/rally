@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useRef } from "react";
 import { useWorkspaceStore, scriptOutputBuffers } from "../stores/workspaceStore";
 import { api } from "../lib/tauri";
 import type { ScriptEntry } from "../lib/types";
@@ -38,17 +38,15 @@ function getWatcherBuildStatus(bufferKey: string): WatcherBuildStatus {
 
 // --- Timestamps ---
 
-const lastBuildTimes = new Map<string, number>();
-const lastBuildTimeStrings = new Map<string, string>();
 const prevStatuses = new Map<string, WatcherBuildStatus>();
 
 function formatAbsoluteTime(timestamp: number): string {
   const d = new Date(timestamp);
   const h = d.getHours();
   const m = d.getMinutes().toString().padStart(2, "0");
-  const ampm = h >= 12 ? "PM" : "AM";
+  const ampm = h >= 12 ? "pm" : "am";
   const h12 = h % 12 || 12;
-  return `${h12}:${m} ${ampm}`;
+  return `${h12}:${m}${ampm}`;
 }
 
 // --- Last line preview from output buffer ---
@@ -147,6 +145,9 @@ export function BuildStatusBar() {
   // Script entries cache per repo path
   const [scriptCache, setScriptCache] = useState<Record<string, ScriptEntry[]>>({});
 
+  // Timestamps cached in a ref — set during render when a build completes
+  const buildTimeCache = useRef<Record<string, string>>({});
+
   // Event-driven re-renders for watcher output
   const [, setTick] = useState(0);
 
@@ -189,42 +190,7 @@ export function BuildStatusBar() {
     return result;
   }, [workspacePaths, rallyConfigs]);
 
-  // Track status transitions for timestamps (post-render side effect)
-  useEffect(() => {
-    for (const { repoPath, scripts } of reposWithStatusBar) {
-      for (const scriptName of scripts) {
-        const key = `${repoPath}:${scriptName}`;
-        const run = scriptRuns[key];
-        const isRunning = run?.status === "running";
-        const isWatcher = isWatcherScript(scriptName);
-
-        if (isRunning) {
-          const status = isWatcher ? getWatcherBuildStatus(key) : "building";
-          const prev = prevStatuses.get(key);
-          if ((status === "success" || status === "error") && prev === "building") {
-            const now = Date.now();
-            lastBuildTimes.set(key, now);
-            lastBuildTimeStrings.set(key, formatAbsoluteTime(now));
-          }
-          prevStatuses.set(key, status);
-        } else if (!isRunning && run?.status === "success") {
-          if (!lastBuildTimes.has(key)) {
-            const now = Date.now();
-            lastBuildTimes.set(key, now);
-            lastBuildTimeStrings.set(key, formatAbsoluteTime(now));
-          }
-          prevStatuses.set(key, "success");
-        } else if (!isRunning && run?.status === "error") {
-          if (!lastBuildTimes.has(key)) {
-            const now = Date.now();
-            lastBuildTimes.set(key, now);
-            lastBuildTimeStrings.set(key, formatAbsoluteTime(now));
-          }
-          prevStatuses.set(key, "error");
-        }
-      }
-    }
-  }, [reposWithStatusBar, scriptRuns]);
+  // No timestamp effect needed — timestamps are cached in buildTimeCache ref during render
 
   // Return null if nothing to show
   if (!activeWorkspaceId || reposWithStatusBar.length === 0) return null;
@@ -323,7 +289,15 @@ export function BuildStatusBar() {
                 buildStatus = "idle";
               }
               const displayName = getDisplayName(scriptName);
-              const timeStr = lastBuildTimeStrings.get(key);
+              // Cache timestamp when we first see a completed build
+              if ((buildStatus === "success" || buildStatus === "error") && !buildTimeCache.current[key]) {
+                buildTimeCache.current[key] = formatAbsoluteTime(Date.now());
+              }
+              // Clear cached timestamp when script restarts (building again)
+              if (buildStatus === "building" || buildStatus === "idle") {
+                delete buildTimeCache.current[key];
+              }
+              const timeStr = buildTimeCache.current[key];
               const isDrawerOpen = statusBarDrawer?.repoPath === repoPath && statusBarDrawer?.scriptName === scriptName;
 
               // Find the command for this script
@@ -380,8 +354,8 @@ export function BuildStatusBar() {
                       {displayName}
                     </span>
 
-                    {/* Status text: live preview when building, static time when done, nothing when idle */}
-                    {buildStatus === "building" ? (
+                    {/* Status text: live preview when building (only if output exists), static time when done, nothing when idle */}
+                    {buildStatus === "building" && getLastLine(key) ? (
                       <span style={{
                         fontSize: 12,
                         fontWeight: 500,
@@ -393,9 +367,9 @@ export function BuildStatusBar() {
                         maxWidth: 200,
                         lineHeight: 1,
                       }}>
-                        {getLastLine(key) || "building\u2026"}
+                        {getLastLine(key)}
                       </span>
-                    ) : buildStatus !== "idle" ? (
+                    ) : buildStatus !== "idle" && buildStatus !== "building" ? (
                       <span
                         style={{
                           fontSize: 12,
@@ -410,7 +384,7 @@ export function BuildStatusBar() {
                       >
                         {buildStatus === "error"
                           ? (getLastLine(key) || "error") + (timeStr ? " \u00B7 " + timeStr : "")
-                          : timeStr ? "built " + timeStr : "built"}
+                          : timeStr ? "built at " + timeStr : "built"}
                       </span>
                     ) : null}
 
