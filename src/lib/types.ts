@@ -175,6 +175,7 @@ export interface RallyConfig {
   excludeScripts: string[];
   mode: string | null;
   setup?: SetupConfig;
+  statusBar: string[];
 }
 
 export interface WorkspaceReadiness {

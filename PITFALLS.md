@@ -62,6 +62,10 @@ When toggling between product mode and dev mode, **never use a conditional terna
 
 **Fix:** Keep both `ProductChatPanel` and `PaneLayout` always mounted, toggling `display: none` / `display: flex`. This matches the pattern that already works for workspace switching (PaneLayout uses `display: none` for inactive workspaces). The ResizeObserver fires when the container goes from 0 to real dimensions, triggering SIGWINCH → TUI redraws correctly.
 
+## xterm.js Instances: Never Hardcode Theme Colors
+
+Any new xterm.js `Terminal` instance must read its theme from CSS variables (`--terminal-bg`, `--terminal-fg`, `--terminal-cursor`, `--terminal-selection`) via `getComputedStyle`, and use the per-theme ANSI color map from `Terminal.tsx`. Never hardcode hex values like `background: "#1e1e1e"` — this breaks light/dimmed themes. Also subscribe to theme changes (via the Zustand `theme` selector) and update `term.options.theme` when the theme changes, matching the pattern in `Terminal.tsx`. The terminal container's CSS `background` should also use `var(--terminal-bg)` so the flash before xterm initializes matches the theme.
+
 ## Context Menu: Always `stopPropagation()` in Nested Handlers
 
 When a component tree has `onContextMenu` handlers at multiple levels (e.g. a tree node AND its container), the child handler **must** call `e.stopPropagation()` in addition to `e.preventDefault()`. Without it, the event bubbles to the parent, which fires a second `showContextMenu()` call. That second call clears the ghost-event suppression flag, so when the user clicks elsewhere to dismiss, macOS dispatches a ghost `contextmenu` event that opens yet another menu. Symptom: dismissing a right-click menu by clicking elsewhere opens a new menu at the click location.

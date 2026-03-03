@@ -579,6 +579,8 @@ pub struct RallyConfig {
     pub mode: Option<String>,
     #[serde(default)]
     pub setup: Option<SetupConfig>,
+    #[serde(default, rename = "statusBar")]
+    pub status_bar: Vec<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -596,12 +598,32 @@ pub fn read_rally_config(root_path: String) -> Result<RallyConfig, String> {
             exclude_scripts: Vec::new(),
             mode: None,
             setup: None,
+            status_bar: Vec::new(),
         });
     }
     let content = fs::read_to_string(&rally_json)
         .map_err(|e| format!("Failed to read RALLY.json: {}", e))?;
     serde_json::from_str(&content)
         .map_err(|e| format!("Failed to parse RALLY.json: {}", e))
+}
+
+#[tauri::command]
+pub fn update_rally_config_status_bar(root_path: String, scripts: Vec<String>) -> Result<(), String> {
+    let rally_json = Path::new(&root_path).join("RALLY.json");
+    let mut config: serde_json::Value = if rally_json.exists() {
+        let content = fs::read_to_string(&rally_json)
+            .map_err(|e| format!("Failed to read RALLY.json: {}", e))?;
+        serde_json::from_str(&content)
+            .map_err(|e| format!("Failed to parse RALLY.json: {}", e))?
+    } else {
+        serde_json::json!({})
+    };
+    config["statusBar"] = serde_json::json!(scripts);
+    let pretty = serde_json::to_string_pretty(&config)
+        .map_err(|e| format!("Failed to serialize RALLY.json: {}", e))?;
+    fs::write(&rally_json, pretty)
+        .map_err(|e| format!("Failed to write RALLY.json: {}", e))?;
+    Ok(())
 }
 
 // --- Workspace readiness ---

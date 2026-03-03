@@ -239,6 +239,9 @@ export const api = {
   readRallyConfig: (rootPath: string) =>
     invoke<RallyConfig>("read_rally_config", { rootPath }),
 
+  updateRallyConfigStatusBar: (rootPath: string, scripts: string[]) =>
+    invoke<void>("update_rally_config_status_bar", { rootPath, scripts }),
+
   // Workspace readiness
   checkWorkspaceReady: (rootPath: string) =>
     invoke<WorkspaceReadiness>("check_workspace_ready", { rootPath }),

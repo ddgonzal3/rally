@@ -323,6 +323,8 @@ function fileContextMenu(
     onRename?: () => void;
     onNewFile?: (parentPath: string) => void;
     onNewFolder?: (parentPath: string) => void;
+    onAddToStatusBar?: () => void;
+    onRemoveFromStatusBar?: () => void;
   },
 ) {
   const targetDir = isDir ? filePath : parentDir(filePath);
@@ -347,6 +349,12 @@ function fileContextMenu(
     },
     "separator" as const,
     { label: "Reveal in Finder", action: () => api.revealInFinder(filePath) },
+    ...((!isDir && filePath.endsWith(".sh")) ? [
+      "separator" as const,
+      callbacks.onRemoveFromStatusBar
+        ? { label: "Remove from Status Bar", action: callbacks.onRemoveFromStatusBar }
+        : { label: "Add to Status Bar", action: () => callbacks.onAddToStatusBar?.() },
+    ] : []),
     "separator" as const,
     {
       label: "Rename",
@@ -653,6 +661,9 @@ const FileTreeNode = React.memo(
             onContextMenu={(e) => {
               e.preventDefault();
               setSelectedFilePath(entry.path);
+              const scriptName = entry.path.split("/").pop() || "";
+              const statusBarScripts = useWorkspaceStore.getState().rallyConfigs[rootPath]?.statusBar ?? [];
+              const isInStatusBar = statusBarScripts.includes(scriptName);
               showContextMenu(
                 fileContextMenu(entry.path, rootPath, entry.is_dir, {
                   onTrash: removeChild
@@ -672,6 +683,12 @@ const FileTreeNode = React.memo(
                       parentPath: p,
                       isDir: true,
                     }),
+                  onAddToStatusBar: (!entry.is_dir && entry.path.endsWith(".sh") && !isInStatusBar)
+                    ? () => useWorkspaceStore.getState().addToStatusBar(rootPath, scriptName)
+                    : undefined,
+                  onRemoveFromStatusBar: (!entry.is_dir && entry.path.endsWith(".sh") && isInStatusBar)
+                    ? () => useWorkspaceStore.getState().removeFromStatusBar(rootPath, scriptName)
+                    : undefined,
                 }),
               );
             }}

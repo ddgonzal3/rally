@@ -25,6 +25,8 @@ import { ShipStatusPill } from "./components/ShipStatusPill";
 import { UnifiedGitPanel } from "./components/UnifiedGitPanel";
 import { SearchPanel } from "./components/SearchPanel";
 import { ProductChatPanel } from "./components/ProductChatPanel";
+import { BuildStatusBar } from "./components/BuildStatusBar";
+import { BuildStatusDrawer } from "./components/BuildStatusDrawer";
 import QuickOpen from "./components/QuickOpen";
 
 function WorkspacePicker({ onSelect }: { onSelect: (id: string) => void }) {
@@ -1373,8 +1375,10 @@ export function App() {
                 />
               </div>
             )}
-            <div style={{ display: isProductMode ? "none" : "flex", flex: 1, flexDirection: "column" as const, minWidth: 0, minHeight: 0 }}>
+            <div style={{ display: isProductMode ? "none" : "flex", flex: 1, flexDirection: "column" as const, minWidth: 0, minHeight: 0, position: "relative" as const }}>
               <PaneLayout />
+              <BuildStatusBar />
+              <BuildStatusDrawer />
             </div>
           </div>
         </div>

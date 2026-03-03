@@ -191,6 +191,7 @@ fn main() {
         commands::reveal_in_finder,
         commands::list_scripts,
         commands::read_rally_config,
+        commands::update_rally_config_status_bar,
         commands::check_workspace_ready,
         commands::file_exists,
         commands::read_clipboard_text,
