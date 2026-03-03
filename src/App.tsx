@@ -1575,8 +1575,8 @@ const styles: Record<string, React.CSSProperties> = {
     overflow: "hidden",
   },
   explorerResizeHandle: {
-    width: 8,
-    minWidth: 8,
+    width: 2,
+    minWidth: 2,
     cursor: "col-resize",
     background: "linear-gradient(to bottom, var(--bg-surface) 28px, var(--bg-elevated) 28px, var(--bg-elevated) 29px, var(--bg-surface) 29px)",
     flexShrink: 0,
