@@ -3,6 +3,7 @@ import { Terminal } from "./Terminal";
 import { ClaudeLauncher } from "./ClaudeLauncher";
 import { ClaudeTerminalWrapper } from "./ClaudeTerminalWrapper";
 import { EditorPane } from "./EditorPane";
+import { WebViewPane } from "./WebViewPane";
 
 import { TerminalLauncher } from "./TerminalLauncher";
 import { DropZoneTarget, type DropPosition } from "./DropZoneOverlay";
@@ -60,6 +61,7 @@ function paneLabel(
     const cwd = pane.cwd || "";
     return cwd.split("/").pop() || "claude";
   }
+  if (pane.type === "webview") return pane.title;
   if (pane.type === "editor" || pane.type === "diff")
     return isDirty ? `${pane.title} *` : pane.title;
   if (pane.type === "terminal" && isClaudeCodeTitle(pane.title)) {
@@ -75,6 +77,7 @@ function paneLabel(
 
 function paneTooltip(pane: Pane): string {
   if (pane.type === "editor" && pane.filePath) return pane.filePath;
+  if (pane.type === "webview" && pane.webviewUrl) return pane.webviewUrl;
   if (pane.type === "diff" && pane.cwd)
     return pane.filePath ? `${pane.cwd}/${pane.filePath}` : pane.cwd;
   if (pane.cwd) return pane.cwd;
@@ -1016,7 +1019,9 @@ function PaneContent({
                 contain: "layout paint",
               }}
             >
-              {pane.type === "editor" && pane.filePath ? (
+              {pane.type === "webview" && pane.webviewUrl ? (
+                <WebViewPane url={pane.webviewUrl} paneId={pane.id} />
+              ) : pane.type === "editor" && pane.filePath ? (
                 <EditorPane filePath={pane.filePath} paneId={pane.id} />
               ) : pane.type === "claude-launcher" ? (
                 <ClaudeLauncher

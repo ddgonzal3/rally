@@ -89,6 +89,7 @@ const VALID_PANE_TYPES = new Set([
   "claude-launcher",
   "editor",
   "diff",
+  "webview",
 ]);
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -355,6 +356,8 @@ interface WorkspaceState {
   deleteLayoutPreset: (workspaceId: string, presetId: string) => void;
   /** Open a file in an editor pane in the top area of the layout */
   openFile: (workspaceId: string, filePath: string, options?: { line?: number; col?: number; skipReveal?: boolean }) => void;
+  /** Open a webview pane to display a URL or local HTML file */
+  openWebView: (workspaceId: string, url: string) => void;
   /** Reveal a file in the explorer (expand ancestors + highlight) */
   revealFileInExplorer: (filePath: string) => void;
   /** Set the active tab in the git diff panel */
@@ -431,6 +434,7 @@ function sanitizePane(raw: unknown): Pane | null {
   if (typeof raw.initialInput === "string") pane.initialInput = raw.initialInput;
   if (typeof raw.ptyId === "string") pane.ptyId = raw.ptyId;
   if (typeof raw.scriptBufferKey === "string") pane.scriptBufferKey = raw.scriptBufferKey;
+  if (typeof raw.webviewUrl === "string") pane.webviewUrl = raw.webviewUrl;
   return pane;
 }
 
@@ -2487,6 +2491,55 @@ export const useWorkspaceStore = create<WorkspaceState>()(
       get().revealFileInExplorer(filePath);
       document.dispatchEvent(new Event("rally-ensure-explorer-visible"));
     }
+  },
+
+  openWebView: (workspaceId, url) => {
+    const layout = get().getOrCreateLayout(workspaceId);
+
+    // Find target group (top area of layout, same as openFile)
+    let targetGroupId: string | null = null;
+    const root = layout.root;
+    if (root.type === "split" && root.direction === "vertical") {
+      targetGroupId = findFirstGroupInSubtree(root.children[0]);
+    }
+    if (!targetGroupId) {
+      targetGroupId = findFirstGroupInSubtree(root);
+    }
+    if (!targetGroupId) return;
+
+    // Dedup: if a webview with this URL is already open in the target group, focus it
+    const targetGroup = layout.groups[targetGroupId];
+    if (targetGroup) {
+      const existing = targetGroup.panes.find(
+        (p) => p.type === "webview" && p.webviewUrl === url,
+      );
+      if (existing) {
+        get().setActivePane(workspaceId, targetGroupId, existing.id);
+        return;
+      }
+    }
+
+    // Derive a readable title from the URL
+    let title: string;
+    if (url.startsWith("http://") || url.startsWith("https://")) {
+      try {
+        const u = new URL(url);
+        title = u.host + (u.pathname !== "/" ? u.pathname : "");
+      } catch {
+        title = url;
+      }
+    } else {
+      // Local file path — use filename
+      title = url.split("/").pop() ?? url;
+    }
+
+    const pane: Pane = {
+      id: crypto.randomUUID(),
+      type: "webview",
+      title,
+      webviewUrl: url,
+    };
+    get().addPaneToGroup(workspaceId, targetGroupId, pane);
   },
 
   revealFileInExplorer: (filePath) => {
