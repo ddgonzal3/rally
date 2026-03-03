@@ -621,7 +621,7 @@ pub fn update_rally_config_status_bar(root_path: String, scripts: Vec<String>) -
     config["statusBar"] = serde_json::json!(scripts);
     let pretty = serde_json::to_string_pretty(&config)
         .map_err(|e| format!("Failed to serialize RALLY.json: {}", e))?;
-    fs::write(&rally_json, pretty)
+    fs::write(&rally_json, pretty + "\n")
         .map_err(|e| format!("Failed to write RALLY.json: {}", e))?;
     Ok(())
 }

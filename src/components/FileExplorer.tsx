@@ -679,7 +679,7 @@ const FileTreeNode = React.memo(
         ) : (
           <button
             ref={btnRef}
-            className={`file-node${(isActiveFile || isRevealTarget) ? " file-node-active" : (isSelected && !entry.is_dir) ? " file-node-active" : ""}`}
+            className={`file-node${(isActiveFile || isRevealTarget || (isSelected && !entry.is_dir)) ? " file-node-active" : ""}`}
             onClick={handleClick}
             onDoubleClick={() => {
               if (renameTimerRef.current) {

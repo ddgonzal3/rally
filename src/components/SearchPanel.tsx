@@ -129,13 +129,16 @@ export function SearchPanel({ onCollapse, flushLeft }: SearchPanelProps) {
   useEffect(() => {
     if (!query.trim() || !hasSearched) return;
     let unlisten: UnlistenFn | null = null;
+    let cancelled = false;
     listen("git-changes-updated", () => {
       clearTimeout(debounceRef.current);
       debounceRef.current = setTimeout(() => {
         doSearch(query, caseSensitive, wholeWord, useRegex);
       }, 500);
-    }).then((fn) => { unlisten = fn; });
-    return () => { unlisten?.(); };
+    }).then((fn) => {
+      if (cancelled) { fn(); } else { unlisten = fn; }
+    });
+    return () => { cancelled = true; unlisten?.(); };
   }, [query, caseSensitive, wholeWord, useRegex, hasSearched, doSearch]);
 
   const repoGroups = useMemo((): RepoGroup[] => {

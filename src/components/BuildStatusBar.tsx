@@ -87,15 +87,6 @@ function getStatusColor(status: WatcherBuildStatus): string {
   }
 }
 
-// --- Aggregate status across scripts ---
-
-function getWorstStatus(statuses: WatcherBuildStatus[]): WatcherBuildStatus {
-  if (statuses.includes("error")) return "error";
-  if (statuses.includes("building")) return "building";
-  if (statuses.includes("success")) return "success";
-  return "idle";
-}
-
 // --- Icons ---
 
 const svgAlign: React.CSSProperties = { flexShrink: 0, display: "block" };
@@ -198,44 +189,45 @@ export function BuildStatusBar() {
     return result;
   }, [workspacePaths, rallyConfigs]);
 
-  // Return null if nothing to show
-  if (!activeWorkspaceId || reposWithStatusBar.length === 0) return null;
+  // Track status transitions for timestamps (post-render side effect)
+  useEffect(() => {
+    for (const { repoPath, scripts } of reposWithStatusBar) {
+      for (const scriptName of scripts) {
+        const key = `${repoPath}:${scriptName}`;
+        const run = scriptRuns[key];
+        const isRunning = run?.status === "running";
+        const isWatcher = isWatcherScript(scriptName);
 
-  // Track status transitions for timestamps
-  for (const { repoPath, scripts } of reposWithStatusBar) {
-    for (const scriptName of scripts) {
-      const key = `${repoPath}:${scriptName}`;
-      const run = scriptRuns[key];
-      const isRunning = run?.status === "running";
-      const isWatcher = isWatcherScript(scriptName);
-
-      if (isRunning) {
-        const status = isWatcher ? getWatcherBuildStatus(key) : "building";
-        const prev = prevStatuses.get(key);
-        // Update timestamp on transition to success/error
-        if ((status === "success" || status === "error") && prev === "building") {
-          const now = Date.now();
-          lastBuildTimes.set(key, now);
-          lastBuildTimeStrings.set(key, formatAbsoluteTime(now));
+        if (isRunning) {
+          const status = isWatcher ? getWatcherBuildStatus(key) : "building";
+          const prev = prevStatuses.get(key);
+          if ((status === "success" || status === "error") && prev === "building") {
+            const now = Date.now();
+            lastBuildTimes.set(key, now);
+            lastBuildTimeStrings.set(key, formatAbsoluteTime(now));
+          }
+          prevStatuses.set(key, status);
+        } else if (!isRunning && run?.status === "success") {
+          if (!lastBuildTimes.has(key)) {
+            const now = Date.now();
+            lastBuildTimes.set(key, now);
+            lastBuildTimeStrings.set(key, formatAbsoluteTime(now));
+          }
+          prevStatuses.set(key, "success");
+        } else if (!isRunning && run?.status === "error") {
+          if (!lastBuildTimes.has(key)) {
+            const now = Date.now();
+            lastBuildTimes.set(key, now);
+            lastBuildTimeStrings.set(key, formatAbsoluteTime(now));
+          }
+          prevStatuses.set(key, "error");
         }
-        prevStatuses.set(key, status);
-      } else if (!isRunning && run?.status === "success") {
-        if (!lastBuildTimes.has(key)) {
-          const now = Date.now();
-          lastBuildTimes.set(key, now);
-          lastBuildTimeStrings.set(key, formatAbsoluteTime(now));
-        }
-        prevStatuses.set(key, "success");
-      } else if (!isRunning && run?.status === "error") {
-        if (!lastBuildTimes.has(key)) {
-          const now = Date.now();
-          lastBuildTimes.set(key, now);
-          lastBuildTimeStrings.set(key, formatAbsoluteTime(now));
-        }
-        prevStatuses.set(key, "error");
       }
     }
-  }
+  }, [reposWithStatusBar, scriptRuns]);
+
+  // Return null if nothing to show
+  if (!activeWorkspaceId || reposWithStatusBar.length === 0) return null;
 
   return (
     <div data-statusbar="" style={{
@@ -254,16 +246,6 @@ export function BuildStatusBar() {
     }}>
       {reposWithStatusBar.map(({ repoPath, repoName, scripts }, repoIdx) => {
         const collapsed = !!statusBarCollapsed[repoPath];
-
-        // Compute per-script statuses for aggregate dot
-        const scriptStatuses = scripts.map((scriptName) => {
-          const key = `${repoPath}:${scriptName}`;
-          const run = scriptRuns[key];
-          if (run?.status === "running") return getWatcherBuildStatus(key);
-          if (run?.status === "success") return "success" as WatcherBuildStatus;
-          if (run?.status === "error") return "error" as WatcherBuildStatus;
-          return "idle" as WatcherBuildStatus;
-        });
 
         return (
           <div
@@ -341,7 +323,6 @@ export function BuildStatusBar() {
                 buildStatus = "idle";
               }
               const displayName = getDisplayName(scriptName);
-              const timestamp = lastBuildTimes.get(key);
               const timeStr = lastBuildTimeStrings.get(key);
               const isDrawerOpen = statusBarDrawer?.repoPath === repoPath && statusBarDrawer?.scriptName === scriptName;
 

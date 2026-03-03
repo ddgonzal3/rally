@@ -29,6 +29,9 @@ import { BuildStatusBar } from "./components/BuildStatusBar";
 import { BuildStatusDrawer } from "./components/BuildStatusDrawer";
 import QuickOpen from "./components/QuickOpen";
 
+/** Default vertical split ratio — golden ratio gives top 61.8%, bottom 38.2% */
+const GOLDEN_RATIO = 0.618;
+
 function WorkspacePicker({ onSelect }: { onSelect: (id: string) => void }) {
   const workspaces = useWorkspaceStore((s) => s.workspaces);
   const activeWorkspaceId = useWorkspaceStore((s) => s.activeWorkspaceId);
@@ -852,7 +855,7 @@ export function App() {
 
           // Animate: slide up from collapsed (0.8) to target ratio
           requestAnimationFrame(() => {
-            const targetRatio = 0.618;
+            const targetRatio = GOLDEN_RATIO;
             const storageKey = `rally:bottomPanelRatio:${wsId}`;
             localStorage.setItem(storageKey, String(targetRatio));
             const cur = useWorkspaceStore.getState();
@@ -930,7 +933,7 @@ export function App() {
         }
 
         const newRatio = isCollapsed
-          ? Number(localStorage.getItem(storageKey)) || 0.618
+          ? Number(localStorage.getItem(storageKey)) || GOLDEN_RATIO
           : (localStorage.setItem(storageKey, String(vertSplits[0].ratio)), 0.8);
         // Update all vertical splits to the same ratio
         let newRoot = layout.root;
