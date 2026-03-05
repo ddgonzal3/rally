@@ -2986,6 +2986,24 @@ export const useWorkspaceStore = create<WorkspaceState>()(
 (window as any).__rallyStoreAccessor = () => useWorkspaceStore.getState();
 
 /**
+ * Returns true if any Claude pane in the given workspace has an active Claude
+ * process (detected via foreground process polling — title is set to "claude"
+ * when Claude Code is running).
+ */
+export function isClaudeActiveInWorkspace(workspaceId: string | null): boolean {
+  if (!workspaceId) return false;
+  const state = useWorkspaceStore.getState();
+  const layout = state.layouts[workspaceId];
+  if (!layout) return false;
+  for (const group of Object.values(layout.groups)) {
+    for (const pane of group.panes) {
+      if (pane.type === "claude" && pane.title === "claude") return true;
+    }
+  }
+  return false;
+}
+
+/**
  * Normalize layout tree so column dividers are independent per row.
  * Transforms H(V(A,C), V(B,D)) → V(H(A,B), H(C,D)) recursively.
  * After normalization, row heights are controlled by a single V-split (inherently linked)
