@@ -32,6 +32,20 @@ export const SplitContainer = React.memo(function SplitContainer({
     (s) => !!s.bottomPanelCollapsed[workspaceId],
   );
 
+  // All hooks must be called before any early return (Rules of Hooks)
+  const handleRootVerticalResize = useCallback(
+    (ratio: number) => {
+      if (node.type !== "split") return;
+      if (ratio >= SNAP_COLLAPSE_THRESHOLD) {
+        updateSplitRatio(workspaceId, node.id, SNAP_COLLAPSE_THRESHOLD);
+        toggleBottomPanel(workspaceId);
+      } else {
+        updateSplitRatio(workspaceId, node.id, ratio);
+      }
+    },
+    [workspaceId, node, updateSplitRatio, toggleBottomPanel],
+  );
+
   if (node.type === "group") {
     return (
       <PaneGroupView
@@ -48,20 +62,6 @@ export const SplitContainer = React.memo(function SplitContainer({
   const [first, second] = node.children;
   const isRootVertical = isRoot && isVertical;
   const collapsed = isRootVertical && bottomCollapsed;
-
-  // For root vertical splits: snap to collapsed when dragged past threshold
-  const handleRootVerticalResize = useCallback(
-    (ratio: number) => {
-      if (ratio >= SNAP_COLLAPSE_THRESHOLD) {
-        // Snap the ratio to the threshold and collapse
-        updateSplitRatio(workspaceId, node.type === "split" ? node.id : "", SNAP_COLLAPSE_THRESHOLD);
-        toggleBottomPanel(workspaceId);
-      } else {
-        updateSplitRatio(workspaceId, node.type === "split" ? node.id : "", ratio);
-      }
-    },
-    [workspaceId, node, updateSplitRatio, toggleBottomPanel],
-  );
 
   return (
     <div
