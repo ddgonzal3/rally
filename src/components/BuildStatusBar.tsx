@@ -7,45 +7,196 @@ import {
   getWatcherBuildStatus,
   getStatusColor,
   getDisplayName,
-  formatAbsoluteTime,
-  getLastLine,
   type WatcherBuildStatus,
 } from "../lib/watcherStatus";
 import { useDetectedPorts } from "../lib/useDetectedPorts";
 import { PortPill } from "./PortPill";
+import { isClaudeActiveInWorkspace } from "../stores/workspaceStore";
+import { showContextMenu } from "../lib/contextMenu";
 
-// --- Icons ---
 
-const svgAlign: React.CSSProperties = { flexShrink: 0, display: "block" };
+// --- ScriptDot sub-component ---
 
-function EyeOpenIcon() {
+function ScriptDot({
+  repoPath,
+  scriptName,
+  scriptCache,
+  scriptRuns,
+  runScript,
+  stopScript,
+  clearScript,
+  openStatusBarDrawer,
+  statusBarDrawer,
+  detectedPorts,
+  activeWorkspaceId,
+  openWebView,
+}: {
+  repoPath: string;
+  scriptName: string;
+  scriptCache: Record<string, ScriptEntry[]>;
+  scriptRuns: ReturnType<typeof useWorkspaceStore.getState>["scriptRuns"];
+  runScript: (repoPath: string, scriptName: string, command: string) => void;
+  stopScript: (repoPath: string, scriptName: string) => void;
+  clearScript: (repoPath: string, scriptName: string) => void;
+  openStatusBarDrawer: (repoPath: string, scriptName: string) => void;
+  statusBarDrawer: { repoPath: string; scriptName: string } | null;
+  detectedPorts: ReturnType<typeof useDetectedPorts>;
+  activeWorkspaceId: string | null;
+  openWebView: (workspaceId: string, url: string) => void;
+}) {
+  const [flashing, setFlashing] = useState(false);
+  const prevStatusRef = useRef<WatcherBuildStatus>("idle");
+
+  const key = `${repoPath}:${scriptName}`;
+  const run = scriptRuns[key];
+  const isRunning = run?.status === "running";
+  const isWatcher = isWatcherScript(scriptName);
+
+  let buildStatus: WatcherBuildStatus;
+  if (isRunning) {
+    buildStatus = isWatcher ? getWatcherBuildStatus(key) : "building";
+  } else if (isWatcher && run?.status === "success") {
+    buildStatus = "idle";
+  } else if (run?.status === "success") {
+    buildStatus = "success";
+  } else if (run?.status === "error") {
+    buildStatus = "error";
+  } else {
+    buildStatus = "idle";
+  }
+
+  const displayName = getDisplayName(scriptName);
+  const isDrawerOpen = statusBarDrawer?.repoPath === repoPath && statusBarDrawer?.scriptName === scriptName;
+  const scriptEntry = scriptCache[repoPath]?.find((e) => e.name === scriptName);
+  const command = scriptEntry?.command ?? scriptName;
+
+  // Flash detection: building -> success triggers a 3s flash
+  useEffect(() => {
+    if (buildStatus === "success" && prevStatusRef.current === "building") {
+      setFlashing(true);
+      const timer = setTimeout(() => setFlashing(false), 3000);
+      return () => clearTimeout(timer);
+    }
+    prevStatusRef.current = buildStatus;
+  }, [buildStatus]);
+
+  // Auto-open drawer on error when Claude is idle
+  const autoOpenedRef = useRef(false);
+  useEffect(() => {
+    if (buildStatus === "error" && !autoOpenedRef.current) {
+      if (!isClaudeActiveInWorkspace(activeWorkspaceId)) {
+        openStatusBarDrawer(repoPath, scriptName);
+        autoOpenedRef.current = true;
+      }
+    }
+    if (buildStatus !== "error") {
+      autoOpenedRef.current = false;
+    }
+  }, [buildStatus, activeWorkspaceId, repoPath, scriptName, openStatusBarDrawer]);
+
+  // Determine dot style
+  const dotStyle: React.CSSProperties = {
+    width: 7,
+    height: 7,
+    borderRadius: "50%",
+    flexShrink: 0,
+  };
+
+  if (flashing) {
+    // Success flash animation
+    dotStyle.background = "var(--status-green)";
+    dotStyle.animation = isWatcher
+      ? "success-flash-watcher 3s ease-out forwards"
+      : "success-flash 3s ease-out forwards";
+  } else if (buildStatus === "building") {
+    dotStyle.background = "var(--status-amber)";
+    dotStyle.animation = "pulse-glow 1.5s ease-in-out infinite";
+  } else if (buildStatus === "error") {
+    dotStyle.background = "var(--status-red)";
+    dotStyle.opacity = 1;
+  } else if (isRunning && isWatcher && buildStatus === "success") {
+    // Watcher running, no active build — steady green
+    dotStyle.background = "var(--status-green)";
+    dotStyle.opacity = 0.7;
+  } else if (isRunning && isWatcher) {
+    // Watcher running, idle state — steady green
+    dotStyle.background = "var(--status-green)";
+    dotStyle.opacity = 0.7;
+  } else {
+    // Idle
+    dotStyle.background = "var(--text-dim)";
+    dotStyle.opacity = 0.6;
+  }
+
+  const restart = () => {
+    if (isRunning) stopScript(repoPath, scriptName);
+    clearScript(repoPath, scriptName);
+    // Small delay to let the PTY clean up before respawning
+    setTimeout(() => runScript(repoPath, scriptName, command), 100);
+  };
+
+  const handleContextMenu = (e: React.MouseEvent) => {
+    e.preventDefault();
+    showContextMenu([
+      {
+        label: "Restart",
+        action: restart,
+        accelerator: "Alt+Click",
+      },
+    ], { x: e.clientX, y: e.clientY });
+  };
+
   return (
-    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" style={svgAlign}>
-      <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8S1 12 1 12z" stroke="var(--status-green)" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
-      <circle cx="12" cy="12" r="3.5" stroke="var(--status-green)" strokeWidth="1.8" />
-    </svg>
-  );
-}
+    <div
+      onClick={(e) => {
+        // Option+click = restart
+        if (e.altKey) {
+          restart();
+          return;
+        }
+        if (isRunning) {
+          openStatusBarDrawer(repoPath, scriptName);
+        } else if (buildStatus === "error") {
+          openStatusBarDrawer(repoPath, scriptName);
+        } else {
+          runScript(repoPath, scriptName, command);
+        }
+      }}
+      onContextMenu={handleContextMenu}
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: 5,
+        padding: "2px 6px",
+        borderRadius: 3,
+        cursor: "pointer",
+        background: isDrawerOpen ? "var(--terminal-bg)" : "transparent",
+      }}
+    >
+      {/* Status dot */}
+      <span style={dotStyle} />
 
-function EyeClosedIcon() {
-  return (
-    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" style={svgAlign}>
-      <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94" stroke="var(--text-dim)" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
-      <path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19" stroke="var(--text-dim)" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
-      <path d="M1 1l22 22" stroke="var(--text-dim)" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-  );
-}
+      {/* Script name */}
+      <span
+        style={{
+          fontSize: 13,
+          fontWeight: 500,
+          color: "var(--text-secondary)",
+          whiteSpace: "nowrap",
+          userSelect: "none",
+          lineHeight: 1,
+        }}
+      >
+        {displayName}
+      </span>
 
-function PlayIcon() {
-  return (
-    <svg width="12" height="12" viewBox="0 0 10 10" fill="none" style={svgAlign}><path d="M2 1l7 4-7 4V1z" fill="currentColor" /></svg>
-  );
-}
-
-function StopIcon() {
-  return (
-    <svg width="12" height="12" viewBox="0 0 10 10" fill="none" style={svgAlign}><rect x="2" y="2" width="6" height="6" rx="1" fill="var(--status-red)" /></svg>
+      {/* Detected localhost port pills */}
+      {activeWorkspaceId && detectedPorts
+        .filter((p) => p.source.type === "script" && p.source.repoPath === repoPath && p.source.scriptName === scriptName)
+        .map((p) => (
+          <PortPill key={p.port} port={p} onClick={(url) => openWebView(activeWorkspaceId, url)} />
+        ))}
+    </div>
   );
 }
 
@@ -53,7 +204,6 @@ function StopIcon() {
 
 export function BuildStatusBar() {
   const activeWorkspaceId = useWorkspaceStore((s) => s.activeWorkspaceId);
-  // Return a stable string to avoid infinite re-renders (PITFALLS.md — new array breaks Object.is)
   const workspacePathsStr = useWorkspaceStore((s) => {
     const ws = s.workspaces.find((w) => w.id === s.activeWorkspaceId);
     return ws?.paths?.join("\n") ?? "";
@@ -66,8 +216,7 @@ export function BuildStatusBar() {
   const scriptRuns = useWorkspaceStore((s) => s.scriptRuns);
   const runScript = useWorkspaceStore((s) => s.runScript);
   const stopScript = useWorkspaceStore((s) => s.stopScript);
-  const statusBarCollapsed = useWorkspaceStore((s) => s.statusBarCollapsed);
-  const toggleStatusBarCollapsed = useWorkspaceStore((s) => s.toggleStatusBarCollapsed);
+  const clearScript = useWorkspaceStore((s) => s.clearScript);
   const openStatusBarDrawer = useWorkspaceStore((s) => s.openStatusBarDrawer);
   const statusBarDrawer = useWorkspaceStore((s) => s.statusBarDrawer);
   const detectedPorts = useDetectedPorts(activeWorkspaceId);
@@ -75,9 +224,6 @@ export function BuildStatusBar() {
 
   // Script entries cache per repo path
   const [scriptCache, setScriptCache] = useState<Record<string, ScriptEntry[]>>({});
-
-  // Timestamps cached in a ref — set during render when a build completes
-  const buildTimeCache = useRef<Record<string, string>>({});
 
   // Event-driven re-renders for watcher output
   const [, setTick] = useState(0);
@@ -99,7 +245,6 @@ export function BuildStatusBar() {
   const loadRallyConfig = useWorkspaceStore((s) => s.loadRallyConfig);
   useEffect(() => {
     for (const path of workspacePaths) {
-      // Ensure config is loaded for every repo (App.tsx only loads paths[0])
       if (!rallyConfigs[path]) {
         loadRallyConfig(path);
       }
@@ -121,269 +266,74 @@ export function BuildStatusBar() {
     return result;
   }, [workspacePaths, rallyConfigs]);
 
-  // No timestamp effect needed — timestamps are cached in buildTimeCache ref during render
-
-  // Return null if nothing to show
   if (!activeWorkspaceId || reposWithStatusBar.length === 0) return null;
 
   return (
-    <div data-statusbar="" style={{
+    <div data-statusbar="" onContextMenu={(e) => e.preventDefault()} style={{
       height: 28,
       background: "var(--bg-surface)",
       borderTop: "1px solid var(--border)",
       display: "flex",
       alignItems: "center",
       gap: 0,
-      paddingLeft: 4,
+      paddingLeft: 8,
       paddingRight: 10,
       paddingBottom: 2,
       flexShrink: 0,
-      overflow: "hidden",
+      overflowX: "auto",
+      overflowY: "hidden",
       userSelect: "none" as const,
+      WebkitUserSelect: "none" as const,
+      scrollbarWidth: "none" as const,
     }}>
-      {reposWithStatusBar.map(({ repoPath, repoName, scripts }, repoIdx) => {
-        const collapsed = !!statusBarCollapsed[repoPath];
+      {reposWithStatusBar.map(({ repoPath, repoName, scripts }, repoIdx) => (
+        <React.Fragment key={repoPath}>
+          {/* Repo divider */}
+          {repoIdx > 0 && (
+            <div style={{
+              width: 1,
+              height: 14,
+              background: "var(--border)",
+              flexShrink: 0,
+              margin: "0 8px",
+            }} />
+          )}
 
-        return (
-          <div
-            key={repoPath}
-            style={{
-              display: "flex",
-              alignItems: "stretch",
-              height: 22,
-              background: "transparent",
-              borderRadius: 0,
-              marginRight: repoIdx < reposWithStatusBar.length - 1 ? 6 : 0,
-            }}
-          >
-            {/* Repo name — arrow/chevron tab */}
-            <div
-              onClick={() => toggleStatusBarCollapsed(repoPath)}
-              style={{
-                display: "flex",
-                alignItems: "center",
-                cursor: "pointer",
-                flexShrink: 0,
-              }}
-            >
-              <div style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 5,
-                padding: "0 2px 0 8px",
-                background: "var(--pill-bg)",
-                borderRadius: "4px 0 0 4px",
-                height: 22,
-              }}>
-                <span
-                  style={{
-                    fontSize: 13,
-                    color: "var(--text-primary)",
-                    userSelect: "none",
-                    whiteSpace: "nowrap",
-                    fontWeight: 600,
-                    lineHeight: 1,
-                  }}
-                >
-                  {repoName}
-                </span>
+          {/* Repo name */}
+          <span style={{
+            fontSize: 13,
+            fontWeight: 600,
+            color: "var(--text-primary)",
+            whiteSpace: "nowrap",
+            lineHeight: 1,
+            flexShrink: 0,
+            marginRight: 2,
+          }}>
+            {repoName}
+          </span>
 
-              </div>
-              {/* Arrow point triangle */}
-              <div style={{
-                width: 0,
-                height: 0,
-                borderTop: "11px solid transparent",
-                borderBottom: "11px solid transparent",
-                borderLeft: "10px solid var(--pill-bg)",
-                flexShrink: 0,
-              }} />
-            </div>
-
-            {/* Expanded: individual script slots */}
-            {!collapsed && (
-              <div style={{ display: "flex", alignItems: "center", gap: 6, padding: "0 8px 0 4px" }}>
-                {scripts.map((scriptName, scriptIdx) => {
-              const key = `${repoPath}:${scriptName}`;
-              const run = scriptRuns[key];
-              const isRunning = run?.status === "running";
-              const isWatcher = isWatcherScript(scriptName);
-              let buildStatus: WatcherBuildStatus;
-              if (isRunning) {
-                // Only use output-based status detection for watchers
-                // Non-watcher scripts just show "building" while running — exit code determines final status
-                buildStatus = isWatcher ? getWatcherBuildStatus(key) : "building";
-              } else if (isWatcher && run?.status === "success") {
-                // Watcher stopped (Ctrl+C) — back to idle, not "success"
-                buildStatus = "idle";
-              } else if (run?.status === "success") {
-                buildStatus = "success";
-              } else if (run?.status === "error") {
-                buildStatus = "error";
-              } else {
-                buildStatus = "idle";
-              }
-              const displayName = getDisplayName(scriptName);
-              // Cache timestamp when we first see a completed build
-              if ((buildStatus === "success" || buildStatus === "error") && !buildTimeCache.current[key]) {
-                buildTimeCache.current[key] = formatAbsoluteTime(Date.now());
-              }
-              // Clear cached timestamp when script restarts (building again)
-              if (buildStatus === "building" || buildStatus === "idle") {
-                delete buildTimeCache.current[key];
-              }
-              const timeStr = buildTimeCache.current[key];
-              const isDrawerOpen = statusBarDrawer?.repoPath === repoPath && statusBarDrawer?.scriptName === scriptName;
-
-              // Find the command for this script
-              const scriptEntry = scriptCache[repoPath]?.find((e) => e.name === scriptName);
-              const command = scriptEntry?.command ?? scriptName;
-
-              return (
-                <React.Fragment key={scriptName}>
-                  {scriptIdx > 0 && (
-                    <div style={{ width: 1, height: 14, background: "var(--border)", flexShrink: 0 }} />
-                  )}
-                  <div
-                    onClick={() => {
-                      // Only auto-start if there's no existing run at all
-                      if (!run) {
-                        runScript(repoPath, scriptName, command);
-                      }
-                      openStatusBarDrawer(repoPath, scriptName);
-                    }}
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: 5,
-                      padding: "2px 6px",
-                      borderRadius: isDrawerOpen ? "3px 3px 0 0" : 3,
-                      cursor: "pointer",
-                      background: isDrawerOpen ? "var(--terminal-bg)" : "transparent",
-                    }}
-                  >
-                    {/* Status dot */}
-                    <span
-                      style={{
-                        width: 7,
-                        height: 7,
-                        borderRadius: "50%",
-                        background: getStatusColor(buildStatus),
-                        opacity: 0.6,
-                        flexShrink: 0,
-                        ...(buildStatus === "building" ? { animation: "pulse-glow 1.5s ease-in-out infinite" } : {}),
-                      }}
-                    />
-
-                    {/* Script name */}
-                    <span
-                      style={{
-                        fontSize: 13,
-                        fontWeight: 500,
-                        color: "var(--text-secondary)",
-                        whiteSpace: "nowrap",
-                        userSelect: "none",
-                        lineHeight: 1,
-                      }}
-                    >
-                      {displayName}
-                    </span>
-
-                    {/* Status text: live preview when building (only if output exists), static time when done, nothing when idle */}
-                    {buildStatus === "building" && getLastLine(key) ? (
-                      <span style={{
-                        fontSize: 12,
-                        fontWeight: 500,
-                        color: "var(--text-secondary)",
-                        whiteSpace: "nowrap",
-                        overflow: "hidden",
-                        textOverflow: "ellipsis",
-                        width: 200,
-                        maxWidth: 200,
-                        lineHeight: 1,
-                      }}>
-                        {getLastLine(key)}
-                      </span>
-                    ) : buildStatus !== "idle" && buildStatus !== "building" ? (
-                      <span
-                        style={{
-                          fontSize: 12,
-                          fontWeight: 500,
-                          color: buildStatus === "error" ? "var(--status-red)" : "var(--text-secondary)",
-                          whiteSpace: "nowrap",
-                          overflow: "hidden",
-                          textOverflow: "ellipsis",
-                          maxWidth: 200,
-                          lineHeight: 1,
-                        }}
-                      >
-                        {buildStatus === "error"
-                          ? (getLastLine(key) || "error") + (timeStr ? " \u00B7 " + timeStr : "")
-                          : timeStr ? "built at " + timeStr : "built"}
-                      </span>
-                    ) : null}
-
-                    {/* Action button: eye toggle for watchers, play/stop for scripts */}
-                    {isWatcher ? (
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          if (isRunning) {
-                            stopScript(repoPath, scriptName);
-                          } else {
-                            runScript(repoPath, scriptName, command);
-                          }
-                        }}
-                        style={actionBtnStyle}
-                        title={isRunning ? "Stop watcher" : "Start watcher"}
-                      >
-                        {isRunning ? <EyeOpenIcon /> : <EyeClosedIcon />}
-                      </button>
-                    ) : (
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          if (buildStatus === "building") {
-                            stopScript(repoPath, scriptName);
-                          } else {
-                            runScript(repoPath, scriptName, command);
-                          }
-                        }}
-                        style={actionBtnStyle}
-                        title={buildStatus === "building" ? "Stop" : "Run"}
-                      >
-                        {buildStatus === "building" ? <StopIcon /> : <PlayIcon />}
-                      </button>
-                    )}
-
-                    {/* Detected localhost port pills */}
-                    {activeWorkspaceId && detectedPorts
-                      .filter((p) => p.source.type === "script" && p.source.repoPath === repoPath && p.source.scriptName === scriptName)
-                      .map((p) => (
-                        <PortPill key={p.port} port={p} onClick={(url) => openWebView(activeWorkspaceId, url)} />
-                      ))}
-                  </div>
-                </React.Fragment>
-              );
-                })}
-              </div>
-            )}
-          </div>
-        );
-      })}
+          {/* Script dots */}
+          {scripts.map((scriptName) => (
+            <React.Fragment key={scriptName}>
+              <ScriptDot
+                repoPath={repoPath}
+                scriptName={scriptName}
+                scriptCache={scriptCache}
+                scriptRuns={scriptRuns}
+                runScript={runScript}
+                stopScript={stopScript}
+                clearScript={clearScript}
+                openStatusBarDrawer={openStatusBarDrawer}
+                statusBarDrawer={statusBarDrawer}
+                detectedPorts={detectedPorts}
+                activeWorkspaceId={activeWorkspaceId}
+                openWebView={openWebView}
+              />
+            </React.Fragment>
+          ))}
+        </React.Fragment>
+      ))}
     </div>
   );
 }
 
-const actionBtnStyle: React.CSSProperties = {
-  display: "flex",
-  alignItems: "center",
-  justifyContent: "center",
-  background: "none",
-  border: "none",
-  color: "var(--text-dim)",
-  cursor: "pointer",
-  padding: 0,
-  borderRadius: 3,
-  flexShrink: 0,
-};

@@ -1,5 +1,4 @@
 import { scriptOutputBuffers } from "../stores/workspaceStore";
-import { stripAnsi } from "./ansi";
 
 export type WatcherBuildStatus = "idle" | "building" | "success" | "error";
 
@@ -63,22 +62,3 @@ export function getDisplayName(scriptName: string): string {
   return scriptName.replace(/\.(sh|bash)$/, "");
 }
 
-export function formatAbsoluteTime(timestamp: number): string {
-  const d = new Date(timestamp);
-  const h = d.getHours();
-  const m = d.getMinutes().toString().padStart(2, "0");
-  const ampm = h >= 12 ? "pm" : "am";
-  const h12 = h % 12 || 12;
-  return `${h12}:${m}${ampm}`;
-}
-
-export function getLastLine(bufferKey: string): string {
-  const buf = scriptOutputBuffers.get(bufferKey);
-  if (!buf || buf.length === 0) return "";
-  const decoder = new TextDecoder("utf-8", { fatal: false });
-  const tail = buf.slice(Math.max(0, buf.length - 5));
-  const text = tail.map((c) => decoder.decode(c, { stream: true })).join("");
-  const lines = text.split(/\r?\n/).filter((l) => l.trim().length > 0);
-  if (lines.length === 0) return "";
-  return stripAnsi(lines[lines.length - 1]).replace(/\r/g, "").trim();
-}

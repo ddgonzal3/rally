@@ -240,8 +240,6 @@ interface WorkspaceState {
   shellPanels: Record<string, ShellPanel>;
   /** Cached RALLY.json configs per repo path (not persisted) */
   rallyConfigs: Record<string, RallyConfig>;
-  /** Per-repo collapse state for status bar tabs (in-memory only) */
-  statusBarCollapsed: Record<string, boolean>;
   /** Which script's drawer is currently open, or null */
   statusBarDrawer: { repoPath: string; scriptName: string } | null;
   /** Detected localhost ports keyed by workspace ID */
@@ -262,7 +260,6 @@ interface WorkspaceState {
   loadRallyConfig: (rootPath: string) => Promise<void>;
 
   // Status bar actions
-  toggleStatusBarCollapsed: (repoPath: string) => void;
   openStatusBarDrawer: (repoPath: string, scriptName: string) => void;
   closeStatusBarDrawer: () => void;
   addToStatusBar: (rootPath: string, scriptName: string) => Promise<void>;
@@ -685,7 +682,6 @@ export const useWorkspaceStore = create<WorkspaceState>()(
   productSessions: {},
   shellPanels: {},
   rallyConfigs: {},
-  statusBarCollapsed: {},
   statusBarDrawer: null,
   detectedPorts: {},
   addDetectedPort: (workspaceId, port) => {
@@ -789,15 +785,6 @@ export const useWorkspaceStore = create<WorkspaceState>()(
   },
 
   // --- Status bar actions ---
-
-  toggleStatusBarCollapsed: (repoPath) => {
-    set((s) => ({
-      statusBarCollapsed: {
-        ...s.statusBarCollapsed,
-        [repoPath]: !s.statusBarCollapsed[repoPath],
-      },
-    }));
-  },
 
   openStatusBarDrawer: (repoPath, scriptName) => {
     const current = get().statusBarDrawer;

@@ -416,14 +416,38 @@ export function App() {
   const MIN_EXPLORER_WIDTH = 120;
   const ACTIVITY_BAR_WIDTH = 46;
   const RESIZE_HANDLE_WIDTH = 6;
+  // Track whether the explorer was auto-collapsed by a snap (so we can auto-restore)
+  const autoCollapsedRef = useRef(false);
+  // Track previous window width to detect snaps vs manual drags
+  const prevWindowWidthRef = useRef(window.innerWidth);
+  const SNAP_THRESHOLD = 150; // px — jumps larger than this are snaps, not manual drags
   useEffect(() => {
     const checkWidth = () => {
       if (resizingRef.current) return;
       const w = window.innerWidth;
+      const halfScreen = window.screen.width / 2;
+      const delta = Math.abs(w - prevWindowWidthRef.current);
+      const isSnap = delta >= SNAP_THRESHOLD;
+      prevWindowWidthRef.current = w;
+
       const explorerSpace = fileExplorerCollapsed
         ? 0
         : fileExplorerWidth + RESIZE_HANDLE_WIDTH;
       const mainWidth = w - ACTIVITY_BAR_WIDTH - explorerSpace;
+
+      // Auto-collapse on snap to half screen or narrower (not during manual drag)
+      if (isSnap && w <= halfScreen && !fileExplorerCollapsed) {
+        autoCollapsedRef.current = true;
+        setFileExplorerCollapsed(true);
+        return;
+      }
+
+      // Auto-restore on snap past half screen (if we auto-collapsed earlier)
+      if (isSnap && w > halfScreen && fileExplorerCollapsed && autoCollapsedRef.current) {
+        autoCollapsedRef.current = false;
+        setFileExplorerCollapsed(false);
+        return;
+      }
 
       if (mainWidth < MIN_MAIN_WIDTH && !fileExplorerCollapsed) {
         // Shrink explorer to fit
@@ -1468,6 +1492,7 @@ export function App() {
                 style={styles.activityBtn}
                 onClick={() => {
                   if (view === "workspaces") return;
+                  autoCollapsedRef.current = false; // User-initiated toggle clears auto-collapse
                   if (isActive) {
                     setFileExplorerCollapsed(true);
                   } else {
