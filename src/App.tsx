@@ -1517,11 +1517,22 @@ export function App() {
           <div style={{ flex: 1 }} />
           <ThemeCycleButton />
         </div>
-        {!fileExplorerCollapsed && (
+        {!fileExplorerCollapsed && (() => {
+          const isHoverOverlay = wsHoverAnim !== null && preHoverRef.current?.collapsed === true;
+          return (
           <div
             style={{
               display: "flex",
               flexShrink: 0,
+              ...(isHoverOverlay ? {
+                position: "absolute" as const,
+                top: 0,
+                left: 47,
+                bottom: 0,
+                zIndex: 20,
+                background: "var(--bg-surface)",
+                boxShadow: "4px 0 12px rgba(0,0,0,0.3)",
+              } : {}),
               ...(wsHoverAnim === "in" ? { animation: "wsHoverSlideIn 160ms ease-out" } : {}),
               ...(wsHoverAnim === "out" ? { animation: "wsHoverSlideOut 90ms ease-in forwards" } : {}),
             }}
@@ -1571,7 +1582,8 @@ export function App() {
               <div style={styles.explorerResizeHeaderBorder} />
             </div>
           </div>
-        )}
+          );
+        })()}
         <div style={styles.main}>
           <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", position: "relative" }}>
             {activeWorkspaceId && activeRootPath && (
