@@ -404,16 +404,11 @@ export function App() {
   // When the window is too narrow we shrink below this, and restore when space returns.
   const preferredExplorerWidthRef = useRef(fileExplorerWidth);
 
-  // Hover-to-open for workspaces panel
-  const workspacesHoverRef = useRef(false);
-  const hoverCloseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const preHoverRef = useRef<{ collapsed: boolean; view: typeof explorerView } | null>(null);
-  const [wsHoverAnim, setWsHoverAnim] = useState<"in" | "out" | null>(null);
   const [showAddWorkspaceModal, setShowAddWorkspaceModal] = useState(false);
 
   // Auto-shrink explorer (and collapse sidebar as last resort) to keep main area usable
   const MIN_MAIN_WIDTH = 600;
-  const MIN_EXPLORER_WIDTH = 120;
+  const MIN_EXPLORER_WIDTH = 180;
   const ACTIVITY_BAR_WIDTH = 46;
   const RESIZE_HANDLE_WIDTH = 6;
   // Track whether the explorer was auto-collapsed by a snap (so we can auto-restore)
@@ -1303,7 +1298,7 @@ export function App() {
       const onMouseMove = (ev: MouseEvent) => {
         if (!resizingRef.current) return;
         finalWidth = Math.max(
-          140,
+          180,
           Math.min(500, startWidth + (ev.clientX - startX)),
         );
         cancelAnimationFrame(raf);
@@ -1315,11 +1310,14 @@ export function App() {
         });
       };
       const onMouseUp = () => {
-        resizingRef.current = false;
         cancelAnimationFrame(raf);
         preferredExplorerWidthRef.current = finalWidth;
         setFileExplorerWidth(finalWidth);
         localStorage.setItem(fileExplorerWidthKey, String(finalWidth));
+        // Keep resizingRef true briefly so the auto-shrink effect
+        // (which re-runs when fileExplorerWidth changes) doesn't
+        // immediately override the user's chosen width.
+        setTimeout(() => { resizingRef.current = false; }, 100);
         document.removeEventListener("mousemove", onMouseMove);
         document.removeEventListener("mouseup", onMouseUp);
         document.body.style.cursor = "";
@@ -1344,51 +1342,6 @@ export function App() {
     [appWindow],
   );
 
-  const clearHoverTimer = useCallback(() => {
-    if (hoverCloseTimerRef.current) {
-      clearTimeout(hoverCloseTimerRef.current);
-      hoverCloseTimerRef.current = null;
-    }
-  }, []);
-
-  const handleWorkspacesHoverEnter = useCallback(() => {
-    clearHoverTimer();
-    setWsHoverAnim((prev) => prev === "out" ? null : prev); // cancel slide-out, snap visible
-    // Already showing workspaces via click (not hover) — don't interfere
-    if (!fileExplorerCollapsed && explorerView === "workspaces" && !workspacesHoverRef.current) {
-      return;
-    }
-    if (!workspacesHoverRef.current) {
-      preHoverRef.current = { collapsed: fileExplorerCollapsed, view: explorerView };
-      workspacesHoverRef.current = true;
-      setWsHoverAnim("in");
-      setExplorerView("workspaces");
-      setFileExplorerCollapsed(false);
-    }
-  }, [fileExplorerCollapsed, explorerView, clearHoverTimer]);
-
-  const handleWorkspacesHoverLeave = useCallback(() => {
-    if (!workspacesHoverRef.current) return;
-    hoverCloseTimerRef.current = setTimeout(() => {
-      if (!workspacesHoverRef.current) return;
-      // Start slide-out animation
-      setWsHoverAnim("out");
-      hoverCloseTimerRef.current = setTimeout(() => {
-        hoverCloseTimerRef.current = null;
-        if (!workspacesHoverRef.current) return;
-        setWsHoverAnim(null);
-        const prev = preHoverRef.current;
-        if (prev) {
-          setFileExplorerCollapsed(prev.collapsed);
-          setExplorerView(prev.view as typeof explorerView);
-        } else {
-          setFileExplorerCollapsed(true);
-        }
-        workspacesHoverRef.current = false;
-        preHoverRef.current = null;
-      }, 90);
-    }, 100);
-  }, []);
 
   return (
     <div style={styles.app}>
@@ -1491,8 +1444,7 @@ export function App() {
                 className={`activity-btn${isActive ? " activity-btn-active" : ""}`}
                 style={styles.activityBtn}
                 onClick={() => {
-                  if (view === "workspaces") return;
-                  autoCollapsedRef.current = false; // User-initiated toggle clears auto-collapse
+                  autoCollapsedRef.current = false;
                   if (isActive) {
                     setFileExplorerCollapsed(true);
                   } else {
@@ -1502,8 +1454,6 @@ export function App() {
                     }
                   }
                 }}
-                onMouseEnter={view === "workspaces" ? handleWorkspacesHoverEnter : undefined}
-                onMouseLeave={view === "workspaces" ? handleWorkspacesHoverLeave : undefined}
                 title={
                   isActive
                     ? `Hide ${title.toLowerCase()}`
@@ -1518,26 +1468,12 @@ export function App() {
           <ThemeCycleButton />
         </div>
         {!fileExplorerCollapsed && (() => {
-          const isHoverOverlay = wsHoverAnim !== null && preHoverRef.current?.collapsed === true;
           return (
           <div
             style={{
               display: "flex",
               flexShrink: 0,
-              ...(isHoverOverlay ? {
-                position: "absolute" as const,
-                top: 0,
-                left: 47,
-                bottom: 0,
-                zIndex: 20,
-                background: "var(--bg-surface)",
-                boxShadow: "4px 0 12px rgba(0,0,0,0.3)",
-              } : {}),
-              ...(wsHoverAnim === "in" ? { animation: "wsHoverSlideIn 160ms ease-out" } : {}),
-              ...(wsHoverAnim === "out" ? { animation: "wsHoverSlideOut 90ms ease-in forwards" } : {}),
             }}
-            onMouseEnter={explorerView === "workspaces" ? handleWorkspacesHoverEnter : undefined}
-            onMouseLeave={explorerView === "workspaces" ? handleWorkspacesHoverLeave : undefined}
           >
             <div
               ref={explorerRef}
@@ -1552,10 +1488,6 @@ export function App() {
                   onSelect={(id) => {
                     setActiveWorkspace(id);
                     setExplorerView("files");
-                    clearHoverTimer();
-                    workspacesHoverRef.current = false;
-                    preHoverRef.current = null;
-                    setWsHoverAnim(null);
                   }}
                 />
               )}
@@ -1604,14 +1536,6 @@ export function App() {
         <UnifiedGitPanel />
       </div>
       <style>{`
-        @keyframes wsHoverSlideIn {
-          from { transform: translateX(-14px); opacity: 0; }
-          to { transform: translateX(0); opacity: 1; }
-        }
-        @keyframes wsHoverSlideOut {
-          from { transform: translateX(0); opacity: 1; }
-          to { transform: translateX(-14px); opacity: 0; }
-        }
         .syn-comment { color: #8b949e; font-style: italic; }
         .syn-string { color: #a5d6ff; }
         .syn-keyword { color: #ff7b72; }

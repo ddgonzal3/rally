@@ -3207,6 +3207,7 @@ const styles: Record<string, React.CSSProperties> = {
     alignItems: "center",
     gap: 0,
     marginLeft: 6,
+    flexShrink: 0,
   },
   rootName: {
     overflow: "hidden",
@@ -3220,11 +3221,15 @@ const styles: Record<string, React.CSSProperties> = {
     display: "flex",
     alignItems: "center",
     gap: 6,
+    minWidth: 0,
   },
   rootBranch: {
     fontSize: 12,
     color: "var(--text-secondary)",
     fontWeight: 600,
+    overflow: "hidden",
+    textOverflow: "ellipsis",
+    whiteSpace: "nowrap" as const,
   },
   aheadCount: {
     color: "var(--status-amber)",
