@@ -2207,10 +2207,14 @@ function LayoutPresetsDropdown({ workspaceId }: { workspaceId: string }) {
   const activePresetId = useWorkspaceStore((s) => s.activePresetId[workspaceId]);
   const activePreset = presets.find((p) => p.id === activePresetId);
 
+  const [confirmingPresetId, setConfirmingPresetId] = useState<string | null>(null);
+  const [terminalsToKill, setTerminalsToKill] = useState(0);
+
   const close = useCallback(() => {
     setOpen(false);
     setSaving(false);
     setName("");
+    setConfirmingPresetId(null);
   }, []);
 
   // Close on outside click / Escape
@@ -2256,7 +2260,35 @@ function LayoutPresetsDropdown({ workspaceId }: { workspaceId: string }) {
   };
 
   const doRestore = (presetId: string) => {
-    useWorkspaceStore.getState().restoreLayoutPreset(workspaceId, presetId);
+    const state = useWorkspaceStore.getState();
+    const currentLayout = state.layouts[workspaceId];
+    const allPresets = state.layoutPresets[workspaceId] ?? [];
+    const preset = allPresets.find((p) => p.id === presetId);
+
+    if (preset && currentLayout) {
+      // Count total panes in current layout vs preset layout
+      let currentPaneCount = 0;
+      for (const group of Object.values(currentLayout.groups)) {
+        currentPaneCount += group.panes.length;
+      }
+      let presetPaneCount = 0;
+      for (const group of Object.values(preset.layout.groups)) {
+        presetPaneCount += group.panes.length;
+      }
+      if (currentPaneCount > presetPaneCount) {
+        setConfirmingPresetId(presetId);
+        setTerminalsToKill(currentPaneCount - presetPaneCount);
+        return;
+      }
+    }
+
+    state.restoreLayoutPreset(workspaceId, presetId);
+    close();
+  };
+
+  const doConfirmRestore = () => {
+    if (!confirmingPresetId) return;
+    useWorkspaceStore.getState().restoreLayoutPreset(workspaceId, confirmingPresetId);
     close();
   };
 
@@ -2273,17 +2305,10 @@ function LayoutPresetsDropdown({ workspaceId }: { workspaceId: string }) {
   const handleToggle = (e: React.MouseEvent) => {
     e.stopPropagation();
     if (open) { close(); return; }
-    // Measure button position for portal placement — prefer right-aligned,
-    // but flip to left-aligned if that would push the dropdown off-screen.
+    // Measure button position for portal placement — left-aligned so it grows rightward.
     const rect = btnRef.current?.getBoundingClientRect();
     if (rect) {
-      const rightAligned = window.innerWidth - rect.right;
-      // If right-aligning would push the dropdown past the left edge, left-align instead
-      if (rect.right - DROPDOWN_MIN_WIDTH < 0) {
-        setPos({ top: rect.bottom + 4, right: -1, left: rect.left });
-      } else {
-        setPos({ top: rect.bottom + 4, right: rightAligned, left: -1 });
-      }
+      setPos({ top: rect.bottom + 4, right: -1, left: rect.left });
     }
     setOpen(true);
     setSaving(false);
@@ -2303,6 +2328,29 @@ function LayoutPresetsDropdown({ workspaceId }: { workspaceId: string }) {
         zIndex: 10000, boxShadow: "0 8px 24px var(--shadow)",
       }}
     >
+      {confirmingPresetId ? (
+        <div style={{ display: "flex", alignItems: "center", gap: 6, padding: "0 10px", height: 28, margin: "0 4px" }}>
+          <span style={{ fontSize: 13, fontWeight: 600, color: "var(--text-primary)", whiteSpace: "nowrap", flex: 1 }}>
+            Close {terminalsToKill} terminal{terminalsToKill > 1 ? "s" : ""}?
+          </span>
+          <button
+            onClick={() => setConfirmingPresetId(null)}
+            style={{
+              background: "rgba(255,255,255,0.08)", border: "0.5px solid var(--border-subtle)",
+              color: "var(--text-primary)", fontSize: 12, fontWeight: 600, cursor: "pointer",
+              padding: "3px 12px", borderRadius: 6, letterSpacing: "-0.01em",
+            }}
+          >No</button>
+          <button
+            onClick={doConfirmRestore}
+            style={{
+              background: "var(--text-primary)", border: "none",
+              color: "var(--bg-app)", fontSize: 12, fontWeight: 600, cursor: "pointer",
+              padding: "3px 12px", borderRadius: 6, letterSpacing: "-0.01em",
+            }}
+          >Yes</button>
+        </div>
+      ) : <>
       {/* Saved layouts — click to restore, hover shows X to delete */}
       {presets.map((p) => {
         const isActive = p.id === activePresetId;
@@ -2387,6 +2435,7 @@ function LayoutPresetsDropdown({ workspaceId }: { workspaceId: string }) {
           <span style={{ fontSize: 13, fontWeight: 600, color: "var(--text-primary)" }}>Update &lsquo;{activePreset.name}&rsquo;</span>
         </div>
       )}
+      </>}
     </div>,
     document.body,
   ) : null;

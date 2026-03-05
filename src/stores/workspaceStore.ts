@@ -2349,8 +2349,8 @@ export const useWorkspaceStore = create<WorkspaceState>()(
         ...group,
         panes: group.panes.map((p) => {
           const { ptyId: _, scriptBufferKey: _2, ...rest } = p;
-          if (rest.type === "claude") {
-            return { id: rest.id, type: "claude-launcher" as const, title: rest.title, ...(rest.cwd ? { cwd: rest.cwd } : {}) };
+          if (shouldRestoreAsClaudeLauncher(rest)) {
+            return { id: rest.id, type: "claude-launcher" as const, title: rest.type === "claude" ? rest.title : "Claude Code", ...(rest.cwd ? { cwd: rest.cwd } : {}) };
           }
           return rest;
         }),
@@ -2400,8 +2400,8 @@ export const useWorkspaceStore = create<WorkspaceState>()(
         ...group,
         panes: group.panes.map((p) => {
           const { ptyId: _, scriptBufferKey: _2, ...rest } = p;
-          if (rest.type === "claude") {
-            return { id: rest.id, type: "claude-launcher" as const, title: rest.title, ...(rest.cwd ? { cwd: rest.cwd } : {}) };
+          if (shouldRestoreAsClaudeLauncher(rest)) {
+            return { id: rest.id, type: "claude-launcher" as const, title: rest.type === "claude" ? rest.title : "Claude Code", ...(rest.cwd ? { cwd: rest.cwd } : {}) };
           }
           return rest;
         }),
@@ -2461,6 +2461,17 @@ export const useWorkspaceStore = create<WorkspaceState>()(
     // old PTY refs, and killing orphaned PTYs causes "Process exited" on
     // the still-alive components. Fresh IDs force a full unmount → remount.
     const cloned: WorkspaceLayout = JSON.parse(JSON.stringify(preset.layout));
+
+    // Sanitize cloned panes: convert terminal panes that should be claude-launchers.
+    // This fixes presets saved before the shouldRestoreAsClaudeLauncher check was added.
+    for (const group of Object.values(cloned.groups)) {
+      group.panes = group.panes.map((p) => {
+        if (shouldRestoreAsClaudeLauncher(p) && p.type !== "claude-launcher") {
+          return { id: p.id, type: "claude-launcher" as const, title: p.type === "claude" ? p.title : "Claude Code", ...(p.cwd ? { cwd: p.cwd } : {}) };
+        }
+        return p;
+      });
+    }
 
     // --- PTY preservation: match old panes to new panes by position + type + cwd ---
     const preservedPtyIds = new Set<string>();

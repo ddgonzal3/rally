@@ -92,7 +92,7 @@ const styles: Record<string, React.CSSProperties> = {
   overlay: {
     position: "absolute",
     inset: 0,
-    background: "var(--bg-surface)",
+    background: "var(--terminal-bg)",
     display: "flex",
     alignItems: "center",
     justifyContent: "center",
