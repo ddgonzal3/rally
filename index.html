@@ -195,6 +195,18 @@
         50% { opacity: 1; }
       }
 
+      @keyframes success-flash {
+        0% { background: var(--status-green); opacity: 1; }
+        70% { background: var(--status-green); opacity: 0.8; }
+        100% { background: var(--text-dim); opacity: 0.6; }
+      }
+
+      @keyframes success-flash-watcher {
+        0% { background: var(--status-green); opacity: 1; }
+        70% { background: var(--status-green); opacity: 0.8; }
+        100% { background: var(--status-green); opacity: 0.4; }
+      }
+
       .status-bar-slot:hover { background: var(--bg-hover); }
       .status-bar-tab:hover { background: var(--bg-hover); }
 
