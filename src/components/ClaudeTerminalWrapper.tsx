@@ -7,6 +7,7 @@ interface ClaudeTerminalWrapperProps {
   command?: string;
   initialInput?: string;
   ptyId?: string;
+  workspaceId?: string;
   onPtySpawned?: (ptyId: string) => void;
   onCwdChanged?: (cwd: string) => void;
   onFileOpen?: OnFileOpen;
@@ -15,7 +16,7 @@ interface ClaudeTerminalWrapperProps {
 const MIN_OVERLAY_MS = 1500;
 const MAX_OVERLAY_MS = 5000;
 
-export function ClaudeTerminalWrapper({ cwd, command, initialInput, ptyId, onPtySpawned, onCwdChanged, onFileOpen }: ClaudeTerminalWrapperProps) {
+export function ClaudeTerminalWrapper({ cwd, command, initialInput, ptyId, workspaceId, onPtySpawned, onCwdChanged, onFileOpen }: ClaudeTerminalWrapperProps) {
   const [ready, setReady] = useState(!!ptyId);
   const containerRef = useRef<HTMLDivElement>(null);
   const ptyArrivedRef = useRef(!!ptyId);
@@ -62,7 +63,7 @@ export function ClaudeTerminalWrapper({ cwd, command, initialInput, ptyId, onPty
 
   return (
     <div ref={containerRef} style={styles.container}>
-      <Terminal cwd={cwd} command={cleanCommand} initialInput={initialInput} ptyId={ptyId} onPtySpawned={onPtySpawned} onCwdChanged={onCwdChanged} onFileOpen={onFileOpen} />
+      <Terminal cwd={cwd} command={cleanCommand} initialInput={initialInput} ptyId={ptyId} workspaceId={workspaceId} onPtySpawned={onPtySpawned} onCwdChanged={onCwdChanged} onFileOpen={onFileOpen} />
       {!ready && (
         <div style={styles.overlay}>
           <div style={styles.content}>

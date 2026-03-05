@@ -1,13 +1,16 @@
-import React from "react";
+import React, { useCallback } from "react";
 import { PaneGroupView } from "./PaneGroupView";
 import { ResizeHandle } from "./ResizeHandle";
 import { useWorkspaceStore } from "../stores/workspaceStore";
+import { DEFAULT_BOTTOM_RATIO } from "../lib/types";
 import type { LayoutNode } from "../lib/types";
 
 interface SplitContainerProps {
   node: LayoutNode;
   workspaceId: string;
   workspacePath: string;
+  isRoot?: boolean;
+  isBottomPanel?: boolean;
 }
 
 /**
@@ -19,8 +22,28 @@ export const SplitContainer = React.memo(function SplitContainer({
   node,
   workspaceId,
   workspacePath,
+  isRoot,
+  isBottomPanel,
 }: SplitContainerProps) {
   const updateSplitRatio = useWorkspaceStore((s) => s.updateSplitRatio);
+  const toggleBottomPanel = useWorkspaceStore((s) => s.toggleBottomPanel);
+  const bottomCollapsed = useWorkspaceStore(
+    (s) => !!s.bottomPanelCollapsed[workspaceId],
+  );
+
+  // All hooks must be called before any early return (Rules of Hooks)
+  const handleRootVerticalResize = useCallback(
+    (ratio: number) => {
+      if (node.type !== "split") return;
+      if (ratio >= DEFAULT_BOTTOM_RATIO) {
+        updateSplitRatio(workspaceId, node.id, DEFAULT_BOTTOM_RATIO);
+        toggleBottomPanel(workspaceId);
+      } else {
+        updateSplitRatio(workspaceId, node.id, ratio);
+      }
+    },
+    [workspaceId, node, updateSplitRatio, toggleBottomPanel],
+  );
 
   if (node.type === "group") {
     return (
@@ -28,6 +51,7 @@ export const SplitContainer = React.memo(function SplitContainer({
         groupId={node.groupId}
         workspaceId={workspaceId}
         workspacePath={workspacePath}
+        isBottomPanel={isBottomPanel}
       />
     );
   }
@@ -35,6 +59,8 @@ export const SplitContainer = React.memo(function SplitContainer({
   // Split node
   const isVertical = node.direction === "vertical";
   const [first, second] = node.children;
+  const isRootVertical = isRoot && isVertical;
+  const collapsed = isRootVertical && bottomCollapsed;
 
   return (
     <div
@@ -49,7 +75,7 @@ export const SplitContainer = React.memo(function SplitContainer({
     >
       <div
         style={{
-          flex: `${node.ratio} 1 0%`,
+          flex: collapsed ? "1 1 0%" : `${node.ratio} 1 0%`,
           minWidth: 0,
           minHeight: 0,
           display: "flex",
@@ -64,26 +90,34 @@ export const SplitContainer = React.memo(function SplitContainer({
         />
       </div>
 
-      <ResizeHandle
-        direction={node.direction}
-        ratio={node.ratio}
-        onResize={(ratio) => updateSplitRatio(workspaceId, node.id, ratio)}
-      />
+      {!collapsed && (
+        <ResizeHandle
+          direction={node.direction}
+          ratio={node.ratio}
+          onResize={isRootVertical
+            ? handleRootVerticalResize
+            : (ratio) => updateSplitRatio(workspaceId, node.id, ratio)
+          }
+        />
+      )}
 
       <div
         style={{
-          flex: `${1 - node.ratio} 1 0%`,
+          flex: collapsed ? "0 0 29px" : `${1 - node.ratio} 1 0%`,
           minWidth: 0,
-          minHeight: 0,
+          minHeight: collapsed ? 29 : 0,
+          maxHeight: collapsed ? 29 : undefined,
           display: "flex",
           overflow: "hidden",
           transition: "var(--split-transition, flex 0.08s ease)",
+          ...(collapsed ? { borderTop: "1px solid var(--border)" } : {}),
         }}
       >
         <SplitContainer
           node={second}
           workspaceId={workspaceId}
           workspacePath={workspacePath}
+          isBottomPanel={isRootVertical || isBottomPanel}
         />
       </div>
     </div>

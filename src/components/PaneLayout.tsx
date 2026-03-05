@@ -43,6 +43,7 @@ const WorkspaceLayoutView = React.memo(function WorkspaceLayoutView({
         node={root}
         workspaceId={workspaceId}
         workspacePath={workspacePath}
+        isRoot
       />
     </div>
   );

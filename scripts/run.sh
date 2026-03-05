@@ -14,5 +14,9 @@ echo "Building..."
 npm run build
 cargo tauri build --bundles app
 
-echo "Launching..."
-open "src-tauri/target/release/bundle/macos/Rally.app"
+if [ "$1" = "--no-launch" ]; then
+  echo "Build complete (skipping launch)."
+else
+  echo "Launching..."
+  open "src-tauri/target/release/bundle/macos/Rally.app"
+fi

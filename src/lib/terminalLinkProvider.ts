@@ -6,10 +6,11 @@ import { api, openUrl } from "./tauri";
 // Web URLs: match http(s)://... stopping at common delimiters
 const URL_REGEX = /https?:\/\/[^\s'")\]}>]+/g;
 
-// File paths: must contain at least one `/` and end with a file extension.
-// Supports absolute, relative with prefix (./ ../), and implicit relative paths.
-// Optional :line or :line:col suffix.
-const FILE_PATH_REGEX = /(?:\.\.?\/|\/)[^\s'"()[\]{}<>,;!?`|]+?\.[a-zA-Z0-9]{1,10}(?::\d+(?::\d+)?)?/g;
+// File paths: supports absolute (/foo), relative with prefix (./foo, ../foo),
+// implicit relative with slash (src/foo.ts), and bare filenames (foo.ts).
+// Must end with a file extension. Optional :line or :line:col suffix.
+const FILE_PATH_REGEX = /(?:\.\.?\/|\/|[a-zA-Z0-9_@.-]+\/)[^\s'"()[\]{}<>,;!?`|]+?\.[a-zA-Z0-9]{1,10}(?::\d+(?::\d+)?)?/g;
+const BARE_FILE_REGEX = /(?<![/\w.-])[a-zA-Z0-9_@.-]+\.[a-zA-Z0-9]{1,10}(?::\d+(?::\d+)?)?(?![/\w.-])/g;
 
 interface LinkMatch {
   text: string;
@@ -45,6 +46,22 @@ function findLinksInText(text: string): LinkMatch[] {
       (um) => um.kind === "url" && startIdx < um.startIndex + um.text.length && endIdx > um.startIndex
     );
     if (overlapsUrl) continue;
+
+    matches.push({ text: matchText, startIndex: startIdx, kind: "file" });
+  }
+
+  // Bare filenames (e.g. "config.yaml:1") — no slash required
+  BARE_FILE_REGEX.lastIndex = 0;
+  while ((m = BARE_FILE_REGEX.exec(text)) !== null) {
+    const matchText = m[0];
+    const startIdx = m.index;
+    const endIdx = startIdx + matchText.length;
+
+    // Skip if overlaps with any existing match
+    const overlaps = matches.some(
+      (um) => startIdx < um.startIndex + um.text.length && endIdx > um.startIndex
+    );
+    if (overlaps) continue;
 
     matches.push({ text: matchText, startIndex: startIdx, kind: "file" });
   }

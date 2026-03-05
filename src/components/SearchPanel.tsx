@@ -5,6 +5,7 @@ import { api } from "../lib/tauri";
 import type { SearchMatch, ReplaceOp } from "../lib/types";
 import { ScrollArea } from "./ScrollArea";
 import { FileIcon } from "./FileIcon";
+import { showContextMenu } from "../lib/contextMenu";
 import "./SearchPanel.css";
 
 interface SearchPanelProps {
@@ -47,6 +48,36 @@ function findRepoForFile(filePath: string, sortedRoots: string[]): string {
   return dirname(filePath) || filePath;
 }
 
+interface PerWorkspaceSearchState {
+  query: string;
+  caseSensitive: boolean;
+  wholeWord: boolean;
+  useRegex: boolean;
+  results: SearchMatch[];
+  hasSearched: boolean;
+  collapsedFiles: Set<string>;
+  replaceOpen: boolean;
+  replaceValue: string;
+  preserveCase: boolean;
+  collapsedRepos: Set<string>;
+}
+
+function defaultSearchState(): PerWorkspaceSearchState {
+  return {
+    query: "",
+    caseSensitive: false,
+    wholeWord: false,
+    useRegex: false,
+    results: [],
+    hasSearched: false,
+    collapsedFiles: new Set(),
+    replaceOpen: false,
+    replaceValue: "",
+    preserveCase: false,
+    collapsedRepos: new Set(),
+  };
+}
+
 export function SearchPanel({ onCollapse, flushLeft }: SearchPanelProps) {
   const activeWorkspaceId = useWorkspaceStore((s) => s.activeWorkspaceId);
   const workspaces = useWorkspaceStore((s) => s.workspaces);
@@ -54,6 +85,10 @@ export function SearchPanel({ onCollapse, flushLeft }: SearchPanelProps) {
 
   const ws = workspaces.find((w) => w.id === activeWorkspaceId);
   const paths = ws?.paths ?? [];
+
+  // Per-workspace search state cache
+  const stateMapRef = useRef<Map<string, PerWorkspaceSearchState>>(new Map());
+  const prevWorkspaceRef = useRef<string | null>(null);
 
   const [query, setQuery] = useState("");
   const [caseSensitive, setCaseSensitive] = useState(false);
@@ -70,6 +105,41 @@ export function SearchPanel({ onCollapse, flushLeft }: SearchPanelProps) {
   const [replaceInputFocused, setReplaceInputFocused] = useState(false);
   const [preserveCase, setPreserveCase] = useState(false);
   const [collapsedRepos, setCollapsedRepos] = useState<Set<string>>(new Set());
+
+  // Save/restore search state when switching workspaces
+  useEffect(() => {
+    const wsId = activeWorkspaceId ?? "";
+    const prevId = prevWorkspaceRef.current;
+
+    // Save current state for the previous workspace
+    if (prevId && prevId !== wsId) {
+      stateMapRef.current.set(prevId, {
+        query, caseSensitive, wholeWord, useRegex, results,
+        hasSearched, collapsedFiles, replaceOpen, replaceValue,
+        preserveCase, collapsedRepos,
+      });
+    }
+
+    // Restore state for the new workspace (or reset to defaults)
+    if (prevId !== wsId) {
+      const saved = stateMapRef.current.get(wsId) ?? defaultSearchState();
+      setQuery(saved.query);
+      setCaseSensitive(saved.caseSensitive);
+      setWholeWord(saved.wholeWord);
+      setUseRegex(saved.useRegex);
+      setResults(saved.results);
+      setHasSearched(saved.hasSearched);
+      setCollapsedFiles(saved.collapsedFiles);
+      setReplaceOpen(saved.replaceOpen);
+      setReplaceValue(saved.replaceValue);
+      setPreserveCase(saved.preserveCase);
+      setCollapsedRepos(saved.collapsedRepos);
+      setSearching(false);
+      setReplacing(false);
+      prevWorkspaceRef.current = wsId;
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeWorkspaceId]);
 
   const inputRef = useRef<HTMLInputElement>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout>>(undefined);
@@ -430,6 +500,17 @@ export function SearchPanel({ onCollapse, flushLeft }: SearchPanelProps) {
                     <div
                       className="search-file-row filematch repo-file-row"
                       onClick={() => toggleFileCollapse(group.filePath)}
+                      onContextMenu={(e) => {
+                        e.preventDefault();
+                        const prefix = repo.repoPath.endsWith("/") ? repo.repoPath : `${repo.repoPath}/`;
+                        const rel = group.filePath.startsWith(prefix)
+                          ? group.filePath.slice(prefix.length)
+                          : group.filePath;
+                        showContextMenu([
+                          { label: "Copy Relative Path", action: () => navigator.clipboard.writeText(rel) },
+                          { label: "Copy Path", action: () => navigator.clipboard.writeText(group.filePath) },
+                        ], { x: e.clientX, y: e.clientY });
+                      }}
                     >
                       <span className={`search-tree-twistie codicon codicon-chevron-right ${isCollapsed ? "" : "expanded"}`} />
                       <FileIcon fileName={group.fileName} size={16} style={{ marginRight: 6 }} />

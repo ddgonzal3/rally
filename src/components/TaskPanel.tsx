@@ -1,11 +1,13 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { Terminal as XTerminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
+import { listen } from "@tauri-apps/api/event";
 import { useWorkspaceStore, scriptOutputBuffers } from "../stores/workspaceStore";
 import { api } from "../lib/tauri";
 import type { ScriptEntry, ScriptRun } from "../lib/types";
 import { TerminalPromptIcon } from "./FileIcons";
 import { showContextMenu } from "../lib/contextMenu";
+import { isWatcherScript, getWatcherBuildStatus, type WatcherBuildStatus } from "../lib/watcherStatus";
 
 interface TaskPanelProps {
   rootPath: string;
@@ -53,6 +55,17 @@ export function TaskPanel({ rootPath, workspaceId }: TaskPanelProps) {
   const refreshEntries = useCallback(() => {
     api.listScripts(rootPath).then(setEntries).catch(() => setEntries([]));
   }, [rootPath]);
+
+  // Re-fetch script list when files change in the repo (e.g. RALLY.json or scripts/ modified)
+  useEffect(() => {
+    let unlisten: (() => void) | null = null;
+    listen<{ rootPath: string }>("git-changes-updated", (event) => {
+      if (event.payload?.rootPath === rootPath) {
+        refreshEntries();
+      }
+    }).then((fn) => { unlisten = fn; });
+    return () => { unlisten?.(); };
+  }, [rootPath, refreshEntries]);
 
   if (scripts.length === 0) return null;
 
@@ -291,51 +304,6 @@ export function TaskPanel({ rootPath, workspaceId }: TaskPanelProps) {
   );
 }
 
-// --- Watcher detection & status ---
-
-function isWatcherScript(name: string): boolean {
-  return name.toLowerCase().includes("watch");
-}
-
-type WatcherBuildStatus = "idle" | "building" | "success" | "error";
-
-const ERROR_PATTERNS = /\b(error|failed|failure|ERR!|ERROR)\b/i;
-const SUCCESS_PATTERNS = /\b(built in|compiled successfully|ready in|watching for file changes|successfully compiled|ready|complete)\b/i;
-const BUILDING_PATTERNS = /\b(rebuilding|compiling|bundling|transforming)\b/i;
-
-/**
- * Cached watcher build status — updated incrementally as new output arrives.
- * Avoids re-decoding the entire buffer on every render.
- */
-const watcherStatusCache = new Map<string, { status: WatcherBuildStatus; chunkCount: number }>();
-
-function getWatcherBuildStatus(bufferKey: string): WatcherBuildStatus {
-  const buf = scriptOutputBuffers.get(bufferKey);
-  // Just started, no output yet → must be building
-  if (!buf || buf.length === 0) return "building";
-
-  const cached = watcherStatusCache.get(bufferKey);
-  if (cached && cached.chunkCount === buf.length) return cached.status;
-
-  // Only decode NEW chunks since last check
-  const startIdx = cached?.chunkCount ?? 0;
-  // Default to "building" until we see success or error
-  let currentStatus = cached?.status ?? "building";
-
-  if (buf.length > startIdx) {
-    const decoder = new TextDecoder("utf-8", { fatal: false });
-    const newChunks = buf.slice(startIdx);
-    const text = newChunks.map((c) => decoder.decode(c, { stream: true })).join("");
-
-    // Check the new text — last match wins (most recent output)
-    if (BUILDING_PATTERNS.test(text)) currentStatus = "building";
-    if (ERROR_PATTERNS.test(text)) currentStatus = "error";
-    if (SUCCESS_PATTERNS.test(text)) currentStatus = "success";
-  }
-
-  watcherStatusCache.set(bufferKey, { status: currentStatus, chunkCount: buf.length });
-  return currentStatus;
-}
 
 // --- Icons ---
 

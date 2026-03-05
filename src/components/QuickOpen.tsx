@@ -153,7 +153,6 @@ export default function QuickOpen(props: QuickOpenProps) {
   const resultsRef = useRef<HTMLDivElement>(null);
   const overlayRef = useRef<HTMLDivElement>(null);
 
-  const filesCacheRef = useRef<{ key: string; files: string[] } | null>(null);
   const [allFiles, setAllFiles] = useState<string[]>([]);
 
   const ws = workspaces.find((w) => w.id === activeWorkspaceId);
@@ -162,14 +161,9 @@ export default function QuickOpen(props: QuickOpenProps) {
 
   useEffect(() => {
     if (!visible || isCwdMode || workspacePaths.length === 0) return;
-    if (filesCacheRef.current?.key === cacheKey) {
-      setAllFiles(filesCacheRef.current.files);
-      return;
-    }
     let cancelled = false;
     api.listAllFiles(workspacePaths).then((files) => {
       if (cancelled) return;
-      filesCacheRef.current = { key: cacheKey, files };
       setAllFiles(files);
     });
     return () => {

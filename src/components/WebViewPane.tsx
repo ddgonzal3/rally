@@ -22,6 +22,46 @@ export function WebViewPane({ url, paneId }: WebViewPaneProps) {
   const [srcdoc, setSrcdoc] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
+  // For localhost URLs: track whether the server is reachable
+  const [serverUp, setServerUp] = useState<boolean | null>(null); // null = checking
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // Normalize URL: if user typed "localhost:3000", prepend http://
+  const iframeSrc = isFilePath(url) ? undefined
+    : url.startsWith("http") ? url
+    : `http://${url}`;
+
+  const isLocalhost = isLocalhostUrl(iframeSrc ?? url);
+
+  // Poll localhost to check if server is up
+  useEffect(() => {
+    if (!isLocalhost || !iframeSrc) return;
+    let cancelled = false;
+
+    const check = async () => {
+      try {
+        await fetch(iframeSrc, { mode: "no-cors", cache: "no-store" });
+        if (!cancelled) {
+          setServerUp(true);
+          // Stop polling once server is confirmed up
+          if (pollRef.current) {
+            clearInterval(pollRef.current);
+            pollRef.current = null;
+          }
+        }
+      } catch {
+        if (!cancelled) setServerUp(false);
+      }
+    };
+
+    check();
+    // Keep polling while server is down so we auto-recover when it starts
+    pollRef.current = setInterval(check, 3000);
+    return () => {
+      cancelled = true;
+      if (pollRef.current) clearInterval(pollRef.current);
+    };
+  }, [isLocalhost, iframeSrc, refreshKey]);
 
   // For local HTML files, read the content via Tauri
   useEffect(() => {
@@ -37,13 +77,14 @@ export function WebViewPane({ url, paneId }: WebViewPaneProps) {
 
   const handleRefresh = useCallback(() => {
     if (isFilePath(url)) {
-      // Re-read the file
+      setRefreshKey((k) => k + 1);
+    } else if (isLocalhost) {
+      setServerUp(null);
       setRefreshKey((k) => k + 1);
     } else if (iframeRef.current) {
-      // Reload the iframe
       iframeRef.current.src = iframeRef.current.src;
     }
-  }, [url]);
+  }, [url, isLocalhost]);
 
   const handleOpenInBrowser = useCallback(() => {
     if (isLocalhostUrl(url)) {
@@ -51,10 +92,7 @@ export function WebViewPane({ url, paneId }: WebViewPaneProps) {
     }
   }, [url]);
 
-  // Normalize URL: if user typed "localhost:3000", prepend http://
-  const iframeSrc = isFilePath(url) ? undefined
-    : url.startsWith("http") ? url
-    : `http://${url}`;
+  const showPlaceholder = isLocalhost && !serverUp;
 
   return (
     <div style={styles.container}>
@@ -70,7 +108,7 @@ export function WebViewPane({ url, paneId }: WebViewPaneProps) {
           >
             <RefreshIcon />
           </button>
-          {isLocalhostUrl(iframeSrc ?? url) && (
+          {isLocalhost && (
             <button
               style={styles.toolbarBtn}
               onClick={handleOpenInBrowser}
@@ -83,6 +121,16 @@ export function WebViewPane({ url, paneId }: WebViewPaneProps) {
       </div>
       {error ? (
         <div style={styles.error}>{error}</div>
+      ) : showPlaceholder ? (
+        <div style={styles.placeholder}>
+          <div style={styles.placeholderIcon}>
+            <GlobeOffIcon />
+          </div>
+          <div style={styles.placeholderText}>
+            {serverUp === null ? "Connecting..." : "No server running"}
+          </div>
+          <div style={styles.placeholderUrl}>{iframeSrc}</div>
+        </div>
       ) : (
         <iframe
           ref={iframeRef}
@@ -143,6 +191,17 @@ function ExternalLinkIcon() {
   );
 }
 
+function GlobeOffIcon() {
+  return (
+    <svg width="32" height="32" viewBox="0 0 24 24" fill="none">
+      <circle cx="12" cy="12" r="9.5" stroke="var(--text-dim)" strokeWidth="1.5" />
+      <ellipse cx="12" cy="12" rx="4" ry="9.5" stroke="var(--text-dim)" strokeWidth="1.5" />
+      <line x1="2.5" y1="12" x2="21.5" y2="12" stroke="var(--text-dim)" strokeWidth="1.5" />
+      <line x1="4" y1="4" x2="20" y2="20" stroke="var(--text-dim)" strokeWidth="2" strokeLinecap="round" />
+    </svg>
+  );
+}
+
 // --- Styles ---
 
 const styles: Record<string, React.CSSProperties> = {
@@ -195,6 +254,29 @@ const styles: Record<string, React.CSSProperties> = {
     border: "none",
     background: "#fff",
   },
+  placeholder: {
+    flex: 1,
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    background: "var(--bg-primary)",
+  },
+  placeholderIcon: {
+    opacity: 0.4,
+    marginBottom: 4,
+  },
+  placeholderText: {
+    fontSize: 14,
+    fontWeight: 500,
+    color: "var(--text-secondary)",
+  },
+  placeholderUrl: {
+    fontSize: 12,
+    fontFamily: "var(--font-mono, monospace)",
+    color: "var(--text-dim)",
+  },
   error: {
     flex: 1,
     display: "flex",
@@ -203,5 +285,6 @@ const styles: Record<string, React.CSSProperties> = {
     color: "var(--text-secondary)",
     fontSize: 13,
     padding: 20,
+    background: "var(--bg-primary)",
   },
 };

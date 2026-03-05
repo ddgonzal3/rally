@@ -94,6 +94,8 @@ export function UnifiedGitPanel() {
   const [forcePullConfirm, setForcePullConfirm] = useState(false);
   const [stashCount, setStashCount] = useState(0);
   const [stashing, setStashing] = useState(false);
+  const [allExpanded, setAllExpanded] = useState(true);
+  const [expandKey, setExpandKey] = useState(0);
   const lastFileFingerprint = useRef<string>("");
 
   // Mount/unmount lifecycle — slide in on open, slide out on close
@@ -627,6 +629,17 @@ export function UnifiedGitPanel() {
                 Staged{changes ? ` \u00B7 ${stagedCount}` : ""}
               </button>
               <div style={{ flex: 1 }} />
+              {displayFiles.length > 1 && (
+                <button
+                  onClick={() => {
+                    setAllExpanded((v) => !v);
+                    setExpandKey((k) => k + 1);
+                  }}
+                  style={ms.actionBtn}
+                >
+                  {allExpanded ? "Collapse all" : "Expand all"}
+                </button>
+              )}
               {gitStatus?.dirty && (
                 <button
                   onClick={handleStash}
@@ -812,10 +825,12 @@ export function UnifiedGitPanel() {
                                     ? "R"
                                     : "M"}
                             </span>
-                            <span style={ms.fileItemName}>{fileName}</span>
-                            {dirPath && (
-                              <span style={ms.fileDir}>{dirPath}</span>
-                            )}
+                            <span style={ms.filePath}>
+                              <span className="file-list-name" style={ms.fileItemName}>{fileName}</span>
+                              {dirPath && (
+                                <span className="file-list-dir" style={ms.fileDir}>{dirPath}</span>
+                              )}
+                            </span>
                             <span style={ms.fileStats}>
                               {file.additions > 0 && (
                                 <span style={{ color: "var(--status-green)" }}>
@@ -1045,14 +1060,16 @@ export function UnifiedGitPanel() {
                                                   ? "R"
                                                   : "M"}
                                           </span>
-                                          <span style={ms.fileItemName}>
-                                            {fileName}
-                                          </span>
-                                          {dirPath && (
-                                            <span style={ms.fileDir}>
-                                              {dirPath}
+                                          <span style={ms.filePath}>
+                                            <span className="file-list-name" style={ms.fileItemName}>
+                                              {fileName}
                                             </span>
-                                          )}
+                                            {dirPath && (
+                                              <span className="file-list-dir" style={ms.fileDir}>
+                                                {dirPath}
+                                              </span>
+                                            )}
+                                          </span>
                                         </button>
                                       );
                                     })}
@@ -1103,7 +1120,8 @@ export function UnifiedGitPanel() {
                       <DiffFileSection
                         key={file.newPath || file.oldPath}
                         file={file}
-                        defaultExpanded={true}
+                        defaultExpanded={allExpanded}
+                        expandKey={expandKey}
                         tab={diffTab}
                         onStage={handleStage}
                         onUnstage={handleUnstage}
@@ -1380,20 +1398,25 @@ const ms: Record<string, React.CSSProperties> = {
     textAlign: "center" as const,
     flexShrink: 0,
   },
-  fileItemName: {
+  filePath: {
     flex: 1,
     minWidth: 0,
+    display: "flex",
+    alignItems: "baseline",
+    gap: 6,
     overflow: "hidden",
-    textOverflow: "ellipsis",
+  },
+  fileItemName: {
+    flexShrink: 0,
     whiteSpace: "nowrap" as const,
     color: "var(--text-primary)",
     fontWeight: 500,
   },
   fileDir: {
+    flex: 1,
+    minWidth: 0,
     fontSize: 10,
     color: "var(--text-dim)",
-    flexShrink: 0,
-    maxWidth: 120,
     overflow: "hidden",
     textOverflow: "ellipsis",
     whiteSpace: "nowrap" as const,

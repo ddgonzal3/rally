@@ -6,60 +6,10 @@ import { api } from "../lib/tauri";
 import { TerminalLinkProvider, type OnFileOpen } from "../lib/terminalLinkProvider";
 import { useWorkspaceStore, shipOutputBuffer, scriptOutputBuffers, appendPtyBuffer, clearPtyBuffer, ptyOutputBuffers } from "../stores/workspaceStore";
 import { showContextMenu } from "../lib/contextMenu";
-import type { ThemeName } from "../lib/types";
+import type { ThemeName, DetectedPort } from "../lib/types";
+import { detectPorts } from "../lib/portDetection";
+import { getXtermTheme, getCssVar } from "../lib/xtermTheme";
 import "@xterm/xterm/css/xterm.css";
-
-// ANSI colors per theme — these have no CSS variable equivalents.
-// Background/foreground/cursor/selection are read from CSS variables
-// so theme tweaks in index.html automatically apply everywhere.
-const xtermAnsiColors: Record<ThemeName, Record<string, string>> = {
-  dark: {
-    black: '#1e1e1e',
-    red: '#df7d7d',
-    green: '#7ddf7d',
-    yellow: '#dfdf7d',
-    blue: '#7d7ddf',
-    magenta: '#df7ddf',
-    cyan: '#7ddfdf',
-    white: '#e0e0e0',
-  },
-  dimmed: {
-    black: '#252525',
-    red: '#c87070',
-    green: '#70c870',
-    yellow: '#c8c870',
-    blue: '#7070c8',
-    magenta: '#c870c8',
-    cyan: '#70c8c8',
-    white: '#d2d2d2',
-  },
-  light: {
-    black: '#111',
-    red: '#a83224',
-    green: '#1f8c4e',
-    yellow: '#c47e0e',
-    blue: '#20659a',
-    magenta: '#73388e',
-    cyan: '#128268',
-    white: '#555',
-    brightBlack: '#666',
-    brightWhite: '#333',
-  },
-};
-
-function getCssVar(name: string): string {
-  return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
-}
-
-function getXtermTheme(theme: ThemeName): Record<string, string> {
-  return {
-    background: getCssVar('--terminal-bg'),
-    foreground: getCssVar('--terminal-fg'),
-    cursor: getCssVar('--terminal-cursor'),
-    selectionBackground: getCssVar('--terminal-selection'),
-    ...xtermAnsiColors[theme],
-  };
-}
 
 interface TerminalProps {
   cwd: string;
@@ -71,6 +21,8 @@ interface TerminalProps {
   lockCols?: boolean;
   /** Key into scriptOutputBuffers to replay buffered output on attach */
   scriptBufferKey?: string;
+  /** Workspace ID for port detection — detected localhost URLs are registered here */
+  workspaceId?: string;
   /** Called after a new PTY is spawned — lets the parent persist the ptyId
    *  so it survives React remounts (layout restructuring). When provided,
    *  the Terminal will NOT kill the PTY on unmount — the store manages it. */
@@ -143,10 +95,13 @@ function safeFit(term: XTerminal, fitAddon: FitAddon): boolean {
   // panes are removed and the ResizeObserver fires transiently.
   // xterm's resize() reflows content correctly without a prior clear.
   term.resize(cols, rows);
+  // Keep viewport pinned to the bottom during resize so text doesn't
+  // appear to float/jump as the user drags a split handle.
+  term.scrollToBottom();
   return true;
 }
 
-export function Terminal({ cwd, command, initialInput, ptyId: existingPtyId, lockCols: lockColsProp, scriptBufferKey, onPtySpawned, onCwdChanged, onTitleChange, onFileOpen }: TerminalProps) {
+export function Terminal({ cwd, command, initialInput, ptyId: existingPtyId, lockCols: lockColsProp, scriptBufferKey, workspaceId, onPtySpawned, onCwdChanged, onTitleChange, onFileOpen }: TerminalProps) {
   const theme = useWorkspaceStore((s) => s.theme);
   const themeRef = useRef<ThemeName>(theme);
   themeRef.current = theme;
@@ -239,6 +194,8 @@ export function Terminal({ cwd, command, initialInput, ptyId: existingPtyId, loc
         if (!name && lastPublishedTitleRef.current) {
           emptyCount++;
           if (emptyCount < 2) return;
+          // Foreground process gone (back at shell prompt) — clear detected ports
+          useWorkspaceStore.getState().removePortsByPty(ptyId);
         }
         emptyCount = 0;
         emitTitle(name);
@@ -526,6 +483,7 @@ export function Terminal({ cwd, command, initialInput, ptyId: existingPtyId, loc
       const core = (term as any)._core;
       if (core?._renderService) core._renderService.clear();
       term.resize(LOCKED_COLS, rows);
+      term.scrollToBottom();
       return true;
     }
 
@@ -557,6 +515,21 @@ export function Terminal({ cwd, command, initialInput, ptyId: existingPtyId, loc
                 useWorkspaceStore.getState().refreshPrStatusForPath(cwd);
               }, 1500);
             }
+            // Detect localhost ports in terminal output
+            if (workspaceId && (text.includes("localhost") || text.includes("127.0.0.1") || /\bport\s+\d/i.test(text))) {
+              const ports = detectPorts(text);
+              const ptyId = ptyIdRef.current;
+              if (ports.length > 0 && ptyId) {
+                const store = useWorkspaceStore.getState();
+                for (const p of ports) {
+                  store.addDetectedPort(workspaceId, {
+                    ...p,
+                    source: { type: "pane", ptyId },
+                    detectedAt: Date.now(),
+                  });
+                }
+              }
+            }
           }
           term.write(chunk);
         }
@@ -569,8 +542,9 @@ export function Terminal({ cwd, command, initialInput, ptyId: existingPtyId, loc
           term.writeln(
             `\r\n\x1b[90m[Process exited${code != null ? ` with code ${code}` : ""}]\x1b[0m`
           );
-          // Clean up PTY output buffer on exit
+          // Clean up PTY output buffer and detected ports on exit
           clearPtyBuffer(ptyId);
+          useWorkspaceStore.getState().removePortsByPty(ptyId);
         }
       );
 
@@ -633,6 +607,12 @@ export function Terminal({ cwd, command, initialInput, ptyId: existingPtyId, loc
 
         await connectToPty(existingPtyId);
 
+        // After replaying buffered content, clear the renderer cache so that
+        // mouse-to-cell coordinate mapping is recalculated. Without this,
+        // text selection can appear offset (selecting rows above the cursor).
+        const core = (term as any)._core;
+        if (core?._renderService) core._renderService.clear();
+
         // Sync PTY dimensions — this sends SIGWINCH which makes TUI apps redraw
         if (lockCols) {
           fitRowsOnly();
@@ -682,6 +662,9 @@ export function Terminal({ cwd, command, initialInput, ptyId: existingPtyId, loc
         // Sync dimensions after the async gap — a resize may have occurred
         // during the await (before onResize was registered), leaving the
         // PTY at stale dimensions.
+        // Clear renderer cache first to ensure mouse-to-cell mapping stays correct.
+        const core = (term as any)._core;
+        if (core?._renderService) core._renderService.clear();
         if (safeFit(term, fitAddon)) {
           // safeFit resized xterm, but onResize already forwarded it.
           // No extra action needed.
@@ -752,7 +735,7 @@ export function Terminal({ cwd, command, initialInput, ptyId: existingPtyId, loc
 
   return (
     <div
-      style={{ ...styles.container, background: 'var(--terminal-bg)' }}
+      style={{ ...styles.container, background: 'var(--terminal-bg)', padding: '4px 4px 0 4px' }}
       onMouseDown={handleMouseDown}
       onContextMenu={handleContextMenu}
     >
@@ -772,7 +755,9 @@ const styles: Record<string, React.CSSProperties> = {
   },
   terminal: {
     flex: 1,
-    padding: '4px 4px 0 4px',
     overflow: "hidden",
+    display: "flex",
+    flexDirection: "column",
+    justifyContent: "flex-end",
   },
 };

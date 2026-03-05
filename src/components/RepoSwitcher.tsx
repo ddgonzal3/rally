@@ -71,7 +71,7 @@ export function RepoSwitcher({ workspaceId, rootPath }: RepoSwitcherProps) {
         style={btnStyle}
         title="Switch repository"
       >
-        <svg width="11" height="11" viewBox="0 0 16 16" fill="none" style={{ flexShrink: 0 }}>
+        <svg width="12" height="12" viewBox="0 0 16 16" fill="none" style={{ flexShrink: 0 }}>
           <path
             d="M2 4.5A1.5 1.5 0 013.5 3H6l1 1.5h5.5A1.5 1.5 0 0114 6v5.5a1.5 1.5 0 01-1.5 1.5h-9A1.5 1.5 0 012 11.5v-7z"
             stroke="var(--text-secondary)"
@@ -80,7 +80,7 @@ export function RepoSwitcher({ workspaceId, rootPath }: RepoSwitcherProps) {
             fill="none"
           />
         </svg>
-        <span style={{ fontSize: 11, color: "var(--text-secondary)", fontWeight: 600 }}>{currentBasename}</span>
+        <span style={{ fontSize: 12, color: "var(--text-secondary)", fontWeight: 600 }}>{currentBasename}</span>
         <svg width="8" height="8" viewBox="0 0 16 16" fill="none" style={{ flexShrink: 0, marginLeft: -1 }}>
           <path d="M4 6l4 4 4-4" stroke="var(--text-dim)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
         </svg>

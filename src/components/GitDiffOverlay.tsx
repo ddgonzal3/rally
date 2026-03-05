@@ -111,6 +111,18 @@ export function GitDiffContent({ rootPath }: GitDiffContentProps) {
           Staged{` · ${stagedCount}`}
         </button>
         <div style={{ flex: 1 }} />
+        {activeFiles.length > 0 && (
+          <button
+            onClick={() => {
+              setDefaultExpanded((v) => !v);
+              setExpandKey((k) => k + 1);
+            }}
+            style={cs.bulkActionBtn}
+            title={defaultExpanded ? "Collapse all files" : "Expand all files"}
+          >
+            {defaultExpanded ? "Collapse all" : "Expand all"}
+          </button>
+        )}
         {activeTab === "unstaged" && unstagedCount > 0 && (
           <>
             <button onClick={handleRevertAll} style={revertConfirming ? cs.bulkActionBtnDanger : cs.bulkActionBtn}>

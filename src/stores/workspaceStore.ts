@@ -26,7 +26,9 @@ import type {
   ProductSession,
   ShellPanel,
   ThemeName,
+  DetectedPort,
 } from "../lib/types";
+import { detectPorts } from "../lib/portDetection";
 import {
   createDefaultLayout,
   replaceNode,
@@ -225,6 +227,9 @@ interface WorkspaceState {
   closeUnifiedGitPanel: () => void;
   setUnifiedGitPanelTab: (tab: "changes" | "pr") => void;
   loading: boolean;
+  /** Per-workspace bottom panel collapsed state */
+  bottomPanelCollapsed: Record<string, boolean>;
+  toggleBottomPanel: (workspaceId: string) => void;
   /** Set of pane IDs with unsaved editor changes */
   dirtyPanes: Set<string>;
   /** Workspace mode per workspace ID (product or dev) */
@@ -239,6 +244,11 @@ interface WorkspaceState {
   statusBarCollapsed: Record<string, boolean>;
   /** Which script's drawer is currently open, or null */
   statusBarDrawer: { repoPath: string; scriptName: string } | null;
+  /** Detected localhost ports keyed by workspace ID */
+  detectedPorts: Record<string, DetectedPort[]>;
+  addDetectedPort: (workspaceId: string, port: DetectedPort) => void;
+  removePortsByPty: (ptyId: string) => void;
+  removePortsByScript: (repoPath: string, scriptName: string) => void;
   /** Current UI theme */
   theme: ThemeName;
   setTheme: (theme: ThemeName) => void;
@@ -588,6 +598,26 @@ function restoreLayouts(layouts: Record<string, WorkspaceLayout>): Record<string
   return restored;
 }
 
+/**
+ * Depth-first traversal of a layout tree producing an ordered list of groups.
+ * Position 0 = top-left (first leaf), etc. Used for positional matching when
+ * restoring layout presets so we can preserve PTYs across layout switches.
+ */
+function flattenLayoutGroups(layout: WorkspaceLayout): PaneGroup[] {
+  const groups: PaneGroup[] = [];
+  function walk(node: LayoutNode) {
+    if (node.type === "group") {
+      const g = layout.groups[node.groupId];
+      if (g) groups.push(g);
+    } else {
+      walk(node.children[0]);
+      walk(node.children[1]);
+    }
+  }
+  walk(layout.root);
+  return groups;
+}
+
 function arraysEqual(a: string[], b: string[]): boolean {
   if (a === b) return true;
   if (a.length !== b.length) return false;
@@ -649,6 +679,7 @@ export const useWorkspaceStore = create<WorkspaceState>()(
   unifiedGitPanelPath: null,
   unifiedGitPanelTab: "changes" as const,
   loading: false,
+  bottomPanelCollapsed: {},
   dirtyPanes: new Set(),
   workspaceModes: {},
   productSessions: {},
@@ -656,11 +687,74 @@ export const useWorkspaceStore = create<WorkspaceState>()(
   rallyConfigs: {},
   statusBarCollapsed: {},
   statusBarDrawer: null,
+  detectedPorts: {},
+  addDetectedPort: (workspaceId, port) => {
+    set((s) => {
+      const existing = s.detectedPorts[workspaceId] ?? [];
+      const isDup = existing.some(
+        (p) =>
+          p.port === port.port &&
+          p.source.type === port.source.type &&
+          (port.source.type === "pane"
+            ? (p.source as { type: "pane"; ptyId: string }).ptyId === port.source.ptyId
+            : (p.source as { type: "script"; repoPath: string; scriptName: string }).scriptName ===
+              (port.source as { type: "script"; repoPath: string; scriptName: string }).scriptName),
+      );
+      if (isDup) return s;
+      return {
+        detectedPorts: { ...s.detectedPorts, [workspaceId]: [...existing, port] },
+      };
+    });
+  },
+  removePortsByPty: (ptyId) => {
+    set((s) => {
+      const updated: Record<string, DetectedPort[]> = {};
+      let changed = false;
+      for (const [wsId, ports] of Object.entries(s.detectedPorts)) {
+        const filtered = ports.filter(
+          (p) => !(p.source.type === "pane" && p.source.ptyId === ptyId),
+        );
+        if (filtered.length !== ports.length) changed = true;
+        updated[wsId] = filtered;
+      }
+      return changed ? { detectedPorts: updated } : s;
+    });
+  },
+  removePortsByScript: (repoPath, scriptName) => {
+    set((s) => {
+      const updated: Record<string, DetectedPort[]> = {};
+      let changed = false;
+      for (const [wsId, ports] of Object.entries(s.detectedPorts)) {
+        const filtered = ports.filter(
+          (p) =>
+            !(p.source.type === "script" && p.source.repoPath === repoPath && p.source.scriptName === scriptName),
+        );
+        if (filtered.length !== ports.length) changed = true;
+        updated[wsId] = filtered;
+      }
+      return changed ? { detectedPorts: updated } : s;
+    });
+  },
   theme: (localStorage.getItem('rally:theme') as ThemeName) || 'dark',
   setTheme: (theme) => {
     localStorage.setItem('rally:theme', theme);
     document.documentElement.setAttribute('data-theme', theme);
+    // Force WebKit to repaint backdrop-filter composited layers —
+    // toggling display forces full layout invalidation
+    document.body.style.display = 'none';
+    // Reading offsetHeight forces a synchronous reflow
+    void document.body.offsetHeight;
+    document.body.style.display = '';
     set({ theme });
+  },
+
+  toggleBottomPanel: (workspaceId) => {
+    set((s) => ({
+      bottomPanelCollapsed: {
+        ...s.bottomPanelCollapsed,
+        [workspaceId]: !s.bottomPanelCollapsed[workspaceId],
+      },
+    }));
   },
 
   markPaneDirty: (paneId) => {
@@ -1677,14 +1771,34 @@ export const useWorkspaceStore = create<WorkspaceState>()(
     }));
 
     // Buffer PTY output in module-level array (not Zustand state)
+    const decoder = new TextDecoder("utf-8", { fatal: false });
     const unlistenOutput = await listen<{ data: number[] }>(
       `pty-output-${ptyId}`,
       (event) => {
+        const chunk = new Uint8Array(event.payload.data);
         const buf = scriptOutputBuffers.get(key);
         if (buf) {
-          buf.push(new Uint8Array(event.payload.data));
+          buf.push(chunk);
           // Notify TaskPanel that watcher output changed (event-driven, not polling)
           document.dispatchEvent(new CustomEvent("rally:watcher-output", { detail: { key } }));
+        }
+        // Detect localhost ports in script output
+        const text = decoder.decode(chunk, { stream: true });
+        if (text.includes("localhost") || text.includes("127.0.0.1") || /\bport\s+\d/i.test(text)) {
+          const ports = detectPorts(text);
+          if (ports.length > 0) {
+            // Find workspace containing this rootPath
+            const ws = get().workspaces.find((w) => w.paths.includes(rootPath));
+            if (ws) {
+              for (const p of ports) {
+                get().addDetectedPort(ws.id, {
+                  ...p,
+                  source: { type: "script", repoPath: rootPath, scriptName },
+                  detectedAt: Date.now(),
+                });
+              }
+            }
+          }
         }
       }
     );
@@ -1694,20 +1808,38 @@ export const useWorkspaceStore = create<WorkspaceState>()(
     // shell still has a foreground child process. Delay the start to
     // avoid false positives while the shell is still loading .zshrc.
     let pollStarted = false;
+    let nullPolls = 0;
     const pollInterval = setInterval(async () => {
       if (!pollStarted) {
         // Wait for the command to actually start (first poll finds a child)
         try {
           const fg = await api.getPtyForegroundProcess(ptyId);
-          if (fg !== null) pollStarted = true;
+          if (fg !== null) {
+            pollStarted = true;
+            nullPolls = 0;
+          } else {
+            nullPolls++;
+            // If we've polled several times without ever seeing a foreground child,
+            // the command likely started and finished before the first poll.
+            // Check if there's output in the buffer (meaning the shell ran something).
+            if (nullPolls >= 3) {
+              const buf = scriptOutputBuffers.get(key);
+              if (buf && buf.length > 0) {
+                // Output exists but no foreground child — command already finished
+                pollStarted = true;
+              }
+            }
+          }
         } catch { /* ignore */ }
-        return;
+        if (!pollStarted) return;
       }
       try {
         const fg = await api.getPtyForegroundProcess(ptyId);
         if (fg === null) {
           // No foreground child → command finished, shell is at prompt
           clearInterval(pollInterval);
+          // Clean up detected ports from this script
+          get().removePortsByScript(rootPath, scriptName);
           const current = get().scriptRuns[key];
           if (current && current.status === "running") {
             set((s) => ({
@@ -1770,6 +1902,9 @@ export const useWorkspaceStore = create<WorkspaceState>()(
         }
       }
     }
+
+    // Clean up detected ports from this script
+    get().removePortsByScript(rootPath, scriptName);
 
     set((s) => ({
       scriptRuns: {
@@ -1938,25 +2073,21 @@ export const useWorkspaceStore = create<WorkspaceState>()(
           },
         }));
       } else if (isBottomRow) {
-        // Bottom row — snap shut instantly (no slide animation).
-        // Keep the split in the tree so the top panel doesn't remount (avoids flicker).
-        const rootSplit = layout.root as Extract<LayoutNode, { type: "split" }>;
-        const collapsedRoot = replaceNode(layout.root, rootSplit.id, {
-          ...rootSplit,
-          ratio: 1,
-        });
-        const topGroupId = findFirstGroupInSubtree(rootSplit.children[0]);
-        // Disable flex transition so it snaps, then re-enable after paint
-        document.documentElement.style.setProperty("--split-transition", "none");
+        // Bottom row — collapse the panel instead of manipulating ratio.
+        const topGroupId = findFirstGroupInSubtree(layout.root.type === "split" ? layout.root.children[0] : layout.root);
         set((s) => ({
           activeGroupIds: {
             ...s.activeGroupIds,
             [workspaceId]: topGroupId ?? s.activeGroupIds[workspaceId],
           },
+          bottomPanelCollapsed: {
+            ...s.bottomPanelCollapsed,
+            [workspaceId]: true,
+          },
           layouts: {
             ...s.layouts,
             [workspaceId]: {
-              root: collapsedRoot,
+              ...layout,
               groups: {
                 ...layout.groups,
                 [groupId]: { ...group, panes: [], activePaneId: "", paneHistory: [] },
@@ -1964,9 +2095,6 @@ export const useWorkspaceStore = create<WorkspaceState>()(
             },
           },
         }));
-        requestAnimationFrame(() => {
-          document.documentElement.style.removeProperty("--split-transition");
-        });
         if (topGroupId) {
           setTimeout(() => {
             window.dispatchEvent(
@@ -2327,13 +2455,14 @@ export const useWorkspaceStore = create<WorkspaceState>()(
     const preset = presets.find((p) => p.id === presetId);
     if (!preset) return;
 
-    // Collect orphaned PTY IDs from the CURRENT layout before replacing it.
-    const oldPtyIds: string[] = [];
+    // Collect ALL old PTY IDs from the current layout. We'll remove
+    // preserved ones before killing the rest.
+    const oldPtyIds = new Set<string>();
     const currentLayout = get().layouts[workspaceId];
     if (currentLayout) {
       for (const group of Object.values(currentLayout.groups)) {
         for (const pane of group.panes) {
-          if (pane.ptyId) oldPtyIds.push(pane.ptyId);
+          if (pane.ptyId) oldPtyIds.add(pane.ptyId);
         }
       }
     }
@@ -2346,13 +2475,57 @@ export const useWorkspaceStore = create<WorkspaceState>()(
     // the still-alive components. Fresh IDs force a full unmount → remount.
     const cloned: WorkspaceLayout = JSON.parse(JSON.stringify(preset.layout));
 
+    // --- PTY preservation: match old panes to new panes by position + type + cwd ---
+    const preservedPtyIds = new Set<string>();
+    if (currentLayout) {
+      const oldGroups = flattenLayoutGroups(currentLayout);
+      const newGroups = flattenLayoutGroups(cloned);
+      const consumedOldPanes = new Set<string>(); // old pane IDs already matched
+      const claudeTypes = new Set(["claude", "claude-launcher"]);
+
+      for (let gi = 0; gi < Math.min(oldGroups.length, newGroups.length); gi++) {
+        const oldGroup = oldGroups[gi];
+        const newGroup = newGroups[gi];
+
+        for (const newPane of newGroup.panes) {
+          // Find a matching old pane in the same positional group
+          const match = oldGroup.panes.find((oldPane) => {
+            if (consumedOldPanes.has(oldPane.id)) return false;
+            if (!oldPane.ptyId) return false;
+            // Type compatibility: claude/claude-launcher match each other
+            const typeCompatible =
+              (claudeTypes.has(oldPane.type) && claudeTypes.has(newPane.type)) ||
+              oldPane.type === newPane.type;
+            if (!typeCompatible) return false;
+            if ((oldPane.cwd ?? "") !== (newPane.cwd ?? "")) return false;
+            return true;
+          });
+
+          if (match) {
+            consumedOldPanes.add(match.id);
+            preservedPtyIds.add(match.ptyId!);
+            newPane.ptyId = match.ptyId;
+            // Upgrade launcher → claude if old pane was running
+            if (newPane.type === "claude-launcher" && match.type === "claude") {
+              newPane.type = "claude";
+            }
+          }
+        }
+      }
+    }
+
+    // Remove preserved PTYs from the kill set
+    for (const id of preservedPtyIds) {
+      oldPtyIds.delete(id);
+    }
+
     const groupIdMap = new Map<string, string>();
-    const newGroups: Record<string, PaneGroup> = {};
+    const remappedGroups: Record<string, PaneGroup> = {};
     for (const [oldGid, group] of Object.entries(cloned.groups)) {
       const newGid = crypto.randomUUID();
       groupIdMap.set(oldGid, newGid);
       const newPanes = group.panes.map((p) => ({ ...p, id: crypto.randomUUID() }));
-      newGroups[newGid] = {
+      remappedGroups[newGid] = {
         ...group,
         id: newGid,
         panes: newPanes,
@@ -2371,7 +2544,7 @@ export const useWorkspaceStore = create<WorkspaceState>()(
       };
     }
 
-    const restored: WorkspaceLayout = { root: remapTree(cloned.root), groups: newGroups };
+    const restored: WorkspaceLayout = { root: remapTree(cloned.root), groups: remappedGroups };
     const firstGroup = findFirstGroupInSubtree(restored.root);
 
     // Restore explorer state if present in the preset
@@ -2410,8 +2583,8 @@ export const useWorkspaceStore = create<WorkspaceState>()(
     }));
 
     // Fresh IDs mean React unmounts old terminals (removing pty-exit
-    // listeners) before mounting new ones. Kill orphaned PTYs after
-    // React has flushed the unmount — rAF fires after the paint.
+    // listeners) before mounting new ones. Kill only ORPHANED PTYs
+    // (not preserved ones) after React has flushed the unmount.
     requestAnimationFrame(() => {
       for (const id of oldPtyIds) api.killPty(id).catch(() => {});
     });

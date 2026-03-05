@@ -9,7 +9,7 @@ use rally::config_ops;
 use rally::git_watch::GitWatchState;
 use rally::pty_manager::{self, PtyManager};
 use rally::ship_ops;
-use tauri::menu::{MenuItemBuilder, PredefinedMenuItem, SubmenuBuilder};
+use tauri::menu::{MenuItemBuilder, SubmenuBuilder};
 use tauri::Emitter;
 use tauri::Manager;
 use tauri_plugin_dialog::{DialogExt, MessageDialogButtons, MessageDialogKind};
@@ -240,6 +240,11 @@ fn main() {
 
                     let label = window.label().to_string();
 
+                    // Standalone view windows (file/URL viewers) close without confirmation
+                    if label.starts_with("rally-view-") {
+                        return;
+                    }
+
                     if let Ok(mut bypass) = bypass_close_confirm.lock() {
                         if bypass.remove(&label) {
                             return;
@@ -418,8 +423,6 @@ fn main() {
             let window_submenu = SubmenuBuilder::new(app, "Window")
                 .minimize()
                 .maximize()
-                .separator()
-                .item(&PredefinedMenuItem::close_window(app, Some("Close Window"))?)
                 .build()?;
 
             let menu = tauri::menu::Menu::with_items(
