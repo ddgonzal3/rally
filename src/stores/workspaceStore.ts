@@ -739,6 +739,12 @@ export const useWorkspaceStore = create<WorkspaceState>()(
   setTheme: (theme) => {
     localStorage.setItem('rally:theme', theme);
     document.documentElement.setAttribute('data-theme', theme);
+    // Force WebKit to repaint backdrop-filter composited layers —
+    // toggling display forces full layout invalidation
+    document.body.style.display = 'none';
+    // Reading offsetHeight forces a synchronous reflow
+    void document.body.offsetHeight;
+    document.body.style.display = '';
     set({ theme });
   },
 
