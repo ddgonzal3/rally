@@ -32,7 +32,7 @@ import { BuildStatusDrawer } from "./components/BuildStatusDrawer";
 import QuickOpen from "./components/QuickOpen";
 
 /** Default vertical split ratio — golden ratio gives top 61.8%, bottom 38.2% */
-const GOLDEN_RATIO = 0.618;
+const DEFAULT_BOTTOM_RATIO = 0.786;
 
 const WS_DRAG_THRESHOLD = 4;
 const WS_DRAG_SCROLL_EDGE = 28;
@@ -1035,7 +1035,7 @@ export function App() {
               { type: "group", groupId },
               { type: "group", groupId: newGroupId },
             ],
-            ratio: GOLDEN_RATIO,
+            ratio: DEFAULT_BOTTOM_RATIO,
           };
 
           useWorkspaceStore.setState({
@@ -1104,7 +1104,7 @@ export function App() {
             // Set ratio to golden and uncollapse
             const newRoot = replaceNode(layout.root, rootVSplit.id, {
               ...rootVSplit,
-              ratio: GOLDEN_RATIO,
+              ratio: DEFAULT_BOTTOM_RATIO,
             });
             useWorkspaceStore.setState({
               bottomPanelCollapsed: { ...s.bottomPanelCollapsed, [wsId]: false },
@@ -1122,7 +1122,7 @@ export function App() {
             }
           }
         } else if (rootVSplit) {
-          const isAtGolden = Math.abs(rootVSplit.ratio - GOLDEN_RATIO) < 0.02;
+          const isAtGolden = Math.abs(rootVSplit.ratio - DEFAULT_BOTTOM_RATIO) < 0.02;
           if (isAtGolden) {
             // At golden ratio → fully collapse
             s.toggleBottomPanel(wsId);
@@ -1130,7 +1130,7 @@ export function App() {
             // Custom size → snap to golden ratio
             const newRoot = replaceNode(layout.root, rootVSplit.id, {
               ...rootVSplit,
-              ratio: GOLDEN_RATIO,
+              ratio: DEFAULT_BOTTOM_RATIO,
             });
             useWorkspaceStore.setState({
               layouts: { ...s.layouts, [wsId]: { ...layout, root: newRoot } },

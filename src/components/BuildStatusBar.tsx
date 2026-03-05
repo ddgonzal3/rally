@@ -20,11 +20,21 @@ const watcherStatusCache = new Map<string, { status: WatcherBuildStatus; chunkCo
 function getWatcherBuildStatus(bufferKey: string): WatcherBuildStatus {
   const buf = scriptOutputBuffers.get(bufferKey);
   if (!buf || buf.length === 0) return "building";
-  const cached = watcherStatusCache.get(bufferKey);
+  let cached = watcherStatusCache.get(bufferKey);
+  // Buffer was reset (new run) — clear stale cache
+  if (cached && buf.length < cached.chunkCount) {
+    watcherStatusCache.delete(bufferKey);
+    cached = undefined;
+  }
   if (cached && cached.chunkCount === buf.length) return cached.status;
   const startIdx = cached?.chunkCount ?? 0;
   let currentStatus = cached?.status ?? "building";
   if (buf.length > startIdx) {
+    // For watchers: new output after success/error means a rebuild started
+    if (currentStatus === "success" || currentStatus === "error") {
+      currentStatus = "building";
+    }
+
     const decoder = new TextDecoder("utf-8", { fatal: false });
     const newChunks = buf.slice(startIdx);
     const text = newChunks.map((c) => decoder.decode(c, { stream: true })).join("");
@@ -52,7 +62,7 @@ function formatAbsoluteTime(timestamp: number): string {
 // --- Last line preview from output buffer ---
 
 /** ANSI escape code stripper */
-const ANSI_RE = /\x1b\[[0-9;]*[a-zA-Z]|\x1b\].*?\x07|\x1b[()][A-Z0-9]|\x0f/g;
+const ANSI_RE = /\x1b\[[0-9;?]*[a-zA-Z]|\x1b\[[0-9;?]*[hlm]|\x1b\].*?\x07|\x1b[()][A-Z0-9]|\x0f/g;
 
 function getLastLine(bufferKey: string): string {
   const buf = scriptOutputBuffers.get(bufferKey);
@@ -288,8 +298,9 @@ export function BuildStatusBar() {
               const isWatcher = isWatcherScript(scriptName);
               let buildStatus: WatcherBuildStatus;
               if (isRunning) {
-                // Use output-based status detection for all scripts, not just watchers
-                buildStatus = getWatcherBuildStatus(key);
+                // Only use output-based status detection for watchers
+                // Non-watcher scripts just show "building" while running — exit code determines final status
+                buildStatus = isWatcher ? getWatcherBuildStatus(key) : "building";
               } else if (isWatcher && run?.status === "success") {
                 // Watcher stopped (Ctrl+C) — back to idle, not "success"
                 buildStatus = "idle";
@@ -323,8 +334,8 @@ export function BuildStatusBar() {
                   )}
                   <div
                     onClick={() => {
-                      // Start the script if idle, then open the drawer
-                      if (!isRunning && buildStatus === "idle") {
+                      // Only auto-start if there's no existing run at all
+                      if (!run) {
                         runScript(repoPath, scriptName, command);
                       }
                       openStatusBarDrawer(repoPath, scriptName);

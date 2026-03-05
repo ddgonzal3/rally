@@ -1802,14 +1802,30 @@ export const useWorkspaceStore = create<WorkspaceState>()(
     // shell still has a foreground child process. Delay the start to
     // avoid false positives while the shell is still loading .zshrc.
     let pollStarted = false;
+    let nullPolls = 0;
     const pollInterval = setInterval(async () => {
       if (!pollStarted) {
         // Wait for the command to actually start (first poll finds a child)
         try {
           const fg = await api.getPtyForegroundProcess(ptyId);
-          if (fg !== null) pollStarted = true;
+          if (fg !== null) {
+            pollStarted = true;
+            nullPolls = 0;
+          } else {
+            nullPolls++;
+            // If we've polled several times without ever seeing a foreground child,
+            // the command likely started and finished before the first poll.
+            // Check if there's output in the buffer (meaning the shell ran something).
+            if (nullPolls >= 3) {
+              const buf = scriptOutputBuffers.get(key);
+              if (buf && buf.length > 0) {
+                // Output exists but no foreground child — command already finished
+                pollStarted = true;
+              }
+            }
+          }
         } catch { /* ignore */ }
-        return;
+        if (!pollStarted) return;
       }
       try {
         const fg = await api.getPtyForegroundProcess(ptyId);

@@ -1,8 +1,10 @@
-import React from "react";
+import React, { useCallback } from "react";
 import { PaneGroupView } from "./PaneGroupView";
 import { ResizeHandle } from "./ResizeHandle";
 import { useWorkspaceStore } from "../stores/workspaceStore";
 import type { LayoutNode } from "../lib/types";
+
+const SNAP_COLLAPSE_THRESHOLD = 0.786;
 
 interface SplitContainerProps {
   node: LayoutNode;
@@ -25,6 +27,7 @@ export const SplitContainer = React.memo(function SplitContainer({
   isBottomPanel,
 }: SplitContainerProps) {
   const updateSplitRatio = useWorkspaceStore((s) => s.updateSplitRatio);
+  const toggleBottomPanel = useWorkspaceStore((s) => s.toggleBottomPanel);
   const bottomCollapsed = useWorkspaceStore(
     (s) => !!s.bottomPanelCollapsed[workspaceId],
   );
@@ -45,6 +48,20 @@ export const SplitContainer = React.memo(function SplitContainer({
   const [first, second] = node.children;
   const isRootVertical = isRoot && isVertical;
   const collapsed = isRootVertical && bottomCollapsed;
+
+  // For root vertical splits: snap to collapsed when dragged past threshold
+  const handleRootVerticalResize = useCallback(
+    (ratio: number) => {
+      if (ratio >= SNAP_COLLAPSE_THRESHOLD) {
+        // Snap the ratio to the threshold and collapse
+        updateSplitRatio(workspaceId, node.type === "split" ? node.id : "", SNAP_COLLAPSE_THRESHOLD);
+        toggleBottomPanel(workspaceId);
+      } else {
+        updateSplitRatio(workspaceId, node.type === "split" ? node.id : "", ratio);
+      }
+    },
+    [workspaceId, node, updateSplitRatio, toggleBottomPanel],
+  );
 
   return (
     <div
@@ -78,7 +95,10 @@ export const SplitContainer = React.memo(function SplitContainer({
         <ResizeHandle
           direction={node.direction}
           ratio={node.ratio}
-          onResize={(ratio) => updateSplitRatio(workspaceId, node.id, ratio)}
+          onResize={isRootVertical
+            ? handleRootVerticalResize
+            : (ratio) => updateSplitRatio(workspaceId, node.id, ratio)
+          }
         />
       )}
 

@@ -326,7 +326,12 @@ function getWatcherBuildStatus(bufferKey: string): WatcherBuildStatus {
   // Just started, no output yet → must be building
   if (!buf || buf.length === 0) return "building";
 
-  const cached = watcherStatusCache.get(bufferKey);
+  let cached = watcherStatusCache.get(bufferKey);
+  // Buffer was reset (new run) — clear stale cache
+  if (cached && buf.length < cached.chunkCount) {
+    watcherStatusCache.delete(bufferKey);
+    cached = undefined;
+  }
   if (cached && cached.chunkCount === buf.length) return cached.status;
 
   // Only decode NEW chunks since last check
@@ -335,6 +340,11 @@ function getWatcherBuildStatus(bufferKey: string): WatcherBuildStatus {
   let currentStatus = cached?.status ?? "building";
 
   if (buf.length > startIdx) {
+    // For watchers: new output after success/error means a rebuild started
+    if (currentStatus === "success" || currentStatus === "error") {
+      currentStatus = "building";
+    }
+
     const decoder = new TextDecoder("utf-8", { fatal: false });
     const newChunks = buf.slice(startIdx);
     const text = newChunks.map((c) => decoder.decode(c, { stream: true })).join("");
