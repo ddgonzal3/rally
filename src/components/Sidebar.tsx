@@ -5,10 +5,11 @@ import { api } from "../lib/tauri";
 import { showContextMenu } from "../lib/contextMenu";
 import { openWindow } from "../lib/windowUtils";
 
-const WORKSPACE_DRAG_THRESHOLD = 5;
-const WORKSPACE_DRAG_SCROLL_EDGE = 32;
-const WORKSPACE_DRAG_MAX_SCROLL_STEP = 16;
-const WORKSPACE_REORDER_TRANSITION = "transform 170ms cubic-bezier(0.2, 0, 0, 1)";
+const WORKSPACE_DRAG_THRESHOLD = 4;
+const WORKSPACE_DRAG_SCROLL_EDGE = 28;
+const WORKSPACE_DRAG_MAX_SCROLL_STEP = 14;
+const WORKSPACE_REORDER_TRANSITION =
+  "transform 170ms cubic-bezier(0.2, 0, 0, 1)";
 
 function clamp(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value));
@@ -78,7 +79,10 @@ export function Sidebar() {
     };
     document.addEventListener("rally-open-add-workspace", openAddWorkspace);
     return () => {
-      document.removeEventListener("rally-open-add-workspace", openAddWorkspace);
+      document.removeEventListener(
+        "rally-open-add-workspace",
+        openAddWorkspace,
+      );
     };
   }, []);
 
@@ -93,7 +97,10 @@ export function Sidebar() {
   const commitRename = useCallback(() => {
     if (!renamingId) return;
     const trimmed = renameValue.trim();
-    if (trimmed && trimmed !== workspaces.find((w) => w.id === renamingId)?.name) {
+    if (
+      trimmed &&
+      trimmed !== workspaces.find((w) => w.id === renamingId)?.name
+    ) {
       renameWorkspace(renamingId, trimmed);
     }
     setRenamingId(null);
@@ -104,20 +111,27 @@ export function Sidebar() {
     setRenameValue(currentName);
   }, []);
 
-  const handleListContextMenu = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
-    const target = e.target as HTMLElement;
-    if (target.closest(".sidebar-item")) return;
-    e.preventDefault();
-    showContextMenu([
-      {
-        label: "New Workspace...",
-        action: () => setShowAddModal(true),
-      },
-    ]);
-  }, []);
+  const handleListContextMenu = useCallback(
+    (e: React.MouseEvent<HTMLDivElement>) => {
+      const target = e.target as HTMLElement;
+      if (target.closest(".sidebar-item")) return;
+      e.preventDefault();
+      showContextMenu([
+        {
+          label: "New Workspace...",
+          action: () => setShowAddModal(true),
+        },
+      ]);
+    },
+    [],
+  );
 
   const handleWorkspaceMouseDown = useCallback(
-    (e: React.MouseEvent<HTMLDivElement>, workspaceId: string, isRenaming: boolean) => {
+    (
+      e: React.MouseEvent<HTMLDivElement>,
+      workspaceId: string,
+      isRenaming: boolean,
+    ) => {
       if (e.button !== 0) return;
       if (renamingId || isRenaming) return;
       if ((e.target as HTMLElement).closest("input,button")) return;
@@ -173,9 +187,11 @@ export function Sidebar() {
         setDragOffsetY(0);
         setDragItemHeight(0);
         if (currentDropIndex !== fromIndex) {
-          void reorderWorkspace(workspaceId, currentDropIndex).catch((error) => {
-            console.error("Failed to reorder workspaces:", error);
-          });
+          void reorderWorkspace(workspaceId, currentDropIndex).catch(
+            (error) => {
+              console.error("Failed to reorder workspaces:", error);
+            },
+          );
         }
         setTimeout(() => {
           suppressClickRef.current = false;
@@ -202,7 +218,13 @@ export function Sidebar() {
             onClick={() => setShowAddModal(true)}
             title="Add workspace"
           >
-            <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+            <svg
+              width="12"
+              height="12"
+              viewBox="0 0 12 12"
+              fill="none"
+              aria-hidden="true"
+            >
               <path
                 d="M6 2v8M2 6h8"
                 stroke="currentColor"
@@ -256,9 +278,15 @@ export function Sidebar() {
                   transition: isDraggingRow
                     ? "box-shadow 120ms, background-color 120ms"
                     : `${WORKSPACE_REORDER_TRANSITION}, background-color 120ms`,
-                  cursor: isRenaming ? "text" : isDraggingRow ? "grabbing" : "pointer",
+                  cursor: isRenaming
+                    ? "text"
+                    : isDraggingRow
+                      ? "grabbing"
+                      : "pointer",
                 }}
-                onMouseDown={(e) => handleWorkspaceMouseDown(e, ws.id, isRenaming)}
+                onMouseDown={(e) =>
+                  handleWorkspaceMouseDown(e, ws.id, isRenaming)
+                }
                 onClick={(e) => {
                   if (suppressClickRef.current) return;
                   if (isRenaming) return;
@@ -266,7 +294,9 @@ export function Sidebar() {
                     clearTimeout(renameTimerRef.current);
                     renameTimerRef.current = null;
                   }
-                  const clickedOnName = (e.target as HTMLElement).closest("[data-ws-name]") !== null;
+                  const clickedOnName =
+                    (e.target as HTMLElement).closest("[data-ws-name]") !==
+                    null;
                   if (isActive && clickedOnName) {
                     renameTimerRef.current = setTimeout(() => {
                       renameTimerRef.current = null;
@@ -321,7 +351,9 @@ export function Sidebar() {
                     }}
                   />
                 ) : (
-                  <div data-ws-name style={styles.itemName}>{ws.name}</div>
+                  <div data-ws-name style={styles.itemName}>
+                    {ws.name}
+                  </div>
                 )}
               </div>
             );

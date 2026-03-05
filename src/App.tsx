@@ -1143,12 +1143,9 @@ export function App() {
             }
           }
         } else if (rootVSplit) {
-          const isAtGolden = Math.abs(rootVSplit.ratio - DEFAULT_BOTTOM_RATIO) < 0.02;
-          if (isAtGolden) {
-            // At golden ratio → fully collapse
-            s.toggleBottomPanel(wsId);
-          } else {
-            // Custom size → snap to golden ratio
+          const bottomIsBiggerThanGolden = rootVSplit.ratio < DEFAULT_BOTTOM_RATIO - 0.02;
+          if (bottomIsBiggerThanGolden) {
+            // Bottom panel larger than golden → snap to golden first
             const newRoot = replaceNode(layout.root, rootVSplit.id, {
               ...rootVSplit,
               ratio: DEFAULT_BOTTOM_RATIO,
@@ -1156,6 +1153,9 @@ export function App() {
             useWorkspaceStore.setState({
               layouts: { ...s.layouts, [wsId]: { ...layout, root: newRoot } },
             });
+          } else {
+            // Bottom panel at or smaller than golden → collapse
+            s.toggleBottomPanel(wsId);
           }
         }
       }
