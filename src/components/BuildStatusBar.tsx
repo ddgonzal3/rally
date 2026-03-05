@@ -7,12 +7,13 @@ import {
   getWatcherBuildStatus,
   getStatusColor,
   getDisplayName,
+  clearWatcherStatusCache,
   type WatcherBuildStatus,
 } from "../lib/watcherStatus";
 import { useDetectedPorts } from "../lib/useDetectedPorts";
 import { PortPill } from "./PortPill";
 import { isClaudeActiveInWorkspace } from "../stores/workspaceStore";
-import { showContextMenu } from "../lib/contextMenu";
+import { showContextMenu, type MenuAction } from "../lib/contextMenu";
 
 
 // --- ScriptDot sub-component ---
@@ -70,15 +71,30 @@ function ScriptDot({
   const scriptEntry = scriptCache[repoPath]?.find((e) => e.name === scriptName);
   const command = scriptEntry?.command ?? scriptName;
 
+  // "built at" timestamp — shown when watcher finishes a build, dismissed after 30s
+  const [builtAt, setBuiltAt] = useState<string | null>(null);
+
   // Flash detection: building -> success triggers a 3s flash
   useEffect(() => {
     if (buildStatus === "success" && prevStatusRef.current === "building") {
       setFlashing(true);
       const timer = setTimeout(() => setFlashing(false), 3000);
+      // Show completion timestamp
+      const now = new Date();
+      const timeStr = now.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }).toLowerCase();
+      setBuiltAt(timeStr);
+      prevStatusRef.current = buildStatus;
       return () => clearTimeout(timer);
     }
     prevStatusRef.current = buildStatus;
-  }, [buildStatus]);
+  }, [buildStatus, isWatcher]);
+
+  // Auto-dismiss "built at" after 30s
+  useEffect(() => {
+    if (!builtAt) return;
+    const timer = setTimeout(() => setBuiltAt(null), 30000);
+    return () => clearTimeout(timer);
+  }, [builtAt]);
 
   // Auto-open drawer on error when Claude is idle
   const autoOpenedRef = useRef(false);
@@ -110,16 +126,11 @@ function ScriptDot({
       : "success-flash 3s ease-out forwards";
   } else if (buildStatus === "building") {
     dotStyle.background = "var(--status-amber)";
-    dotStyle.animation = "pulse-glow 1.5s ease-in-out infinite";
   } else if (buildStatus === "error") {
     dotStyle.background = "var(--status-red)";
     dotStyle.opacity = 1;
-  } else if (isRunning && isWatcher && buildStatus === "success") {
-    // Watcher running, no active build — steady green
-    dotStyle.background = "var(--status-green)";
-    dotStyle.opacity = 0.7;
   } else if (isRunning && isWatcher) {
-    // Watcher running, idle state — steady green
+    // Watcher running (idle or success) — steady green
     dotStyle.background = "var(--status-green)";
     dotStyle.opacity = 0.7;
   } else {
@@ -131,19 +142,39 @@ function ScriptDot({
   const restart = () => {
     if (isRunning) stopScript(repoPath, scriptName);
     clearScript(repoPath, scriptName);
+    clearWatcherStatusCache(key);
+    setFlashing(false);
+    setBuiltAt(null);
+    prevStatusRef.current = "idle";
     // Small delay to let the PTY clean up before respawning
     setTimeout(() => runScript(repoPath, scriptName, command), 100);
   };
 
+  const kill = () => {
+    if (isRunning) stopScript(repoPath, scriptName);
+    clearScript(repoPath, scriptName);
+  };
+
   const handleContextMenu = (e: React.MouseEvent) => {
     e.preventDefault();
-    showContextMenu([
+    const items: MenuAction[] = [
       {
         label: "Restart",
         action: restart,
         accelerator: "Alt+Click",
       },
-    ], { x: e.clientX, y: e.clientY });
+    ];
+    if (isRunning) {
+      items.push({
+        label: "Kill",
+        action: kill,
+      });
+    }
+    // Nudge Y above the status bar so the menu opens upward instead of
+    // clipping against the bottom window edge.
+    const bar = (e.currentTarget as HTMLElement).closest("[data-statusbar]");
+    const barTop = bar ? bar.getBoundingClientRect().top : e.clientY;
+    showContextMenu(items, { x: e.clientX, y: barTop });
   };
 
   return (
@@ -174,7 +205,7 @@ function ScriptDot({
       }}
     >
       {/* Status dot */}
-      <span style={dotStyle} />
+      <span className={buildStatus === "building" && !flashing ? "pulse-sync" : undefined} style={dotStyle} />
 
       {/* Script name */}
       <span
@@ -189,6 +220,20 @@ function ScriptDot({
       >
         {displayName}
       </span>
+
+      {/* "built at" timestamp — auto-dismisses after 30s */}
+      {builtAt && (
+        <span
+          style={{
+            fontSize: 12,
+            color: "var(--text-secondary)",
+            whiteSpace: "nowrap",
+            lineHeight: 1,
+          }}
+        >
+          {isWatcher ? "built" : "ran"} at {builtAt}
+        </span>
+      )}
 
       {/* Detected localhost port pills */}
       {activeWorkspaceId && detectedPorts

@@ -331,13 +331,13 @@ function BuildStatusDot({ status }: { status: WatcherBuildStatus }) {
   const color = status === "error" ? "#e06c75" : status === "success" ? "#4caf50" : "#e8b930";
   return (
     <span
+      className={status === "building" ? "pulse-sync" : undefined}
       style={{
         width: 6,
         height: 6,
         borderRadius: "50%",
         background: color,
         flexShrink: 0,
-        ...(status === "building" ? { animation: "pulse-glow 1.5s ease-in-out infinite" } : {}),
       }}
     />
   );

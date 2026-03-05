@@ -420,8 +420,26 @@ pub fn get_pty_foreground_process(
     state: tauri::State<'_, PtyState>,
     pty_id: String,
 ) -> Result<Option<String>, String> {
-    let manager = state.lock().map_err(|e| e.to_string())?;
-    manager.foreground_process(&pty_id)
+    // Extract the shell PID under the lock, then release it immediately.
+    // foreground_child_name() runs expensive subprocess calls (pgrep, ps)
+    // that can take 50-200ms — holding the PtyManager mutex during those
+    // would block all write_pty calls, causing typing lag.
+    let shell_pid = {
+        let manager = state.lock().map_err(|e| e.to_string())?;
+        let session = manager
+            .sessions
+            .get(&pty_id)
+            .ok_or_else(|| format!("PTY session not found: {}", pty_id))?;
+        let child_guard = session.child.lock().map_err(|e| e.to_string())?;
+        let pid = child_guard.process_id();
+        drop(child_guard);
+        pid
+    };
+    // Lock is released here — expensive process tree walk happens without it
+    match shell_pid {
+        Some(pid) => Ok(foreground_child_name(pid)),
+        None => Ok(None),
+    }
 }
 
 /// Check if a single PID is a Claude Code process (by name or node args).
