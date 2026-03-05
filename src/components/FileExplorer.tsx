@@ -2209,12 +2209,20 @@ function LayoutPresetsDropdown({ workspaceId }: { workspaceId: string }) {
 
   const [confirmingPresetId, setConfirmingPresetId] = useState<string | null>(null);
   const [terminalsToKill, setTerminalsToKill] = useState(0);
+  const [renamingId, setRenamingId] = useState<string | null>(null);
+  const [renameValue, setRenameValue] = useState("");
+  const renameRef = useRef<HTMLInputElement>(null);
+  const [dragIdx, setDragIdx] = useState<number | null>(null);
+  const [overIdx, setOverIdx] = useState<number | null>(null);
+  const didDragRef = useRef(false);
+  const [noTransition, setNoTransition] = useState(false);
 
   const close = useCallback(() => {
     setOpen(false);
     setSaving(false);
     setName("");
     setConfirmingPresetId(null);
+    setRenamingId(null);
   }, []);
 
   // Close on outside click / Escape
@@ -2244,6 +2252,10 @@ function LayoutPresetsDropdown({ workspaceId }: { workspaceId: string }) {
   useEffect(() => {
     if (saving) inputRef.current?.focus();
   }, [saving]);
+
+  useEffect(() => {
+    if (renamingId) renameRef.current?.focus();
+  }, [renamingId]);
 
   const doSaveNew = () => {
     const trimmed = name.trim();
@@ -2297,8 +2309,59 @@ function LayoutPresetsDropdown({ workspaceId }: { workspaceId: string }) {
     useWorkspaceStore.getState().deleteLayoutPreset(workspaceId, presetId);
   };
 
+  const startRename = (e: React.MouseEvent, preset: { id: string; name: string }) => {
+    e.stopPropagation();
+    setRenamingId(preset.id);
+    setRenameValue(preset.name);
+  };
+
+  const commitRename = () => {
+    if (renamingId && renameValue.trim()) {
+      useWorkspaceStore.getState().renameLayoutPreset(workspaceId, renamingId, renameValue);
+    }
+    setRenamingId(null);
+  };
+
+  const handleGrabStart = (e: React.MouseEvent, idx: number) => {
+    e.preventDefault();
+    e.stopPropagation();
+    didDragRef.current = true;
+    setDragIdx(idx);
+    setOverIdx(idx);
+    const startY = e.clientY;
+    const rowHeight = 28;
+    let lastOver = idx;
+
+    const onMove = (ev: MouseEvent) => {
+      const offset = Math.round((ev.clientY - startY) / rowHeight);
+      lastOver = Math.max(0, Math.min(presets.length - 1, idx + offset));
+      setOverIdx(lastOver);
+    };
+
+    const onUp = () => {
+      document.removeEventListener("mousemove", onMove);
+      document.removeEventListener("mouseup", onUp);
+      // Keep didDragRef true briefly so the click event is suppressed
+      setTimeout(() => { didDragRef.current = false; }, 0);
+      // Disable transitions before committing reorder to prevent bounce
+      setNoTransition(true);
+      if (lastOver !== idx) {
+        const ids = presets.map((p) => p.id);
+        const [moved] = ids.splice(idx, 1);
+        ids.splice(lastOver, 0, moved);
+        useWorkspaceStore.getState().reorderLayoutPresets(workspaceId, ids);
+      }
+      setDragIdx(null);
+      setOverIdx(null);
+      requestAnimationFrame(() => setNoTransition(false));
+    };
+
+    document.addEventListener("mousemove", onMove);
+    document.addEventListener("mouseup", onUp);
+  };
+
   const btnRef = useRef<HTMLButtonElement>(null);
-  const [pos, setPos] = useState({ top: 0, right: 0, left: -1 });
+  const [pos, setPos] = useState({ top: 0, left: 0 });
 
   const DROPDOWN_MIN_WIDTH = 200;
 
@@ -2308,7 +2371,7 @@ function LayoutPresetsDropdown({ workspaceId }: { workspaceId: string }) {
     // Measure button position for portal placement — left-aligned so it grows rightward.
     const rect = btnRef.current?.getBoundingClientRect();
     if (rect) {
-      setPos({ top: rect.bottom + 4, right: -1, left: rect.left });
+      setPos({ top: rect.bottom + 4, left: rect.left });
     }
     setOpen(true);
     setSaving(false);
@@ -2319,19 +2382,18 @@ function LayoutPresetsDropdown({ workspaceId }: { workspaceId: string }) {
     <div
       ref={dropdownRef}
       style={{
-        position: "fixed", top: pos.top,
-        ...(pos.right >= 0 ? { right: pos.right } : { left: pos.left }),
+        position: "fixed", top: pos.top, left: pos.left,
         minWidth: DROPDOWN_MIN_WIDTH,
         background: "var(--frosted-bg)", backdropFilter: "blur(20px) saturate(180%)",
         WebkitBackdropFilter: "blur(20px) saturate(180%)",
         border: "1px solid var(--border-subtle)", borderRadius: 6, padding: "4px 0",
-        zIndex: 10000, boxShadow: "0 8px 24px var(--shadow)",
+        zIndex: 10000, boxShadow: "0 8px 24px var(--shadow)", userSelect: "none",
       }}
     >
       {confirmingPresetId ? (
         <div style={{ display: "flex", alignItems: "center", gap: 6, padding: "0 10px", height: 28, margin: "0 4px" }}>
           <span style={{ fontSize: 13, fontWeight: 600, color: "var(--text-primary)", whiteSpace: "nowrap", flex: 1 }}>
-            Close {terminalsToKill} terminal{terminalsToKill > 1 ? "s" : ""}?
+            Close {terminalsToKill} pane{terminalsToKill > 1 ? "s" : ""}?
           </span>
           <button
             onClick={() => setConfirmingPresetId(null)}
@@ -2351,26 +2413,84 @@ function LayoutPresetsDropdown({ workspaceId }: { workspaceId: string }) {
           >Yes</button>
         </div>
       ) : <>
-      {/* Saved layouts — click to restore, hover shows X to delete */}
-      {presets.map((p) => {
+      {/* Saved layouts — grab handle to reorder, click to restore, pen to rename, X to delete */}
+      {presets.map((p, i) => {
         const isActive = p.id === activePresetId;
+        const isRenaming = renamingId === p.id;
+        // Compute visual offset for drag animation
+        let translateY = 0;
+        if (dragIdx !== null && overIdx !== null && dragIdx !== overIdx) {
+          if (i === dragIdx) {
+            translateY = (overIdx - dragIdx) * 28;
+          } else if (dragIdx < overIdx && i > dragIdx && i <= overIdx) {
+            translateY = -28;
+          } else if (dragIdx > overIdx && i < dragIdx && i >= overIdx) {
+            translateY = 28;
+          }
+        }
+        const isDragged = dragIdx === i;
         return (
           <div
             key={p.id}
             className="layout-preset-row"
             style={{
-              display: "flex", alignItems: "center", padding: "0 6px 0 10px", height: 28, cursor: "pointer", borderRadius: 4, margin: "0 4px",
+              display: "flex", alignItems: "center", padding: "0 4px 0 0", height: 28, cursor: isRenaming ? "default" : "pointer", borderRadius: 4, margin: "0 4px",
               borderLeft: isActive ? "2px solid rgba(255,255,255,0.5)" : "2px solid transparent",
+              opacity: isDragged ? 0.5 : 1,
+              transform: translateY ? `translateY(${translateY}px)` : undefined,
+              transition: noTransition ? "none" : isDragged ? "opacity 150ms" : "transform 150ms ease, opacity 150ms",
+              position: "relative", zIndex: isDragged ? 1 : 0,
             }}
-            onClick={() => doRestore(p.id)}
+            onClick={() => !isRenaming && !didDragRef.current && doRestore(p.id)}
           >
-            <span style={{
-              flex: 1, fontSize: 13, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
-              color: "var(--text-primary)",
-            }}>{p.name}</span>
+            {/* Grab handle */}
+            <div
+              className="layout-preset-handle"
+              onMouseDown={(e) => handleGrabStart(e, i)}
+              style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 20, height: 28, cursor: "grab", flexShrink: 0, opacity: 0 }}
+            >
+              <svg width="8" height="10" viewBox="0 0 8 10" fill="currentColor" style={{ color: "var(--text-dim)" }}>
+                <circle cx="2.5" cy="2" r="1" /><circle cx="5.5" cy="2" r="1" />
+                <circle cx="2.5" cy="5" r="1" /><circle cx="5.5" cy="5" r="1" />
+                <circle cx="2.5" cy="8" r="1" /><circle cx="5.5" cy="8" r="1" />
+              </svg>
+            </div>
+            {isRenaming ? (
+              <input
+                ref={renameRef}
+                value={renameValue}
+                onChange={(e) => setRenameValue(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") commitRename();
+                  if (e.key === "Escape") setRenamingId(null);
+                }}
+                onBlur={commitRename}
+                onClick={(e) => e.stopPropagation()}
+                style={{
+                  flex: 1, background: "var(--bg-hover)", border: "1px solid var(--border-subtle)",
+                  borderRadius: 4, color: "var(--text-primary)", fontSize: 13, fontWeight: 600,
+                  padding: "1px 6px", outline: "none", minWidth: 0,
+                }}
+              />
+            ) : (
+              <span style={{
+                flex: 1, fontSize: 13, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+                color: "var(--text-primary)",
+              }}>{p.name}</span>
+            )}
             <button
               className="layout-preset-delete"
-              style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 22, height: 22, background: "none", border: "none", color: "var(--text-primary)", cursor: "pointer", borderRadius: 3, flexShrink: 0, opacity: 0 }}
+              style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 20, height: 20, background: "none", border: "none", color: "var(--text-primary)", cursor: "pointer", borderRadius: 3, flexShrink: 0, opacity: 0 }}
+              onClick={(e) => startRename(e, p)}
+              title="Rename layout"
+            >
+              <svg width="10" height="10" viewBox="0 0 12 12" fill="none">
+                <path d="M8.5 1.5l2 2L4 10H2v-2z" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+            </button>
+            <button
+              className="layout-preset-delete"
+              style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 20, height: 20, background: "none", border: "none", color: "var(--text-primary)", cursor: "pointer", borderRadius: 3, flexShrink: 0, opacity: 0 }}
               onClick={(e) => doDelete(e, p.id)}
               title="Delete layout"
             >

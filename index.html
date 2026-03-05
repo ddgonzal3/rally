@@ -38,8 +38,10 @@
         --status-red: #f85149;
         --status-amber: #d29922;
         --status-blue: #58a6ff;
-        --tab-indicator: #4191e0;
+        --tab-indicator: rgba(255, 255, 255, 0.5);
         --pill-bg: #2a2a2a;
+        --drop-preview-bg: rgba(255, 255, 255, 0.04);
+        --drop-preview-border: rgba(255, 255, 255, 0.08);
       }
 
       [data-theme="dimmed"] {
@@ -67,8 +69,10 @@
         --status-red: #f85149;
         --status-amber: #d29922;
         --status-blue: #58a6ff;
-        --tab-indicator: #4191e0;
+        --tab-indicator: rgba(255, 255, 255, 0.5);
         --pill-bg: #2d2d2d;
+        --drop-preview-bg: rgba(255, 255, 255, 0.04);
+        --drop-preview-border: rgba(255, 255, 255, 0.08);
       }
 
       [data-theme="light"] {
@@ -96,8 +100,10 @@
         --status-red: #cf222e;
         --status-amber: #9a6700;
         --status-blue: #0969da;
-        --tab-indicator: #555;
+        --tab-indicator: rgba(0, 0, 0, 0.35);
         --pill-bg: #b3b3b3;
+        --drop-preview-bg: rgba(0, 0, 0, 0.04);
+        --drop-preview-border: rgba(0, 0, 0, 0.08);
       }
 
       * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -153,8 +159,9 @@
       .repo-terminal-btn:hover { background: var(--bg-hover) !important; }
       .repo-terminal-btn:hover svg path { stroke: var(--text-primary) !important; }
       .layout-preset-row:hover { background: var(--bg-hover); }
-      .layout-preset-row:hover .layout-preset-delete { opacity: 1 !important; }
-      .layout-preset-delete:hover { color: var(--text-primary) !important; background: var(--bg-hover); }
+      .layout-preset-row:hover .layout-preset-delete,
+      .layout-preset-row:hover .layout-preset-handle { opacity: 1 !important; }
+      .layout-preset-delete:hover { color: var(--text-primary) !important; background: rgba(255,255,255,0.1) !important; border-radius: 4px; }
       .hide-native-scrollbar::-webkit-scrollbar { display: none !important; }
       .hide-native-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
       /* Fix Monaco find widget close button — it's the only absolutely-positioned button;

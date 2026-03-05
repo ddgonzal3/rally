@@ -1651,46 +1651,119 @@ export function App() {
   );
 }
 
+function ThemeIcon({ t, size = 18 }: { t: ThemeName; size?: number }) {
+  if (t === "light")
+    return (
+      <svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+        <circle cx="12" cy="12" r="4" stroke="currentColor" strokeWidth="1.5" />
+        <path d="M12 2v3M12 19v3M4.22 4.22l2.12 2.12M17.66 17.66l2.12 2.12M2 12h3M19 12h3M4.22 19.78l2.12-2.12M17.66 6.34l2.12-2.12" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+      </svg>
+    );
+  if (t === "dimmed")
+    return (
+      <svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+        <circle cx="12" cy="12" r="4" stroke="currentColor" strokeWidth="1.5" />
+        <path d="M12 2v3M12 19v3M2 12h3M19 12h3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+      </svg>
+    );
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
 function ThemeCycleButton() {
   const theme = useWorkspaceStore((s) => s.theme);
   const setTheme = useWorkspaceStore((s) => s.setTheme);
-  const order: ThemeName[] = ["dark", "dimmed", "light"];
-  const next = order[(order.indexOf(theme) + 1) % order.length];
-  const label = theme === "dark" ? "Dark" : theme === "dimmed" ? "Dimmed" : "Light";
+  const [open, setOpen] = React.useState(false);
+  const ref = React.useRef<HTMLDivElement>(null);
+  // Fixed order: light (top), dimmed (middle), dark (bottom)
+  const ordered: ThemeName[] = ["light", "dimmed", "dark"];
+
+  React.useEffect(() => {
+    if (!open) return;
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [open]);
+
+  const btnStyle: React.CSSProperties = {
+    background: "none",
+    border: "none",
+    cursor: "pointer",
+    width: 32,
+    height: 32,
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: 4,
+    color: "var(--text-secondary)",
+    padding: 0,
+  };
+
+  // Split into: items above the current theme, and items below
+  const currentIdx = ordered.indexOf(theme);
+  const above = ordered.slice(0, currentIdx);
+  const below = ordered.slice(currentIdx + 1);
+
   return (
-    <button
-      className="activity-btn"
-      style={{
-        background: "none",
-        border: "none",
-        cursor: "pointer",
-        width: 32,
-        height: 32,
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        borderRadius: 4,
-        marginBottom: 4,
-      }}
-      onClick={() => setTheme(next)}
-      title={`Theme: ${label} (click to switch)`}
-    >
-      {theme === "light" ? (
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
-          <circle cx="12" cy="12" r="4" stroke="var(--text-secondary)" strokeWidth="1.5" />
-          <path d="M12 2v3M12 19v3M4.22 4.22l2.12 2.12M17.66 17.66l2.12 2.12M2 12h3M19 12h3M4.22 19.78l2.12-2.12M17.66 6.34l2.12-2.12" stroke="var(--text-secondary)" strokeWidth="1.5" strokeLinecap="round" />
-        </svg>
-      ) : theme === "dimmed" ? (
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
-          <circle cx="12" cy="12" r="4" stroke="var(--text-secondary)" strokeWidth="1.5" />
-          <path d="M12 2v3M12 19v3M2 12h3M19 12h3" stroke="var(--text-secondary)" strokeWidth="1.5" strokeLinecap="round" />
-        </svg>
-      ) : (
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
-          <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" stroke="var(--text-secondary)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-        </svg>
-      )}
-    </button>
+    <div ref={ref} style={{ display: "flex", flexDirection: "column", alignItems: "center", marginBottom: 4 }}>
+      <div
+        style={{
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "center",
+          overflow: "hidden",
+          maxHeight: open ? above.length * 32 : 0,
+          transition: "max-height 0.2s ease",
+        }}
+      >
+        {above.map((t) => (
+          <button
+            key={t}
+            className="activity-btn"
+            style={btnStyle}
+            onClick={() => { setTheme(t); setOpen(false); }}
+            title={t.charAt(0).toUpperCase() + t.slice(1)}
+          >
+            <ThemeIcon t={t} />
+          </button>
+        ))}
+      </div>
+      <button
+        className="activity-btn"
+        style={{ ...btnStyle, ...(open ? { color: "var(--text-primary)" } : {}) }}
+        onClick={() => setOpen(!open)}
+        title="Theme"
+      >
+        <ThemeIcon t={theme} />
+      </button>
+      <div
+        style={{
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "center",
+          overflow: "hidden",
+          maxHeight: open ? below.length * 32 : 0,
+          transition: "max-height 0.2s ease",
+        }}
+      >
+        {below.map((t) => (
+          <button
+            key={t}
+            className="activity-btn"
+            style={btnStyle}
+            onClick={() => { setTheme(t); setOpen(false); }}
+            title={t.charAt(0).toUpperCase() + t.slice(1)}
+          >
+            <ThemeIcon t={t} />
+          </button>
+        ))}
+      </div>
+    </div>
   );
 }
 
