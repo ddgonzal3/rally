@@ -2,7 +2,6 @@ import React, { useCallback } from "react";
 import { PaneGroupView } from "./PaneGroupView";
 import { ResizeHandle } from "./ResizeHandle";
 import { useWorkspaceStore } from "../stores/workspaceStore";
-import { DEFAULT_BOTTOM_RATIO } from "../lib/types";
 import type { LayoutNode } from "../lib/types";
 
 interface SplitContainerProps {
@@ -26,7 +25,6 @@ export const SplitContainer = React.memo(function SplitContainer({
   isBottomPanel,
 }: SplitContainerProps) {
   const updateSplitRatio = useWorkspaceStore((s) => s.updateSplitRatio);
-  const toggleBottomPanel = useWorkspaceStore((s) => s.toggleBottomPanel);
   const bottomCollapsed = useWorkspaceStore(
     (s) => !!s.bottomPanelCollapsed[workspaceId],
   );
@@ -35,14 +33,9 @@ export const SplitContainer = React.memo(function SplitContainer({
   const handleRootVerticalResize = useCallback(
     (ratio: number) => {
       if (node.type !== "split") return;
-      if (ratio >= DEFAULT_BOTTOM_RATIO) {
-        updateSplitRatio(workspaceId, node.id, DEFAULT_BOTTOM_RATIO);
-        toggleBottomPanel(workspaceId);
-      } else {
-        updateSplitRatio(workspaceId, node.id, ratio);
-      }
+      updateSplitRatio(workspaceId, node.id, ratio);
     },
-    [workspaceId, node, updateSplitRatio, toggleBottomPanel],
+    [workspaceId, node, updateSplitRatio],
   );
 
   if (node.type === "group") {
