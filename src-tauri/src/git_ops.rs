@@ -123,7 +123,7 @@ pub async fn sync_branch(cwd: &str, main_branch: &str) -> Result<String, String>
     }
 
     // Check for dirty working tree
-    let porcelain = git_cmd(cwd, &["status", "--porcelain"]).await?;
+    let porcelain = git_cmd(cwd, &["status", "--porcelain", "-uno"]).await?;
     if !porcelain.is_empty() {
         return Err("Working tree is dirty. Commit or stash your changes first.".to_string());
     }
