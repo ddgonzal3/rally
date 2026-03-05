@@ -5,6 +5,7 @@ import { api } from "../lib/tauri";
 import type { SearchMatch, ReplaceOp } from "../lib/types";
 import { ScrollArea } from "./ScrollArea";
 import { FileIcon } from "./FileIcon";
+import { showContextMenu } from "../lib/contextMenu";
 import "./SearchPanel.css";
 
 interface SearchPanelProps {
@@ -430,6 +431,17 @@ export function SearchPanel({ onCollapse, flushLeft }: SearchPanelProps) {
                     <div
                       className="search-file-row filematch repo-file-row"
                       onClick={() => toggleFileCollapse(group.filePath)}
+                      onContextMenu={(e) => {
+                        e.preventDefault();
+                        const prefix = repo.repoPath.endsWith("/") ? repo.repoPath : `${repo.repoPath}/`;
+                        const rel = group.filePath.startsWith(prefix)
+                          ? group.filePath.slice(prefix.length)
+                          : group.filePath;
+                        showContextMenu([
+                          { label: "Copy Relative Path", action: () => navigator.clipboard.writeText(rel) },
+                          { label: "Copy Path", action: () => navigator.clipboard.writeText(group.filePath) },
+                        ], { x: e.clientX, y: e.clientY });
+                      }}
                     >
                       <span className={`search-tree-twistie codicon codicon-chevron-right ${isCollapsed ? "" : "expanded"}`} />
                       <FileIcon fileName={group.fileName} size={16} style={{ marginRight: 6 }} />

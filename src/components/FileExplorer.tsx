@@ -1838,8 +1838,8 @@ function ChangeFileItem({
         <FileIcon name={fileName} isDir={false} isOpen={false} />
       </span>
       <span style={styles.changeFileInfo}>
-        <span style={styles.changeFileName}>{fileName}</span>
-        {dir && <span style={styles.changeFileDir}>{dir}</span>}
+        <span className="change-file-name" style={styles.changeFileName}>{fileName}</span>
+        {dir && <span className="change-file-dir" style={styles.changeFileDir}>{dir}</span>}
       </span>
       <div style={styles.changeRight}>
         {secondaryActionLabel && onSecondaryAction && (
@@ -2173,8 +2173,8 @@ function PrFilesPanel({
                   <FileIcon name={fileName} isDir={false} isOpen={false} />
                 </span>
                 <span style={styles.changeFileInfo}>
-                  <span style={styles.changeFileName}>{fileName}</span>
-                  {dir && <span style={styles.changeFileDir}>{dir}</span>}
+                  <span className="change-file-name" style={styles.changeFileName}>{fileName}</span>
+                  {dir && <span className="change-file-dir" style={styles.changeFileDir}>{dir}</span>}
                 </span>
                 <span style={styles.statusGlyphWrap}>
                   <ChangeStatusGlyph status={f.status} />
@@ -2887,8 +2887,10 @@ export function FileExplorer({ onCollapse, flushLeft }: FileExplorerProps) {
                 transition:
                   isDraggingCard || dropSettling
                     ? "none"
-                    : `${REPO_REORDER_TRANSITION}, background-color 120ms`,
-                willChange: "transform",
+                    : draggingRootPath
+                      ? `${REPO_REORDER_TRANSITION}, background-color 120ms`
+                      : "background-color 120ms",
+                ...(isDraggingCard ? { willChange: "transform" as const } : undefined),
               }}
             >
               <RootSection
@@ -2937,7 +2939,7 @@ const styles: Record<string, React.CSSProperties> = {
     borderRight: "6px solid transparent",
     borderBottomColor: "var(--border)",
     padding: 0,
-    overflow: "hidden",
+    overflow: "clip",
   },
   cardDragging: {
     zIndex: 120,
@@ -3089,7 +3091,6 @@ const styles: Record<string, React.CSSProperties> = {
     textAlign: "left" as const,
     lineHeight: 1.4,
     cursor: "pointer",
-    position: "relative" as const,
   },
   spacer: {
     width: 14,

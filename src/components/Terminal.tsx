@@ -143,6 +143,9 @@ function safeFit(term: XTerminal, fitAddon: FitAddon): boolean {
   // panes are removed and the ResizeObserver fires transiently.
   // xterm's resize() reflows content correctly without a prior clear.
   term.resize(cols, rows);
+  // Keep viewport pinned to the bottom during resize so text doesn't
+  // appear to float/jump as the user drags a split handle.
+  term.scrollToBottom();
   return true;
 }
 
@@ -526,6 +529,7 @@ export function Terminal({ cwd, command, initialInput, ptyId: existingPtyId, loc
       const core = (term as any)._core;
       if (core?._renderService) core._renderService.clear();
       term.resize(LOCKED_COLS, rows);
+      term.scrollToBottom();
       return true;
     }
 
@@ -633,6 +637,12 @@ export function Terminal({ cwd, command, initialInput, ptyId: existingPtyId, loc
 
         await connectToPty(existingPtyId);
 
+        // After replaying buffered content, clear the renderer cache so that
+        // mouse-to-cell coordinate mapping is recalculated. Without this,
+        // text selection can appear offset (selecting rows above the cursor).
+        const core = (term as any)._core;
+        if (core?._renderService) core._renderService.clear();
+
         // Sync PTY dimensions — this sends SIGWINCH which makes TUI apps redraw
         if (lockCols) {
           fitRowsOnly();
@@ -682,6 +692,9 @@ export function Terminal({ cwd, command, initialInput, ptyId: existingPtyId, loc
         // Sync dimensions after the async gap — a resize may have occurred
         // during the await (before onResize was registered), leaving the
         // PTY at stale dimensions.
+        // Clear renderer cache first to ensure mouse-to-cell mapping stays correct.
+        const core = (term as any)._core;
+        if (core?._renderService) core._renderService.clear();
         if (safeFit(term, fitAddon)) {
           // safeFit resized xterm, but onResize already forwarded it.
           // No extra action needed.
@@ -752,7 +765,7 @@ export function Terminal({ cwd, command, initialInput, ptyId: existingPtyId, loc
 
   return (
     <div
-      style={{ ...styles.container, background: 'var(--terminal-bg)' }}
+      style={{ ...styles.container, background: 'var(--terminal-bg)', padding: '4px 4px 0 4px' }}
       onMouseDown={handleMouseDown}
       onContextMenu={handleContextMenu}
     >
@@ -772,7 +785,9 @@ const styles: Record<string, React.CSSProperties> = {
   },
   terminal: {
     flex: 1,
-    padding: '4px 4px 0 4px',
     overflow: "hidden",
+    display: "flex",
+    flexDirection: "column",
+    justifyContent: "flex-end",
   },
 };

@@ -58,18 +58,18 @@ function paneLabel(
     return cwd.split("/").pop() || "Claude Code";
   }
   if (pane.type === "claude") {
-    const cwd = pane.cwd || "";
+    const cwd = pane.cwd || workspacePath || "";
     return cwd.split("/").pop() || "claude";
   }
   if (pane.type === "webview") return pane.title;
   if (pane.type === "editor" || pane.type === "diff")
     return isDirty ? `${pane.title} *` : pane.title;
   if (pane.type === "terminal" && isClaudeCodeTitle(pane.title)) {
-    const cwd = pane.cwd || "";
+    const cwd = pane.cwd || workspacePath || "";
     return cwd.split("/").pop() || "claude";
   }
   if (pane.type === "terminal") {
-    const cwd = pane.cwd || "";
+    const cwd = pane.cwd || workspacePath || "";
     return cwd.split("/").pop() || "zsh";
   }
   return "zsh";
@@ -1022,7 +1022,7 @@ function PaneContent({
               {pane.type === "webview" && pane.webviewUrl ? (
                 <WebViewPane url={pane.webviewUrl} paneId={pane.id} />
               ) : pane.type === "editor" && pane.filePath ? (
-                <EditorPane filePath={pane.filePath} paneId={pane.id} />
+                <EditorPane filePath={pane.filePath} paneId={pane.id} workspaceId={workspaceId} groupId={groupId} />
               ) : pane.type === "claude-launcher" ? (
                 <ClaudeLauncher
                   workspacePath={paneCwd}

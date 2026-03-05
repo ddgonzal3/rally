@@ -3,6 +3,7 @@ import { useWorkspaceStore } from "../stores/workspaceStore";
 import { AddWorkspaceModal } from "./AddWorkspaceModal";
 import { api } from "../lib/tauri";
 import { showContextMenu } from "../lib/contextMenu";
+import { openWindow } from "../lib/windowUtils";
 
 const WORKSPACE_DRAG_THRESHOLD = 4;
 const WORKSPACE_DRAG_SCROLL_EDGE = 28;
@@ -286,12 +287,13 @@ export function Sidebar() {
                   e.preventDefault();
                   showContextMenu([
                     {
+                      label: "Open in New Window",
+                      action: () => openWindow({ workspaceId: ws.id }),
+                    },
+                    "separator",
+                    {
                       label: "Rename",
                       action: () => startRename(ws.id, ws.name),
-                    },
-                    {
-                      label: "Reveal in Finder",
-                      action: () => api.revealInFinder(ws.paths[0]),
                     },
                     "separator",
                     {

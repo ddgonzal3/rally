@@ -9,6 +9,8 @@ import { MarkdownPreview } from "./MarkdownPreview";
 interface EditorPaneProps {
   filePath: string;
   paneId: string;
+  workspaceId: string;
+  groupId: string;
 }
 
 const IMAGE_EXTENSIONS = new Set([
@@ -95,11 +97,11 @@ function getLanguageFromPath(path: string): string {
   return map[ext] ?? "plaintext";
 }
 
-export const EditorPane = React.memo(function EditorPane({ filePath, paneId }: EditorPaneProps) {
+export const EditorPane = React.memo(function EditorPane({ filePath, paneId, workspaceId, groupId }: EditorPaneProps) {
   if (isImageFile(filePath)) {
     return <ImageViewer filePath={filePath} />;
   }
-  return <TextEditor filePath={filePath} paneId={paneId} />;
+  return <TextEditor filePath={filePath} paneId={paneId} workspaceId={workspaceId} groupId={groupId} />;
 });
 
 /** Image viewer — loads file as base64 and renders an <img> */
@@ -160,7 +162,7 @@ function ImageViewer({ filePath }: { filePath: string }) {
 }
 
 /** Text editor — Monaco with syntax highlighting */
-function TextEditor({ filePath, paneId }: { filePath: string; paneId: string }) {
+function TextEditor({ filePath, paneId, workspaceId, groupId }: { filePath: string; paneId: string; workspaceId: string; groupId: string }) {
   const [content, setContent] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [previewContent, setPreviewContent] = useState("");
@@ -172,22 +174,18 @@ function TextEditor({ filePath, paneId }: { filePath: string; paneId: string }) 
   const appTheme = useWorkspaceStore((s) => s.theme);
 
   // Subscribe to initialLine/initialCol/editorViewMode from pane data (set via Cmd+click)
-  // Combined into a single selector with referential stability to avoid 3x iteration and unnecessary re-renders
+  // Direct lookup by workspaceId/groupId avoids iterating all layouts/groups
   const paneDataRef = useRef<{ initialLine?: number; initialCol?: number; editorViewMode?: string }>({});
   const paneData = useWorkspaceStore((s) => {
-    for (const layout of Object.values(s.layouts)) {
-      for (const group of Object.values(layout.groups)) {
-        const pane = group.panes.find((p) => p.id === paneId);
-        if (pane) {
-          const next = { initialLine: pane.initialLine, initialCol: pane.initialCol, editorViewMode: pane.editorViewMode };
-          const prev = paneDataRef.current;
-          if (prev.initialLine === next.initialLine && prev.initialCol === next.initialCol && prev.editorViewMode === next.editorViewMode) {
-            return prev;
-          }
-          paneDataRef.current = next;
-          return next;
-        }
+    const pane = s.layouts[workspaceId]?.groups[groupId]?.panes.find((p) => p.id === paneId);
+    if (pane) {
+      const next = { initialLine: pane.initialLine, initialCol: pane.initialCol, editorViewMode: pane.editorViewMode };
+      const prev = paneDataRef.current;
+      if (prev.initialLine === next.initialLine && prev.initialCol === next.initialCol && prev.editorViewMode === next.editorViewMode) {
+        return prev;
       }
+      paneDataRef.current = next;
+      return next;
     }
     return paneDataRef.current;
   });

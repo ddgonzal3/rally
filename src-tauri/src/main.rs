@@ -9,7 +9,7 @@ use rally::config_ops;
 use rally::git_watch::GitWatchState;
 use rally::pty_manager::{self, PtyManager};
 use rally::ship_ops;
-use tauri::menu::{MenuItemBuilder, PredefinedMenuItem, SubmenuBuilder};
+use tauri::menu::{MenuItemBuilder, SubmenuBuilder};
 use tauri::Emitter;
 use tauri::Manager;
 use tauri_plugin_dialog::{DialogExt, MessageDialogButtons, MessageDialogKind};
@@ -418,8 +418,6 @@ fn main() {
             let window_submenu = SubmenuBuilder::new(app, "Window")
                 .minimize()
                 .maximize()
-                .separator()
-                .item(&PredefinedMenuItem::close_window(app, Some("Close Window"))?)
                 .build()?;
 
             let menu = tauri::menu::Menu::with_items(
