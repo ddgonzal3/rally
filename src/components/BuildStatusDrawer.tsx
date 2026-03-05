@@ -210,48 +210,58 @@ export function BuildStatusDrawer() {
           borderTop: "1px solid var(--border)",
           gap: 6,
         }}>
-        <button
-          onClick={(e) => { e.stopPropagation(); setPinned((p) => !p); }}
-          title={pinned ? "Unpin (click outside will close)" : "Pin open"}
-          style={{ ...drawerBtnStyle, padding: "2px 0" }}
-        >
-          {pinned ? (
-            <svg width="13" height="13" viewBox="0 0 16 16" fill="none">
-              <path d="M4.10002 1.08186L3.72499 1.94778L5.18409 3.40687L4.53635 7.42274C4.01662 7.60746 3.55856 7.93327 3.21358 8.36365C2.87267 8.79115 2.65993 9.30651 2.59998 9.85L3.09777 10.3478L6.91588 10.2932L6.9091 16L7.94543 14.9637L7.94548 10.2728L11.3 10.2319L11.8181 9.71367C11.7748 9.17983 11.5742 8.67084 11.2417 8.25096C10.9092 7.83107 10.4597 7.51912 9.95002 7.35457L9.42496 3.35227L10.925 1.85227L10.5772 1L4.10002 1.08186ZM8.5523 2.80687L8.40224 3.24324L9.00224 7.75686L9.30907 8.1455C9.88043 8.32423 10.369 8.70152 10.6864 9.20914L7.95912 9.20914L3.77272 9.26369C4.10766 8.75069 4.60442 8.36429 5.18409 8.16594L5.5046 7.76369L6.23411 3.22959L6.0977 2.80687L5.31359 2.02277L9.34997 1.96825L8.5523 2.80687Z" fill="var(--text-primary)" />
-            </svg>
-          ) : (
-            <svg width="13" height="13" viewBox="0 0 16 16" fill="none">
-              <path d="M15.4181 4.50005L14.5522 4.12501L13.0931 5.58411L9.07726 4.93638C8.89254 4.41665 8.56673 3.95859 8.13635 3.61361C7.70885 3.2727 7.19349 3.05996 6.65 3L6.1522 3.4978L6.20684 7.31591L0.5 7.30913L1.53633 8.34546L6.22719 8.3455L6.26814 11.7L6.78633 12.2182C7.32017 12.1748 7.82916 11.9743 8.24904 11.6418C8.66893 11.3093 8.98088 10.8597 9.14543 10.35L13.1477 9.82499L14.6477 11.325L15.5 10.9773L15.4181 4.50005ZM13.6931 8.95233L13.2568 8.80226L8.74314 9.40226L8.3545 9.70909C8.17577 10.2805 7.79848 10.769 7.29086 11.0864V8.35915L7.23631 4.17275C7.74931 4.50768 8.13571 5.00445 8.33406 5.58411L8.73631 5.90463L13.2704 6.63413L13.6931 6.49772L14.4772 5.71362L14.5317 9.75L13.6931 8.95233Z" fill="var(--text-dim)" />
-            </svg>
-          )}
-        </button>
+        {/* Identity — left side */}
         <TerminalPromptIcon size={14} />
         <span style={{ fontSize: 13, fontWeight: 600, color: "var(--text-primary)" }}>
           {drawer.scriptName}
         </span>
-        {isRunning && (
+        <div style={{ flex: 1 }} />
+        {/* Actions — right side */}
+        <div style={{ display: "flex", alignItems: "center", gap: 2 }}>
+          {/* Pin */}
           <button
-            onClick={() => stopScript(drawer.repoPath, drawer.scriptName)}
-            title="Kill process"
+            onClick={(e) => { e.stopPropagation(); setPinned((p) => !p); }}
+            title={pinned ? "Unpin (click outside will close)" : "Pin open"}
             style={drawerBtnStyle}
           >
-            <svg width="12" height="12" viewBox="0 0 10 10" fill="none"><rect x="2" y="2" width="6" height="6" rx="1" fill="var(--text-dim)" /></svg>
+            {pinned ? (
+              <svg width="13" height="13" viewBox="0 0 16 16" fill="none">
+                <path d="M4.10002 1.08186L3.72499 1.94778L5.18409 3.40687L4.53635 7.42274C4.01662 7.60746 3.55856 7.93327 3.21358 8.36365C2.87267 8.79115 2.65993 9.30651 2.59998 9.85L3.09777 10.3478L6.91588 10.2932L6.9091 16L7.94543 14.9637L7.94548 10.2728L11.3 10.2319L11.8181 9.71367C11.7748 9.17983 11.5742 8.67084 11.2417 8.25096C10.9092 7.83107 10.4597 7.51912 9.95002 7.35457L9.42496 3.35227L10.925 1.85227L10.5772 1L4.10002 1.08186ZM8.5523 2.80687L8.40224 3.24324L9.00224 7.75686L9.30907 8.1455C9.88043 8.32423 10.369 8.70152 10.6864 9.20914L7.95912 9.20914L3.77272 9.26369C4.10766 8.75069 4.60442 8.36429 5.18409 8.16594L5.5046 7.76369L6.23411 3.22959L6.0977 2.80687L5.31359 2.02277L9.34997 1.96825L8.5523 2.80687Z" fill="var(--text-primary)" />
+              </svg>
+            ) : (
+              <svg width="13" height="13" viewBox="0 0 16 16" fill="none">
+                <path d="M15.4181 4.50005L14.5522 4.12501L13.0931 5.58411L9.07726 4.93638C8.89254 4.41665 8.56673 3.95859 8.13635 3.61361C7.70885 3.2727 7.19349 3.05996 6.65 3L6.1522 3.4978L6.20684 7.31591L0.5 7.30913L1.53633 8.34546L6.22719 8.3455L6.26814 11.7L6.78633 12.2182C7.32017 12.1748 7.82916 11.9743 8.24904 11.6418C8.66893 11.3093 8.98088 10.8597 9.14543 10.35L13.1477 9.82499L14.6477 11.325L15.5 10.9773L15.4181 4.50005ZM13.6931 8.95233L13.2568 8.80226L8.74314 9.40226L8.3545 9.70909C8.17577 10.2805 7.79848 10.769 7.29086 11.0864V8.35915L7.23631 4.17275C7.74931 4.50768 8.13571 5.00445 8.33406 5.58411L8.73631 5.90463L13.2704 6.63413L13.6931 6.49772L14.4772 5.71362L14.5317 9.75L13.6931 8.95233Z" fill="var(--text-dim)" />
+              </svg>
+            )}
           </button>
-        )}
-        {!isRunning && currentRun && (
+          {/* Minimize — close drawer, keep process alive */}
           <button
-            onClick={() => {
+            onClick={(e) => { e.stopPropagation(); closeStatusBarDrawer(); }}
+            title="Minimize"
+            style={drawerBtnStyle}
+          >
+            <svg width="12" height="12" viewBox="0 0 10 10" fill="none">
+              <path d="M2.5 5h5" stroke="var(--text-dim)" strokeWidth="1.3" strokeLinecap="round" />
+            </svg>
+          </button>
+          {/* Kill — stop process + close drawer */}
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              if (isRunning) {
+                stopScript(drawer.repoPath, drawer.scriptName);
+              }
               clearScript(drawer.repoPath, drawer.scriptName);
               closeStatusBarDrawer();
             }}
-            title="Clear"
+            title="Kill process"
             style={drawerBtnStyle}
           >
             <svg width="12" height="12" viewBox="0 0 10 10" fill="none">
               <path d="M2.5 2.5L7.5 7.5M7.5 2.5L2.5 7.5" stroke="var(--text-dim)" strokeWidth="1.3" strokeLinecap="round" />
             </svg>
           </button>
-        )}
+        </div>
       </div>
       <div ref={termRef} style={{ flex: 1, overflow: "hidden", display: "flex", flexDirection: "column", justifyContent: "flex-end" }} />
     </div>

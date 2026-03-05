@@ -240,8 +240,6 @@ interface WorkspaceState {
   shellPanels: Record<string, ShellPanel>;
   /** Cached RALLY.json configs per repo path (not persisted) */
   rallyConfigs: Record<string, RallyConfig>;
-  /** Per-repo collapse state for status bar tabs (in-memory only) */
-  statusBarCollapsed: Record<string, boolean>;
   /** Which script's drawer is currently open, or null */
   statusBarDrawer: { repoPath: string; scriptName: string } | null;
   /** Detected localhost ports keyed by workspace ID */
@@ -262,7 +260,6 @@ interface WorkspaceState {
   loadRallyConfig: (rootPath: string) => Promise<void>;
 
   // Status bar actions
-  toggleStatusBarCollapsed: (repoPath: string) => void;
   openStatusBarDrawer: (repoPath: string, scriptName: string) => void;
   closeStatusBarDrawer: () => void;
   addToStatusBar: (rootPath: string, scriptName: string) => Promise<void>;
@@ -685,7 +682,6 @@ export const useWorkspaceStore = create<WorkspaceState>()(
   productSessions: {},
   shellPanels: {},
   rallyConfigs: {},
-  statusBarCollapsed: {},
   statusBarDrawer: null,
   detectedPorts: {},
   addDetectedPort: (workspaceId, port) => {
@@ -789,15 +785,6 @@ export const useWorkspaceStore = create<WorkspaceState>()(
   },
 
   // --- Status bar actions ---
-
-  toggleStatusBarCollapsed: (repoPath) => {
-    set((s) => ({
-      statusBarCollapsed: {
-        ...s.statusBarCollapsed,
-        [repoPath]: !s.statusBarCollapsed[repoPath],
-      },
-    }));
-  },
 
   openStatusBarDrawer: (repoPath, scriptName) => {
     const current = get().statusBarDrawer;
@@ -2984,6 +2971,24 @@ export const useWorkspaceStore = create<WorkspaceState>()(
 
 // Expose store accessor globally for the test bridge (only used when RALLY_TEST_MODE=1)
 (window as any).__rallyStoreAccessor = () => useWorkspaceStore.getState();
+
+/**
+ * Returns true if any Claude pane in the given workspace has an active Claude
+ * process (detected via foreground process polling — title is set to "claude"
+ * when Claude Code is running).
+ */
+export function isClaudeActiveInWorkspace(workspaceId: string | null): boolean {
+  if (!workspaceId) return false;
+  const state = useWorkspaceStore.getState();
+  const layout = state.layouts[workspaceId];
+  if (!layout) return false;
+  for (const group of Object.values(layout.groups)) {
+    for (const pane of group.panes) {
+      if (pane.type === "claude" && pane.title === "claude") return true;
+    }
+  }
+  return false;
+}
 
 /**
  * Normalize layout tree so column dividers are independent per row.
