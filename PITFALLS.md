@@ -70,7 +70,7 @@ Any new xterm.js `Terminal` instance must read its theme from CSS variables (`--
 
 Over extended sessions, xterm.js's text selection can become misaligned from the mouse cursor. The root cause is that xterm.js caches character dimension measurements (`_charSizeService`, `_widthCache`, `_setDefaultSpacing`) at initialization and only recalculates on font option changes, DPR changes, or actual col/row resizes. Environmental changes (display profile changes, CSS zoom, True Tone adjustments) can cause the cached measurements to drift from actual DOM rendering.
 
-**Fix:** `Terminal.tsx` uses a periodic "resize dance" (`forceTerminalRefresh`) that forces full dimension recalculation by resizing +1 row then back, followed by explicit `handleCharSizeChanged()` and `_renderService.clear()` calls. This runs every 2 minutes and on window focus. A manual "Fix Selection Alignment" option is also in the terminal context menu.
+**Fix:** `Terminal.tsx` uses a periodic "resize dance" (`forceTerminalRefresh`) that forces full dimension recalculation by resizing +1 row then back, followed by explicit `handleCharSizeChanged()` and `_renderService.clear()` calls. This runs every 2 minutes and on window focus.
 
 **Note:** CSS `zoom` on a parent container (used for app-level zoom in `App.tsx`) creates a fundamental coordinate mismatch — mouse events are in viewport (zoomed) pixels, but xterm's cell dimensions are in CSS (unzoomed) pixels. The periodic refresh mitigates some effects but can't fully fix zoom ≠ 1.0 misalignment.
 

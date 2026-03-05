@@ -27,16 +27,16 @@ pub struct PtyInfo {
     pub alive: bool,
 }
 
-pub(crate) struct PtySession {
+struct PtySession {
     writer: Box<dyn Write + Send>,
     pair: portable_pty::PtyPair,
-    pub(crate) child: Arc<Mutex<Box<dyn portable_pty::Child + Send + Sync>>>,
+    child: Arc<Mutex<Box<dyn portable_pty::Child + Send + Sync>>>,
     cwd: String,
     command: Option<String>,
 }
 
 pub struct PtyManager {
-    pub(crate) sessions: HashMap<String, PtySession>,
+    sessions: HashMap<String, PtySession>,
 }
 
 impl PtyManager {

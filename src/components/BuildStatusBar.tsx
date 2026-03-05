@@ -79,12 +79,11 @@ function ScriptDot({
     if (buildStatus === "success" && prevStatusRef.current === "building") {
       setFlashing(true);
       const timer = setTimeout(() => setFlashing(false), 3000);
-      // Show "built at" timestamp for watchers
-      if (isWatcher) {
-        const now = new Date();
-        const timeStr = now.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }).toLowerCase();
-        setBuiltAt(timeStr);
-      }
+      // Show completion timestamp
+      const now = new Date();
+      const timeStr = now.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }).toLowerCase();
+      setBuiltAt(timeStr);
+      prevStatusRef.current = buildStatus;
       return () => clearTimeout(timer);
     }
     prevStatusRef.current = buildStatus;
@@ -130,12 +129,8 @@ function ScriptDot({
   } else if (buildStatus === "error") {
     dotStyle.background = "var(--status-red)";
     dotStyle.opacity = 1;
-  } else if (isRunning && isWatcher && buildStatus === "success") {
-    // Watcher running, no active build — steady green
-    dotStyle.background = "var(--status-green)";
-    dotStyle.opacity = 0.7;
   } else if (isRunning && isWatcher) {
-    // Watcher running, idle state — steady green
+    // Watcher running (idle or success) — steady green
     dotStyle.background = "var(--status-green)";
     dotStyle.opacity = 0.7;
   } else {
@@ -175,7 +170,11 @@ function ScriptDot({
         action: kill,
       });
     }
-    showContextMenu(items, { x: e.clientX, y: e.clientY });
+    // Nudge Y above the status bar so the menu opens upward instead of
+    // clipping against the bottom window edge.
+    const bar = (e.currentTarget as HTMLElement).closest("[data-statusbar]");
+    const barTop = bar ? bar.getBoundingClientRect().top : e.clientY;
+    showContextMenu(items, { x: e.clientX, y: barTop });
   };
 
   return (
@@ -226,13 +225,13 @@ function ScriptDot({
       {builtAt && (
         <span
           style={{
-            fontSize: 11,
-            color: "var(--text-dim)",
+            fontSize: 12,
+            color: "var(--text-secondary)",
             whiteSpace: "nowrap",
             lineHeight: 1,
           }}
         >
-          built at {builtAt}
+          {isWatcher ? "built" : "ran"} at {builtAt}
         </span>
       )}
 

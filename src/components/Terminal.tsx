@@ -187,14 +187,17 @@ export function Terminal({ cwd, command, initialInput, ptyId: existingPtyId, loc
   // causing text selection to misalign from the mouse cursor.
   useEffect(() => {
     const interval = setInterval(forceTerminalRefresh, DIMENSION_REFRESH_INTERVAL);
+    let focusTimer: ReturnType<typeof setTimeout> | null = null;
     const handleFocus = () => {
       // Delay slightly to let the display settle after focus change
       // (e.g. switching from an external display)
-      setTimeout(forceTerminalRefresh, 200);
+      if (focusTimer) clearTimeout(focusTimer);
+      focusTimer = setTimeout(forceTerminalRefresh, 200);
     };
     window.addEventListener("focus", handleFocus);
     return () => {
       clearInterval(interval);
+      if (focusTimer) clearTimeout(focusTimer);
       window.removeEventListener("focus", handleFocus);
     };
   }, [forceTerminalRefresh]);
