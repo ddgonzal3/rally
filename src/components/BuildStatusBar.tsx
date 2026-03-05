@@ -7,6 +7,7 @@ import {
   getWatcherBuildStatus,
   getStatusColor,
   getDisplayName,
+  clearWatcherStatusCache,
   type WatcherBuildStatus,
 } from "../lib/watcherStatus";
 import { useDetectedPorts } from "../lib/useDetectedPorts";
@@ -126,7 +127,6 @@ function ScriptDot({
       : "success-flash 3s ease-out forwards";
   } else if (buildStatus === "building") {
     dotStyle.background = "var(--status-amber)";
-    dotStyle.animation = "pulse-glow 1.5s ease-in-out infinite";
   } else if (buildStatus === "error") {
     dotStyle.background = "var(--status-red)";
     dotStyle.opacity = 1;
@@ -147,19 +147,35 @@ function ScriptDot({
   const restart = () => {
     if (isRunning) stopScript(repoPath, scriptName);
     clearScript(repoPath, scriptName);
+    clearWatcherStatusCache(key);
+    setFlashing(false);
+    setBuiltAt(null);
+    prevStatusRef.current = "idle";
     // Small delay to let the PTY clean up before respawning
     setTimeout(() => runScript(repoPath, scriptName, command), 100);
   };
 
+  const kill = () => {
+    if (isRunning) stopScript(repoPath, scriptName);
+    clearScript(repoPath, scriptName);
+  };
+
   const handleContextMenu = (e: React.MouseEvent) => {
     e.preventDefault();
-    showContextMenu([
+    const items = [
       {
         label: "Restart",
         action: restart,
         accelerator: "Alt+Click",
       },
-    ], { x: e.clientX, y: e.clientY });
+    ];
+    if (isRunning) {
+      items.push({
+        label: "Kill",
+        action: kill,
+      });
+    }
+    showContextMenu(items, { x: e.clientX, y: e.clientY });
   };
 
   return (
@@ -190,7 +206,7 @@ function ScriptDot({
       }}
     >
       {/* Status dot */}
-      <span style={dotStyle} />
+      <span className={buildStatus === "building" && !flashing ? "pulse-sync" : undefined} style={dotStyle} />
 
       {/* Script name */}
       <span

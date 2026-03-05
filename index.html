@@ -202,6 +202,28 @@
         50% { opacity: 1; }
       }
 
+      /* Global pulse: a single animation on :root drives a custom property.
+         All .pulse-sync elements read it, so they're always in phase
+         regardless of when they mount. */
+      @property --pulse-phase {
+        syntax: '<number>';
+        initial-value: 0.5;
+        inherits: true;
+      }
+
+      @keyframes global-pulse {
+        0%, 100% { --pulse-phase: 0.5; }
+        50% { --pulse-phase: 1; }
+      }
+
+      :root {
+        animation: global-pulse 1.5s ease-in-out infinite;
+      }
+
+      .pulse-sync {
+        opacity: var(--pulse-phase) !important;
+      }
+
       @keyframes success-flash {
         0% { background: var(--status-green); opacity: 1; }
         70% { background: var(--status-green); opacity: 0.8; }

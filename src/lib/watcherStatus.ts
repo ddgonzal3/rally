@@ -49,6 +49,10 @@ export function getWatcherBuildStatus(bufferKey: string): WatcherBuildStatus {
   return currentStatus;
 }
 
+export function clearWatcherStatusCache(bufferKey: string): void {
+  watcherStatusCache.delete(bufferKey);
+}
+
 export function getStatusColor(status: WatcherBuildStatus): string {
   switch (status) {
     case "error": return "var(--status-red)";
