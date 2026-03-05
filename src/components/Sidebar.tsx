@@ -5,9 +5,9 @@ import { api } from "../lib/tauri";
 import { showContextMenu } from "../lib/contextMenu";
 import { openWindow } from "../lib/windowUtils";
 
-const WORKSPACE_DRAG_THRESHOLD = 4;
-const WORKSPACE_DRAG_SCROLL_EDGE = 28;
-const WORKSPACE_DRAG_MAX_SCROLL_STEP = 14;
+const WORKSPACE_DRAG_THRESHOLD = 5;
+const WORKSPACE_DRAG_SCROLL_EDGE = 32;
+const WORKSPACE_DRAG_MAX_SCROLL_STEP = 16;
 const WORKSPACE_REORDER_TRANSITION = "transform 170ms cubic-bezier(0.2, 0, 0, 1)";
 
 function clamp(value: number, min: number, max: number): number {

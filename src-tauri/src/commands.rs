@@ -22,7 +22,7 @@ pub struct FileEntry {
     pub is_dir: bool,
 }
 
-const HIDDEN_DIRS: &[&str] = &["node_modules", ".git", ".angular", "dist", "target", ".nx"];
+const HIDDEN_DIRS: &[&str] = &["node_modules", ".git", ".angular", "dist", "target", ".nx", ".cache", "__pycache__"];
 
 #[tauri::command]
 pub fn list_directory(path: String) -> Result<Vec<FileEntry>, String> {

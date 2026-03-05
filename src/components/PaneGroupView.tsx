@@ -411,8 +411,14 @@ export function PaneGroupView({
       onMouseDown={focusGroup}
       data-group-id={groupId}
     >
-      {/* Tab bar */}
-      <div style={styles.tabBar}>
+      {/* Tab bar — click anywhere to expand when collapsed */}
+      <div
+        style={{
+          ...styles.tabBar,
+          ...(bottomCollapsed ? { cursor: "pointer" } : {}),
+        }}
+        onClick={bottomCollapsed ? () => toggleBottomPanel(workspaceId) : undefined}
+      >
         <div style={styles.tabs}>
           {group.panes.map((pane) => {
             const isActive = pane.id === activePaneId;
