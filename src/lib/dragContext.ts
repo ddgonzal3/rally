@@ -20,6 +20,8 @@ export interface DragState {
   groupId: string | null;
   paneId: string | null;
   filePaths: string[];
+  prevMouseX: number;
+  prevMouseY: number;
   mouseX: number;
   mouseY: number;
 }
@@ -30,6 +32,8 @@ const IDLE_STATE: DragState = {
   groupId: null,
   paneId: null,
   filePaths: [],
+  prevMouseX: 0,
+  prevMouseY: 0,
   mouseX: 0,
   mouseY: 0,
 };
@@ -64,10 +68,26 @@ export function getDragState(): Readonly<DragState> {
 
 /** Start dragging a pane tab (internal mouse-based drag). */
 export function startDrag(groupId: string, paneId: string, x: number, y: number) {
-  state = { isDragging: true, type: "pane", groupId, paneId, filePaths: [], mouseX: x, mouseY: y };
+  state = {
+    isDragging: true,
+    type: "pane",
+    groupId,
+    paneId,
+    filePaths: [],
+    prevMouseX: x,
+    prevMouseY: y,
+    mouseX: x,
+    mouseY: y,
+  };
 
   const onMouseMove = (e: MouseEvent) => {
-    state = { ...state, mouseX: e.clientX, mouseY: e.clientY };
+    state = {
+      ...state,
+      prevMouseX: state.mouseX,
+      prevMouseY: state.mouseY,
+      mouseX: e.clientX,
+      mouseY: e.clientY,
+    };
     notify();
   };
 
@@ -94,10 +114,26 @@ export function startDrag(groupId: string, paneId: string, x: number, y: number)
 
 /** Start dragging file(s) from the file explorer (mouse-based). */
 export function startFileDrag(filePaths: string[], x: number, y: number) {
-  state = { isDragging: true, type: "file", groupId: null, paneId: null, filePaths, mouseX: x, mouseY: y };
+  state = {
+    isDragging: true,
+    type: "file",
+    groupId: null,
+    paneId: null,
+    filePaths,
+    prevMouseX: x,
+    prevMouseY: y,
+    mouseX: x,
+    mouseY: y,
+  };
 
   const onMouseMove = (e: MouseEvent) => {
-    state = { ...state, mouseX: e.clientX, mouseY: e.clientY };
+    state = {
+      ...state,
+      prevMouseX: state.mouseX,
+      prevMouseY: state.mouseY,
+      mouseX: e.clientX,
+      mouseY: e.clientY,
+    };
     notify();
   };
 
@@ -127,14 +163,30 @@ export function startFileDrag(filePaths: string[], x: number, y: number) {
  * No mouse listeners — Tauri's onDragDropEvent manages position updates.
  */
 export function startExternalFileDrag(filePaths: string[], x: number, y: number) {
-  state = { isDragging: true, type: "file", groupId: null, paneId: null, filePaths, mouseX: x, mouseY: y };
+  state = {
+    isDragging: true,
+    type: "file",
+    groupId: null,
+    paneId: null,
+    filePaths,
+    prevMouseX: x,
+    prevMouseY: y,
+    mouseX: x,
+    mouseY: y,
+  };
   notify();
 }
 
 /** Update drag position (for Tauri's 'over' events during external file drag). */
 export function updateDragPosition(x: number, y: number) {
   if (!state.isDragging) return;
-  state = { ...state, mouseX: x, mouseY: y };
+  state = {
+    ...state,
+    prevMouseX: state.mouseX,
+    prevMouseY: state.mouseY,
+    mouseX: x,
+    mouseY: y,
+  };
   notify();
 }
 

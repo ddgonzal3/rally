@@ -359,6 +359,10 @@ interface WorkspaceState {
   updateLayoutPreset: (workspaceId: string, presetId: string) => void;
   /** Restore a saved layout preset (kills existing PTYs) */
   restoreLayoutPreset: (workspaceId: string, presetId: string) => void;
+  /** Rename a saved layout preset */
+  renameLayoutPreset: (workspaceId: string, presetId: string, newName: string) => void;
+  /** Reorder layout presets */
+  reorderLayoutPresets: (workspaceId: string, presetIds: string[]) => void;
   /** Delete a saved layout preset */
   deleteLayoutPreset: (workspaceId: string, presetId: string) => void;
   /** Open a file in an editor pane in the top area of the layout */
@@ -527,6 +531,18 @@ function shouldRestoreAsClaudeLauncher(pane: Pane): boolean {
   const command = (pane.command ?? "").trim().toLowerCase();
   if (!command) return false;
   return command === "claude" || command.startsWith("claude ") || command.includes("/claude ");
+}
+
+/** Convert a pane to claude-launcher if it should be one, stripping ptyId/scriptBufferKey. */
+function sanitizePaneForPreset(pane: Pane): Pane {
+  const { ptyId: _, scriptBufferKey: _2, ...rest } = pane;
+  if (!shouldRestoreAsClaudeLauncher(rest)) return rest;
+  return {
+    id: rest.id,
+    type: "claude-launcher" as const,
+    title: rest.type === "claude" ? rest.title : "Claude Code",
+    ...(rest.cwd ? { cwd: rest.cwd } : {}),
+  };
 }
 
 /** On restore, convert active claude sessions back to launchers (fresh start). */
@@ -2345,16 +2361,7 @@ export const useWorkspaceStore = create<WorkspaceState>()(
     // Deep-clone and sanitize: strip ptyIds, convert claude → launcher
     const groups: Record<string, PaneGroup> = {};
     for (const [gId, group] of Object.entries(layout.groups)) {
-      groups[gId] = {
-        ...group,
-        panes: group.panes.map((p) => {
-          const { ptyId: _, scriptBufferKey: _2, ...rest } = p;
-          if (rest.type === "claude") {
-            return { id: rest.id, type: "claude-launcher" as const, title: rest.title, ...(rest.cwd ? { cwd: rest.cwd } : {}) };
-          }
-          return rest;
-        }),
-      };
+      groups[gId] = { ...group, panes: group.panes.map(sanitizePaneForPreset) };
     }
     const snapshot: WorkspaceLayout = {
       root: JSON.parse(JSON.stringify(layout.root)),
@@ -2396,16 +2403,7 @@ export const useWorkspaceStore = create<WorkspaceState>()(
     const layout = get().getOrCreateLayout(workspaceId);
     const groups: Record<string, PaneGroup> = {};
     for (const [gId, group] of Object.entries(layout.groups)) {
-      groups[gId] = {
-        ...group,
-        panes: group.panes.map((p) => {
-          const { ptyId: _, scriptBufferKey: _2, ...rest } = p;
-          if (rest.type === "claude") {
-            return { id: rest.id, type: "claude-launcher" as const, title: rest.title, ...(rest.cwd ? { cwd: rest.cwd } : {}) };
-          }
-          return rest;
-        }),
-      };
+      groups[gId] = { ...group, panes: group.panes.map(sanitizePaneForPreset) };
     }
     const snapshot: WorkspaceLayout = {
       root: JSON.parse(JSON.stringify(layout.root)),
@@ -2461,6 +2459,12 @@ export const useWorkspaceStore = create<WorkspaceState>()(
     // old PTY refs, and killing orphaned PTYs causes "Process exited" on
     // the still-alive components. Fresh IDs force a full unmount → remount.
     const cloned: WorkspaceLayout = JSON.parse(JSON.stringify(preset.layout));
+
+    // Sanitize cloned panes: convert terminal panes that should be claude-launchers.
+    // This fixes presets saved before the shouldRestoreAsClaudeLauncher check was added.
+    for (const group of Object.values(cloned.groups)) {
+      group.panes = group.panes.map(sanitizePaneForPreset);
+    }
 
     // --- PTY preservation: match old panes to new panes by position + type + cwd ---
     const preservedPtyIds = new Set<string>();
@@ -2593,6 +2597,30 @@ export const useWorkspaceStore = create<WorkspaceState>()(
         update.activePresetId = rest;
       }
       return update;
+    });
+  },
+
+  renameLayoutPreset: (workspaceId, presetId, newName) => {
+    const trimmed = newName.trim();
+    if (!trimmed) return;
+    set((s) => ({
+      layoutPresets: {
+        ...s.layoutPresets,
+        [workspaceId]: (s.layoutPresets[workspaceId] ?? []).map((p) =>
+          p.id === presetId ? { ...p, name: trimmed } : p
+        ),
+      },
+    }));
+  },
+
+  reorderLayoutPresets: (workspaceId, presetIds) => {
+    set((s) => {
+      const existing = s.layoutPresets[workspaceId] ?? [];
+      const byId = new Map(existing.map((p) => [p.id, p]));
+      const reordered = presetIds.map((id) => byId.get(id)).filter(Boolean) as typeof existing;
+      return {
+        layoutPresets: { ...s.layoutPresets, [workspaceId]: reordered },
+      };
     });
   },
 

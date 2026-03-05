@@ -676,7 +676,7 @@ const styles: Record<string, React.CSSProperties> = {
     padding: "0 10px",
     minHeight: 29,
     maxHeight: 29,
-    background: "var(--bg-elevated)",
+    background: "var(--bg-surface)",
     borderBottom: "1px solid var(--border)",
     zIndex: 10,
     position: "relative" as const,

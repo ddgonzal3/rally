@@ -100,14 +100,14 @@ export function ResizeHandle({ direction, ratio, onResize }: ResizeHandleProps) 
         onMouseDown={onMouseDown}
         style={{
           flexShrink: 0,
-          width: 6,
+          width: 3,
           height: "100%",
           cursor: "col-resize",
           background: "linear-gradient(to bottom, var(--bg-surface) 28px, var(--bg-elevated) 28px, var(--bg-elevated) 29px, var(--bg-app) 29px)",
           zIndex: 10,
           display: "flex",
           alignItems: "center",
-          justifyContent: "flex-end",
+          justifyContent: "center",
         }}
         onMouseEnter={() => highlightLine()}
         onMouseLeave={() => {
