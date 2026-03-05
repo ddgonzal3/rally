@@ -214,6 +214,9 @@ export function BuildStatusDrawer() {
       zIndex: 100,
       display: "flex",
       flexDirection: "column" as const,
+      boxShadow: theme === "light"
+        ? "0 -3px 12px rgba(0,0,0,0.08)"
+        : "0 -3px 12px rgba(255,255,255,0.035)",
     }}>
       {/* Combined resize handle + header */}
       <div
