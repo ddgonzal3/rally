@@ -1,99 +1,18 @@
 import React, { useState, useEffect, useMemo, useRef } from "react";
-import { useWorkspaceStore, scriptOutputBuffers } from "../stores/workspaceStore";
+import { useWorkspaceStore } from "../stores/workspaceStore";
 import { api } from "../lib/tauri";
-import type { ScriptEntry, DetectedPort } from "../lib/types";
-
-// --- Watcher detection & status (copied from TaskPanel.tsx) ---
-
-function isWatcherScript(name: string): boolean {
-  return name.toLowerCase().includes("watch");
-}
-
-type WatcherBuildStatus = "idle" | "building" | "success" | "error";
-
-const ERROR_PATTERNS = /\b(error|failed|failure|ERR!|ERROR)\b/i;
-const SUCCESS_PATTERNS = /\b(built in|compiled successfully|ready in|watching for file changes|successfully compiled|ready|complete)\b/i;
-const BUILDING_PATTERNS = /\b(rebuilding|compiling|bundling|transforming)\b/i;
-
-const watcherStatusCache = new Map<string, { status: WatcherBuildStatus; chunkCount: number }>();
-
-function getWatcherBuildStatus(bufferKey: string): WatcherBuildStatus {
-  const buf = scriptOutputBuffers.get(bufferKey);
-  if (!buf || buf.length === 0) return "building";
-  let cached = watcherStatusCache.get(bufferKey);
-  // Buffer was reset (new run) — clear stale cache
-  if (cached && buf.length < cached.chunkCount) {
-    watcherStatusCache.delete(bufferKey);
-    cached = undefined;
-  }
-  if (cached && cached.chunkCount === buf.length) return cached.status;
-  const startIdx = cached?.chunkCount ?? 0;
-  let currentStatus = cached?.status ?? "building";
-  if (buf.length > startIdx) {
-    // For watchers: new output after success/error means a rebuild started
-    if (currentStatus === "success" || currentStatus === "error") {
-      currentStatus = "building";
-    }
-
-    const decoder = new TextDecoder("utf-8", { fatal: false });
-    const newChunks = buf.slice(startIdx);
-    const text = newChunks.map((c) => decoder.decode(c, { stream: true })).join("");
-    if (BUILDING_PATTERNS.test(text)) currentStatus = "building";
-    if (ERROR_PATTERNS.test(text)) currentStatus = "error";
-    if (SUCCESS_PATTERNS.test(text)) currentStatus = "success";
-  }
-  watcherStatusCache.set(bufferKey, { status: currentStatus, chunkCount: buf.length });
-  return currentStatus;
-}
-
-// --- Timestamps ---
-
-const prevStatuses = new Map<string, WatcherBuildStatus>();
-
-function formatAbsoluteTime(timestamp: number): string {
-  const d = new Date(timestamp);
-  const h = d.getHours();
-  const m = d.getMinutes().toString().padStart(2, "0");
-  const ampm = h >= 12 ? "pm" : "am";
-  const h12 = h % 12 || 12;
-  return `${h12}:${m}${ampm}`;
-}
-
-// --- Last line preview from output buffer ---
-
-/** ANSI escape code stripper */
-const ANSI_RE = /\x1b\[[0-9;?]*[a-zA-Z]|\x1b\[[0-9;?]*[hlm]|\x1b\].*?\x07|\x1b[()][A-Z0-9]|\x0f/g;
-
-function getLastLine(bufferKey: string): string {
-  const buf = scriptOutputBuffers.get(bufferKey);
-  if (!buf || buf.length === 0) return "";
-  // Decode just the last few chunks (avoid decoding the entire buffer)
-  const decoder = new TextDecoder("utf-8", { fatal: false });
-  const tail = buf.slice(Math.max(0, buf.length - 5));
-  const text = tail.map((c) => decoder.decode(c, { stream: true })).join("");
-  // Split by newlines, filter empty, take last non-empty line
-  const lines = text.split(/\r?\n/).filter((l) => l.trim().length > 0);
-  if (lines.length === 0) return "";
-  // Strip ANSI codes and carriage returns for clean display
-  return lines[lines.length - 1].replace(ANSI_RE, "").replace(/\r/g, "").trim();
-}
-
-// --- Display name ---
-
-function getDisplayName(scriptName: string): string {
-  return scriptName.replace(/\.(sh|bash)$/, "");
-}
-
-// --- Status dot color ---
-
-function getStatusColor(status: WatcherBuildStatus): string {
-  switch (status) {
-    case "error": return "var(--status-red)";
-    case "success": return "var(--status-green)";
-    case "building": return "var(--status-amber)";
-    case "idle": return "var(--text-dim)";
-  }
-}
+import type { ScriptEntry } from "../lib/types";
+import {
+  isWatcherScript,
+  getWatcherBuildStatus,
+  getStatusColor,
+  getDisplayName,
+  formatAbsoluteTime,
+  getLastLine,
+  type WatcherBuildStatus,
+} from "../lib/watcherStatus";
+import { useDetectedPorts } from "../lib/useDetectedPorts";
+import { PortPill } from "./PortPill";
 
 // --- Icons ---
 
@@ -151,14 +70,7 @@ export function BuildStatusBar() {
   const toggleStatusBarCollapsed = useWorkspaceStore((s) => s.toggleStatusBarCollapsed);
   const openStatusBarDrawer = useWorkspaceStore((s) => s.openStatusBarDrawer);
   const statusBarDrawer = useWorkspaceStore((s) => s.statusBarDrawer);
-  const detectedPortsJson = useWorkspaceStore((s) => {
-    if (!activeWorkspaceId) return "[]";
-    return JSON.stringify(s.detectedPorts[activeWorkspaceId] ?? []);
-  });
-  const detectedPorts: DetectedPort[] = useMemo(
-    () => JSON.parse(detectedPortsJson),
-    [detectedPortsJson],
-  );
+  const detectedPorts = useDetectedPorts(activeWorkspaceId);
   const openWebView = useWorkspaceStore((s) => s.openWebView);
 
   // Script entries cache per repo path
@@ -448,25 +360,7 @@ export function BuildStatusBar() {
                     {activeWorkspaceId && detectedPorts
                       .filter((p) => p.source.type === "script" && p.source.repoPath === repoPath && p.source.scriptName === scriptName)
                       .map((p) => (
-                        <span
-                          key={p.port}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            openWebView(activeWorkspaceId!, p.url);
-                          }}
-                          title={`Open ${p.url}`}
-                          style={{
-                            fontSize: 10,
-                            fontWeight: 600,
-                            color: "var(--status-green)",
-                            cursor: "pointer",
-                            marginLeft: 2,
-                            flexShrink: 0,
-                            lineHeight: 1,
-                          }}
-                        >
-                          :{p.port}
-                        </span>
+                        <PortPill key={p.port} port={p} onClick={(url) => openWebView(activeWorkspaceId, url)} />
                       ))}
                   </div>
                 </React.Fragment>

@@ -245,6 +245,11 @@ export interface DetectedPort {
   detectedAt: number;
 }
 
+// --- Layout Constants ---
+
+/** Golden-ratio split: top gets ~78.6%, bottom ~21.4%. Also used as the snap threshold for collapsing. */
+export const DEFAULT_BOTTOM_RATIO = 0.786;
+
 // --- Pane & Layout Types ---
 
 export type EditorViewMode = "raw" | "split" | "preview";

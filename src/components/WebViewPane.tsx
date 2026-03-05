@@ -41,7 +41,14 @@ export function WebViewPane({ url, paneId }: WebViewPaneProps) {
     const check = async () => {
       try {
         await fetch(iframeSrc, { mode: "no-cors", cache: "no-store" });
-        if (!cancelled) setServerUp(true);
+        if (!cancelled) {
+          setServerUp(true);
+          // Stop polling once server is confirmed up
+          if (pollRef.current) {
+            clearInterval(pollRef.current);
+            pollRef.current = null;
+          }
+        }
       } catch {
         if (!cancelled) setServerUp(false);
       }

@@ -191,8 +191,8 @@ export function BranchSwitcher({
             : {
                 display: "inline-flex",
                 alignItems: "center",
-                gap: 5,
-                fontSize: 11,
+                gap: 4,
+                fontSize: 12,
                 color: "var(--text-secondary)",
                 fontWeight: 600,
                 cursor: "pointer",
@@ -200,7 +200,6 @@ export function BranchSwitcher({
                 borderRadius: 4,
                 padding: "1px 4px",
                 background: open ? "var(--bg-hover)" : "none",
-                marginLeft: 8,
               }
         }
         onMouseEnter={(e) => {

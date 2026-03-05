@@ -1,6 +1,26 @@
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { addToast } from "../components/ToastContainer";
 
+function attachWindowErrorHandler(w: WebviewWindow, context: string) {
+  w.once("tauri://error", (e) => {
+    const payload = e?.payload;
+    const detail =
+      typeof payload === "string"
+        ? payload
+        : payload && typeof payload === "object" && "message" in payload
+          ? String((payload as { message?: unknown }).message ?? "")
+          : "";
+    console.error(`Failed to create window (${context}):`, e);
+    addToast({
+      type: "warning",
+      title: "Window open failed",
+      message: detail
+        ? `Could not open ${context}. ${detail}`
+        : `Could not open ${context}.`,
+    });
+  });
+}
+
 /**
  * Open a URL or local file in a standalone browser-like window.
  * Works for localhost URLs, remote URLs, and local file paths.
@@ -10,7 +30,7 @@ export function openInNewWindow(url: string, title?: string) {
 
   // For localhost/http URLs, load directly. For file paths, use a file:// URL.
   let loadUrl = url;
-  if (url.startsWith("/") || url.startsWith("~")) {
+  if (url.startsWith("/")) {
     loadUrl = `file://${url}`;
   } else if (!url.startsWith("http")) {
     loadUrl = `http://${url}`;
@@ -28,23 +48,7 @@ export function openInNewWindow(url: string, title?: string) {
     decorations: true,
   });
 
-  w.once("tauri://error", (e) => {
-    const payload = e?.payload;
-    const detail =
-      typeof payload === "string"
-        ? payload
-        : payload && typeof payload === "object" && "message" in payload
-          ? String((payload as { message?: unknown }).message ?? "")
-          : "";
-    console.error("Failed to create window:", e);
-    addToast({
-      type: "warning",
-      title: "Window open failed",
-      message: detail
-        ? `Could not open window. ${detail}`
-        : "Could not open window.",
-    });
-  });
+  attachWindowErrorHandler(w, "window");
 }
 
 export function openWindow(opts?: {
@@ -73,21 +77,5 @@ export function openWindow(opts?: {
     hiddenTitle: true,
   });
 
-  w.once("tauri://error", (e) => {
-    const payload = e?.payload;
-    const detail =
-      typeof payload === "string"
-        ? payload
-        : payload && typeof payload === "object" && "message" in payload
-          ? String((payload as { message?: unknown }).message ?? "")
-          : "";
-    console.error("Failed to create window:", e);
-    addToast({
-      type: "warning",
-      title: "Window open failed",
-      message: detail
-        ? `Could not open a new window. ${detail}`
-        : "Could not open a new window.",
-    });
-  });
+  attachWindowErrorHandler(w, "a new window");
 }

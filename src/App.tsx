@@ -11,7 +11,7 @@ import { useWorkspaceStore } from "./stores/workspaceStore";
 import { api } from "./lib/tauri";
 import { showContextMenu } from "./lib/contextMenu";
 import { AddWorkspaceModal } from "./components/AddWorkspaceModal";
-import { findFirstGroupInSubtree, findNeighborGroup, replaceNode, type LayoutNode, type NavigationDirection, type Pane, type ThemeName } from "./lib/types";
+import { DEFAULT_BOTTOM_RATIO, findFirstGroupInSubtree, findNeighborGroup, replaceNode, type LayoutNode, type NavigationDirection, type Pane, type ThemeName } from "./lib/types";
 import {
   startExternalFileDrag,
   updateDragPosition,
@@ -30,9 +30,6 @@ import { ProductChatPanel } from "./components/ProductChatPanel";
 import { BuildStatusBar } from "./components/BuildStatusBar";
 import { BuildStatusDrawer } from "./components/BuildStatusDrawer";
 import QuickOpen from "./components/QuickOpen";
-
-/** Default vertical split ratio — golden ratio gives top 61.8%, bottom 38.2% */
-const DEFAULT_BOTTOM_RATIO = 0.786;
 
 const WS_DRAG_THRESHOLD = 4;
 const WS_DRAG_SCROLL_EDGE = 28;
@@ -1563,8 +1560,8 @@ export function App() {
             <div style={{ display: isProductMode ? "none" : "flex", flex: 1, flexDirection: "column" as const, minWidth: 0, minHeight: 0, position: "relative" as const }}>
               <PaneLayout />
               <BuildStatusDrawer />
-              <BuildStatusBar />
             </div>
+            <BuildStatusBar />
           </div>
         </div>
         <UnifiedGitPanel />

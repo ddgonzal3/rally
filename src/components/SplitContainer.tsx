@@ -2,9 +2,8 @@ import React, { useCallback } from "react";
 import { PaneGroupView } from "./PaneGroupView";
 import { ResizeHandle } from "./ResizeHandle";
 import { useWorkspaceStore } from "../stores/workspaceStore";
+import { DEFAULT_BOTTOM_RATIO } from "../lib/types";
 import type { LayoutNode } from "../lib/types";
-
-const SNAP_COLLAPSE_THRESHOLD = 0.786;
 
 interface SplitContainerProps {
   node: LayoutNode;
@@ -36,8 +35,8 @@ export const SplitContainer = React.memo(function SplitContainer({
   const handleRootVerticalResize = useCallback(
     (ratio: number) => {
       if (node.type !== "split") return;
-      if (ratio >= SNAP_COLLAPSE_THRESHOLD) {
-        updateSplitRatio(workspaceId, node.id, SNAP_COLLAPSE_THRESHOLD);
+      if (ratio >= DEFAULT_BOTTOM_RATIO) {
+        updateSplitRatio(workspaceId, node.id, DEFAULT_BOTTOM_RATIO);
         toggleBottomPanel(workspaceId);
       } else {
         updateSplitRatio(workspaceId, node.id, ratio);

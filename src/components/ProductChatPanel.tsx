@@ -8,14 +8,7 @@ import type { OnFileOpen } from "../lib/terminalLinkProvider";
 import { BranchSwitcher } from "./BranchSwitcher";
 import { RepoSwitcher } from "./RepoSwitcher";
 import { addToast } from "./ToastContainer";
-
-// Inject spin keyframe once
-if (typeof document !== "undefined" && !document.getElementById("rally-spin-keyframe")) {
-  const style = document.createElement("style");
-  style.id = "rally-spin-keyframe";
-  style.textContent = `@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }`;
-  document.head.appendChild(style);
-}
+import { SyncConfirmModal } from "./SyncConfirmModal";
 
 interface ProductChatPanelProps {
   rootPath: string;
@@ -40,7 +33,8 @@ export function ProductChatPanel({ rootPath, workspaceId }: ProductChatPanelProp
   const [inputFocused, setInputFocused] = useState(false);
   const [readiness, setReadiness] = useState<{ ready: boolean; issues: string[] } | null>(null);
   const [dangerousMode, setDangerousMode] = useState(true);
-  const [syncing, setSyncing] = useState(false);
+  const [syncModalOpen, setSyncModalOpen] = useState(false);
+  const syncBtnRef = useRef<HTMLButtonElement>(null);
   const syncBranch = useWorkspaceStore((s) => s.syncBranch);
   const ptyIdRef = useRef<string | undefined>(undefined);
   const unlistenExitRef = useRef<UnlistenFn | null>(null);
@@ -218,14 +212,12 @@ export function ProductChatPanel({ rootPath, workspaceId }: ProductChatPanelProp
   }, [workspaceId, clearProductSession]);
 
   const handleSync = useCallback(async () => {
-    setSyncing(true);
     try {
       await syncBranch(rootPath, mainBranch);
       addToast({ type: "success", title: "Sync complete", message: `Synced ${branch} with ${mainBranch}` });
     } catch (e) {
       addToast({ type: "warning", title: "Sync failed", message: String(e instanceof Error ? e.message : e) });
-    } finally {
-      setSyncing(false);
+      throw e;
     }
   }, [syncBranch, rootPath, mainBranch, branch]);
 
@@ -255,7 +247,7 @@ export function ProductChatPanel({ rootPath, workspaceId }: ProductChatPanelProp
             <RepoSwitcher workspaceId={workspaceId} rootPath={rootPath} />
             {(workspace?.paths.length ?? 0) <= 1 && (
               <>
-                <svg width="11" height="11" viewBox="0 0 16 16" fill="none" style={{ flexShrink: 0 }}>
+                <svg width="12" height="12" viewBox="0 0 16 16" fill="none" style={{ flexShrink: 0 }}>
                   <path
                     d="M2 4.5A1.5 1.5 0 013.5 3H6l1 1.5h5.5A1.5 1.5 0 0114 6v5.5a1.5 1.5 0 01-1.5 1.5h-9A1.5 1.5 0 012 11.5v-7z"
                     stroke="var(--text-secondary)"
@@ -281,23 +273,13 @@ export function ProductChatPanel({ rootPath, workspaceId }: ProductChatPanelProp
             )}
             {gitStatus && gitStatus.behind > 0 && branch !== mainBranch && (
               <button
+                ref={syncBtnRef}
+                className="sidebar-btn"
                 style={styles.syncBtn}
-                onClick={handleSync}
-                disabled={syncing}
+                onClick={() => setSyncModalOpen(true)}
                 title={`Sync ${branch} with ${mainBranch} (${gitStatus.behind} behind)`}
               >
-                <svg
-                  width="12"
-                  height="12"
-                  viewBox="0 0 16 16"
-                  fill="none"
-                  style={syncing ? { animation: "spin 1s linear infinite" } : undefined}
-                >
-                  <path
-                    d="M2.5 8a5.5 5.5 0 0 1 9.3-3.95L10 6h5V1l-1.8 1.8A7.5 7.5 0 0 0 .5 8h2zm11 0a5.5 5.5 0 0 1-9.3 3.95L6 10H1v5l1.8-1.8A7.5 7.5 0 0 0 15.5 8h-2z"
-                    fill="var(--text-secondary)"
-                  />
-                </svg>
+                Sync
               </button>
             )}
             <button
@@ -381,7 +363,7 @@ export function ProductChatPanel({ rootPath, workspaceId }: ProductChatPanelProp
               <RepoSwitcher workspaceId={workspaceId} rootPath={rootPath} />
               {(workspace?.paths.length ?? 0) <= 1 && (
                 <>
-                  <svg width="11" height="11" viewBox="0 0 16 16" fill="none" style={{ flexShrink: 0 }}>
+                  <svg width="12" height="12" viewBox="0 0 16 16" fill="none" style={{ flexShrink: 0 }}>
                     <path
                       d="M2 4.5A1.5 1.5 0 013.5 3H6l1 1.5h5.5A1.5 1.5 0 0114 6v5.5a1.5 1.5 0 01-1.5 1.5h-9A1.5 1.5 0 012 11.5v-7z"
                       stroke="var(--text-secondary)"
@@ -440,6 +422,15 @@ export function ProductChatPanel({ rootPath, workspaceId }: ProductChatPanelProp
           </div>
         </div>
       )}
+      <SyncConfirmModal
+        open={syncModalOpen}
+        onClose={() => setSyncModalOpen(false)}
+        onConfirm={handleSync}
+        branch={branch}
+        mainBranch={mainBranch}
+        behind={gitStatus?.behind ?? 0}
+        anchorRef={syncBtnRef}
+      />
       </div>
     );
   }
@@ -458,7 +449,7 @@ export function ProductChatPanel({ rootPath, workspaceId }: ProductChatPanelProp
           New Session
         </button>
         <div style={styles.headerRight}>
-          <svg width="11" height="11" viewBox="0 0 16 16" fill="none" style={{ flexShrink: 0 }}>
+          <svg width="12" height="12" viewBox="0 0 16 16" fill="none" style={{ flexShrink: 0 }}>
             <path
               d="M2 4.5A1.5 1.5 0 013.5 3H6l1 1.5h5.5A1.5 1.5 0 0114 6v5.5a1.5 1.5 0 01-1.5 1.5h-9A1.5 1.5 0 012 11.5v-7z"
               stroke="var(--text-secondary)"
@@ -482,23 +473,13 @@ export function ProductChatPanel({ rootPath, workspaceId }: ProductChatPanelProp
           )}
           {gitStatus && gitStatus.behind > 0 && branch !== mainBranch && (
             <button
+              ref={syncBtnRef}
+              className="sidebar-btn"
               style={styles.syncBtn}
-              onClick={handleSync}
-              disabled={syncing}
+              onClick={() => setSyncModalOpen(true)}
               title={`Sync ${branch} with ${mainBranch} (${gitStatus.behind} behind)`}
             >
-              <svg
-                width="12"
-                height="12"
-                viewBox="0 0 16 16"
-                fill="none"
-                style={syncing ? { animation: "spin 1s linear infinite" } : undefined}
-              >
-                <path
-                  d="M2.5 8a5.5 5.5 0 0 1 9.3-3.95L10 6h5V1l-1.8 1.8A7.5 7.5 0 0 0 .5 8h2zm11 0a5.5 5.5 0 0 1-9.3 3.95L6 10H1v5l1.8-1.8A7.5 7.5 0 0 0 15.5 8h-2z"
-                  fill="var(--text-secondary)"
-                />
-              </svg>
+              Sync
             </button>
           )}
           <button
@@ -532,6 +513,15 @@ export function ProductChatPanel({ rootPath, workspaceId }: ProductChatPanelProp
         </div>
       </div>
     )}
+    <SyncConfirmModal
+      open={syncModalOpen}
+      onClose={() => setSyncModalOpen(false)}
+      onConfirm={handleSync}
+      branch={branch}
+      mainBranch={mainBranch}
+      behind={gitStatus?.behind ?? 0}
+      anchorRef={syncBtnRef}
+    />
     </div>
   );
 }
@@ -698,7 +688,7 @@ const styles: Record<string, React.CSSProperties> = {
     background: "none",
     border: "none",
     cursor: "pointer",
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: 500,
     color: "var(--text-secondary)",
     padding: "0 6px",
@@ -709,12 +699,12 @@ const styles: Record<string, React.CSSProperties> = {
   headerRight: {
     display: "flex",
     alignItems: "center",
-    gap: 5,
+    gap: 2,
     overflow: "hidden",
     minWidth: 0,
   },
   headerPathText: {
-    fontSize: 11,
+    fontSize: 12,
     color: "var(--text-secondary)",
     fontWeight: 600,
     overflow: "hidden",
@@ -722,17 +712,17 @@ const styles: Record<string, React.CSSProperties> = {
     whiteSpace: "nowrap" as const,
   },
   syncBtn: {
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
     background: "none",
     border: "none",
     cursor: "pointer",
-    padding: 2,
-    borderRadius: 3,
-    flexShrink: 0,
-    opacity: 0.7,
-    transition: "opacity 0.15s ease",
+    borderRadius: 4,
+    padding: "0 4px",
+    fontSize: 12,
+    color: "var(--text-secondary)",
+    fontWeight: 600,
+    height: 22,
+    letterSpacing: "0.01em",
+    whiteSpace: "nowrap" as const,
   },
   terminalArea: {
     flex: 1,
@@ -770,9 +760,8 @@ const styles: Record<string, React.CSSProperties> = {
     border: "none",
     cursor: "pointer",
     borderRadius: 4,
-    padding: "0 6px",
-    marginLeft: 6,
-    fontSize: 11,
+    padding: "0 4px",
+    fontSize: 12,
     color: "var(--text-secondary)",
     fontWeight: 600,
     height: 22,

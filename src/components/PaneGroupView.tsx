@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useMemo } from "react";
+import React, { useCallback, useEffect, useRef } from "react";
 import { Terminal } from "./Terminal";
 import { ClaudeLauncher } from "./ClaudeLauncher";
 import { ClaudeTerminalWrapper } from "./ClaudeTerminalWrapper";
@@ -8,12 +8,14 @@ import { WebViewPane } from "./WebViewPane";
 import { TerminalLauncher } from "./TerminalLauncher";
 import { DropZoneTarget, type DropPosition } from "./DropZoneOverlay";
 import { PaneTabIcon, FileIcon } from "./FileIcons";
+import { PortPill } from "./PortPill";
 import { useWorkspaceStore } from "../stores/workspaceStore";
 import { getDragState, startDrag, endDrag } from "../lib/dragContext";
 import { showContextMenu } from "../lib/contextMenu";
 import { api } from "../lib/tauri";
 import { openInNewWindow } from "../lib/windowUtils";
-import type { PaneGroup, Pane, DetectedPort } from "../lib/types";
+import { useDetectedPorts } from "../lib/useDetectedPorts";
+import type { PaneGroup, Pane } from "../lib/types";
 import type { OnFileOpen } from "../lib/terminalLinkProvider";
 import {
   REQUEST_NEW_TERMINAL_CWD_EVENT,
@@ -119,13 +121,7 @@ export function PaneGroupView({
   const revealFileInExplorer = useWorkspaceStore((s) => s.revealFileInExplorer);
   const dirtyPanes = useWorkspaceStore((s) => s.dirtyPanes);
   const setEditorViewMode = useWorkspaceStore((s) => s.setEditorViewMode);
-  const detectedPortsJson = useWorkspaceStore((s) =>
-    JSON.stringify(s.detectedPorts[workspaceId] ?? []),
-  );
-  const detectedPorts: DetectedPort[] = useMemo(
-    () => JSON.parse(detectedPortsJson),
-    [detectedPortsJson],
-  );
+  const detectedPorts = useDetectedPorts(workspaceId);
   const openWebView = useWorkspaceStore((s) => s.openWebView);
   const bottomCollapsed = useWorkspaceStore(
     (s) => isBottomPanel ? !!s.bottomPanelCollapsed[workspaceId] : false,
@@ -578,24 +574,7 @@ export function PaneGroupView({
                 {pane.ptyId && detectedPorts
                   .filter((p) => p.source.type === "pane" && p.source.ptyId === pane.ptyId)
                   .map((p) => (
-                    <span
-                      key={p.port}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        openWebView(workspaceId, p.url);
-                      }}
-                      title={`Open ${p.url}`}
-                      style={{
-                        fontSize: 10,
-                        fontWeight: 600,
-                        color: "var(--status-green)",
-                        cursor: "pointer",
-                        marginLeft: 4,
-                        flexShrink: 0,
-                      }}
-                    >
-                      :{p.port}
-                    </span>
+                    <PortPill key={p.port} port={p} onClick={(url) => openWebView(workspaceId, url)} />
                   ))}
                 <div style={styles.tabActions}>
                   {isActive &&
