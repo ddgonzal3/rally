@@ -236,6 +236,15 @@ export interface ScriptRun {
   exitCode: number | null;
 }
 
+export interface DetectedPort {
+  port: number;
+  url: string;
+  source:
+    | { type: "pane"; ptyId: string }
+    | { type: "script"; repoPath: string; scriptName: string };
+  detectedAt: number;
+}
+
 // --- Pane & Layout Types ---
 
 export type EditorViewMode = "raw" | "split" | "preview";

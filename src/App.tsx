@@ -363,9 +363,25 @@ export function App() {
     const saved = localStorage.getItem("rally:zoomLevel");
     return saved ? Number(saved) : 1.0;
   });
-  const [explorerView, setExplorerView] = useState<
-    "files" | "search" | "claude" | "scripts" | "workspaces"
-  >("files");
+  type ExplorerView = "files" | "search" | "claude" | "scripts" | "workspaces";
+  const explorerViewPerWorkspaceRef = useRef<Map<string, ExplorerView>>(new Map());
+  const prevExplorerWsRef = useRef<string | null>(null);
+  const [explorerView, setExplorerView] = useState<ExplorerView>("files");
+
+  // Persist explorerView per workspace
+  useEffect(() => {
+    const wsId = activeWorkspaceId ?? "";
+    const prevId = prevExplorerWsRef.current;
+    if (prevId && prevId !== wsId) {
+      explorerViewPerWorkspaceRef.current.set(prevId, explorerView);
+    }
+    if (prevId !== wsId) {
+      const saved = explorerViewPerWorkspaceRef.current.get(wsId) ?? "files";
+      setExplorerView(saved);
+      prevExplorerWsRef.current = wsId;
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeWorkspaceId]);
   const [quickOpenVisible, setQuickOpenVisible] = useState(false);
   const [newTerminalCwdRequest, setNewTerminalCwdRequest] =
     useState<RequestNewTerminalCwdDetail | null>(null);
@@ -627,6 +643,7 @@ export function App() {
           .workspaces.find((w) => w.paths.includes(rootPath));
         if (ws) {
           void refreshGitStatusForPath(rootPath, ws.main_branch);
+          loadRallyConfig(rootPath);
         }
       }, delay);
       refreshTimers.set(rootPath, timer);
@@ -645,7 +662,7 @@ export function App() {
       refreshTimers.clear();
       unlisten?.();
     };
-  }, [refreshGitStatusForPath, shouldDeferBackgroundWork]);
+  }, [refreshGitStatusForPath, shouldDeferBackgroundWork, loadRallyConfig]);
 
   // Native File menu actions (always handled here so they work even when
   // sidebar/explorer panels are collapsed).
@@ -968,7 +985,7 @@ export function App() {
         }
         useWorkspaceStore.getState().closeActiveTab(wsId);
       }
-      // Ctrl+` toggles the bottom panel (bypasses ratio clamp)
+      // Ctrl+` toggles the bottom panel
       if (e.ctrlKey && e.key === "`") {
         e.preventDefault();
         const s = useWorkspaceStore.getState();
@@ -1010,16 +1027,15 @@ export function App() {
             panes: [newPane],
             activePaneId: newPane.id,
           };
-          const splitId = crypto.randomUUID();
           const splitNode: LayoutNode = {
             type: "split",
-            id: splitId,
+            id: crypto.randomUUID(),
             direction: "vertical",
             children: [
               { type: "group", groupId },
               { type: "group", groupId: newGroupId },
             ],
-            ratio: 0.8,
+            ratio: GOLDEN_RATIO,
           };
 
           useWorkspaceStore.setState({
@@ -1039,56 +1055,25 @@ export function App() {
             },
           });
 
-          // Animate: slide up from collapsed (0.8) to target ratio
-          requestAnimationFrame(() => {
-            const targetRatio = GOLDEN_RATIO;
-            const storageKey = `rally:bottomPanelRatio:${wsId}`;
-            localStorage.setItem(storageKey, String(targetRatio));
-            const cur = useWorkspaceStore.getState();
-            const curLayout = cur.layouts[wsId];
-            if (!curLayout) return;
-            const animRoot = replaceNode(curLayout.root, splitId, {
-              ...splitNode,
-              ratio: targetRatio,
-            });
-            useWorkspaceStore.setState({
-              layouts: {
-                ...cur.layouts,
-                [wsId]: { ...curLayout, root: animRoot },
-              },
-            });
-            // Focus the new bottom terminal after it mounts
-            setTimeout(() => {
-              window.dispatchEvent(
-                new CustomEvent("rally-focus-group", { detail: newGroupId }),
-              );
-            }, 50);
-          });
+          // Focus the new bottom terminal after it mounts
+          setTimeout(() => {
+            window.dispatchEvent(
+              new CustomEvent("rally-focus-group", { detail: newGroupId }),
+            );
+          }, 50);
           return;
         }
 
-        // Collect all vertical splits in the tree (handles both root-level
-        // vertical splits and vertical splits nested inside horizontal columns)
-        function collectVerticalSplits(node: LayoutNode): Array<Extract<LayoutNode, { type: "split" }>> {
-          if (node.type === "group") return [];
-          if (node.direction === "vertical") return [node];
-          return [
-            ...collectVerticalSplits(node.children[0]),
-            ...collectVerticalSplits(node.children[1]),
-          ];
-        }
-        const vertSplits = root.type === "split" && root.direction === "vertical"
-          ? [root as Extract<LayoutNode, { type: "split" }>]
-          : collectVerticalSplits(root);
-        if (vertSplits.length === 0) return;
+        const isCollapsed = !!s.bottomPanelCollapsed[wsId];
+        const rootVSplit = root.type === "split" && root.direction === "vertical"
+          ? root as Extract<LayoutNode, { type: "split" }>
+          : null;
 
-        const storageKey = `rally:bottomPanelRatio:${wsId}`;
-        const isCollapsed = vertSplits.every((vs) => vs.ratio >= 0.79);
-
-        // When expanding, repopulate any empty bottom groups with a terminal
         if (isCollapsed) {
-          for (const vs of vertSplits) {
-            const bottomGroupId = findFirstGroupInSubtree(vs.children[1]);
+          // Collapsed → expand to golden ratio
+          if (rootVSplit) {
+            // Repopulate empty bottom groups with a terminal
+            const bottomGroupId = findFirstGroupInSubtree(rootVSplit.children[1]);
             const bottomGroup = bottomGroupId ? layout.groups[bottomGroupId] : null;
             if (bottomGroupId && bottomGroup && bottomGroup.panes.length === 0) {
               const activeGroupId = s.activeGroupIds[wsId];
@@ -1115,30 +1100,41 @@ export function App() {
                 },
               };
             }
+
+            // Set ratio to golden and uncollapse
+            const newRoot = replaceNode(layout.root, rootVSplit.id, {
+              ...rootVSplit,
+              ratio: GOLDEN_RATIO,
+            });
+            useWorkspaceStore.setState({
+              bottomPanelCollapsed: { ...s.bottomPanelCollapsed, [wsId]: false },
+              layouts: { ...s.layouts, [wsId]: { ...layout, root: newRoot } },
+            });
+
+            // Focus the bottom terminal
+            const focusGroupId = findFirstGroupInSubtree(rootVSplit.children[1]);
+            if (focusGroupId) {
+              setTimeout(() => {
+                window.dispatchEvent(
+                  new CustomEvent("rally-focus-group", { detail: focusGroupId }),
+                );
+              }, 50);
+            }
           }
-        }
-
-        const newRatio = isCollapsed
-          ? Number(localStorage.getItem(storageKey)) || GOLDEN_RATIO
-          : (localStorage.setItem(storageKey, String(vertSplits[0].ratio)), 0.8);
-        // Update all vertical splits to the same ratio
-        let newRoot = layout.root;
-        for (const vs of vertSplits) {
-          newRoot = replaceNode(newRoot, vs.id, { ...vs, ratio: newRatio });
-        }
-        useWorkspaceStore.setState({
-          layouts: { ...s.layouts, [wsId]: { ...layout, root: newRoot } },
-        });
-
-        // Focus the bottom terminal when expanding
-        if (isCollapsed) {
-          const focusGroupId = findFirstGroupInSubtree(vertSplits[0].children[1]);
-          if (focusGroupId) {
-            setTimeout(() => {
-              window.dispatchEvent(
-                new CustomEvent("rally-focus-group", { detail: focusGroupId }),
-              );
-            }, 50);
+        } else if (rootVSplit) {
+          const isAtGolden = Math.abs(rootVSplit.ratio - GOLDEN_RATIO) < 0.02;
+          if (isAtGolden) {
+            // At golden ratio → fully collapse
+            s.toggleBottomPanel(wsId);
+          } else {
+            // Custom size → snap to golden ratio
+            const newRoot = replaceNode(layout.root, rootVSplit.id, {
+              ...rootVSplit,
+              ratio: GOLDEN_RATIO,
+            });
+            useWorkspaceStore.setState({
+              layouts: { ...s.layouts, [wsId]: { ...layout, root: newRoot } },
+            });
           }
         }
       }

@@ -12,7 +12,8 @@ import { useWorkspaceStore } from "../stores/workspaceStore";
 import { getDragState, startDrag, endDrag } from "../lib/dragContext";
 import { showContextMenu } from "../lib/contextMenu";
 import { api } from "../lib/tauri";
-import type { PaneGroup, Pane } from "../lib/types";
+import { openInNewWindow } from "../lib/windowUtils";
+import type { PaneGroup, Pane, DetectedPort } from "../lib/types";
 import type { OnFileOpen } from "../lib/terminalLinkProvider";
 import {
   REQUEST_NEW_TERMINAL_CWD_EVENT,
@@ -31,6 +32,7 @@ interface PaneGroupViewProps {
   groupId: string;
   workspaceId: string;
   workspacePath: string;
+  isBottomPanel?: boolean;
 }
 
 /** Check if a terminal title indicates Claude Code is running. */
@@ -95,6 +97,7 @@ export function PaneGroupView({
   groupId,
   workspaceId,
   workspacePath,
+  isBottomPanel,
 }: PaneGroupViewProps) {
   // Subscribe to this specific group from the store.
   // This is the key performance optimization: each PaneGroupView only
@@ -116,6 +119,18 @@ export function PaneGroupView({
   const revealFileInExplorer = useWorkspaceStore((s) => s.revealFileInExplorer);
   const dirtyPanes = useWorkspaceStore((s) => s.dirtyPanes);
   const setEditorViewMode = useWorkspaceStore((s) => s.setEditorViewMode);
+  const detectedPortsJson = useWorkspaceStore((s) =>
+    JSON.stringify(s.detectedPorts[workspaceId] ?? []),
+  );
+  const detectedPorts: DetectedPort[] = useMemo(
+    () => JSON.parse(detectedPortsJson),
+    [detectedPortsJson],
+  );
+  const openWebView = useWorkspaceStore((s) => s.openWebView);
+  const bottomCollapsed = useWorkspaceStore(
+    (s) => isBottomPanel ? !!s.bottomPanelCollapsed[workspaceId] : false,
+  );
+  const toggleBottomPanel = useWorkspaceStore((s) => s.toggleBottomPanel);
 
   const ws = workspaces.find((w) => w.id === workspaceId);
   const paths = ws?.paths ?? [workspacePath];
@@ -414,7 +429,10 @@ export function PaneGroupView({
                   ...styles.tab,
                   ...(isActive ? styles.tabActive : {}),
                 }}
-                onClick={() => setActivePane(workspaceId, groupId, pane.id)}
+                onClick={() => {
+                  setActivePane(workspaceId, groupId, pane.id);
+                  if (bottomCollapsed) toggleBottomPanel(workspaceId);
+                }}
                 onDoubleClick={() => {
                   if (
                     pane.type === "terminal" ||
@@ -443,6 +461,16 @@ export function PaneGroupView({
                       label: "Reveal in Finder",
                       action: () => api.revealInFinder(pane.filePath!),
                     });
+                    items.push({
+                      label: "Open in New Window",
+                      action: () => openInNewWindow(pane.filePath!, pane.title),
+                    });
+                  }
+                  if (pane.type === "webview" && pane.webviewUrl) {
+                    items.push({
+                      label: "Open in New Window",
+                      action: () => openInNewWindow(pane.webviewUrl!, pane.title),
+                    });
                   }
                   if (
                     items.length > 0 &&
@@ -469,6 +497,23 @@ export function PaneGroupView({
                           transformPane(workspaceId, groupId, pane.id, {
                             customTitle: undefined,
                           }),
+                      });
+                    }
+                    items.push("separator");
+                  }
+                  {/* Detected ports — open in webview or new window */}
+                  const panePorts = pane.ptyId
+                    ? detectedPorts.filter((p) => p.source.type === "pane" && p.source.ptyId === pane.ptyId)
+                    : [];
+                  if (panePorts.length > 0) {
+                    for (const dp of panePorts) {
+                      items.push({
+                        label: `Open :${dp.port} in Pane`,
+                        action: () => openWebView(workspaceId, dp.url),
+                      });
+                      items.push({
+                        label: `Open :${dp.port} in New Window`,
+                        action: () => openInNewWindow(dp.url, `localhost:${dp.port}`),
                       });
                     }
                     items.push("separator");
@@ -529,6 +574,29 @@ export function PaneGroupView({
                     {paneLabel(pane, dirtyPanes.has(pane.id), workspacePath)}
                   </span>
                 )}
+                {/* Port pills for terminals with detected localhost servers */}
+                {pane.ptyId && detectedPorts
+                  .filter((p) => p.source.type === "pane" && p.source.ptyId === pane.ptyId)
+                  .map((p) => (
+                    <span
+                      key={p.port}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        openWebView(workspaceId, p.url);
+                      }}
+                      title={`Open ${p.url}`}
+                      style={{
+                        fontSize: 10,
+                        fontWeight: 600,
+                        color: "var(--status-green)",
+                        cursor: "pointer",
+                        marginLeft: 4,
+                        flexShrink: 0,
+                      }}
+                    >
+                      :{p.port}
+                    </span>
+                  ))}
                 <div style={styles.tabActions}>
                   {isActive &&
                     pane.type === "editor" &&
@@ -661,73 +729,98 @@ export function PaneGroupView({
           })}
         </div>
         <div style={styles.actions}>
-          <button
-            className="tab-action"
-            style={styles.actionBtn}
-            onClick={() => handleAction("terminal")}
-            title="New terminal tab"
-          >
-            <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
-              <path
-                d="M7 1v12M1 7h12"
-                stroke="currentColor"
-                strokeWidth="1.5"
-                strokeLinecap="round"
-              />
-            </svg>
-          </button>
-          <button
-            className="tab-action"
-            style={styles.actionBtn}
-            onClick={() => handleAction("split-h")}
-            title="Split right"
-          >
-            <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
-              <rect
-                x="1"
-                y="1.5"
-                width="12"
-                height="10.5"
-                rx="1.5"
-                stroke="currentColor"
-                strokeWidth="1.3"
-              />
-              <line
-                x1="7"
-                y1="1.5"
-                x2="7"
-                y2="12"
-                stroke="currentColor"
-                strokeWidth="1.3"
-              />
-            </svg>
-          </button>
-          <button
-            className="tab-action"
-            style={styles.actionBtn}
-            onClick={() => handleAction("split-v")}
-            title="Split down"
-          >
-            <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
-              <rect
-                x="1"
-                y="1.5"
-                width="12"
-                height="10.5"
-                rx="1.5"
-                stroke="currentColor"
-                strokeWidth="1.3"
-              />
-              <line
-                x1="1"
-                y1="6.75"
-                x2="13"
-                y2="6.75"
-                stroke="currentColor"
-                strokeWidth="1.3"
-              />
-            </svg>
-          </button>
+          {!bottomCollapsed && (
+            <>
+              <button
+                className="tab-action"
+                style={styles.actionBtn}
+                onClick={() => handleAction("terminal")}
+                title="New terminal tab"
+              >
+                <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+                  <path
+                    d="M7 1v12M1 7h12"
+                    stroke="currentColor"
+                    strokeWidth="1.5"
+                    strokeLinecap="round"
+                  />
+                </svg>
+              </button>
+              <button
+                className="tab-action"
+                style={styles.actionBtn}
+                onClick={() => handleAction("split-h")}
+                title="Split right"
+              >
+                <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+                  <rect
+                    x="1"
+                    y="1.5"
+                    width="12"
+                    height="10.5"
+                    rx="1.5"
+                    stroke="currentColor"
+                    strokeWidth="1.3"
+                  />
+                  <line
+                    x1="7"
+                    y1="1.5"
+                    x2="7"
+                    y2="12"
+                    stroke="currentColor"
+                    strokeWidth="1.3"
+                  />
+                </svg>
+              </button>
+              <button
+                className="tab-action"
+                style={styles.actionBtn}
+                onClick={() => handleAction("split-v")}
+                title="Split down"
+              >
+                <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+                  <rect
+                    x="1"
+                    y="1.5"
+                    width="12"
+                    height="10.5"
+                    rx="1.5"
+                    stroke="currentColor"
+                    strokeWidth="1.3"
+                  />
+                  <line
+                    x1="1"
+                    y1="6.75"
+                    x2="13"
+                    y2="6.75"
+                    stroke="currentColor"
+                    strokeWidth="1.3"
+                  />
+                </svg>
+              </button>
+            </>
+          )}
+          {isBottomPanel && (
+            <button
+              className="tab-action"
+              style={styles.actionBtn}
+              onClick={() => toggleBottomPanel(workspaceId)}
+              title={bottomCollapsed ? "Expand panel (Ctrl+`)" : "Collapse panel (Ctrl+`)"}
+            >
+              <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+                <path
+                  d={bottomCollapsed
+                    ? "M3 9l4-4 4 4"
+                    : "M3 5l4 4 4-4"
+                  }
+                  stroke="currentColor"
+                  strokeWidth="1.5"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </svg>
+            </button>
+          )}
         </div>
       </div>
 
@@ -1036,6 +1129,7 @@ function PaneContent({
                   command={pane.command}
                   initialInput={pane.initialInput}
                   ptyId={pane.ptyId}
+                  workspaceId={workspaceId}
                   onPtySpawned={(id) =>
                     transformPane(workspaceId, groupId, pane.id, { ptyId: id })
                   }
@@ -1053,6 +1147,7 @@ function PaneContent({
                   initialInput={pane.initialInput}
                   ptyId={pane.ptyId}
                   scriptBufferKey={pane.scriptBufferKey}
+                  workspaceId={workspaceId}
                   onPtySpawned={(id) =>
                     transformPane(workspaceId, groupId, pane.id, { ptyId: id })
                   }

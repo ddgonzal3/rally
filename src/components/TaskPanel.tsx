@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { Terminal as XTerminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
+import { listen } from "@tauri-apps/api/event";
 import { useWorkspaceStore, scriptOutputBuffers } from "../stores/workspaceStore";
 import { api } from "../lib/tauri";
 import type { ScriptEntry, ScriptRun } from "../lib/types";
@@ -53,6 +54,17 @@ export function TaskPanel({ rootPath, workspaceId }: TaskPanelProps) {
   const refreshEntries = useCallback(() => {
     api.listScripts(rootPath).then(setEntries).catch(() => setEntries([]));
   }, [rootPath]);
+
+  // Re-fetch script list when files change in the repo (e.g. RALLY.json or scripts/ modified)
+  useEffect(() => {
+    let unlisten: (() => void) | null = null;
+    listen<{ rootPath: string }>("git-changes-updated", (event) => {
+      if (event.payload?.rootPath === rootPath) {
+        refreshEntries();
+      }
+    }).then((fn) => { unlisten = fn; });
+    return () => { unlisten?.(); };
+  }, [rootPath, refreshEntries]);
 
   if (scripts.length === 0) return null;
 

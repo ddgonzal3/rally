@@ -6,7 +6,8 @@ import { api } from "../lib/tauri";
 import { TerminalLinkProvider, type OnFileOpen } from "../lib/terminalLinkProvider";
 import { useWorkspaceStore, shipOutputBuffer, scriptOutputBuffers, appendPtyBuffer, clearPtyBuffer, ptyOutputBuffers } from "../stores/workspaceStore";
 import { showContextMenu } from "../lib/contextMenu";
-import type { ThemeName } from "../lib/types";
+import type { ThemeName, DetectedPort } from "../lib/types";
+import { detectPorts } from "../lib/portDetection";
 import "@xterm/xterm/css/xterm.css";
 
 // ANSI colors per theme — these have no CSS variable equivalents.
@@ -71,6 +72,8 @@ interface TerminalProps {
   lockCols?: boolean;
   /** Key into scriptOutputBuffers to replay buffered output on attach */
   scriptBufferKey?: string;
+  /** Workspace ID for port detection — detected localhost URLs are registered here */
+  workspaceId?: string;
   /** Called after a new PTY is spawned — lets the parent persist the ptyId
    *  so it survives React remounts (layout restructuring). When provided,
    *  the Terminal will NOT kill the PTY on unmount — the store manages it. */
@@ -149,7 +152,7 @@ function safeFit(term: XTerminal, fitAddon: FitAddon): boolean {
   return true;
 }
 
-export function Terminal({ cwd, command, initialInput, ptyId: existingPtyId, lockCols: lockColsProp, scriptBufferKey, onPtySpawned, onCwdChanged, onTitleChange, onFileOpen }: TerminalProps) {
+export function Terminal({ cwd, command, initialInput, ptyId: existingPtyId, lockCols: lockColsProp, scriptBufferKey, workspaceId, onPtySpawned, onCwdChanged, onTitleChange, onFileOpen }: TerminalProps) {
   const theme = useWorkspaceStore((s) => s.theme);
   const themeRef = useRef<ThemeName>(theme);
   themeRef.current = theme;
@@ -242,6 +245,8 @@ export function Terminal({ cwd, command, initialInput, ptyId: existingPtyId, loc
         if (!name && lastPublishedTitleRef.current) {
           emptyCount++;
           if (emptyCount < 2) return;
+          // Foreground process gone (back at shell prompt) — clear detected ports
+          useWorkspaceStore.getState().removePortsByPty(ptyId);
         }
         emptyCount = 0;
         emitTitle(name);
@@ -561,6 +566,21 @@ export function Terminal({ cwd, command, initialInput, ptyId: existingPtyId, loc
                 useWorkspaceStore.getState().refreshPrStatusForPath(cwd);
               }, 1500);
             }
+            // Detect localhost ports in terminal output
+            if (workspaceId && (text.includes("localhost") || text.includes("127.0.0.1") || /\bport\s+\d/i.test(text))) {
+              const ports = detectPorts(text);
+              const ptyId = ptyIdRef.current;
+              if (ports.length > 0 && ptyId) {
+                const store = useWorkspaceStore.getState();
+                for (const p of ports) {
+                  store.addDetectedPort(workspaceId, {
+                    ...p,
+                    source: { type: "pane", ptyId },
+                    detectedAt: Date.now(),
+                  });
+                }
+              }
+            }
           }
           term.write(chunk);
         }
@@ -573,8 +593,9 @@ export function Terminal({ cwd, command, initialInput, ptyId: existingPtyId, loc
           term.writeln(
             `\r\n\x1b[90m[Process exited${code != null ? ` with code ${code}` : ""}]\x1b[0m`
           );
-          // Clean up PTY output buffer on exit
+          // Clean up PTY output buffer and detected ports on exit
           clearPtyBuffer(ptyId);
+          useWorkspaceStore.getState().removePortsByPty(ptyId);
         }
       );
 

@@ -1,6 +1,52 @@
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { addToast } from "../components/ToastContainer";
 
+/**
+ * Open a URL or local file in a standalone browser-like window.
+ * Works for localhost URLs, remote URLs, and local file paths.
+ */
+export function openInNewWindow(url: string, title?: string) {
+  const label = `rally-view-${crypto.randomUUID()}`;
+
+  // For localhost/http URLs, load directly. For file paths, use a file:// URL.
+  let loadUrl = url;
+  if (url.startsWith("/") || url.startsWith("~")) {
+    loadUrl = `file://${url}`;
+  } else if (!url.startsWith("http")) {
+    loadUrl = `http://${url}`;
+  }
+
+  const displayTitle = title || url;
+
+  const w = new WebviewWindow(label, {
+    url: loadUrl,
+    title: displayTitle,
+    width: 1200,
+    height: 800,
+    resizable: true,
+    fullscreen: false,
+    decorations: true,
+  });
+
+  w.once("tauri://error", (e) => {
+    const payload = e?.payload;
+    const detail =
+      typeof payload === "string"
+        ? payload
+        : payload && typeof payload === "object" && "message" in payload
+          ? String((payload as { message?: unknown }).message ?? "")
+          : "";
+    console.error("Failed to create window:", e);
+    addToast({
+      type: "warning",
+      title: "Window open failed",
+      message: detail
+        ? `Could not open window. ${detail}`
+        : "Could not open window.",
+    });
+  });
+}
+
 export function openWindow(opts?: {
   workspaceId?: string;
   blankWorkspace?: boolean;

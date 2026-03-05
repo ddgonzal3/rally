@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { useWorkspaceStore, scriptOutputBuffers } from "../stores/workspaceStore";
 import { api } from "../lib/tauri";
-import type { ScriptEntry } from "../lib/types";
+import type { ScriptEntry, DetectedPort } from "../lib/types";
 
 // --- Watcher detection & status (copied from TaskPanel.tsx) ---
 
@@ -141,6 +141,15 @@ export function BuildStatusBar() {
   const toggleStatusBarCollapsed = useWorkspaceStore((s) => s.toggleStatusBarCollapsed);
   const openStatusBarDrawer = useWorkspaceStore((s) => s.openStatusBarDrawer);
   const statusBarDrawer = useWorkspaceStore((s) => s.statusBarDrawer);
+  const detectedPortsJson = useWorkspaceStore((s) => {
+    if (!activeWorkspaceId) return "[]";
+    return JSON.stringify(s.detectedPorts[activeWorkspaceId] ?? []);
+  });
+  const detectedPorts: DetectedPort[] = useMemo(
+    () => JSON.parse(detectedPortsJson),
+    [detectedPortsJson],
+  );
+  const openWebView = useWorkspaceStore((s) => s.openWebView);
 
   // Script entries cache per repo path
   const [scriptCache, setScriptCache] = useState<Record<string, ScriptEntry[]>>({});
@@ -423,6 +432,31 @@ export function BuildStatusBar() {
                         {buildStatus === "building" ? <StopIcon /> : <PlayIcon />}
                       </button>
                     )}
+
+                    {/* Detected localhost port pills */}
+                    {activeWorkspaceId && detectedPorts
+                      .filter((p) => p.source.type === "script" && p.source.repoPath === repoPath && p.source.scriptName === scriptName)
+                      .map((p) => (
+                        <span
+                          key={p.port}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            openWebView(activeWorkspaceId!, p.url);
+                          }}
+                          title={`Open ${p.url}`}
+                          style={{
+                            fontSize: 10,
+                            fontWeight: 600,
+                            color: "var(--status-green)",
+                            cursor: "pointer",
+                            marginLeft: 2,
+                            flexShrink: 0,
+                            lineHeight: 1,
+                          }}
+                        >
+                          :{p.port}
+                        </span>
+                      ))}
                   </div>
                 </React.Fragment>
               );

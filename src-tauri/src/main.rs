@@ -240,6 +240,11 @@ fn main() {
 
                     let label = window.label().to_string();
 
+                    // Standalone view windows (file/URL viewers) close without confirmation
+                    if label.starts_with("rally-view-") {
+                        return;
+                    }
+
                     if let Ok(mut bypass) = bypass_close_confirm.lock() {
                         if bypass.remove(&label) {
                             return;
