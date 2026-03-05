@@ -2400,7 +2400,7 @@ function LayoutPresetsDropdown({ workspaceId }: { workspaceId: string }) {
         onClick={handleToggle}
         title="Saved layouts"
       >
-        <svg width="12" height="12" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+        <svg width="12" height="12" viewBox="0 0 17 16" fill="none" aria-hidden="true">
           <rect x="1" y="1" width="6.5" height="14" rx="1" stroke="currentColor" strokeWidth="1.3" />
           <rect x="9" y="1" width="6" height="6" rx="1" stroke="currentColor" strokeWidth="1.3" />
           <rect x="9" y="9" width="6" height="6" rx="1" stroke="currentColor" strokeWidth="1.3" />
@@ -2952,7 +2952,7 @@ const styles: Record<string, React.CSSProperties> = {
     display: "flex",
     alignItems: "center",
     justifyContent: "space-between",
-    padding: "0 8px 0 12px",
+    padding: "0 4px 0 12px",
     minHeight: 29,
     maxHeight: 29,
     borderBottom: "1px solid var(--border)",
