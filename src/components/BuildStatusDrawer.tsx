@@ -182,7 +182,7 @@ export function BuildStatusDrawer() {
   return (
     <div ref={panelRef} style={{
       position: "absolute" as const,
-      bottom: 28,
+      bottom: 0,
       left: 0,
       right: 0,
       height,

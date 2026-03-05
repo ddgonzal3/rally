@@ -70,15 +70,31 @@ function ScriptDot({
   const scriptEntry = scriptCache[repoPath]?.find((e) => e.name === scriptName);
   const command = scriptEntry?.command ?? scriptName;
 
+  // "built at" timestamp — shown when watcher finishes a build, dismissed after 30s
+  const [builtAt, setBuiltAt] = useState<string | null>(null);
+
   // Flash detection: building -> success triggers a 3s flash
   useEffect(() => {
     if (buildStatus === "success" && prevStatusRef.current === "building") {
       setFlashing(true);
       const timer = setTimeout(() => setFlashing(false), 3000);
+      // Show "built at" timestamp for watchers
+      if (isWatcher) {
+        const now = new Date();
+        const timeStr = now.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }).toLowerCase();
+        setBuiltAt(timeStr);
+      }
       return () => clearTimeout(timer);
     }
     prevStatusRef.current = buildStatus;
-  }, [buildStatus]);
+  }, [buildStatus, isWatcher]);
+
+  // Auto-dismiss "built at" after 30s
+  useEffect(() => {
+    if (!builtAt) return;
+    const timer = setTimeout(() => setBuiltAt(null), 30000);
+    return () => clearTimeout(timer);
+  }, [builtAt]);
 
   // Auto-open drawer on error when Claude is idle
   const autoOpenedRef = useRef(false);
@@ -189,6 +205,20 @@ function ScriptDot({
       >
         {displayName}
       </span>
+
+      {/* "built at" timestamp — auto-dismisses after 30s */}
+      {builtAt && (
+        <span
+          style={{
+            fontSize: 11,
+            color: "var(--text-dim)",
+            whiteSpace: "nowrap",
+            lineHeight: 1,
+          }}
+        >
+          built at {builtAt}
+        </span>
+      )}
 
       {/* Detected localhost port pills */}
       {activeWorkspaceId && detectedPorts
