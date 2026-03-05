@@ -59,16 +59,20 @@ export function BuildStatusDrawer() {
     dragging.current = true;
     const startY = e.clientY;
     const startHeight = height;
+    let rafId = 0;
 
     const onMouseMove = (ev: MouseEvent) => {
       if (!dragging.current) return;
-      const delta = startY - ev.clientY;
-      const newHeight = Math.max(100, Math.min(500, startHeight + delta));
-      setHeight(newHeight);
+      cancelAnimationFrame(rafId);
+      rafId = requestAnimationFrame(() => {
+        const delta = startY - ev.clientY;
+        setHeight(Math.max(100, Math.min(500, startHeight + delta)));
+      });
     };
 
     const onMouseUp = () => {
       dragging.current = false;
+      cancelAnimationFrame(rafId);
       document.removeEventListener("mousemove", onMouseMove);
       document.removeEventListener("mouseup", onMouseUp);
       document.body.style.cursor = "";
@@ -182,19 +186,23 @@ export function BuildStatusDrawer() {
     }
   }, [theme]);
 
-  // ResizeObserver for xterm fit
+  // ResizeObserver for xterm fit — debounced to avoid lag during drag
   useEffect(() => {
     if (!termRef.current || !fitAddonRef.current) return;
     const fitAddon = fitAddonRef.current;
     const term = xtermRef.current;
+    let timer: ReturnType<typeof setTimeout>;
     const ro = new ResizeObserver(() => {
-      try {
-        fitAddon.fit();
-        term?.scrollToBottom();
-      } catch {}
+      clearTimeout(timer);
+      timer = setTimeout(() => {
+        try {
+          fitAddon.fit();
+          term?.scrollToBottom();
+        } catch {}
+      }, 60);
     });
     ro.observe(termRef.current);
-    return () => ro.disconnect();
+    return () => { ro.disconnect(); clearTimeout(timer); };
   }, [drawer]);
 
   if (!drawer) return null;
