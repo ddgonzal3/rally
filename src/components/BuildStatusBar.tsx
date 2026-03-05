@@ -13,7 +13,7 @@ import {
 import { useDetectedPorts } from "../lib/useDetectedPorts";
 import { PortPill } from "./PortPill";
 import { isClaudeActiveInWorkspace } from "../stores/workspaceStore";
-import { showContextMenu } from "../lib/contextMenu";
+import { showContextMenu, type MenuAction } from "../lib/contextMenu";
 
 
 // --- ScriptDot sub-component ---
@@ -162,7 +162,7 @@ function ScriptDot({
 
   const handleContextMenu = (e: React.MouseEvent) => {
     e.preventDefault();
-    const items = [
+    const items: MenuAction[] = [
       {
         label: "Restart",
         action: restart,

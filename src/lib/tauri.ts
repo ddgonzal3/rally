@@ -171,6 +171,9 @@ export const api = {
   saveClipboardImage: (data: string, mimeType: string) =>
     invoke<string>("save_clipboard_image", { data, mimeType }),
 
+  getHomeDir: () =>
+    invoke<string>("get_home_dir"),
+
   readFileContent: (path: string) =>
     invoke<string>("read_file_content", { path }),
 

@@ -28,6 +28,11 @@ fn home_dir() -> PathBuf {
 }
 
 #[tauri::command]
+pub fn get_home_dir() -> String {
+    home_dir().to_string_lossy().to_string()
+}
+
+#[tauri::command]
 pub fn read_file_content(path: String) -> Result<String, String> {
     fs::read_to_string(&path).map_err(|e| format!("Failed to read {}: {}", path, e))
 }

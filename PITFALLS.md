@@ -66,6 +66,14 @@ When toggling between product mode and dev mode, **never use a conditional terna
 
 Any new xterm.js `Terminal` instance must read its theme from CSS variables (`--terminal-bg`, `--terminal-fg`, `--terminal-cursor`, `--terminal-selection`) via `getComputedStyle`, and use the per-theme ANSI color map from `Terminal.tsx`. Never hardcode hex values like `background: "#1e1e1e"` — this breaks light/dimmed themes. Also subscribe to theme changes (via the Zustand `theme` selector) and update `term.options.theme` when the theme changes, matching the pattern in `Terminal.tsx`. The terminal container's CSS `background` should also use `var(--terminal-bg)` so the flash before xterm initializes matches the theme.
 
+## xterm.js Selection Drift: Periodic Dimension Refresh Required
+
+Over extended sessions, xterm.js's text selection can become misaligned from the mouse cursor. The root cause is that xterm.js caches character dimension measurements (`_charSizeService`, `_widthCache`, `_setDefaultSpacing`) at initialization and only recalculates on font option changes, DPR changes, or actual col/row resizes. Environmental changes (display profile changes, CSS zoom, True Tone adjustments) can cause the cached measurements to drift from actual DOM rendering.
+
+**Fix:** `Terminal.tsx` uses a periodic "resize dance" (`forceTerminalRefresh`) that forces full dimension recalculation by resizing +1 row then back, followed by explicit `handleCharSizeChanged()` and `_renderService.clear()` calls. This runs every 2 minutes and on window focus. A manual "Fix Selection Alignment" option is also in the terminal context menu.
+
+**Note:** CSS `zoom` on a parent container (used for app-level zoom in `App.tsx`) creates a fundamental coordinate mismatch — mouse events are in viewport (zoomed) pixels, but xterm's cell dimensions are in CSS (unzoomed) pixels. The periodic refresh mitigates some effects but can't fully fix zoom ≠ 1.0 misalignment.
+
 ## Context Menu: Always `stopPropagation()` in Nested Handlers
 
 When a component tree has `onContextMenu` handlers at multiple levels (e.g. a tree node AND its container), the child handler **must** call `e.stopPropagation()` in addition to `e.preventDefault()`. Without it, the event bubbles to the parent, which fires a second `showContextMenu()` call. That second call clears the ghost-event suppression flag, so when the user clicks elsewhere to dismiss, macOS dispatches a ghost `contextmenu` event that opens yet another menu. Symptom: dismissing a right-click menu by clicking elsewhere opens a new menu at the click location.
