@@ -1841,6 +1841,38 @@ export const useWorkspaceStore = create<WorkspaceState>()(
 
     // Buffer PTY output in module-level array (not Zustand state)
     const decoder = new TextDecoder("utf-8", { fatal: false });
+    // Throttle watcher status updates to avoid excessive Zustand set() calls
+    // and React re-renders when a noisy watcher fires many chunks per second.
+    let pendingWatcherStatus: typeof undefined | string = undefined;
+    let watcherStatusRafId = 0;
+    const flushWatcherStatus = () => {
+      watcherStatusRafId = 0;
+      if (pendingWatcherStatus === undefined) return;
+      const nextStatus = pendingWatcherStatus as string;
+      pendingWatcherStatus = undefined;
+      const currentRun = get().scriptRuns[key];
+      if (currentRun && currentRun.watcherBuildStatus !== nextStatus) {
+        set((s) => {
+          const run = s.scriptRuns[key];
+          if (!run) return s;
+          return {
+            scriptRuns: {
+              ...s.scriptRuns,
+              [key]: {
+                ...run,
+                status: "running",
+                exitCode: null,
+                watcherBuildStatus: nextStatus as any,
+              },
+            },
+          };
+        });
+      }
+    };
+    // Throttle the custom event dispatch too — high-frequency watchers can
+    // fire hundreds of events per second, each triggering a DOM dispatch.
+    let outputEventRafId = 0;
+
     const unlistenOutput = await listen<{ data: number[] }>(
       `pty-output-${ptyId}`,
       (event) => {
@@ -1849,31 +1881,19 @@ export const useWorkspaceStore = create<WorkspaceState>()(
         const buf = scriptOutputBuffers.get(key);
         if (buf) {
           pushLimitedChunk(buf, chunk, MAX_SCRIPT_BUFFER_CHUNKS);
-          // Notify TaskPanel that watcher output changed (event-driven, not polling)
-          document.dispatchEvent(new CustomEvent("rally:watcher-output", { detail: { key } }));
+          // Notify drawer that watcher output changed — throttled to once per frame
+          if (!outputEventRafId) {
+            outputEventRafId = requestAnimationFrame(() => {
+              outputEventRafId = 0;
+              document.dispatchEvent(new CustomEvent("rally:watcher-output", { detail: { key } }));
+            });
+          }
         }
         if (isWatcher) {
           const nextWatcherBuildStatus = observeWatcherOutput(key, text);
-          const currentRun = get().scriptRuns[key];
-          if (
-            currentRun &&
-            currentRun.watcherBuildStatus !== nextWatcherBuildStatus
-          ) {
-            set((s) => {
-              const run = s.scriptRuns[key];
-              if (!run) return s;
-              return {
-                scriptRuns: {
-                  ...s.scriptRuns,
-                  [key]: {
-                    ...run,
-                    status: "running",
-                    exitCode: null,
-                    watcherBuildStatus: nextWatcherBuildStatus,
-                  },
-                },
-              };
-            });
+          pendingWatcherStatus = nextWatcherBuildStatus;
+          if (!watcherStatusRafId) {
+            watcherStatusRafId = requestAnimationFrame(flushWatcherStatus);
           }
         }
         // Detect localhost ports in script output
