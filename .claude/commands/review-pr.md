@@ -249,6 +249,19 @@ git add -u  # or specific files
 
 If no issues are found in a category, omit that section entirely.
 
+## Step 7: Post Review Comment on PR (Main Agent)
+
+After printing the report, post it as a comment on the PR so it's visible on GitHub:
+
+```bash
+gh pr comment <PR_NUMBER> --body "$(cat <<'EOF'
+<paste the full report from Step 6 here>
+EOF
+)"
+```
+
+Use the PR number determined in Step 1. If no PR exists (e.g., branch has no open PR), skip this step and inform the user that no PR comment was posted because no open PR was found.
+
 ## What "Good Enough" Looks Like
 
 After your pass, the code should:
