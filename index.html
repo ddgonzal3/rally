@@ -202,26 +202,18 @@
         50% { opacity: 1; }
       }
 
-      /* Global pulse: a single animation on :root drives a custom property.
-         All .pulse-sync elements read it, so they're always in phase
-         regardless of when they mount. */
-      @property --pulse-phase {
-        syntax: '<number>';
-        initial-value: 0.5;
-        inherits: true;
-      }
-
-      @keyframes global-pulse {
-        0%, 100% { --pulse-phase: 0.5; }
-        50% { --pulse-phase: 1; }
-      }
-
-      :root {
-        animation: global-pulse 1.5s ease-in-out infinite;
+      /* Global pulse: all .pulse-sync elements share the same keyframe
+         animation with identical duration/timing so they stay in phase.
+         Uses standard opacity animation (GPU-composited) instead of
+         @property on :root which forces style recalc on every frame. */
+      @keyframes pulse-sync-kf {
+        0%, 100% { opacity: 0.5; }
+        50% { opacity: 1; }
       }
 
       .pulse-sync {
-        opacity: var(--pulse-phase) !important;
+        animation: pulse-sync-kf 1.5s ease-in-out infinite !important;
+        will-change: opacity;
       }
 
       @keyframes success-flash {

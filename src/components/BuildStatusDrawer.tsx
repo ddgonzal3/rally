@@ -112,27 +112,50 @@ export function BuildStatusDrawer() {
     // Focus the terminal so it captures keyboard input (Ctrl+C, etc.)
     requestAnimationFrame(() => term.focus());
 
-    // Replay buffered output — raw Uint8Array, never TextDecoder
+    // Replay buffered output in batches to avoid freezing the main thread.
+    // A long-running watcher can accumulate thousands of chunks; writing them
+    // all synchronously blocks the event loop and makes the app unresponsive.
     const buf = scriptOutputBuffers.get(bufferKey);
-    if (buf) {
-      for (const chunk of buf) {
-        term.write(chunk);
+    let writtenChunks = 0;
+    let replayDone = false;
+    const REPLAY_BATCH_SIZE = 50;
+
+    const replayBatch = () => {
+      const currentBuf = scriptOutputBuffers.get(bufferKey);
+      if (!currentBuf) { replayDone = true; return; }
+      const end = Math.min(writtenChunks + REPLAY_BATCH_SIZE, currentBuf.length);
+      for (let i = writtenChunks; i < end; i++) {
+        term.write(currentBuf[i]);
       }
+      writtenChunks = end;
+      if (writtenChunks < currentBuf.length) {
+        requestAnimationFrame(replayBatch);
+      } else {
+        replayDone = true;
+        term.scrollToBottom();
+      }
+    };
+
+    if (buf && buf.length > 0) {
+      requestAnimationFrame(replayBatch);
+    } else {
+      replayDone = true;
     }
 
-    // Track how many chunks we've written for incremental updates
-    let writtenChunks = buf ? buf.length : 0;
-
-    // Listen for new output
+    // Listen for new output — queue writes that arrive during replay
+    const pendingChunks: Uint8Array[] = [];
     const handler = (e: Event) => {
       const detail = (e as CustomEvent).detail;
       if (detail?.key === bufferKey) {
         const currentBuf = scriptOutputBuffers.get(bufferKey);
-        if (currentBuf) {
+        if (!currentBuf) return;
+        if (replayDone) {
           for (let i = writtenChunks; i < currentBuf.length; i++) {
             term.write(currentBuf[i]);
           }
           writtenChunks = currentBuf.length;
+        } else {
+          // Replay still in progress — it will catch up via writtenChunks
         }
       }
     };
