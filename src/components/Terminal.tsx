@@ -42,12 +42,6 @@ interface TerminalProps {
 const OSC7_REGEX = /\x1b\]7;file:\/\/[^/]*(\/[^\x07\x1b]*?)(?:\x07|\x1b\\)/g;
 const OSC7_TAIL_MAX = 4096;
 const CLAUDE_LOST_POLL_THRESHOLD = 3;
-const PTY_RESIZE_DEBOUNCE_MS = 48;
-
-function isSplitDragActive(): boolean {
-  return typeof document !== "undefined" &&
-    document.documentElement.getAttribute("data-rally-split-drag") === "1";
-}
 
 function parseLatestOsc7Cwd(text: string): string | null {
   OSC7_REGEX.lastIndex = 0;
@@ -98,12 +92,24 @@ function safeFit(term: XTerminal, fitAddon: FitAddon): boolean {
   if (cols < MIN_COLS || rows < MIN_ROWS) return false;
   if (cols === term.cols && rows === term.rows) return false;
 
+  // Capture viewport anchor: how far from the bottom the user has scrolled.
+  // After resize, restore this distance so content stays visually pinned.
+  const buf = term.buffer.active;
+  const distFromBottom = buf.baseY - buf.viewportY;
+
   // Resize in-place without clearing the renderer first.
   // FitAddon.fit() calls _renderService.clear() before resize, but that
   // blanks the canvas for one frame — visible as flicker when sibling
   // panes are removed and the ResizeObserver fires transiently.
   // xterm's resize() reflows content correctly without a prior clear.
   term.resize(cols, rows);
+
+  // Restore viewport position relative to the bottom.
+  const newBuf = term.buffer.active;
+  const targetViewport = Math.max(0, newBuf.baseY - distFromBottom);
+  if (newBuf.viewportY !== targetViewport) {
+    term.scrollToLine(targetViewport);
+  }
   return true;
 }
 
@@ -310,25 +316,13 @@ export function Terminal({ cwd, command, initialInput, ptyId: existingPtyId, loc
       cursorStyle: "bar",
       cursorWidth: 2,
       allowProposedApi: true,
+      fastScrollSensitivity: 5,
     });
 
     const fitAddon = new FitAddon();
     term.loadAddon(fitAddon);
 
     term.open(containerRef.current);
-
-    // Bottom-anchor the xterm element inside the container.
-    // During split-drag resizes, the container height changes but xterm keeps
-    // its current dimensions — anchoring to bottom keeps the prompt/cursor
-    // visually fixed while the top of the terminal reveals/hides content.
-    // This matches VS Code's approach (terminal.css: .xterm { position: absolute; bottom: 0 }).
-    const xtermEl = containerRef.current.querySelector('.xterm') as HTMLElement | null;
-    if (xtermEl) {
-      xtermEl.style.position = 'absolute';
-      xtermEl.style.bottom = '0';
-      xtermEl.style.left = '0';
-      xtermEl.style.right = '0';
-    }
 
     // Patch mouse-to-cell coordinate conversion to account for CSS zoom.
     // The body container uses CSS `zoom` for app-level scaling (App.tsx).
@@ -578,41 +572,7 @@ export function Terminal({ cwd, command, initialInput, ptyId: existingPtyId, loc
     const LOCKED_COLS = 80; // Must match ship PTY spawn size
     let ptySpawned = false;
     let rafId: number | null = null;
-    let resizeTimer: ReturnType<typeof setTimeout> | null = null;
-    let pendingResize: { cols: number; rows: number } | null = null;
-    let lastSentResize: { cols: number; rows: number } | null = null;
     const outputDecoder = new TextDecoder();
-
-    function flushPtyResize() {
-      resizeTimer = null;
-      const next = pendingResize;
-      pendingResize = null;
-      if (!ptyIdRef.current || !next) return;
-      if (
-        lastSentResize &&
-        lastSentResize.cols === next.cols &&
-        lastSentResize.rows === next.rows
-      ) {
-        return;
-      }
-      lastSentResize = next;
-      api.resizePty(ptyIdRef.current, next.cols, next.rows);
-    }
-
-    function schedulePtyResize(cols: number, rows: number, immediate = false) {
-      if (cols < MIN_COLS || rows < MIN_ROWS) return;
-      pendingResize = { cols, rows };
-      if (isSplitDragActive() && !immediate) return;
-      if (immediate) {
-        if (resizeTimer) {
-          clearTimeout(resizeTimer);
-        }
-        flushPtyResize();
-        return;
-      }
-      if (resizeTimer) return;
-      resizeTimer = setTimeout(flushPtyResize, PTY_RESIZE_DEBOUNCE_MS);
-    }
 
     /** Fit rows to container, keeping cols locked at LOCKED_COLS. */
     function fitRowsOnly(): boolean {
@@ -620,9 +580,14 @@ export function Terminal({ cwd, command, initialInput, ptyId: existingPtyId, loc
       if (!dims || !Number.isFinite(dims.rows)) return false;
       const rows = Math.max(MIN_ROWS, Math.round(dims.rows));
       if (rows === term.rows && term.cols === LOCKED_COLS) return false;
-      const core = (term as any)._core;
-      if (core?._renderService) core._renderService.clear();
+      const buf = term.buffer.active;
+      const distFromBottom = buf.baseY - buf.viewportY;
       term.resize(LOCKED_COLS, rows);
+      const newBuf = term.buffer.active;
+      const targetViewport = Math.max(0, newBuf.baseY - distFromBottom);
+      if (newBuf.viewportY !== targetViewport) {
+        term.scrollToLine(targetViewport);
+      }
       return true;
     }
 
@@ -700,7 +665,7 @@ export function Terminal({ cwd, command, initialInput, ptyId: existingPtyId, loc
         if (ptyIdRef.current && cols >= MIN_COLS && rows >= MIN_ROWS) {
           // When cols are locked (ship dock), always send the locked cols
           // to avoid SIGWINCH-triggered col-change garble
-          schedulePtyResize(lockCols ? LOCKED_COLS : cols, rows);
+          api.resizePty(ptyIdRef.current, lockCols ? LOCKED_COLS : cols, rows);
         }
       });
     }
@@ -756,12 +721,12 @@ export function Terminal({ cwd, command, initialInput, ptyId: existingPtyId, loc
         if (lockCols) {
           fitRowsOnly();
           if (term.rows >= MIN_ROWS) {
-            schedulePtyResize(LOCKED_COLS, term.rows, true);
+            api.resizePty(existingPtyId, LOCKED_COLS, term.rows);
           }
         } else {
           safeFit(term, fitAddon);
           if (term.cols >= MIN_COLS && term.rows >= MIN_ROWS) {
-            schedulePtyResize(term.cols, term.rows, true);
+            api.resizePty(existingPtyId, term.cols, term.rows);
           }
         }
       } catch (e) {
@@ -816,7 +781,7 @@ export function Terminal({ cwd, command, initialInput, ptyId: existingPtyId, loc
             currentRows >= MIN_ROWS &&
             (currentCols !== spawnCols || currentRows !== spawnRows)
           ) {
-            schedulePtyResize(currentCols, currentRows, true);
+            api.resizePty(ptyId, currentCols, currentRows);
           }
         }
       } catch (e) {
@@ -831,49 +796,20 @@ export function Terminal({ cwd, command, initialInput, ptyId: existingPtyId, loc
       if (el.clientWidth < 100 || el.clientHeight < 50) return;
 
       if (rafId !== null) cancelAnimationFrame(rafId);
-      if (!ptySpawned) {
-        rafId = requestAnimationFrame(() => {
-          rafId = null;
-          initFn();
-        });
-        return;
-      }
       rafId = requestAnimationFrame(() => {
         rafId = null;
-        if (isSplitDragActive()) {
-          // During split drag, only resize rows (cheap) — keep cols fixed
-          // to avoid expensive horizontal reflow that causes jitter.
-          // Bottom-anchoring CSS keeps content visually pinned.
-          // Full cols+rows fit happens on drag end.
-          const dims = fitAddon.proposeDimensions();
-          if (dims && Number.isFinite(dims.rows)) {
-            const rows = Math.max(MIN_ROWS, Math.round(dims.rows));
-            if (rows !== term.rows) {
-              term.resize(term.cols, rows);
-            }
-          }
-          return;
+        if (!ptySpawned) {
+          initFn();
+        } else {
+          lockCols ? fitRowsOnly() : safeFit(term, fitAddon);
         }
-        lockCols ? fitRowsOnly() : safeFit(term, fitAddon);
       });
     });
     observer.observe(el);
 
-    const handleSplitResizeEnd = () => {
-      if (rafId !== null) cancelAnimationFrame(rafId);
-      rafId = requestAnimationFrame(() => {
-        rafId = null;
-        lockCols ? fitRowsOnly() : safeFit(term, fitAddon);
-        flushPtyResize();
-      });
-    };
-    document.addEventListener("rally:split-resize-end", handleSplitResizeEnd);
-
     return () => {
       if (rafId !== null) cancelAnimationFrame(rafId);
-      if (resizeTimer) clearTimeout(resizeTimer);
       observer.disconnect();
-      document.removeEventListener("rally:split-resize-end", handleSplitResizeEnd);
       linkDisposable.dispose();
       titleDisposable.dispose();
       window.removeEventListener("keydown", handleKeyDown);
@@ -914,18 +850,18 @@ export function Terminal({ cwd, command, initialInput, ptyId: existingPtyId, loc
 
 const styles: Record<string, React.CSSProperties> = {
   container: {
-    position: "relative" as const,
+    display: "flex",
+    flexDirection: "column",
     flex: 1,
     minWidth: 0,
     minHeight: 0,
     overflow: "hidden",
   },
   terminal: {
-    position: "absolute" as const,
-    top: 0,
-    bottom: 0,
-    left: 0,
-    right: 0,
+    flex: 1,
     overflow: "hidden",
+    display: "flex",
+    flexDirection: "column",
+    justifyContent: "flex-end",
   },
 };
