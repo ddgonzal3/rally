@@ -101,11 +101,6 @@ function safeFit(term: XTerminal, fitAddon: FitAddon): boolean {
   return true;
 }
 
-// How often to force-refresh terminal dimensions (ms).
-// Recalculates character sizes and coordinate mapping to prevent
-// mouse selection from drifting over extended sessions.
-const DIMENSION_REFRESH_INTERVAL = 120_000; // 2 minutes
-
 export function Terminal({ cwd, command, initialInput, ptyId: existingPtyId, lockCols: lockColsProp, scriptBufferKey, workspaceId, onPtySpawned, onCwdChanged, onTitleChange, onFileOpen }: TerminalProps) {
   const theme = useWorkspaceStore((s) => s.theme);
   const themeRef = useRef<ThemeName>(theme);
@@ -123,7 +118,6 @@ export function Terminal({ cwd, command, initialInput, ptyId: existingPtyId, loc
   const lastPublishedTitleRef = useRef<string | null>(null);
   const claudeLikelyActiveRef = useRef(false);
   const claudeLostPollCountRef = useRef(0);
-  const suppressPtyResizeRef = useRef(false);
   onTitleChangeRef.current = onTitleChange;
 
   const emitTitle = useCallback((title: string) => {
@@ -131,43 +125,6 @@ export function Terminal({ cwd, command, initialInput, ptyId: existingPtyId, loc
     if (normalized === lastPublishedTitleRef.current) return;
     lastPublishedTitleRef.current = normalized;
     onTitleChangeRef.current?.(normalized);
-  }, []);
-
-  /**
-   * Force xterm.js to fully recalculate character dimensions and coordinate
-   * mapping. Uses a resize dance (+1 row then back) to trigger the internal
-   * _afterResize → _charSizeService.measure → handleResize → _updateDimensions
-   * → _widthCache.clear → _setDefaultSpacing chain. PTY notifications are
-   * suppressed during the dance to avoid sending transient SIGWINCH.
-   */
-  const forceTerminalRefresh = useCallback(() => {
-    const term = termRef.current;
-    if (!term) return;
-    const { cols, rows } = term;
-    if (cols < MIN_COLS || rows < MIN_ROWS) return;
-
-    // 1. Resize dance: +1 row then back to force full dimension recalculation.
-    //    Each resize triggers _afterResize → charSizeService.measure,
-    //    handleResize → _updateDimensions, and row element refresh.
-    suppressPtyResizeRef.current = true;
-    try {
-      term.resize(cols, rows + 1);
-      term.resize(cols, rows);
-    } finally {
-      suppressPtyResizeRef.current = false;
-    }
-
-    // 2. Force renderer to clear its DOM character width cache and
-    //    recalculate letter-spacing. handleResize alone doesn't do this —
-    //    only handleCharSizeChanged clears _widthCache + _setDefaultSpacing.
-    const core = (term as any)._core;
-    const renderer = core?._renderService?._renderer?.value;
-    if (renderer?.handleCharSizeChanged) {
-      renderer.handleCharSizeChanged();
-    }
-
-    // 3. Clear renderer row cache so mouse-to-cell coordinate mapping is fresh
-    if (core?._renderService) core._renderService.clear();
   }, []);
 
   useEffect(() => {
@@ -180,27 +137,6 @@ export function Terminal({ cwd, command, initialInput, ptyId: existingPtyId, loc
       termRef.current.options.theme = getXtermTheme(theme);
     }
   }, [theme]);
-
-  // Periodically refresh terminal dimensions and re-measure on window focus.
-  // Over extended sessions, xterm.js's cached character size measurements can
-  // drift from actual DOM rendering (display profile changes, CSS zoom, etc.),
-  // causing text selection to misalign from the mouse cursor.
-  useEffect(() => {
-    const interval = setInterval(forceTerminalRefresh, DIMENSION_REFRESH_INTERVAL);
-    let focusTimer: ReturnType<typeof setTimeout> | null = null;
-    const handleFocus = () => {
-      // Delay slightly to let the display settle after focus change
-      // (e.g. switching from an external display)
-      if (focusTimer) clearTimeout(focusTimer);
-      focusTimer = setTimeout(forceTerminalRefresh, 200);
-    };
-    window.addEventListener("focus", handleFocus);
-    return () => {
-      clearInterval(interval);
-      if (focusTimer) clearTimeout(focusTimer);
-      window.removeEventListener("focus", handleFocus);
-    };
-  }, [forceTerminalRefresh]);
 
   // Poll foreground process to detect Claude Code (or other named processes).
   // Keep Claude "sticky" until several polls agree it is gone, so transient
@@ -322,85 +258,6 @@ export function Terminal({ cwd, command, initialInput, ptyId: existingPtyId, loc
           action: () => term?.clear(),
         },
         {
-          label: "Dump Terminal Diagnostics",
-          action: async () => {
-            if (!term) return;
-            const core = (term as any)._core;
-            const renderer = core?._renderService?._renderer?.value;
-            const charSize = core?._charSizeService;
-            const dims = core?._renderService?.dimensions;
-            const screenEl = term.element?.querySelector(".xterm-screen");
-            const screenRect = screenEl?.getBoundingClientRect();
-            const containerRect = containerRef.current?.getBoundingClientRect();
-
-            // Measure a character in the DOM for comparison
-            let domCharWidth: number | null = null;
-            let domCharHeight: number | null = null;
-            const measureEl = term.element?.querySelector(".xterm-char-measure-element") as HTMLElement | null;
-            if (measureEl) {
-              measureEl.textContent = "W".repeat(32);
-              domCharWidth = measureEl.offsetWidth / 32;
-              domCharHeight = measureEl.offsetHeight;
-            }
-
-            // Read widthCache default spacing
-            let defaultSpacing: string | null = null;
-            const rowContainer = term.element?.querySelector(".xterm-rows") as HTMLElement | null;
-            if (rowContainer) {
-              defaultSpacing = rowContainer.style.letterSpacing;
-            }
-
-            const zoom = parseFloat(localStorage.getItem("rally:zoomLevel") || "1");
-
-            const diag = {
-              timestamp: new Date().toISOString(),
-              ptyId: ptyIdRef.current,
-              terminal: { cols: term.cols, rows: term.rows },
-              charSizeService: charSize ? {
-                width: charSize.width,
-                height: charSize.height,
-                hasValidSize: charSize.hasValidSize,
-                measureStrategy: charSize._measureStrategy?.constructor?.name ?? "unknown",
-              } : null,
-              renderDimensions: dims ? {
-                css: { cell: dims.css.cell, canvas: dims.css.canvas },
-                device: { cell: dims.device.cell, char: dims.device.char, canvas: dims.device.canvas },
-              } : null,
-              domMeasurement: { charWidth: domCharWidth, charHeight: domCharHeight },
-              defaultLetterSpacing: defaultSpacing,
-              screenElementRect: screenRect ? { x: screenRect.x, y: screenRect.y, width: screenRect.width, height: screenRect.height } : null,
-              containerRect: containerRect ? { x: containerRect.x, y: containerRect.y, width: containerRect.width, height: containerRect.height } : null,
-              expectedCanvasWidth: dims ? dims.css.cell.width * term.cols : null,
-              actualScreenWidth: screenRect?.width ?? null,
-              widthMismatch: dims && screenRect ? Math.abs(dims.css.cell.width * term.cols - screenRect.width) : null,
-              environment: {
-                devicePixelRatio: window.devicePixelRatio,
-                cssZoom: zoom,
-                screenWidth: window.screen.width,
-                screenHeight: window.screen.height,
-              },
-              widthCacheEntries: (() => {
-                const wc = renderer?._widthCache;
-                if (!wc) return null;
-                // Re-measure W fresh from DOM to compare against cached
-                const fresh = wc._measure?.("W", 0);
-                const cached = wc._flat?.[87]; // 'W' = charCode 87
-                return { cachedW: cached, freshW: fresh };
-              })(),
-            };
-
-            const filename = `terminal-diag-${new Date().toISOString().replace(/[:.]/g, "-")}.json`;
-            const homedir = await api.getHomeDir();
-            const path = `${homedir}/Downloads/${filename}`;
-            try {
-              await api.writeFileContent(path, JSON.stringify(diag, null, 2));
-              term.writeln(`\r\n\x1b[90m[Diagnostics written to ~/Downloads/${filename}]\x1b[0m`);
-            } catch (err) {
-              term.writeln(`\r\n\x1b[31m[Failed to write diagnostics: ${err}]\x1b[0m`);
-            }
-          },
-        },
-        {
           label: "Kill Terminal",
           action: () => {
             if (ptyId) api.killPty(ptyId);
@@ -447,6 +304,82 @@ export function Terminal({ cwd, command, initialInput, ptyId: existingPtyId, loc
     term.loadAddon(fitAddon);
 
     term.open(containerRef.current);
+
+    // Patch mouse-to-cell coordinate conversion to account for CSS zoom.
+    // The body container uses CSS `zoom` for app-level scaling (App.tsx).
+    // xterm.js computes selection coordinates as:
+    //   col = (event.clientX - rect.left) / css.cell.width
+    // But clientX and rect are in viewport pixels (zoomed), while
+    // css.cell.width is in CSS pixels (unzoomed, from OffscreenCanvas).
+    // When zoom ≠ 1.0, this gives wrong columns. Fix: divide the
+    // viewport-space offset by zoom before the cell-width division.
+    const mouseService = (term as any)._core?._mouseService;
+    if (mouseService) {
+      const origGetCoords = mouseService.getCoords.bind(mouseService);
+      const origGetMouseReportCoords = mouseService.getMouseReportCoords.bind(mouseService);
+      const getZoom = () => parseFloat(localStorage.getItem("rally:zoomLevel") || "1");
+
+      mouseService.getCoords = function(
+        event: { clientX: number; clientY: number },
+        element: HTMLElement,
+        colCount: number,
+        rowCount: number,
+        isSelection?: boolean,
+      ): [number, number] | undefined {
+        const z = getZoom();
+        if (z === 1) return origGetCoords(event, element, colCount, rowCount, isSelection);
+
+        const renderDims = (term as any)._core._renderService?.dimensions;
+        const cellW = renderDims?.css?.cell?.width;
+        const cellH = renderDims?.css?.cell?.height;
+        if (!cellW || !cellH) return undefined;
+
+        const rect = element.getBoundingClientRect();
+        const style = window.getComputedStyle(element);
+        const padL = parseInt(style.getPropertyValue("padding-left"));
+        const padT = parseInt(style.getPropertyValue("padding-top"));
+
+        // Convert viewport offset → CSS offset by dividing by zoom
+        const relX = (event.clientX - rect.left - padL) / z;
+        const relY = (event.clientY - rect.top - padT) / z;
+
+        let col = Math.ceil((relX + (isSelection ? cellW / 2 : 0)) / cellW);
+        let row = Math.ceil(relY / cellH);
+        col = Math.min(Math.max(col, 1), colCount + (isSelection ? 1 : 0));
+        row = Math.min(Math.max(row, 1), rowCount);
+        return [col, row];
+      };
+
+      mouseService.getMouseReportCoords = function(
+        event: MouseEvent,
+        element: HTMLElement,
+      ): { col: number; row: number; x: number; y: number } | undefined {
+        const z = getZoom();
+        if (z === 1) return origGetMouseReportCoords(event, element);
+
+        const renderDims = (term as any)._core._renderService?.dimensions;
+        const cellW = renderDims?.css?.cell?.width;
+        const cellH = renderDims?.css?.cell?.height;
+        if (!cellW || !cellH) return undefined;
+
+        const rect = element.getBoundingClientRect();
+        const style = window.getComputedStyle(element);
+        const padL = parseInt(style.getPropertyValue("padding-left"));
+        const padT = parseInt(style.getPropertyValue("padding-top"));
+
+        let x = (event.clientX - rect.left - padL) / z;
+        let y = (event.clientY - rect.top - padT) / z;
+        x = Math.min(Math.max(x, 0), renderDims.css.canvas.width - 1);
+        y = Math.min(Math.max(y, 0), renderDims.css.canvas.height - 1);
+
+        return {
+          col: Math.floor(x / cellW),
+          row: Math.floor(y / cellH),
+          x: Math.floor(x),
+          y: Math.floor(y),
+        };
+      };
+    }
 
     // Custom link provider: Cmd+click for file paths and URLs
     const noop: OnFileOpen = () => {};
@@ -701,7 +634,6 @@ export function Terminal({ cwd, command, initialInput, ptyId: existingPtyId, loc
       });
 
       term.onResize(({ cols, rows }) => {
-        if (suppressPtyResizeRef.current) return;
         if (ptyIdRef.current && cols >= MIN_COLS && rows >= MIN_ROWS) {
           // When cols are locked (ship dock), always send the locked cols
           // to avoid SIGWINCH-triggered col-change garble
