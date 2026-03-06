@@ -979,6 +979,11 @@ const bcStyles: Record<string, React.CSSProperties> = {
 // Unmounted panes detach their xterm, PTY listeners, and ResizeObservers.
 const MAX_CACHED_PANES = 3;
 
+function shouldCacheInactivePane(pane: Pane | undefined): boolean {
+  if (!pane) return false;
+  return pane.type === "terminal" || pane.type === "claude" || pane.type === "webview";
+}
+
 function PaneContent({
   panes,
   activePaneId,
@@ -1056,9 +1061,9 @@ function PaneContent({
   }, [groupId]);
 
   // Determine which panes to mount: active + LRU cache, filtered to existing panes
-  const existingPaneIds = new Set(panes.map((p) => p.id));
+  const panesById = new Map(panes.map((p) => [p.id, p]));
   const mountedPaneIds = new Set(
-    recentPaneIds.current.filter((id) => existingPaneIds.has(id)),
+    recentPaneIds.current.filter((id) => shouldCacheInactivePane(panesById.get(id))),
   );
   // Always include active pane
   mountedPaneIds.add(activePaneId);
