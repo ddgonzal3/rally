@@ -86,13 +86,23 @@ export function ProductChatPanel({ rootPath, workspaceId }: ProductChatPanelProp
     const container = (e.target as HTMLElement).closest('[data-shell-container]') as HTMLElement;
     if (!container) return;
     const containerHeight = container.getBoundingClientRect().height;
+    let rafId = 0;
+    let nextHeight = startHeight;
 
     const onMove = (ev: MouseEvent) => {
       const dy = startY - ev.clientY;
-      const newHeight = startHeight + (dy / containerHeight) * 100;
-      setShellHeight(Math.min(SHELL_MAX, Math.max(15, newHeight)));
+      nextHeight = Math.min(
+        SHELL_MAX,
+        Math.max(15, startHeight + (dy / containerHeight) * 100),
+      );
+      cancelAnimationFrame(rafId);
+      rafId = requestAnimationFrame(() => {
+        setShellHeight(nextHeight);
+      });
     };
     const cleanup = () => {
+      cancelAnimationFrame(rafId);
+      setShellHeight(nextHeight);
       document.removeEventListener("mousemove", onMove);
       document.removeEventListener("mouseup", cleanup);
       resizeCleanupRef.current = null;

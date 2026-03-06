@@ -58,7 +58,20 @@ export const scriptOutputBuffers = new Map<string, Uint8Array[]>();
  * Limited to MAX_PTY_BUFFER_CHUNKS to prevent unbounded memory growth.
  */
 const MAX_PTY_BUFFER_CHUNKS = 2000;
+const MAX_SHIP_BUFFER_CHUNKS = 2000;
+const MAX_SCRIPT_BUFFER_CHUNKS = 2000;
 export const ptyOutputBuffers = new Map<string, Uint8Array[]>();
+
+function pushLimitedChunk(
+  buffer: Uint8Array[],
+  chunk: Uint8Array,
+  maxChunks: number,
+) {
+  buffer.push(chunk);
+  if (buffer.length > maxChunks) {
+    buffer.splice(0, buffer.length - maxChunks);
+  }
+}
 
 export function appendPtyBuffer(ptyId: string, chunk: Uint8Array) {
   let buf = ptyOutputBuffers.get(ptyId);
@@ -66,11 +79,7 @@ export function appendPtyBuffer(ptyId: string, chunk: Uint8Array) {
     buf = [];
     ptyOutputBuffers.set(ptyId, buf);
   }
-  buf.push(chunk);
-  // Trim to prevent unbounded growth
-  if (buf.length > MAX_PTY_BUFFER_CHUNKS) {
-    buf.splice(0, buf.length - MAX_PTY_BUFFER_CHUNKS);
-  }
+  pushLimitedChunk(buf, chunk, MAX_PTY_BUFFER_CHUNKS);
 }
 
 export function clearPtyBuffer(ptyId: string) {
@@ -113,7 +122,8 @@ type PersistedWorkspaceState = {
 };
 
 const workspacePersistStorage = (() => {
-  let lastRefs: {
+  const PERSIST_DEBOUNCE_MS = 150;
+  type PersistRefs = {
     activeWorkspaceId: string | null;
     activePathIndex: PersistedWorkspaceState["activePathIndex"];
     layouts: PersistedWorkspaceState["layouts"];
@@ -126,7 +136,70 @@ const workspacePersistStorage = (() => {
     unifiedGitPanelTab: string;
     workspaceModes: PersistedWorkspaceState["workspaceModes"];
     version: number;
+  };
+  let lastRefs: PersistRefs | null = null;
+  let pending: {
+    name: string;
+    value: { state: PersistedWorkspaceState; version?: number };
+    refs: PersistRefs;
   } | null = null;
+  let persistTimer: ReturnType<typeof setTimeout> | null = null;
+
+  function buildRefs(
+    state: PersistedWorkspaceState,
+    version: number,
+  ): PersistRefs {
+    return {
+      activeWorkspaceId: state.activeWorkspaceId,
+      activePathIndex: state.activePathIndex,
+      layouts: state.layouts,
+      activeGroupIds: state.activeGroupIds,
+      layoutPresets: state.layoutPresets,
+      activePresetId: state.activePresetId,
+      gitDiffActiveTab: state.gitDiffActiveTab,
+      unifiedGitPanelOpen: state.unifiedGitPanelOpen,
+      unifiedGitPanelPath: state.unifiedGitPanelPath,
+      unifiedGitPanelTab: state.unifiedGitPanelTab,
+      workspaceModes: state.workspaceModes,
+      version,
+    };
+  }
+
+  function sameRefs(
+    a: PersistRefs | null,
+    b: PersistRefs,
+  ) {
+    return !!a &&
+      a.version === b.version &&
+      a.activeWorkspaceId === b.activeWorkspaceId &&
+      a.activePathIndex === b.activePathIndex &&
+      a.layouts === b.layouts &&
+      a.activeGroupIds === b.activeGroupIds &&
+      a.layoutPresets === b.layoutPresets &&
+      a.activePresetId === b.activePresetId &&
+      a.gitDiffActiveTab === b.gitDiffActiveTab &&
+      a.unifiedGitPanelOpen === b.unifiedGitPanelOpen &&
+      a.unifiedGitPanelPath === b.unifiedGitPanelPath &&
+      a.unifiedGitPanelTab === b.unifiedGitPanelTab &&
+      a.workspaceModes === b.workspaceModes;
+  }
+
+  function flushPending() {
+    if (persistTimer) {
+      clearTimeout(persistTimer);
+      persistTimer = null;
+    }
+    if (!pending) return;
+    const next = pending;
+    pending = null;
+    localStorage.setItem(next.name, JSON.stringify(next.value));
+    lastRefs = next.refs;
+  }
+
+  if (typeof window !== "undefined") {
+    window.addEventListener("pagehide", flushPending);
+    window.addEventListener("beforeunload", flushPending);
+  }
 
   return {
     getItem: (name: string) => {
@@ -146,41 +219,20 @@ const workspacePersistStorage = (() => {
     ) => {
       const { state, version } = value;
       const resolvedVersion = version ?? 0;
-      if (
-        lastRefs &&
-        lastRefs.version === resolvedVersion &&
-        lastRefs.activeWorkspaceId === state.activeWorkspaceId &&
-        lastRefs.activePathIndex === state.activePathIndex &&
-        lastRefs.layouts === state.layouts &&
-        lastRefs.activeGroupIds === state.activeGroupIds &&
-        lastRefs.layoutPresets === state.layoutPresets &&
-        lastRefs.activePresetId === state.activePresetId &&
-        lastRefs.gitDiffActiveTab === state.gitDiffActiveTab &&
-        lastRefs.unifiedGitPanelOpen === state.unifiedGitPanelOpen &&
-        lastRefs.unifiedGitPanelPath === state.unifiedGitPanelPath &&
-        lastRefs.unifiedGitPanelTab === state.unifiedGitPanelTab &&
-        lastRefs.workspaceModes === state.workspaceModes
-      ) {
+      const refs = buildRefs(state, resolvedVersion);
+      if (sameRefs(lastRefs, refs) || sameRefs(pending?.refs ?? null, refs)) {
         return;
       }
-
-      localStorage.setItem(name, JSON.stringify(value));
-      lastRefs = {
-        activeWorkspaceId: state.activeWorkspaceId,
-        activePathIndex: state.activePathIndex,
-        layouts: state.layouts,
-        activeGroupIds: state.activeGroupIds,
-        layoutPresets: state.layoutPresets,
-        activePresetId: state.activePresetId,
-        gitDiffActiveTab: state.gitDiffActiveTab,
-        unifiedGitPanelOpen: state.unifiedGitPanelOpen,
-        unifiedGitPanelPath: state.unifiedGitPanelPath,
-        unifiedGitPanelTab: state.unifiedGitPanelTab,
-        workspaceModes: state.workspaceModes,
-        version: resolvedVersion,
-      };
+      pending = { name, value, refs };
+      if (persistTimer) clearTimeout(persistTimer);
+      persistTimer = setTimeout(flushPending, PERSIST_DEBOUNCE_MS);
     },
     removeItem: (name: string) => {
+      if (persistTimer) {
+        clearTimeout(persistTimer);
+        persistTimer = null;
+      }
+      pending = null;
       localStorage.removeItem(name);
       lastRefs = null;
     },
@@ -1545,7 +1597,7 @@ export const useWorkspaceStore = create<WorkspaceState>()(
           // Buffer raw bytes in the module-level array (not Zustand state).
           // This avoids O(n) array copies and React re-renders on every chunk,
           // which was causing lag across all terminals and editors.
-          shipOutputBuffer.push(chunk);
+          pushLimitedChunk(shipOutputBuffer, chunk, MAX_SHIP_BUFFER_CHUNKS);
         }
       );
 
@@ -1781,7 +1833,7 @@ export const useWorkspaceStore = create<WorkspaceState>()(
         const chunk = new Uint8Array(event.payload.data);
         const buf = scriptOutputBuffers.get(key);
         if (buf) {
-          buf.push(chunk);
+          pushLimitedChunk(buf, chunk, MAX_SCRIPT_BUFFER_CHUNKS);
           // Notify TaskPanel that watcher output changed (event-driven, not polling)
           document.dispatchEvent(new CustomEvent("rally:watcher-output", { detail: { key } }));
         }
@@ -2295,6 +2347,9 @@ export const useWorkspaceStore = create<WorkspaceState>()(
     // Snap column dividers to peer positions in adjacent rows
     if (targetSplit.direction === "horizontal") {
       clamped = snapToPeerRatio(layout.root, splitId, clamped);
+    }
+    if (Math.abs(targetSplit.ratio - clamped) < 0.0001) {
+      return;
     }
     let newRoot = replaceNode(layout.root, splitId, {
       ...targetSplit,
@@ -3193,4 +3248,3 @@ function syncPeerVerticalSplits(
 ): LayoutNode {
   return syncPeers(root, changedSplitId, ratio, "vertical");
 }
-

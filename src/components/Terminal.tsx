@@ -39,6 +39,8 @@ interface TerminalProps {
 const OSC7_REGEX = /\x1b\]7;file:\/\/[^/]*(\/[^\x07\x1b]*?)(?:\x07|\x1b\\)/g;
 const OSC7_TAIL_MAX = 4096;
 const CLAUDE_LOST_POLL_THRESHOLD = 3;
+const FIT_DEBOUNCE_MS = 24;
+const PTY_RESIZE_DEBOUNCE_MS = 48;
 
 function parseLatestOsc7Cwd(text: string): string | null {
   OSC7_REGEX.lastIndex = 0;
@@ -549,6 +551,41 @@ export function Terminal({ cwd, command, initialInput, ptyId: existingPtyId, loc
     const LOCKED_COLS = 80; // Must match ship PTY spawn size
     let ptySpawned = false;
     let rafId: number | null = null;
+    let fitTimer: ReturnType<typeof setTimeout> | null = null;
+    let resizeTimer: ReturnType<typeof setTimeout> | null = null;
+    let pendingResize: { cols: number; rows: number } | null = null;
+    let lastSentResize: { cols: number; rows: number } | null = null;
+    const outputDecoder = new TextDecoder();
+
+    function flushPtyResize() {
+      resizeTimer = null;
+      const next = pendingResize;
+      pendingResize = null;
+      if (!ptyIdRef.current || !next) return;
+      if (
+        lastSentResize &&
+        lastSentResize.cols === next.cols &&
+        lastSentResize.rows === next.rows
+      ) {
+        return;
+      }
+      lastSentResize = next;
+      api.resizePty(ptyIdRef.current, next.cols, next.rows);
+    }
+
+    function schedulePtyResize(cols: number, rows: number, immediate = false) {
+      if (cols < MIN_COLS || rows < MIN_ROWS) return;
+      pendingResize = { cols, rows };
+      if (immediate) {
+        if (resizeTimer) {
+          clearTimeout(resizeTimer);
+        }
+        flushPtyResize();
+        return;
+      }
+      if (resizeTimer) return;
+      resizeTimer = setTimeout(flushPtyResize, PTY_RESIZE_DEBOUNCE_MS);
+    }
 
     /** Fit rows to container, keeping cols locked at LOCKED_COLS. */
     function fitRowsOnly(): boolean {
@@ -575,7 +612,7 @@ export function Terminal({ cwd, command, initialInput, ptyId: existingPtyId, loc
           appendPtyBuffer(ptyId, chunk);
           // Parse OSC 7 to track shell CWD
           if (onCwdChanged) {
-            const text = new TextDecoder().decode(chunk);
+            const text = outputDecoder.decode(chunk, { stream: true });
             const combined = osc7TailRef.current + text;
             osc7TailRef.current = combined.slice(-OSC7_TAIL_MAX);
             const newCwd = parseLatestOsc7Cwd(combined);
@@ -637,7 +674,7 @@ export function Terminal({ cwd, command, initialInput, ptyId: existingPtyId, loc
         if (ptyIdRef.current && cols >= MIN_COLS && rows >= MIN_ROWS) {
           // When cols are locked (ship dock), always send the locked cols
           // to avoid SIGWINCH-triggered col-change garble
-          api.resizePty(ptyIdRef.current, lockCols ? LOCKED_COLS : cols, rows);
+          schedulePtyResize(lockCols ? LOCKED_COLS : cols, rows);
         }
       });
     }
@@ -693,12 +730,12 @@ export function Terminal({ cwd, command, initialInput, ptyId: existingPtyId, loc
         if (lockCols) {
           fitRowsOnly();
           if (term.rows >= MIN_ROWS) {
-            api.resizePty(existingPtyId, LOCKED_COLS, term.rows);
+            schedulePtyResize(LOCKED_COLS, term.rows, true);
           }
         } else {
           safeFit(term, fitAddon);
           if (term.cols >= MIN_COLS && term.rows >= MIN_ROWS) {
-            api.resizePty(existingPtyId, term.cols, term.rows);
+            schedulePtyResize(term.cols, term.rows, true);
           }
         }
       } catch (e) {
@@ -753,7 +790,7 @@ export function Terminal({ cwd, command, initialInput, ptyId: existingPtyId, loc
             currentRows >= MIN_ROWS &&
             (currentCols !== spawnCols || currentRows !== spawnRows)
           ) {
-            api.resizePty(ptyId, currentCols, currentRows);
+            schedulePtyResize(currentCols, currentRows, true);
           }
         }
       } catch (e) {
@@ -767,20 +804,26 @@ export function Terminal({ cwd, command, initialInput, ptyId: existingPtyId, loc
     const observer = new ResizeObserver(() => {
       if (el.clientWidth < 100 || el.clientHeight < 50) return;
 
+      if (fitTimer) clearTimeout(fitTimer);
       if (rafId !== null) cancelAnimationFrame(rafId);
-      rafId = requestAnimationFrame(() => {
-        rafId = null;
-        if (!ptySpawned) {
+      if (!ptySpawned) {
+        rafId = requestAnimationFrame(() => {
+          rafId = null;
           initFn();
-        } else {
-          lockCols ? fitRowsOnly() : safeFit(term, fitAddon);
-        }
-      });
+        });
+        return;
+      }
+      fitTimer = setTimeout(() => {
+        fitTimer = null;
+        lockCols ? fitRowsOnly() : safeFit(term, fitAddon);
+      }, FIT_DEBOUNCE_MS);
     });
     observer.observe(el);
 
     return () => {
       if (rafId !== null) cancelAnimationFrame(rafId);
+      if (fitTimer) clearTimeout(fitTimer);
+      if (resizeTimer) clearTimeout(resizeTimer);
       observer.disconnect();
       linkDisposable.dispose();
       titleDisposable.dispose();

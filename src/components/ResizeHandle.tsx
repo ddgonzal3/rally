@@ -11,6 +11,7 @@ export function ResizeHandle({ direction, ratio, onResize }: ResizeHandleProps) 
   const handleRef = useRef<HTMLDivElement>(null);
   const lineRef = useRef<HTMLDivElement>(null);
   const dragging = useRef(false);
+  const rafRef = useRef<number | null>(null);
 
   const isRowHandle = direction === "vertical";
 
@@ -40,16 +41,41 @@ export function ResizeHandle({ direction, ratio, onResize }: ResizeHandleProps) 
       const total = isVertical ? rect.height : rect.width;
       const handleSize = isVertical ? handleRect.height : handleRect.width;
       const usable = Math.max(1, total - handleSize);
+      const firstPane = handle.previousElementSibling as HTMLElement | null;
+      const secondPane = handle.nextElementSibling as HTMLElement | null;
+      let latestRatio = startRatio;
+
+      const applyPreview = (nextRatio: number) => {
+        if (!firstPane || !secondPane) return;
+        firstPane.style.flex = `${nextRatio} 1 0%`;
+        secondPane.style.flex = `${1 - nextRatio} 1 0%`;
+      };
+
+      const scheduleCommit = (nextRatio: number) => {
+        latestRatio = nextRatio;
+        if (rafRef.current !== null) return;
+        rafRef.current = requestAnimationFrame(() => {
+          rafRef.current = null;
+          onResize(latestRatio);
+        });
+      };
 
       const onMouseMove = (ev: MouseEvent) => {
         if (!dragging.current) return;
         const pointer = isVertical ? ev.clientY : ev.clientX;
         const delta = pointer - startPointer;
-        onResize(startRatio + delta / usable);
+        const nextRatio = Math.max(0.15, Math.min(0.85, startRatio + delta / usable));
+        applyPreview(nextRatio);
+        scheduleCommit(nextRatio);
       };
 
       const onMouseUp = () => {
         dragging.current = false;
+        if (rafRef.current !== null) {
+          cancelAnimationFrame(rafRef.current);
+          rafRef.current = null;
+        }
+        onResize(latestRatio);
         document.documentElement.style.removeProperty("--split-transition");
         document.removeEventListener("mousemove", onMouseMove);
         document.removeEventListener("mouseup", onMouseUp);
