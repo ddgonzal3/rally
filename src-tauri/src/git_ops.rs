@@ -152,9 +152,19 @@ pub async fn sync_branch(cwd: &str, main_branch: &str) -> Result<String, String>
             .map_err(|e| format!("Failed to reset {}: {}", branch, e))?;
     }
 
+    // Snapshot HEAD before rebase to detect if anything changed
+    let head_before = git_cmd(cwd, &["rev-parse", "HEAD"]).await.unwrap_or_default();
+
     // Rebase onto main
     match git_cmd(cwd, &["rebase", main_branch]).await {
-        Ok(_) => Ok(format!("{} synced with {}", branch, main_branch)),
+        Ok(_) => {
+            let head_after = git_cmd(cwd, &["rev-parse", "HEAD"]).await.unwrap_or_default();
+            // Only push if the rebase actually changed commits
+            if head_before != head_after {
+                let _ = git_cmd(cwd, &["push", "--force-with-lease"]).await;
+            }
+            Ok(format!("{} synced with {}", branch, main_branch))
+        }
         Err(e) => {
             let _ = git_cmd(cwd, &["rebase", "--abort"]).await;
             Err(e)

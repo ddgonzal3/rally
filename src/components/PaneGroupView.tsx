@@ -197,8 +197,9 @@ export function PaneGroupView({
   // Focus and select text when entering rename mode
   useEffect(() => {
     if (renamingPaneId && renameInputRef.current) {
-      renameInputRef.current.focus();
-      renameInputRef.current.select();
+      const input = renameInputRef.current;
+      input.focus();
+      input.select();
     }
   }, [renamingPaneId]);
   const executeAction = useCallback((actionType: PendingAction["type"], cwd: string) => {
@@ -584,21 +585,9 @@ export function PaneGroupView({
                     onBlur={() => commitRename(pane.id)}
                     onMouseDown={(e) => e.stopPropagation()}
                     onClick={(e) => e.stopPropagation()}
-                    size={Math.max(renameValue.length, 4)}
                     style={{
-                      background: "var(--bg-hover)",
-                      border: "1px solid var(--border-subtle)",
-                      borderRadius: 3,
-                      color: "var(--text-primary)",
-                      outline: "none",
-                      padding: "0 4px",
-                      margin: "-1px 0",
-                      fontSize: "inherit",
-                      fontFamily: "inherit",
-                      fontWeight: "inherit",
-                      width: "auto",
-                      minWidth: 40,
-                      maxWidth: 160,
+                      ...styles.renameInput,
+                      width: `${Math.min(Math.max(renameValue.length + 1, 4), 18)}ch`,
                     }}
                     autoFocus
                   />
@@ -1166,6 +1155,21 @@ function PaneContent({
                     })
                   }
                   onFileOpen={handleFileOpen}
+                  onKill={() => {
+                    const store = useWorkspaceStore.getState();
+                    if (pane.scriptBufferKey) {
+                      // Script/watcher terminal — stop the script (kills PTY,
+                      // closes panes, resets status) and clear the run entry.
+                      const sep = pane.scriptBufferKey.indexOf(":");
+                      const rootPath = pane.scriptBufferKey.slice(0, sep);
+                      const scriptName = pane.scriptBufferKey.slice(sep + 1);
+                      store.stopScript(rootPath, scriptName);
+                      store.clearScript(rootPath, scriptName);
+                    } else {
+                      // Regular terminal — close the pane (which kills the PTY).
+                      store.closePane(workspaceId, groupId, pane.id);
+                    }
+                  }}
                 />
               )}
             </div>
@@ -1234,6 +1238,28 @@ const styles: Record<string, React.CSSProperties> = {
     overflow: "hidden",
     textOverflow: "ellipsis",
     fontWeight: 600,
+  },
+  renameInput: {
+    appearance: "none",
+    WebkitAppearance: "none",
+    background: "var(--bg-hover)",
+    border: "1px solid var(--border-subtle)",
+    borderRadius: 4,
+    color: "var(--text-primary)",
+    caretColor: "var(--text-primary)",
+    outline: "none",
+    padding: "0 6px",
+    margin: "0 3px 0 0",
+    fontSize: "inherit",
+    fontFamily: "inherit",
+    fontWeight: 600,
+    lineHeight: "20px",
+    height: 20,
+    minWidth: 48,
+    maxWidth: 168,
+    minHeight: 0,
+    boxSizing: "border-box",
+    flex: "0 1 auto",
   },
   tabActions: {
     display: "flex",

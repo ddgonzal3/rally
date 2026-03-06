@@ -10,6 +10,9 @@ export function PortPill({ port: p, onClick }: PortPillProps) {
   return (
     <span
       key={p.port}
+      onMouseDown={(e) => {
+        e.stopPropagation();
+      }}
       onClick={(e) => {
         e.stopPropagation();
         onClick(p.url);

@@ -37,6 +37,12 @@ import {
 } from "../lib/types";
 import { api } from "../lib/tauri";
 import { getExpandedPaths, setExpandedPaths } from "../components/FileExplorer";
+import {
+  clearWatcherStatusCache,
+  inferScriptCompletionStatus,
+  isWatcherScript,
+  observeWatcherOutput,
+} from "../lib/watcherStatus";
 
 /**
  * Ship PTY output buffer — stored outside Zustand state to avoid O(n) array
@@ -1803,6 +1809,7 @@ export const useWorkspaceStore = create<WorkspaceState>()(
 
   runScript: async (rootPath, scriptName, command) => {
     const key = `${rootPath}:${scriptName}`;
+    const isWatcher = isWatcherScript(scriptName);
 
     // Kill existing run if any
     const existing = get().scriptRuns[key];
@@ -1816,12 +1823,19 @@ export const useWorkspaceStore = create<WorkspaceState>()(
 
     // Reset module-level output buffer (outside Zustand to avoid
     // O(n) array copies and React re-renders on every PTY chunk)
+    clearWatcherStatusCache(key);
     scriptOutputBuffers.set(key, []);
 
     set((s) => ({
       scriptRuns: {
         ...s.scriptRuns,
-        [key]: { scriptName, ptyId, status: "running", exitCode: null },
+        [key]: {
+          scriptName,
+          ptyId,
+          status: "running",
+          exitCode: null,
+          watcherBuildStatus: isWatcher ? "building" : undefined,
+        },
       },
     }));
 
@@ -1831,14 +1845,42 @@ export const useWorkspaceStore = create<WorkspaceState>()(
       `pty-output-${ptyId}`,
       (event) => {
         const chunk = new Uint8Array(event.payload.data);
+        const text = decoder.decode(chunk, { stream: true });
         const buf = scriptOutputBuffers.get(key);
         if (buf) {
           pushLimitedChunk(buf, chunk, MAX_SCRIPT_BUFFER_CHUNKS);
           // Notify TaskPanel that watcher output changed (event-driven, not polling)
           document.dispatchEvent(new CustomEvent("rally:watcher-output", { detail: { key } }));
         }
+        if (isWatcher) {
+          const nextWatcherBuildStatus = observeWatcherOutput(key, text);
+          const currentRun = get().scriptRuns[key];
+          if (
+            currentRun &&
+            (
+              currentRun.status !== "running" ||
+              currentRun.exitCode !== null ||
+              currentRun.watcherBuildStatus !== nextWatcherBuildStatus
+            )
+          ) {
+            set((s) => {
+              const run = s.scriptRuns[key];
+              if (!run) return s;
+              return {
+                scriptRuns: {
+                  ...s.scriptRuns,
+                  [key]: {
+                    ...run,
+                    status: "running",
+                    exitCode: null,
+                    watcherBuildStatus: nextWatcherBuildStatus,
+                  },
+                },
+              };
+            });
+          }
+        }
         // Detect localhost ports in script output
-        const text = decoder.decode(chunk, { stream: true });
         if (text.includes("localhost") || text.includes("127.0.0.1") || /\bport\s+\d/i.test(text)) {
           const ports = detectPorts(text);
           if (ports.length > 0) {
@@ -1890,24 +1932,41 @@ export const useWorkspaceStore = create<WorkspaceState>()(
       }
       try {
         const fg = await api.getPtyForegroundProcess(ptyId);
+        const current = get().scriptRuns[key];
         if (fg === null) {
           // No foreground child → command finished, shell is at prompt
-          clearInterval(pollInterval);
-          // Clean up detected ports from this script
-          get().removePortsByScript(rootPath, scriptName);
-          const current = get().scriptRuns[key];
           if (current && current.status === "running") {
+            // Clean up detected ports from this script
+            get().removePortsByScript(rootPath, scriptName);
+            const finalStatus = inferScriptCompletionStatus(key, scriptName);
             set((s) => ({
               scriptRuns: {
                 ...s.scriptRuns,
                 [key]: {
                   ...s.scriptRuns[key],
-                  status: "success",
-                  exitCode: 0,
+                  status: finalStatus,
+                  exitCode: finalStatus === "error" ? 1 : 0,
+                  watcherBuildStatus: isWatcher
+                    ? (s.scriptRuns[key].watcherBuildStatus ?? (finalStatus === "error" ? "error" : "success"))
+                    : s.scriptRuns[key].watcherBuildStatus,
                 },
               },
             }));
           }
+          // Keep polling — user may re-run the command manually in the shell
+        } else if (current && current.status !== "running") {
+          // Foreground child reappeared — user restarted the command manually
+          set((s) => ({
+            scriptRuns: {
+              ...s.scriptRuns,
+              [key]: {
+                ...s.scriptRuns[key],
+                status: "running",
+                exitCode: null,
+                watcherBuildStatus: isWatcher ? "building" : s.scriptRuns[key].watcherBuildStatus,
+              },
+            },
+          }));
         }
       } catch {
         // PTY gone — stop polling
@@ -1924,13 +1983,19 @@ export const useWorkspaceStore = create<WorkspaceState>()(
         const current = get().scriptRuns[key];
         // Only update if still running (poll may have already marked it)
         if (current && current.status === "running") {
+          const finalStatus = isWatcher
+            ? inferScriptCompletionStatus(key, scriptName)
+            : code === 0 ? "success" : "error";
           set((s) => ({
             scriptRuns: {
               ...s.scriptRuns,
               [key]: {
                 ...s.scriptRuns[key],
-                status: code === 0 ? "success" : "error",
+                status: finalStatus,
                 exitCode: code,
+                watcherBuildStatus: isWatcher
+                  ? (s.scriptRuns[key].watcherBuildStatus ?? (finalStatus === "error" ? "error" : "success"))
+                  : s.scriptRuns[key].watcherBuildStatus,
               },
             },
           }));
@@ -1971,6 +2036,7 @@ export const useWorkspaceStore = create<WorkspaceState>()(
 
   clearScript: (rootPath, scriptName) => {
     const key = `${rootPath}:${scriptName}`;
+    clearWatcherStatusCache(key);
     scriptOutputBuffers.delete(key);
     set((s) => {
       const { [key]: _, ...rest } = s.scriptRuns;

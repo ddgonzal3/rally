@@ -234,6 +234,7 @@ export interface ScriptRun {
   ptyId: string;
   status: "running" | "success" | "error" | "stopped";
   exitCode: number | null;
+  watcherBuildStatus?: "idle" | "building" | "success" | "error";
 }
 
 export interface DetectedPort {

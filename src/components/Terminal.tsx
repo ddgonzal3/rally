@@ -33,6 +33,9 @@ interface TerminalProps {
   onTitleChange?: (title: string) => void;
   /** Called when user Cmd+clicks a file path in terminal output */
   onFileOpen?: OnFileOpen;
+  /** Called when user right-clicks → Kill Terminal. Lets the parent do
+   *  proper cleanup (close pane, stop script, etc.) instead of just killing the PTY. */
+  onKill?: () => void;
 }
 
 // OSC 7 format: \x1b]7;file://hostname/path\x07  (or \x1b\\ as terminator)
@@ -109,7 +112,7 @@ function safeFit(term: XTerminal, fitAddon: FitAddon): boolean {
   return true;
 }
 
-export function Terminal({ cwd, command, initialInput, ptyId: existingPtyId, lockCols: lockColsProp, scriptBufferKey, workspaceId, onPtySpawned, onCwdChanged, onTitleChange, onFileOpen }: TerminalProps) {
+export function Terminal({ cwd, command, initialInput, ptyId: existingPtyId, lockCols: lockColsProp, scriptBufferKey, workspaceId, onPtySpawned, onCwdChanged, onTitleChange, onFileOpen, onKill }: TerminalProps) {
   const theme = useWorkspaceStore((s) => s.theme);
   const themeRef = useRef<ThemeName>(theme);
   themeRef.current = theme;
@@ -123,10 +126,12 @@ export function Terminal({ cwd, command, initialInput, ptyId: existingPtyId, loc
   const osc7TailRef = useRef<string>("");
   const prDetectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const onTitleChangeRef = useRef(onTitleChange);
+  const onKillRef = useRef(onKill);
   const lastPublishedTitleRef = useRef<string | null>(null);
   const claudeLikelyActiveRef = useRef(false);
   const claudeLostPollCountRef = useRef(0);
   onTitleChangeRef.current = onTitleChange;
+  onKillRef.current = onKill;
 
   const emitTitle = useCallback((title: string) => {
     const normalized = normalizeTerminalTitle(title);
@@ -268,7 +273,11 @@ export function Terminal({ cwd, command, initialInput, ptyId: existingPtyId, loc
         {
           label: "Kill Terminal",
           action: () => {
-            if (ptyId) api.killPty(ptyId);
+            if (onKillRef.current) {
+              onKillRef.current();
+            } else if (ptyId) {
+              api.killPty(ptyId);
+            }
           },
         },
       ],
@@ -541,6 +550,10 @@ export function Terminal({ cwd, command, initialInput, ptyId: existingPtyId, loc
       }
       // Let Cmd+W bubble to document for close tab shortcut
       if (ev.key === "w") {
+        return false;
+      }
+      // Let Cmd+Shift+[ / ] bubble to document for tab cycling
+      if (ev.shiftKey && (ev.code === "BracketLeft" || ev.code === "BracketRight")) {
         return false;
       }
       return true;
