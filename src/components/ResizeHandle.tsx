@@ -11,7 +11,6 @@ export function ResizeHandle({ direction, ratio, onResize }: ResizeHandleProps) 
   const handleRef = useRef<HTMLDivElement>(null);
   const lineRef = useRef<HTMLDivElement>(null);
   const dragging = useRef(false);
-  const rafRef = useRef<number | null>(null);
 
   const isRowHandle = direction === "vertical";
 
@@ -62,10 +61,6 @@ export function ResizeHandle({ direction, ratio, onResize }: ResizeHandleProps) 
 
       const onMouseUp = () => {
         dragging.current = false;
-        if (rafRef.current !== null) {
-          cancelAnimationFrame(rafRef.current);
-          rafRef.current = null;
-        }
         document.documentElement.removeAttribute("data-rally-split-drag");
         onResize(latestRatio);
         document.dispatchEvent(new CustomEvent("rally:split-resize-end"));

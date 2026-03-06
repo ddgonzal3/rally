@@ -83,7 +83,8 @@ function applyWatcherText(
   text: string,
 ): WatcherBuildStatus {
   let nextStatus = status;
-  for (const line of text.split("\n").map(normalizeLine)) {
+  for (const raw of text.split("\n")) {
+    const line = normalizeLine(raw);
     if (!line) continue;
     if (hasBuilding(line)) {
       nextStatus = "building";
@@ -159,7 +160,8 @@ export function inferScriptCompletionStatus(
   }
 
   const text = decodeChunks(buf);
-  for (const line of text.split("\n").map(normalizeLine)) {
+  for (const raw of text.split("\n")) {
+    const line = normalizeLine(raw);
     if (hasScriptError(line)) return "error";
   }
   return "success";

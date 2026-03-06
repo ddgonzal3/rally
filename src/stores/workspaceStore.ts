@@ -784,8 +784,8 @@ export const useWorkspaceStore = create<WorkspaceState>()(
         const filtered = ports.filter(
           (p) => !(p.source.type === "pane" && p.source.ptyId === ptyId),
         );
+        updated[wsId] = filtered.length !== ports.length ? filtered : ports;
         if (filtered.length !== ports.length) changed = true;
-        updated[wsId] = filtered;
       }
       return changed ? { detectedPorts: updated } : s;
     });
@@ -799,8 +799,8 @@ export const useWorkspaceStore = create<WorkspaceState>()(
           (p) =>
             !(p.source.type === "script" && p.source.repoPath === repoPath && p.source.scriptName === scriptName),
         );
+        updated[wsId] = filtered.length !== ports.length ? filtered : ports;
         if (filtered.length !== ports.length) changed = true;
-        updated[wsId] = filtered;
       }
       return changed ? { detectedPorts: updated } : s;
     });
@@ -1857,11 +1857,7 @@ export const useWorkspaceStore = create<WorkspaceState>()(
           const currentRun = get().scriptRuns[key];
           if (
             currentRun &&
-            (
-              currentRun.status !== "running" ||
-              currentRun.exitCode !== null ||
-              currentRun.watcherBuildStatus !== nextWatcherBuildStatus
-            )
+            currentRun.watcherBuildStatus !== nextWatcherBuildStatus
           ) {
             set((s) => {
               const run = s.scriptRuns[key];
