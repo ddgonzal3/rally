@@ -28,7 +28,7 @@ pub struct PtyInfo {
 }
 
 struct PtySession {
-    writer: Box<dyn Write + Send>,
+    write_tx: Option<mpsc::Sender<Vec<u8>>>,
     pair: portable_pty::PtyPair,
     child: Arc<Mutex<Box<dyn portable_pty::Child + Send + Sync>>>,
     cwd: String,
@@ -252,10 +252,25 @@ impl PtyManager {
             let _ = writer.write_all(input.as_bytes());
         }
 
+        // Spawn a dedicated writer thread so write_pty doesn't hold the
+        // global mutex during blocking I/O (write_all + flush).
+        let (write_tx, write_rx) = mpsc::channel::<Vec<u8>>();
+        thread::spawn(move || {
+            let mut writer = writer;
+            while let Ok(data) = write_rx.recv() {
+                let _ = writer.write_all(&data);
+                // Drain any queued writes before flushing
+                while let Ok(more) = write_rx.try_recv() {
+                    let _ = writer.write_all(&more);
+                }
+                let _ = writer.flush();
+            }
+        });
+
         self.sessions.insert(
             pty_id.clone(),
             PtySession {
-                writer,
+                write_tx: Some(write_tx),
                 pair,
                 child,
                 cwd: effective_cwd,
@@ -266,19 +281,15 @@ impl PtyManager {
         Ok(pty_id)
     }
 
-    pub fn write(&mut self, pty_id: &str, data: &[u8]) -> Result<(), String> {
+    pub fn write(&self, pty_id: &str, data: &[u8]) -> Result<(), String> {
         let session = self
             .sessions
-            .get_mut(pty_id)
+            .get(pty_id)
             .ok_or_else(|| format!("PTY session not found: {}", pty_id))?;
-        session
-            .writer
-            .write_all(data)
-            .map_err(|e| format!("Failed to write to PTY: {}", e))?;
-        session
-            .writer
-            .flush()
-            .map_err(|e| format!("Failed to flush PTY: {}", e))?;
+        if let Some(ref tx) = session.write_tx {
+            tx.send(data.to_vec())
+                .map_err(|e| format!("Failed to send to PTY writer: {}", e))?;
+        }
         Ok(())
     }
 
@@ -374,8 +385,18 @@ pub fn write_pty(
     pty_id: String,
     data: Vec<u8>,
 ) -> Result<(), String> {
-    let mut manager = state.lock().map_err(|e| e.to_string())?;
+    let manager = state.lock().map_err(|e| e.to_string())?;
     manager.write(&pty_id, &data)
+}
+
+#[tauri::command]
+pub fn write_pty_string(
+    state: tauri::State<'_, PtyState>,
+    pty_id: String,
+    data: String,
+) -> Result<(), String> {
+    let manager = state.lock().map_err(|e| e.to_string())?;
+    manager.write(&pty_id, data.as_bytes())
 }
 
 #[tauri::command]

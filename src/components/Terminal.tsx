@@ -599,43 +599,46 @@ export function Terminal({ cwd, command, initialInput, ptyId: existingPtyId, loc
         `pty-output-${ptyId}`,
         (event) => {
           const chunk = new Uint8Array(event.payload.data);
-          // Buffer output for replay on remount (e.g. after split)
+          // Write to xterm FIRST — lowest latency for visible output
+          term.write(chunk);
+          // Buffer for replay (cheap — just array push)
           appendPtyBuffer(ptyId, chunk);
-          // Parse OSC 7 to track shell CWD
+          // Defer heavier parsing to avoid blocking the render
           if (onCwdChanged) {
-            const text = outputDecoder.decode(chunk, { stream: true });
-            const combined = osc7TailRef.current + text;
-            osc7TailRef.current = combined.slice(-OSC7_TAIL_MAX);
-            const newCwd = parseLatestOsc7Cwd(combined);
-            if (newCwd && newCwd !== lastCwdRef.current) {
-              lastCwdRef.current = newCwd;
-              onCwdChanged(newCwd);
-            }
-            // Detect GitHub PR URLs in terminal output (e.g. from `gh pr create` or `gpr`)
-            if (text.includes("github.com") && /\/pull\/\d+/.test(text)) {
-              if (prDetectTimerRef.current) clearTimeout(prDetectTimerRef.current);
-              prDetectTimerRef.current = setTimeout(() => {
-                prDetectTimerRef.current = null;
-                useWorkspaceStore.getState().refreshPrStatusForPath(cwd);
-              }, 1500);
-            }
-            // Detect localhost ports in terminal output
-            if (workspaceId && (text.includes("localhost") || text.includes("127.0.0.1") || /\bport\s+\d/i.test(text))) {
-              const ports = detectPorts(text);
-              const ptyId = ptyIdRef.current;
-              if (ports.length > 0 && ptyId) {
-                const store = useWorkspaceStore.getState();
-                for (const p of ports) {
-                  store.addDetectedPort(workspaceId, {
-                    ...p,
-                    source: { type: "pane", ptyId },
-                    detectedAt: Date.now(),
-                  });
+            queueMicrotask(() => {
+              const text = outputDecoder.decode(chunk, { stream: true });
+              const combined = osc7TailRef.current + text;
+              osc7TailRef.current = combined.slice(-OSC7_TAIL_MAX);
+              const newCwd = parseLatestOsc7Cwd(combined);
+              if (newCwd && newCwd !== lastCwdRef.current) {
+                lastCwdRef.current = newCwd;
+                onCwdChanged(newCwd);
+              }
+              // Detect GitHub PR URLs in terminal output
+              if (text.includes("github.com") && /\/pull\/\d+/.test(text)) {
+                if (prDetectTimerRef.current) clearTimeout(prDetectTimerRef.current);
+                prDetectTimerRef.current = setTimeout(() => {
+                  prDetectTimerRef.current = null;
+                  useWorkspaceStore.getState().refreshPrStatusForPath(cwd);
+                }, 1500);
+              }
+              // Detect localhost ports in terminal output
+              if (workspaceId && (text.includes("localhost") || text.includes("127.0.0.1") || /\bport\s+\d/i.test(text))) {
+                const ports = detectPorts(text);
+                const curPtyId = ptyIdRef.current;
+                if (ports.length > 0 && curPtyId) {
+                  const store = useWorkspaceStore.getState();
+                  for (const p of ports) {
+                    store.addDetectedPort(workspaceId, {
+                      ...p,
+                      source: { type: "pane", ptyId: curPtyId },
+                      detectedAt: Date.now(),
+                    });
+                  }
                 }
               }
-            }
+            });
           }
-          term.write(chunk);
         }
       );
 
@@ -652,20 +655,49 @@ export function Terminal({ cwd, command, initialInput, ptyId: existingPtyId, loc
         }
       );
 
+      // Send keystrokes immediately — no batching/debouncing (matches VSCode).
+      // Latency-critical: each keystroke goes directly to PTY.
       term.onData((data) => {
         if (ptyIdRef.current) {
-          api.writePty(
-            ptyIdRef.current,
-            Array.from(encoder.encode(data))
-          );
+          api.writePtyString(ptyIdRef.current, data);
         }
       });
 
+      // Debounce horizontal (col) resize at 100ms (expensive — causes reflow),
+      // but send vertical (row) resize immediately (cheap). Matches VSCode strategy.
+      let lastSentCols = 0;
+      let lastSentRows = 0;
+      let colResizeTimer: ReturnType<typeof setTimeout> | null = null;
+
       term.onResize(({ cols, rows }) => {
-        if (ptyIdRef.current && cols >= MIN_COLS && rows >= MIN_ROWS) {
-          // When cols are locked (ship dock), always send the locked cols
-          // to avoid SIGWINCH-triggered col-change garble
-          api.resizePty(ptyIdRef.current, lockCols ? LOCKED_COLS : cols, rows);
+        if (!ptyIdRef.current || cols < MIN_COLS || rows < MIN_ROWS) return;
+        // Skip during split drag — PTY gets resized on drag end
+        if (document.documentElement.hasAttribute("data-rally-split-drag")) return;
+        const effectiveCols = lockCols ? LOCKED_COLS : cols;
+
+        // Row change: send immediately
+        if (rows !== lastSentRows) {
+          lastSentRows = rows;
+          lastSentCols = effectiveCols;
+          if (colResizeTimer !== null) {
+            clearTimeout(colResizeTimer);
+            colResizeTimer = null;
+          }
+          api.resizePty(ptyIdRef.current!, effectiveCols, rows);
+          return;
+        }
+
+        // Col-only change: debounce 100ms
+        if (effectiveCols !== lastSentCols) {
+          if (colResizeTimer !== null) clearTimeout(colResizeTimer);
+          colResizeTimer = setTimeout(() => {
+            colResizeTimer = null;
+            if (ptyIdRef.current) {
+              lastSentCols = effectiveCols;
+              lastSentRows = rows;
+              api.resizePty(ptyIdRef.current, effectiveCols, rows);
+            }
+          }, 100);
         }
       });
     }
@@ -792,6 +824,9 @@ export function Terminal({ cwd, command, initialInput, ptyId: existingPtyId, loc
     const initFn = existingPtyId ? attachExistingPty : spawnPty;
 
     const el = containerRef.current;
+
+    // xterm fit runs normally during drag (content must render in real-time).
+    // The expensive PTY resize IPC is already skipped in term.onResize during drag.
     const observer = new ResizeObserver(() => {
       if (el.clientWidth < 100 || el.clientHeight < 50) return;
 
@@ -807,9 +842,20 @@ export function Terminal({ cwd, command, initialInput, ptyId: existingPtyId, loc
     });
     observer.observe(el);
 
+    // After split drag ends, send a final PTY resize (skipped during drag)
+    const onDragEnd = () => {
+      if (el.clientWidth < 100 || el.clientHeight < 50) return;
+      if (ptyIdRef.current) {
+        const cols = lockCols ? LOCKED_COLS : term.cols;
+        api.resizePty(ptyIdRef.current, cols, term.rows);
+      }
+    };
+    document.addEventListener("rally:split-resize-end", onDragEnd);
+
     return () => {
       if (rafId !== null) cancelAnimationFrame(rafId);
       observer.disconnect();
+      document.removeEventListener("rally:split-resize-end", onDragEnd);
       linkDisposable.dispose();
       titleDisposable.dispose();
       window.removeEventListener("keydown", handleKeyDown);

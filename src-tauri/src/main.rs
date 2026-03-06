@@ -200,6 +200,7 @@ fn main() {
         commands::save_clipboard_image,
         pty_manager::spawn_pty,
         pty_manager::write_pty,
+        pty_manager::write_pty_string,
         pty_manager::resize_pty,
         pty_manager::kill_pty,
         pty_manager::list_ptys,

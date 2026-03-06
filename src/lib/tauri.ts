@@ -206,6 +206,9 @@ export const api = {
   writePty: (ptyId: string, data: number[]) =>
     invoke<void>("write_pty", { ptyId, data }),
 
+  writePtyString: (ptyId: string, data: string) =>
+    invoke<void>("write_pty_string", { ptyId, data }),
+
   resizePty: (ptyId: string, cols: number, rows: number) =>
     invoke<void>("resize_pty", { ptyId, cols, rows }),
 
