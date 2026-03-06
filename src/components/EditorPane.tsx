@@ -206,8 +206,11 @@ function TextEditor({ filePath, paneId, workspaceId, groupId }: { filePath: stri
       .catch((e) => setError(String(e)));
   }, [filePath, paneId, markClean]);
 
-  const isMarkdown = getExtension(filePath) === "md";
-  const viewMode = isMarkdown ? (editorViewMode ?? "raw") : "raw";
+  const ext = getExtension(filePath);
+  const isMarkdown = ext === "md";
+  const isHtml = ext === "html" || ext === "htm";
+  const hasPreview = isMarkdown || isHtml;
+  const viewMode = hasPreview ? (editorViewMode ?? "raw") : "raw";
 
   const handleSave = useCallback(async () => {
     try {
@@ -460,7 +463,11 @@ function TextEditor({ filePath, paneId, workspaceId, groupId }: { filePath: stri
   if (viewMode === "preview") {
     return (
       <div style={styles.container}>
-        <MarkdownPreview content={previewContent} />
+        {isHtml ? (
+          <HtmlPreview content={previewContent} />
+        ) : (
+          <MarkdownPreview content={previewContent} />
+        )}
       </div>
     );
   }
@@ -587,6 +594,18 @@ function SplitEditorPreview({
   );
 }
 
+/** HTML preview — renders content in a sandboxed iframe */
+function HtmlPreview({ content }: { content: string }) {
+  return (
+    <iframe
+      srcDoc={content}
+      sandbox="allow-scripts"
+      style={styles.htmlIframe}
+      title="HTML Preview"
+    />
+  );
+}
+
 const styles: Record<string, React.CSSProperties> = {
   container: {
     display: "flex",
@@ -646,6 +665,12 @@ const styles: Record<string, React.CSSProperties> = {
     flexDirection: "column" as const,
     minWidth: 0,
     overflow: "hidden",
+  },
+  htmlIframe: {
+    flex: 1,
+    width: "100%",
+    border: "none",
+    background: "#fff",
   },
 };
 

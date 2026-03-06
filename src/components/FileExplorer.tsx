@@ -550,11 +550,7 @@ const FileTreeNode = React.memo(
               setInlineEdit({ type: "rename", path: entry.path });
             }, 350);
           } else if (activeWorkspaceId) {
-            if (/\.(html?)$/i.test(entry.path)) {
-              useWorkspaceStore.getState().openWebView(activeWorkspaceId, entry.path);
-            } else {
-              onOpenFile(activeWorkspaceId, entry.path, { skipReveal: true });
-            }
+            onOpenFile(activeWorkspaceId, entry.path, { skipReveal: true });
             clearSelectedFilePaths(); // Clear selection — activeFile highlight takes over
           }
         }

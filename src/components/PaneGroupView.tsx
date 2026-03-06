@@ -604,9 +604,10 @@ export function PaneGroupView({
                 <div style={styles.tabActions}>
                   {isActive &&
                     pane.type === "editor" &&
-                    pane.filePath?.toLowerCase().endsWith(".md") &&
+                    /\.(md|html?)$/i.test(pane.filePath ?? "") &&
                     (() => {
                       const mode = pane.editorViewMode ?? "raw";
+                      const isHtmlFile = /\.(html?)$/i.test(pane.filePath ?? "");
                       return (
                         <>
                           <button
@@ -666,43 +667,45 @@ export function PaneGroupView({
                               </svg>
                             )}
                           </button>
-                          <button
-                            data-close
-                            className="tab-close tab-close-active"
-                            style={{
-                              ...styles.mdTabBtn,
-                              ...styles.tabActionActive,
-                              ...(mode === "split"
-                                ? { color: "var(--text-primary)" }
-                                : {}),
-                            }}
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setEditorViewMode(
-                                workspaceId,
-                                groupId,
-                                pane.id,
-                                mode === "split" ? "raw" : "split",
-                              );
-                            }}
-                            title={
-                              mode === "split" ? "Exit split" : "Split view"
-                            }
-                          >
-                            <svg
-                              width="13"
-                              height="13"
-                              viewBox="0 0 16 16"
-                              fill="none"
+                          {!isHtmlFile && (
+                            <button
+                              data-close
+                              className="tab-close tab-close-active"
+                              style={{
+                                ...styles.mdTabBtn,
+                                ...styles.tabActionActive,
+                                ...(mode === "split"
+                                  ? { color: "var(--text-primary)" }
+                                  : {}),
+                              }}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setEditorViewMode(
+                                  workspaceId,
+                                  groupId,
+                                  pane.id,
+                                  mode === "split" ? "raw" : "split",
+                                );
+                              }}
+                              title={
+                                mode === "split" ? "Exit split" : "Split view"
+                              }
                             >
-                              <path
-                                fillRule="evenodd"
-                                clipRule="evenodd"
-                                d="M3 1h11l1 1v5.3a3.21 3.21 0 0 0-1-.3V2H9v10.88L7.88 14H3l-1-1V2l1-1zm0 12h5V2H3v11zm10.379-4.998a2.53 2.53 0 0 0-1.19.348h-.03a2.51 2.51 0 0 0-.799 3.53L9 14.23l.71.71 2.35-2.36c.325.22.7.358 1.09.4a2.47 2.47 0 0 0 1.14-.13 2.51 2.51 0 0 0 1-.63 2.46 2.46 0 0 0 .58-1 2.63 2.63 0 0 0 .07-1.15 2.53 2.53 0 0 0-1.35-1.81 2.53 2.53 0 0 0-1.211-.258zm.24 3.992a1.5 1.5 0 0 1-.979-.244 1.55 1.55 0 0 1-.56-.68 1.49 1.49 0 0 1-.08-.86 1.49 1.49 0 0 1 1.18-1.18 1.49 1.49 0 0 1 .86.08c.276.117.512.311.68.56a1.5 1.5 0 0 1-1.1 2.324z"
-                                fill="currentColor"
-                              />
-                            </svg>
-                          </button>
+                              <svg
+                                width="13"
+                                height="13"
+                                viewBox="0 0 16 16"
+                                fill="none"
+                              >
+                                <path
+                                  fillRule="evenodd"
+                                  clipRule="evenodd"
+                                  d="M3 1h11l1 1v5.3a3.21 3.21 0 0 0-1-.3V2H9v10.88L7.88 14H3l-1-1V2l1-1zm0 12h5V2H3v11zm10.379-4.998a2.53 2.53 0 0 0-1.19.348h-.03a2.51 2.51 0 0 0-.799 3.53L9 14.23l.71.71 2.35-2.36c.325.22.7.358 1.09.4a2.47 2.47 0 0 0 1.14-.13 2.51 2.51 0 0 0 1-.63 2.46 2.46 0 0 0 .58-1 2.63 2.63 0 0 0 .07-1.15 2.53 2.53 0 0 0-1.35-1.81 2.53 2.53 0 0 0-1.211-.258zm.24 3.992a1.5 1.5 0 0 1-.979-.244 1.55 1.55 0 0 1-.56-.68 1.49 1.49 0 0 1-.08-.86 1.49 1.49 0 0 1 1.18-1.18 1.49 1.49 0 0 1 .86.08c.276.117.512.311.68.56a1.5 1.5 0 0 1-1.1 2.324z"
+                                  fill="currentColor"
+                                />
+                              </svg>
+                            </button>
+                          )}
                         </>
                       );
                     })()}
@@ -731,25 +734,30 @@ export function PaneGroupView({
               </div>
             );
           })}
+          {!bottomCollapsed && (
+            <button
+              className="tab-action new-tab-btn"
+              style={styles.newTabBtn}
+              onClick={(e) => {
+                e.stopPropagation();
+                handleAction("terminal");
+              }}
+              title="New terminal tab"
+            >
+              <svg width="12" height="12" viewBox="0 0 14 14" fill="none">
+                <path
+                  d="M7 1v12M1 7h12"
+                  stroke="currentColor"
+                  strokeWidth="1.5"
+                  strokeLinecap="round"
+                />
+              </svg>
+            </button>
+          )}
         </div>
         <div style={styles.actions}>
           {!bottomCollapsed && (
             <>
-              <button
-                className="tab-action"
-                style={styles.actionBtn}
-                onClick={() => handleAction("terminal")}
-                title="New terminal tab"
-              >
-                <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
-                  <path
-                    d="M7 1v12M1 7h12"
-                    stroke="currentColor"
-                    strokeWidth="1.5"
-                    strokeLinecap="round"
-                  />
-                </svg>
-              </button>
               <button
                 className="tab-action"
                 style={styles.actionBtn}
@@ -1308,6 +1316,25 @@ const styles: Record<string, React.CSSProperties> = {
   tabActionActive: {
     color: "var(--text-primary)",
   },
+  newTabBtn: {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    width: 20,
+    minWidth: 20,
+    height: 20,
+    background: "none",
+    border: "none",
+    color: "var(--text-dim)",
+    cursor: "pointer",
+    fontSize: 12,
+    borderRadius: 4,
+    flexShrink: 0,
+    padding: 0,
+    margin: "0 4px",
+    alignSelf: "center",
+    transition: "background 0.1s, color 0.1s",
+  },
   actions: {
     display: "flex",
     alignItems: "center",
@@ -1320,8 +1347,8 @@ const styles: Record<string, React.CSSProperties> = {
     display: "flex",
     alignItems: "center",
     justifyContent: "center",
-    width: 22,
-    height: 26,
+    width: 20,
+    height: 20,
     background: "none",
     border: "none",
     color: "var(--text-dim)",
