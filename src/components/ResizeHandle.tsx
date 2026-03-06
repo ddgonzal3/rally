@@ -51,22 +51,13 @@ export function ResizeHandle({ direction, ratio, onResize }: ResizeHandleProps) 
         secondPane.style.flex = `${1 - nextRatio} 1 0%`;
       };
 
-      const scheduleCommit = (nextRatio: number) => {
-        latestRatio = nextRatio;
-        if (rafRef.current !== null) return;
-        rafRef.current = requestAnimationFrame(() => {
-          rafRef.current = null;
-          onResize(latestRatio);
-        });
-      };
-
       const onMouseMove = (ev: MouseEvent) => {
         if (!dragging.current) return;
         const pointer = isVertical ? ev.clientY : ev.clientX;
         const delta = pointer - startPointer;
         const nextRatio = Math.max(0.15, Math.min(0.85, startRatio + delta / usable));
+        latestRatio = nextRatio;
         applyPreview(nextRatio);
-        scheduleCommit(nextRatio);
       };
 
       const onMouseUp = () => {
@@ -75,7 +66,9 @@ export function ResizeHandle({ direction, ratio, onResize }: ResizeHandleProps) 
           cancelAnimationFrame(rafRef.current);
           rafRef.current = null;
         }
+        document.documentElement.removeAttribute("data-rally-split-drag");
         onResize(latestRatio);
+        document.dispatchEvent(new CustomEvent("rally:split-resize-end"));
         document.documentElement.style.removeProperty("--split-transition");
         document.removeEventListener("mousemove", onMouseMove);
         document.removeEventListener("mouseup", onMouseUp);
@@ -109,6 +102,8 @@ export function ResizeHandle({ direction, ratio, onResize }: ResizeHandleProps) 
 
       // Disable flex transition on ALL split containers during drag
       document.documentElement.style.setProperty("--split-transition", "none");
+      document.documentElement.setAttribute("data-rally-split-drag", "1");
+      document.dispatchEvent(new CustomEvent("rally:split-resize-start"));
 
       document.addEventListener("mousemove", onMouseMove);
       document.addEventListener("mouseup", wrappedMouseUp, { once: true });

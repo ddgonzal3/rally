@@ -39,8 +39,12 @@ interface TerminalProps {
 const OSC7_REGEX = /\x1b\]7;file:\/\/[^/]*(\/[^\x07\x1b]*?)(?:\x07|\x1b\\)/g;
 const OSC7_TAIL_MAX = 4096;
 const CLAUDE_LOST_POLL_THRESHOLD = 3;
-const FIT_DEBOUNCE_MS = 24;
 const PTY_RESIZE_DEBOUNCE_MS = 48;
+
+function isSplitDragActive(): boolean {
+  return typeof document !== "undefined" &&
+    document.documentElement.getAttribute("data-rally-split-drag") === "1";
+}
 
 function parseLatestOsc7Cwd(text: string): string | null {
   OSC7_REGEX.lastIndex = 0;
@@ -97,9 +101,11 @@ function safeFit(term: XTerminal, fitAddon: FitAddon): boolean {
   // panes are removed and the ResizeObserver fires transiently.
   // xterm's resize() reflows content correctly without a prior clear.
   term.resize(cols, rows);
-  // Keep viewport pinned to the bottom during resize so text doesn't
-  // appear to float/jump as the user drags a split handle.
-  term.scrollToBottom();
+  if (!isSplitDragActive()) {
+    // Keep viewport pinned to the bottom during resize so text doesn't
+    // appear to float/jump as the user drags a split handle.
+    term.scrollToBottom();
+  }
   return true;
 }
 
@@ -551,7 +557,6 @@ export function Terminal({ cwd, command, initialInput, ptyId: existingPtyId, loc
     const LOCKED_COLS = 80; // Must match ship PTY spawn size
     let ptySpawned = false;
     let rafId: number | null = null;
-    let fitTimer: ReturnType<typeof setTimeout> | null = null;
     let resizeTimer: ReturnType<typeof setTimeout> | null = null;
     let pendingResize: { cols: number; rows: number } | null = null;
     let lastSentResize: { cols: number; rows: number } | null = null;
@@ -576,6 +581,7 @@ export function Terminal({ cwd, command, initialInput, ptyId: existingPtyId, loc
     function schedulePtyResize(cols: number, rows: number, immediate = false) {
       if (cols < MIN_COLS || rows < MIN_ROWS) return;
       pendingResize = { cols, rows };
+      if (isSplitDragActive() && !immediate) return;
       if (immediate) {
         if (resizeTimer) {
           clearTimeout(resizeTimer);
@@ -596,7 +602,9 @@ export function Terminal({ cwd, command, initialInput, ptyId: existingPtyId, loc
       const core = (term as any)._core;
       if (core?._renderService) core._renderService.clear();
       term.resize(LOCKED_COLS, rows);
-      term.scrollToBottom();
+      if (!isSplitDragActive()) {
+        term.scrollToBottom();
+      }
       return true;
     }
 
@@ -804,7 +812,6 @@ export function Terminal({ cwd, command, initialInput, ptyId: existingPtyId, loc
     const observer = new ResizeObserver(() => {
       if (el.clientWidth < 100 || el.clientHeight < 50) return;
 
-      if (fitTimer) clearTimeout(fitTimer);
       if (rafId !== null) cancelAnimationFrame(rafId);
       if (!ptySpawned) {
         rafId = requestAnimationFrame(() => {
@@ -813,18 +820,28 @@ export function Terminal({ cwd, command, initialInput, ptyId: existingPtyId, loc
         });
         return;
       }
-      fitTimer = setTimeout(() => {
-        fitTimer = null;
+      rafId = requestAnimationFrame(() => {
+        rafId = null;
         lockCols ? fitRowsOnly() : safeFit(term, fitAddon);
-      }, FIT_DEBOUNCE_MS);
+      });
     });
     observer.observe(el);
 
+    const handleSplitResizeEnd = () => {
+      if (rafId !== null) cancelAnimationFrame(rafId);
+      rafId = requestAnimationFrame(() => {
+        rafId = null;
+        lockCols ? fitRowsOnly() : safeFit(term, fitAddon);
+        flushPtyResize();
+      });
+    };
+    document.addEventListener("rally:split-resize-end", handleSplitResizeEnd);
+
     return () => {
       if (rafId !== null) cancelAnimationFrame(rafId);
-      if (fitTimer) clearTimeout(fitTimer);
       if (resizeTimer) clearTimeout(resizeTimer);
       observer.disconnect();
+      document.removeEventListener("rally:split-resize-end", handleSplitResizeEnd);
       linkDisposable.dispose();
       titleDisposable.dispose();
       window.removeEventListener("keydown", handleKeyDown);
@@ -874,9 +891,7 @@ const styles: Record<string, React.CSSProperties> = {
   },
   terminal: {
     flex: 1,
+    minHeight: 0,
     overflow: "hidden",
-    display: "flex",
-    flexDirection: "column",
-    justifyContent: "flex-end",
   },
 };
