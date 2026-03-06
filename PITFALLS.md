@@ -72,6 +72,20 @@ The app uses CSS `zoom` on the body container (`App.tsx`) for UI scaling. xterm.
 
 **Fix:** `Terminal.tsx` overrides `_mouseService.getCoords()` and `getMouseReportCoords()` after `term.open()` to divide viewport-space offsets by the current CSS zoom before the cell-width division. The zoom is read from `localStorage("rally:zoomLevel")` on each mouse event. At zoom = 1.0, the override falls through to the original implementation.
 
+## Terminal Typing Lag: Background Polling Must Defer During Typing
+
+xterm.js captures keyboard events and calls `stopPropagation()`, so `document.addEventListener("keydown", ...)` in the **bubble** phase never fires during terminal typing. If background work (git polling, ship polling, etc.) checks a "last interaction" timestamp to defer, that timestamp never updates during typing — causing background Tauri invokes to fire and congest the IPC channel.
+
+**Fix:** Use `capture: true` on the document keydown listener so it fires before xterm can stop propagation. See `App.tsx` `markInteraction`.
+
+## Terminal Resize During Split Drag: Skip PTY IPC, Not xterm Fit
+
+During split-panel drag, the ResizeObserver fires on every pixel. Two expensive things happen: (1) xterm `safeFit()` recalculates dimensions and re-renders content, and (2) `api.resizePty()` sends a blocking IPC call to Rust.
+
+**Don't skip xterm fitting** — users need to see terminal content reflow in real-time. **Do skip the PTY resize IPC** — it's blocking and causes lag. The `term.onResize` handler checks `data-rally-split-drag` and skips `api.resizePty()`. A `rally:split-resize-end` event listener sends the final resize after drag completes.
+
+Also: PTY writes go through a per-session `mpsc::channel` with a dedicated writer thread, so `write_pty` never holds the global `PtyState` mutex during blocking I/O. This prevents write operations from contending with resize or other PTY operations.
+
 ## Context Menu: Always `stopPropagation()` in Nested Handlers
 
 When a component tree has `onContextMenu` handlers at multiple levels (e.g. a tree node AND its container), the child handler **must** call `e.stopPropagation()` in addition to `e.preventDefault()`. Without it, the event bubbles to the parent, which fires a second `showContextMenu()` call. That second call clears the ghost-event suppression flag, so when the user clicks elsewhere to dismiss, macOS dispatches a ghost `contextmenu` event that opens yet another menu. Symptom: dismissing a right-click menu by clicking elsewhere opens a new menu at the click location.

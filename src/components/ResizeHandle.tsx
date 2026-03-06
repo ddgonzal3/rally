@@ -7,10 +7,66 @@ interface ResizeHandleProps {
   onResize: (ratio: number) => void;
 }
 
+/** Snap threshold in ratio units */
+const SNAP_THRESHOLD = 0.012;
+
+/**
+ * Collect ratios of peer resize handles in adjacent split containers.
+ * For a horizontal (column) resize, find other horizontal handles in sibling rows.
+ * For a vertical (row) resize, find other vertical handles in sibling columns.
+ */
+function collectPeerRatios(handle: HTMLElement, direction: SplitDirection): number[] {
+  const parent = handle.parentElement;
+  if (!parent) return [];
+
+  const grandparent = parent.parentElement;
+  if (!grandparent) return [];
+
+  const isVertical = direction === "vertical";
+  const ratios: number[] = [];
+
+  const greatGrandparent = grandparent.parentElement;
+  if (!greatGrandparent) return ratios;
+
+  const siblingContainers = greatGrandparent.children;
+  for (let i = 0; i < siblingContainers.length; i++) {
+    const sibling = siblingContainers[i] as HTMLElement;
+    if (sibling === grandparent) continue;
+
+    const handles = sibling.querySelectorAll<HTMLElement>('[style*="cursor"]');
+    for (const peerHandle of handles) {
+      const cursor = peerHandle.style.cursor;
+      const isPeerSameDirection =
+        (isVertical && cursor === "row-resize") ||
+        (!isVertical && cursor === "col-resize");
+      if (!isPeerSameDirection) continue;
+
+      const peerParent = peerHandle.parentElement;
+      if (!peerParent) continue;
+      const peerParentRect = peerParent.getBoundingClientRect();
+      const peerHandleRect = peerHandle.getBoundingClientRect();
+      const peerTotal = isVertical ? peerParentRect.height : peerParentRect.width;
+      if (peerTotal < 1) continue;
+
+      const peerPos = isVertical
+        ? peerHandleRect.top - peerParentRect.top
+        : peerHandleRect.left - peerParentRect.left;
+      const peerRatio = peerPos / peerTotal;
+      ratios.push(peerRatio);
+    }
+  }
+
+  return ratios;
+}
+
 export function ResizeHandle({ direction, ratio, onResize }: ResizeHandleProps) {
   const handleRef = useRef<HTMLDivElement>(null);
   const lineRef = useRef<HTMLDivElement>(null);
   const dragging = useRef(false);
+  const onResizeRef = useRef(onResize);
+  onResizeRef.current = onResize;
+  const ratioRef = useRef(ratio);
+  ratioRef.current = ratio;
 
   const isRowHandle = direction === "vertical";
 
@@ -36,7 +92,7 @@ export function ResizeHandle({ direction, ratio, onResize }: ResizeHandleProps) 
       const handleRect = handle.getBoundingClientRect();
       const isVertical = direction === "vertical";
       const startPointer = isVertical ? e.clientY : e.clientX;
-      const startRatio = ratio;
+      const startRatio = ratioRef.current;
       const total = isVertical ? rect.height : rect.width;
       const handleSize = isVertical ? handleRect.height : handleRect.width;
       const usable = Math.max(1, total - handleSize);
@@ -44,25 +100,49 @@ export function ResizeHandle({ direction, ratio, onResize }: ResizeHandleProps) 
       const secondPane = handle.nextElementSibling as HTMLElement | null;
       let latestRatio = startRatio;
 
+      // Collect peer ratios at drag start for snapping
+      const peerRatios = collectPeerRatios(handle, direction);
+
+      const snapRatio = (r: number): number => {
+        for (const peer of peerRatios) {
+          if (Math.abs(r - peer) < SNAP_THRESHOLD) return peer;
+        }
+        return r;
+      };
+
       const applyPreview = (nextRatio: number) => {
         if (!firstPane || !secondPane) return;
         firstPane.style.flex = `${nextRatio} 1 0%`;
         secondPane.style.flex = `${1 - nextRatio} 1 0%`;
       };
 
+      let pendingRaf: number | null = null;
+
       const onMouseMove = (ev: MouseEvent) => {
         if (!dragging.current) return;
         const pointer = isVertical ? ev.clientY : ev.clientX;
         const delta = pointer - startPointer;
-        const nextRatio = Math.max(0.15, Math.min(0.85, startRatio + delta / usable));
+        let nextRatio = Math.max(0.15, Math.min(0.85, startRatio + delta / usable));
+        nextRatio = snapRatio(nextRatio);
         latestRatio = nextRatio;
-        applyPreview(nextRatio);
+        if (pendingRaf === null) {
+          pendingRaf = requestAnimationFrame(() => {
+            pendingRaf = null;
+            applyPreview(latestRatio);
+          });
+        }
       };
 
       const onMouseUp = () => {
         dragging.current = false;
+        if (pendingRaf !== null) {
+          cancelAnimationFrame(pendingRaf);
+          pendingRaf = null;
+        }
+        applyPreview(latestRatio);
         document.documentElement.removeAttribute("data-rally-split-drag");
-        onResize(latestRatio);
+        document.documentElement.removeAttribute("data-rally-split-drag-direction");
+        onResizeRef.current(latestRatio);
         document.dispatchEvent(new CustomEvent("rally:split-resize-end"));
         document.documentElement.style.removeProperty("--split-transition");
         document.removeEventListener("mousemove", onMouseMove);
@@ -98,14 +178,15 @@ export function ResizeHandle({ direction, ratio, onResize }: ResizeHandleProps) 
       // Disable flex transition on ALL split containers during drag
       document.documentElement.style.setProperty("--split-transition", "none");
       document.documentElement.setAttribute("data-rally-split-drag", "1");
-      document.dispatchEvent(new CustomEvent("rally:split-resize-start"));
+      document.documentElement.setAttribute("data-rally-split-drag-direction", direction);
+      document.dispatchEvent(new CustomEvent("rally:split-resize-start", { detail: { direction } }));
 
       document.addEventListener("mousemove", onMouseMove);
       document.addEventListener("mouseup", wrappedMouseUp, { once: true });
       document.body.style.cursor = isVertical ? "row-resize" : "col-resize";
       document.body.style.userSelect = "none";
     },
-    [direction, onResize, ratio, resetLine],
+    [direction, resetLine],
   );
 
   // Column separator (horizontal direction)

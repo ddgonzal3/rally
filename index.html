@@ -239,6 +239,12 @@
       .status-bar-slot:hover { background: var(--bg-hover); }
       .status-bar-tab:hover { background: var(--bg-hover); }
 
+      /* During split-drag, disable pointer events on iframes to prevent
+         hover/cursor recalc inside embedded content. */
+      [data-rally-split-drag] iframe {
+        pointer-events: none !important;
+      }
+
     </style>
   </head>
   <body>

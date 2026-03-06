@@ -492,7 +492,7 @@ export function App() {
     document.addEventListener("pointerdown", markInteraction, {
       passive: true,
     });
-    document.addEventListener("keydown", markInteraction, { passive: true });
+    document.addEventListener("keydown", markInteraction, { passive: true, capture: true });
     document.addEventListener("wheel", markInteraction, { passive: true });
     document.addEventListener("scroll", markInteraction, {
       passive: true,
@@ -500,7 +500,7 @@ export function App() {
     });
     return () => {
       document.removeEventListener("pointerdown", markInteraction);
-      document.removeEventListener("keydown", markInteraction);
+      document.removeEventListener("keydown", markInteraction, true);
       document.removeEventListener("wheel", markInteraction);
       document.removeEventListener("scroll", markInteraction, true);
     };
