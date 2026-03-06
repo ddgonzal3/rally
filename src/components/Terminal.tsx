@@ -104,11 +104,6 @@ function safeFit(term: XTerminal, fitAddon: FitAddon): boolean {
   // panes are removed and the ResizeObserver fires transiently.
   // xterm's resize() reflows content correctly without a prior clear.
   term.resize(cols, rows);
-  if (!isSplitDragActive()) {
-    // Keep viewport pinned to the bottom during resize so text doesn't
-    // appear to float/jump as the user drags a split handle.
-    term.scrollToBottom();
-  }
   return true;
 }
 
@@ -321,6 +316,19 @@ export function Terminal({ cwd, command, initialInput, ptyId: existingPtyId, loc
     term.loadAddon(fitAddon);
 
     term.open(containerRef.current);
+
+    // Bottom-anchor the xterm element inside the container.
+    // During split-drag resizes, the container height changes but xterm keeps
+    // its current dimensions — anchoring to bottom keeps the prompt/cursor
+    // visually fixed while the top of the terminal reveals/hides content.
+    // This matches VS Code's approach (terminal.css: .xterm { position: absolute; bottom: 0 }).
+    const xtermEl = containerRef.current.querySelector('.xterm') as HTMLElement | null;
+    if (xtermEl) {
+      xtermEl.style.position = 'absolute';
+      xtermEl.style.bottom = '0';
+      xtermEl.style.left = '0';
+      xtermEl.style.right = '0';
+    }
 
     // Patch mouse-to-cell coordinate conversion to account for CSS zoom.
     // The body container uses CSS `zoom` for app-level scaling (App.tsx).
@@ -615,9 +623,6 @@ export function Terminal({ cwd, command, initialInput, ptyId: existingPtyId, loc
       const core = (term as any)._core;
       if (core?._renderService) core._renderService.clear();
       term.resize(LOCKED_COLS, rows);
-      if (!isSplitDragActive()) {
-        term.scrollToBottom();
-      }
       return true;
     }
 
@@ -835,6 +840,20 @@ export function Terminal({ cwd, command, initialInput, ptyId: existingPtyId, loc
       }
       rafId = requestAnimationFrame(() => {
         rafId = null;
+        if (isSplitDragActive()) {
+          // During split drag, only resize rows (cheap) — keep cols fixed
+          // to avoid expensive horizontal reflow that causes jitter.
+          // Bottom-anchoring CSS keeps content visually pinned.
+          // Full cols+rows fit happens on drag end.
+          const dims = fitAddon.proposeDimensions();
+          if (dims && Number.isFinite(dims.rows)) {
+            const rows = Math.max(MIN_ROWS, Math.round(dims.rows));
+            if (rows !== term.rows) {
+              term.resize(term.cols, rows);
+            }
+          }
+          return;
+        }
         lockCols ? fitRowsOnly() : safeFit(term, fitAddon);
       });
     });
@@ -895,16 +914,18 @@ export function Terminal({ cwd, command, initialInput, ptyId: existingPtyId, loc
 
 const styles: Record<string, React.CSSProperties> = {
   container: {
-    display: "flex",
-    flexDirection: "column",
+    position: "relative" as const,
     flex: 1,
     minWidth: 0,
     minHeight: 0,
     overflow: "hidden",
   },
   terminal: {
-    flex: 1,
-    minHeight: 0,
+    position: "absolute" as const,
+    top: 0,
+    bottom: 0,
+    left: 0,
+    right: 0,
     overflow: "hidden",
   },
 };
