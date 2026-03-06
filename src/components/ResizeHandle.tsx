@@ -40,16 +40,30 @@ export function ResizeHandle({ direction, ratio, onResize }: ResizeHandleProps) 
       const total = isVertical ? rect.height : rect.width;
       const handleSize = isVertical ? handleRect.height : handleRect.width;
       const usable = Math.max(1, total - handleSize);
+      const firstPane = handle.previousElementSibling as HTMLElement | null;
+      const secondPane = handle.nextElementSibling as HTMLElement | null;
+      let latestRatio = startRatio;
+
+      const applyPreview = (nextRatio: number) => {
+        if (!firstPane || !secondPane) return;
+        firstPane.style.flex = `${nextRatio} 1 0%`;
+        secondPane.style.flex = `${1 - nextRatio} 1 0%`;
+      };
 
       const onMouseMove = (ev: MouseEvent) => {
         if (!dragging.current) return;
         const pointer = isVertical ? ev.clientY : ev.clientX;
         const delta = pointer - startPointer;
-        onResize(startRatio + delta / usable);
+        const nextRatio = Math.max(0.15, Math.min(0.85, startRatio + delta / usable));
+        latestRatio = nextRatio;
+        applyPreview(nextRatio);
       };
 
       const onMouseUp = () => {
         dragging.current = false;
+        document.documentElement.removeAttribute("data-rally-split-drag");
+        onResize(latestRatio);
+        document.dispatchEvent(new CustomEvent("rally:split-resize-end"));
         document.documentElement.style.removeProperty("--split-transition");
         document.removeEventListener("mousemove", onMouseMove);
         document.removeEventListener("mouseup", onMouseUp);
@@ -83,6 +97,8 @@ export function ResizeHandle({ direction, ratio, onResize }: ResizeHandleProps) 
 
       // Disable flex transition on ALL split containers during drag
       document.documentElement.style.setProperty("--split-transition", "none");
+      document.documentElement.setAttribute("data-rally-split-drag", "1");
+      document.dispatchEvent(new CustomEvent("rally:split-resize-start"));
 
       document.addEventListener("mousemove", onMouseMove);
       document.addEventListener("mouseup", wrappedMouseUp, { once: true });

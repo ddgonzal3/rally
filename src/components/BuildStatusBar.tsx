@@ -4,15 +4,13 @@ import { api } from "../lib/tauri";
 import type { ScriptEntry } from "../lib/types";
 import {
   isWatcherScript,
-  getWatcherBuildStatus,
-  getStatusColor,
+  getWatcherDisplayStatus,
   getDisplayName,
   clearWatcherStatusCache,
   type WatcherBuildStatus,
 } from "../lib/watcherStatus";
 import { useDetectedPorts } from "../lib/useDetectedPorts";
 import { PortPill } from "./PortPill";
-import { isClaudeActiveInWorkspace } from "../stores/workspaceStore";
 import { showContextMenu, type MenuAction } from "../lib/contextMenu";
 
 
@@ -54,10 +52,10 @@ function ScriptDot({
   const isWatcher = isWatcherScript(scriptName);
 
   let buildStatus: WatcherBuildStatus;
-  if (isRunning) {
-    buildStatus = isWatcher ? getWatcherBuildStatus(key) : "building";
-  } else if (isWatcher && run?.status === "success") {
-    buildStatus = "idle";
+  if (isWatcher) {
+    buildStatus = getWatcherDisplayStatus(run);
+  } else if (isRunning) {
+    buildStatus = "building";
   } else if (run?.status === "success") {
     buildStatus = "success";
   } else if (run?.status === "error") {
@@ -86,29 +84,21 @@ function ScriptDot({
       prevStatusRef.current = buildStatus;
       return () => clearTimeout(timer);
     }
+    if (buildStatus !== "success") {
+      setFlashing(false);
+    }
+    if (buildStatus === "building" || buildStatus === "error") {
+      setBuiltAt(null);
+    }
     prevStatusRef.current = buildStatus;
   }, [buildStatus, isWatcher]);
 
-  // Auto-dismiss "built at" after 30s
+  // Auto-dismiss "built at" after 120s
   useEffect(() => {
     if (!builtAt) return;
-    const timer = setTimeout(() => setBuiltAt(null), 30000);
+    const timer = setTimeout(() => setBuiltAt(null), 120000);
     return () => clearTimeout(timer);
   }, [builtAt]);
-
-  // Auto-open drawer on error when Claude is idle
-  const autoOpenedRef = useRef(false);
-  useEffect(() => {
-    if (buildStatus === "error" && !autoOpenedRef.current) {
-      if (!isClaudeActiveInWorkspace(activeWorkspaceId)) {
-        openStatusBarDrawer(repoPath, scriptName);
-        autoOpenedRef.current = true;
-      }
-    }
-    if (buildStatus !== "error") {
-      autoOpenedRef.current = false;
-    }
-  }, [buildStatus, activeWorkspaceId, repoPath, scriptName, openStatusBarDrawer]);
 
   // Determine dot style
   const dotStyle: React.CSSProperties = {
@@ -153,6 +143,10 @@ function ScriptDot({
   const kill = () => {
     if (isRunning) stopScript(repoPath, scriptName);
     clearScript(repoPath, scriptName);
+    // Close the drawer if it's showing this script
+    if (statusBarDrawer?.repoPath === repoPath && statusBarDrawer?.scriptName === scriptName) {
+      useWorkspaceStore.getState().closeStatusBarDrawer();
+    }
   };
 
   const handleContextMenu = (e: React.MouseEvent) => {
@@ -166,7 +160,7 @@ function ScriptDot({
     ];
     if (isRunning) {
       items.push({
-        label: "Kill",
+        label: "Stop",
         action: kill,
       });
     }
@@ -179,17 +173,22 @@ function ScriptDot({
 
   return (
     <div
-      onClick={(e) => {
+      onMouseDown={(e) => {
+        if (e.button !== 0) return;
         // Option+click = restart
         if (e.altKey) {
+          e.preventDefault();
           restart();
           return;
         }
         if (isRunning) {
+          e.preventDefault();
           openStatusBarDrawer(repoPath, scriptName);
         } else if (buildStatus === "error") {
+          e.preventDefault();
           openStatusBarDrawer(repoPath, scriptName);
         } else {
+          e.preventDefault();
           runScript(repoPath, scriptName, command);
         }
       }}
@@ -269,22 +268,6 @@ export function BuildStatusBar() {
 
   // Script entries cache per repo path
   const [scriptCache, setScriptCache] = useState<Record<string, ScriptEntry[]>>({});
-
-  // Event-driven re-renders for watcher output
-  const [, setTick] = useState(0);
-
-  useEffect(() => {
-    let debounceTimer: ReturnType<typeof setTimeout> | null = null;
-    const handler = () => {
-      if (debounceTimer) clearTimeout(debounceTimer);
-      debounceTimer = setTimeout(() => setTick((t) => t + 1), 300);
-    };
-    document.addEventListener("rally:watcher-output", handler);
-    return () => {
-      document.removeEventListener("rally:watcher-output", handler);
-      if (debounceTimer) clearTimeout(debounceTimer);
-    };
-  }, []);
 
   // Load RALLY.json configs and scripts for ALL repo paths in the workspace
   const loadRallyConfig = useWorkspaceStore((s) => s.loadRallyConfig);
@@ -381,4 +364,3 @@ export function BuildStatusBar() {
     </div>
   );
 }
-

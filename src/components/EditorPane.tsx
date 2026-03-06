@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef } from "react";
+import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import Editor, { type OnMount, type BeforeMount } from "@monaco-editor/react";
 import { invoke } from "@tauri-apps/api/core";
 import { showContextMenu } from "../lib/contextMenu";
@@ -222,6 +222,19 @@ function TextEditor({ filePath, paneId, workspaceId, groupId }: { filePath: stri
   }, [filePath, paneId, markClean]);
 
   const handleBeforeMount: BeforeMount = useCallback((monaco) => {
+    monaco.languages.typescript.typescriptDefaults.setDiagnosticsOptions({
+      noSemanticValidation: true,
+      noSyntaxValidation: true,
+      noSuggestionDiagnostics: true,
+      onlyVisible: true,
+    });
+    monaco.languages.typescript.javascriptDefaults.setDiagnosticsOptions({
+      noSemanticValidation: true,
+      noSyntaxValidation: true,
+      noSuggestionDiagnostics: true,
+      onlyVisible: true,
+    });
+
     // Register a rich bash/shell tokenizer (Monarch grammar)
     if (!monaco.languages.getLanguages().some((l: { id: string }) => l.id === "shell")) {
       monaco.languages.register({ id: "shell" });
@@ -363,6 +376,49 @@ function TextEditor({ filePath, paneId, workspaceId, groupId }: { filePath: stri
     );
   }, []);
 
+  const editorOptions = useMemo(() => ({
+    contextmenu: false,
+    minimap: { enabled: false },
+    fontSize: 13,
+    fontFamily: "'SF Mono', 'Fira Code', 'Cascadia Code', monospace",
+    lineNumbers: "on" as const,
+    wordWrap: "off" as const,
+    scrollBeyondLastLine: false,
+    glyphMargin: false,
+    codeLens: false,
+    folding: false,
+    links: false,
+    colorDecorators: false,
+    selectionHighlight: false,
+    occurrencesHighlight: "off" as const,
+    renderValidationDecorations: "off" as const,
+    wordBasedSuggestions: "off" as const,
+    quickSuggestions: false,
+    padding: { top: 8 },
+    renderLineHighlight: "line" as const,
+    smoothScrolling: false,
+    cursorSmoothCaretAnimation: "off" as const,
+    disableLayerHinting: true,
+    guides: {
+      indentation: false,
+      bracketPairs: false,
+      highlightActiveIndentation: false,
+      bracketPairsHorizontal: false,
+      highlightActiveBracketPair: false,
+    },
+    matchBrackets: "never" as const,
+    stickyScroll: { enabled: false },
+    overviewRulerLanes: 0,
+    overviewRulerBorder: false,
+    hideCursorInOverviewRuler: true,
+    scrollbar: {
+      verticalScrollbarSize: 10,
+      horizontalScrollbarSize: 10,
+      useShadows: false,
+      alwaysConsumeMouseWheel: false,
+    },
+  }), []);
+
   if (error) {
     return (
       <div style={styles.center}>
@@ -385,6 +441,8 @@ function TextEditor({ filePath, paneId, workspaceId, groupId }: { filePath: stri
       language={language}
       theme={`rally-${appTheme}`}
       defaultValue={content}
+      saveViewState
+      keepCurrentModel
       onChange={(value) => {
         contentRef.current = value ?? "";
         markDirty(paneId);
@@ -395,27 +453,7 @@ function TextEditor({ filePath, paneId, workspaceId, groupId }: { filePath: stri
       beforeMount={handleBeforeMount}
       onMount={handleMount}
       loading={<div style={styles.center} />}
-      options={{
-        contextmenu: false,
-        minimap: { enabled: false },
-        fontSize: 13,
-        fontFamily: "'SF Mono', 'Fira Code', 'Cascadia Code', monospace",
-        lineNumbers: "on",
-        wordWrap: "off",
-        scrollBeyondLastLine: false,
-        glyphMargin: false,
-        codeLens: false,
-        selectionHighlight: false,
-        occurrencesHighlight: "off",
-        renderValidationDecorations: "off",
-        wordBasedSuggestions: "off",
-        quickSuggestions: false,
-        padding: { top: 8 },
-        renderLineHighlight: "line",
-        smoothScrolling: false,
-        cursorSmoothCaretAnimation: "off",
-        scrollbar: { verticalScrollbarSize: 10, horizontalScrollbarSize: 10 },
-      }}
+      options={editorOptions}
     />
   );
 
@@ -557,6 +595,9 @@ const styles: Record<string, React.CSSProperties> = {
     minWidth: 0,
     minHeight: 0,
     position: "relative",
+    contain: "strict",
+    isolation: "isolate",
+    transform: "translateZ(0)",
   },
   center: {
     display: "flex",

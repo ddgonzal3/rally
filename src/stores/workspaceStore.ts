@@ -37,6 +37,12 @@ import {
 } from "../lib/types";
 import { api } from "../lib/tauri";
 import { getExpandedPaths, setExpandedPaths } from "../components/FileExplorer";
+import {
+  clearWatcherStatusCache,
+  inferScriptCompletionStatus,
+  isWatcherScript,
+  observeWatcherOutput,
+} from "../lib/watcherStatus";
 
 /**
  * Ship PTY output buffer — stored outside Zustand state to avoid O(n) array
@@ -58,7 +64,20 @@ export const scriptOutputBuffers = new Map<string, Uint8Array[]>();
  * Limited to MAX_PTY_BUFFER_CHUNKS to prevent unbounded memory growth.
  */
 const MAX_PTY_BUFFER_CHUNKS = 2000;
+const MAX_SHIP_BUFFER_CHUNKS = 2000;
+const MAX_SCRIPT_BUFFER_CHUNKS = 2000;
 export const ptyOutputBuffers = new Map<string, Uint8Array[]>();
+
+function pushLimitedChunk(
+  buffer: Uint8Array[],
+  chunk: Uint8Array,
+  maxChunks: number,
+) {
+  buffer.push(chunk);
+  if (buffer.length > maxChunks) {
+    buffer.splice(0, buffer.length - maxChunks);
+  }
+}
 
 export function appendPtyBuffer(ptyId: string, chunk: Uint8Array) {
   let buf = ptyOutputBuffers.get(ptyId);
@@ -66,11 +85,7 @@ export function appendPtyBuffer(ptyId: string, chunk: Uint8Array) {
     buf = [];
     ptyOutputBuffers.set(ptyId, buf);
   }
-  buf.push(chunk);
-  // Trim to prevent unbounded growth
-  if (buf.length > MAX_PTY_BUFFER_CHUNKS) {
-    buf.splice(0, buf.length - MAX_PTY_BUFFER_CHUNKS);
-  }
+  pushLimitedChunk(buf, chunk, MAX_PTY_BUFFER_CHUNKS);
 }
 
 export function clearPtyBuffer(ptyId: string) {
@@ -113,7 +128,8 @@ type PersistedWorkspaceState = {
 };
 
 const workspacePersistStorage = (() => {
-  let lastRefs: {
+  const PERSIST_DEBOUNCE_MS = 150;
+  type PersistRefs = {
     activeWorkspaceId: string | null;
     activePathIndex: PersistedWorkspaceState["activePathIndex"];
     layouts: PersistedWorkspaceState["layouts"];
@@ -126,7 +142,70 @@ const workspacePersistStorage = (() => {
     unifiedGitPanelTab: string;
     workspaceModes: PersistedWorkspaceState["workspaceModes"];
     version: number;
+  };
+  let lastRefs: PersistRefs | null = null;
+  let pending: {
+    name: string;
+    value: { state: PersistedWorkspaceState; version?: number };
+    refs: PersistRefs;
   } | null = null;
+  let persistTimer: ReturnType<typeof setTimeout> | null = null;
+
+  function buildRefs(
+    state: PersistedWorkspaceState,
+    version: number,
+  ): PersistRefs {
+    return {
+      activeWorkspaceId: state.activeWorkspaceId,
+      activePathIndex: state.activePathIndex,
+      layouts: state.layouts,
+      activeGroupIds: state.activeGroupIds,
+      layoutPresets: state.layoutPresets,
+      activePresetId: state.activePresetId,
+      gitDiffActiveTab: state.gitDiffActiveTab,
+      unifiedGitPanelOpen: state.unifiedGitPanelOpen,
+      unifiedGitPanelPath: state.unifiedGitPanelPath,
+      unifiedGitPanelTab: state.unifiedGitPanelTab,
+      workspaceModes: state.workspaceModes,
+      version,
+    };
+  }
+
+  function sameRefs(
+    a: PersistRefs | null,
+    b: PersistRefs,
+  ) {
+    return !!a &&
+      a.version === b.version &&
+      a.activeWorkspaceId === b.activeWorkspaceId &&
+      a.activePathIndex === b.activePathIndex &&
+      a.layouts === b.layouts &&
+      a.activeGroupIds === b.activeGroupIds &&
+      a.layoutPresets === b.layoutPresets &&
+      a.activePresetId === b.activePresetId &&
+      a.gitDiffActiveTab === b.gitDiffActiveTab &&
+      a.unifiedGitPanelOpen === b.unifiedGitPanelOpen &&
+      a.unifiedGitPanelPath === b.unifiedGitPanelPath &&
+      a.unifiedGitPanelTab === b.unifiedGitPanelTab &&
+      a.workspaceModes === b.workspaceModes;
+  }
+
+  function flushPending() {
+    if (persistTimer) {
+      clearTimeout(persistTimer);
+      persistTimer = null;
+    }
+    if (!pending) return;
+    const next = pending;
+    pending = null;
+    localStorage.setItem(next.name, JSON.stringify(next.value));
+    lastRefs = next.refs;
+  }
+
+  if (typeof window !== "undefined") {
+    window.addEventListener("pagehide", flushPending);
+    window.addEventListener("beforeunload", flushPending);
+  }
 
   return {
     getItem: (name: string) => {
@@ -146,41 +225,20 @@ const workspacePersistStorage = (() => {
     ) => {
       const { state, version } = value;
       const resolvedVersion = version ?? 0;
-      if (
-        lastRefs &&
-        lastRefs.version === resolvedVersion &&
-        lastRefs.activeWorkspaceId === state.activeWorkspaceId &&
-        lastRefs.activePathIndex === state.activePathIndex &&
-        lastRefs.layouts === state.layouts &&
-        lastRefs.activeGroupIds === state.activeGroupIds &&
-        lastRefs.layoutPresets === state.layoutPresets &&
-        lastRefs.activePresetId === state.activePresetId &&
-        lastRefs.gitDiffActiveTab === state.gitDiffActiveTab &&
-        lastRefs.unifiedGitPanelOpen === state.unifiedGitPanelOpen &&
-        lastRefs.unifiedGitPanelPath === state.unifiedGitPanelPath &&
-        lastRefs.unifiedGitPanelTab === state.unifiedGitPanelTab &&
-        lastRefs.workspaceModes === state.workspaceModes
-      ) {
+      const refs = buildRefs(state, resolvedVersion);
+      if (sameRefs(lastRefs, refs) || sameRefs(pending?.refs ?? null, refs)) {
         return;
       }
-
-      localStorage.setItem(name, JSON.stringify(value));
-      lastRefs = {
-        activeWorkspaceId: state.activeWorkspaceId,
-        activePathIndex: state.activePathIndex,
-        layouts: state.layouts,
-        activeGroupIds: state.activeGroupIds,
-        layoutPresets: state.layoutPresets,
-        activePresetId: state.activePresetId,
-        gitDiffActiveTab: state.gitDiffActiveTab,
-        unifiedGitPanelOpen: state.unifiedGitPanelOpen,
-        unifiedGitPanelPath: state.unifiedGitPanelPath,
-        unifiedGitPanelTab: state.unifiedGitPanelTab,
-        workspaceModes: state.workspaceModes,
-        version: resolvedVersion,
-      };
+      pending = { name, value, refs };
+      if (persistTimer) clearTimeout(persistTimer);
+      persistTimer = setTimeout(flushPending, PERSIST_DEBOUNCE_MS);
     },
     removeItem: (name: string) => {
+      if (persistTimer) {
+        clearTimeout(persistTimer);
+        persistTimer = null;
+      }
+      pending = null;
       localStorage.removeItem(name);
       lastRefs = null;
     },
@@ -726,8 +784,8 @@ export const useWorkspaceStore = create<WorkspaceState>()(
         const filtered = ports.filter(
           (p) => !(p.source.type === "pane" && p.source.ptyId === ptyId),
         );
+        updated[wsId] = filtered.length !== ports.length ? filtered : ports;
         if (filtered.length !== ports.length) changed = true;
-        updated[wsId] = filtered;
       }
       return changed ? { detectedPorts: updated } : s;
     });
@@ -741,8 +799,8 @@ export const useWorkspaceStore = create<WorkspaceState>()(
           (p) =>
             !(p.source.type === "script" && p.source.repoPath === repoPath && p.source.scriptName === scriptName),
         );
+        updated[wsId] = filtered.length !== ports.length ? filtered : ports;
         if (filtered.length !== ports.length) changed = true;
-        updated[wsId] = filtered;
       }
       return changed ? { detectedPorts: updated } : s;
     });
@@ -1545,7 +1603,7 @@ export const useWorkspaceStore = create<WorkspaceState>()(
           // Buffer raw bytes in the module-level array (not Zustand state).
           // This avoids O(n) array copies and React re-renders on every chunk,
           // which was causing lag across all terminals and editors.
-          shipOutputBuffer.push(chunk);
+          pushLimitedChunk(shipOutputBuffer, chunk, MAX_SHIP_BUFFER_CHUNKS);
         }
       );
 
@@ -1751,6 +1809,7 @@ export const useWorkspaceStore = create<WorkspaceState>()(
 
   runScript: async (rootPath, scriptName, command) => {
     const key = `${rootPath}:${scriptName}`;
+    const isWatcher = isWatcherScript(scriptName);
 
     // Kill existing run if any
     const existing = get().scriptRuns[key];
@@ -1764,12 +1823,19 @@ export const useWorkspaceStore = create<WorkspaceState>()(
 
     // Reset module-level output buffer (outside Zustand to avoid
     // O(n) array copies and React re-renders on every PTY chunk)
+    clearWatcherStatusCache(key);
     scriptOutputBuffers.set(key, []);
 
     set((s) => ({
       scriptRuns: {
         ...s.scriptRuns,
-        [key]: { scriptName, ptyId, status: "running", exitCode: null },
+        [key]: {
+          scriptName,
+          ptyId,
+          status: "running",
+          exitCode: null,
+          watcherBuildStatus: isWatcher ? "building" : undefined,
+        },
       },
     }));
 
@@ -1779,14 +1845,38 @@ export const useWorkspaceStore = create<WorkspaceState>()(
       `pty-output-${ptyId}`,
       (event) => {
         const chunk = new Uint8Array(event.payload.data);
+        const text = decoder.decode(chunk, { stream: true });
         const buf = scriptOutputBuffers.get(key);
         if (buf) {
-          buf.push(chunk);
+          pushLimitedChunk(buf, chunk, MAX_SCRIPT_BUFFER_CHUNKS);
           // Notify TaskPanel that watcher output changed (event-driven, not polling)
           document.dispatchEvent(new CustomEvent("rally:watcher-output", { detail: { key } }));
         }
+        if (isWatcher) {
+          const nextWatcherBuildStatus = observeWatcherOutput(key, text);
+          const currentRun = get().scriptRuns[key];
+          if (
+            currentRun &&
+            currentRun.watcherBuildStatus !== nextWatcherBuildStatus
+          ) {
+            set((s) => {
+              const run = s.scriptRuns[key];
+              if (!run) return s;
+              return {
+                scriptRuns: {
+                  ...s.scriptRuns,
+                  [key]: {
+                    ...run,
+                    status: "running",
+                    exitCode: null,
+                    watcherBuildStatus: nextWatcherBuildStatus,
+                  },
+                },
+              };
+            });
+          }
+        }
         // Detect localhost ports in script output
-        const text = decoder.decode(chunk, { stream: true });
         if (text.includes("localhost") || text.includes("127.0.0.1") || /\bport\s+\d/i.test(text)) {
           const ports = detectPorts(text);
           if (ports.length > 0) {
@@ -1838,24 +1928,41 @@ export const useWorkspaceStore = create<WorkspaceState>()(
       }
       try {
         const fg = await api.getPtyForegroundProcess(ptyId);
+        const current = get().scriptRuns[key];
         if (fg === null) {
           // No foreground child → command finished, shell is at prompt
-          clearInterval(pollInterval);
-          // Clean up detected ports from this script
-          get().removePortsByScript(rootPath, scriptName);
-          const current = get().scriptRuns[key];
           if (current && current.status === "running") {
+            // Clean up detected ports from this script
+            get().removePortsByScript(rootPath, scriptName);
+            const finalStatus = inferScriptCompletionStatus(key, scriptName);
             set((s) => ({
               scriptRuns: {
                 ...s.scriptRuns,
                 [key]: {
                   ...s.scriptRuns[key],
-                  status: "success",
-                  exitCode: 0,
+                  status: finalStatus,
+                  exitCode: finalStatus === "error" ? 1 : 0,
+                  watcherBuildStatus: isWatcher
+                    ? (s.scriptRuns[key].watcherBuildStatus ?? (finalStatus === "error" ? "error" : "success"))
+                    : s.scriptRuns[key].watcherBuildStatus,
                 },
               },
             }));
           }
+          // Keep polling — user may re-run the command manually in the shell
+        } else if (current && current.status !== "running") {
+          // Foreground child reappeared — user restarted the command manually
+          set((s) => ({
+            scriptRuns: {
+              ...s.scriptRuns,
+              [key]: {
+                ...s.scriptRuns[key],
+                status: "running",
+                exitCode: null,
+                watcherBuildStatus: isWatcher ? "building" : s.scriptRuns[key].watcherBuildStatus,
+              },
+            },
+          }));
         }
       } catch {
         // PTY gone — stop polling
@@ -1872,13 +1979,19 @@ export const useWorkspaceStore = create<WorkspaceState>()(
         const current = get().scriptRuns[key];
         // Only update if still running (poll may have already marked it)
         if (current && current.status === "running") {
+          const finalStatus = isWatcher
+            ? inferScriptCompletionStatus(key, scriptName)
+            : code === 0 ? "success" : "error";
           set((s) => ({
             scriptRuns: {
               ...s.scriptRuns,
               [key]: {
                 ...s.scriptRuns[key],
-                status: code === 0 ? "success" : "error",
+                status: finalStatus,
                 exitCode: code,
+                watcherBuildStatus: isWatcher
+                  ? (s.scriptRuns[key].watcherBuildStatus ?? (finalStatus === "error" ? "error" : "success"))
+                  : s.scriptRuns[key].watcherBuildStatus,
               },
             },
           }));
@@ -1919,6 +2032,7 @@ export const useWorkspaceStore = create<WorkspaceState>()(
 
   clearScript: (rootPath, scriptName) => {
     const key = `${rootPath}:${scriptName}`;
+    clearWatcherStatusCache(key);
     scriptOutputBuffers.delete(key);
     set((s) => {
       const { [key]: _, ...rest } = s.scriptRuns;
@@ -2295,6 +2409,9 @@ export const useWorkspaceStore = create<WorkspaceState>()(
     // Snap column dividers to peer positions in adjacent rows
     if (targetSplit.direction === "horizontal") {
       clamped = snapToPeerRatio(layout.root, splitId, clamped);
+    }
+    if (Math.abs(targetSplit.ratio - clamped) < 0.0001) {
+      return;
     }
     let newRoot = replaceNode(layout.root, splitId, {
       ...targetSplit,
@@ -3193,4 +3310,3 @@ function syncPeerVerticalSplits(
 ): LayoutNode {
   return syncPeers(root, changedSplitId, ratio, "vertical");
 }
-

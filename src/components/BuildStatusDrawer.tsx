@@ -69,11 +69,11 @@ export function BuildStatusDrawer() {
       }
     };
     document.addEventListener("keydown", onKey);
-    // Use mousedown so click registers before any focus shifts
-    document.addEventListener("mousedown", onClick);
+    // Capture early so the drawer closes before other handlers do work.
+    document.addEventListener("pointerdown", onClick, true);
     return () => {
       document.removeEventListener("keydown", onKey);
-      document.removeEventListener("mousedown", onClick);
+      document.removeEventListener("pointerdown", onClick, true);
     };
   }, [drawer, pinned, closeStatusBarDrawer]);
 

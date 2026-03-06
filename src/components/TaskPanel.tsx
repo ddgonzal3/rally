@@ -7,7 +7,7 @@ import { api } from "../lib/tauri";
 import type { ScriptEntry, ScriptRun } from "../lib/types";
 import { TerminalPromptIcon } from "./FileIcons";
 import { showContextMenu } from "../lib/contextMenu";
-import { isWatcherScript, getWatcherBuildStatus, type WatcherBuildStatus } from "../lib/watcherStatus";
+import { isWatcherScript, getWatcherDisplayStatus, type WatcherBuildStatus } from "../lib/watcherStatus";
 
 interface TaskPanelProps {
   rootPath: string;
@@ -23,25 +23,6 @@ export function TaskPanel({ rootPath, workspaceId }: TaskPanelProps) {
   const stopScript = useWorkspaceStore((s) => s.stopScript);
   const openFile = useWorkspaceStore((s) => s.openFile);
   const openScriptTerminal = useWorkspaceStore((s) => s.openScriptTerminal);
-
-  // Event-driven re-render: only update when watcher output actually changes
-  const [, setTick] = useState(0);
-  const hasRunningWatchers = Object.entries(scriptRuns).some(
-    ([k, r]) => k.startsWith(rootPath + ":") && r.status === "running" && isWatcherScript(r.scriptName)
-  );
-  useEffect(() => {
-    if (!hasRunningWatchers) return;
-    let debounceTimer: ReturnType<typeof setTimeout> | null = null;
-    const handler = () => {
-      if (debounceTimer) clearTimeout(debounceTimer);
-      debounceTimer = setTimeout(() => setTick((t) => t + 1), 300);
-    };
-    document.addEventListener("rally:watcher-output", handler);
-    return () => {
-      document.removeEventListener("rally:watcher-output", handler);
-      if (debounceTimer) clearTimeout(debounceTimer);
-    };
-  }, [hasRunningWatchers]);
 
   useEffect(() => {
     api.listScripts(rootPath).then(setEntries).catch(() => setEntries([]));
@@ -113,7 +94,7 @@ export function TaskPanel({ rootPath, workspaceId }: TaskPanelProps) {
     const isEntrySelected = selectedEntry === entry.name;
 
     if (isWatcher) {
-      const buildStatus = isRunning ? getWatcherBuildStatus(key) : "idle";
+      const buildStatus = getWatcherDisplayStatus(run);
       return (
         <div
           key={entry.name}

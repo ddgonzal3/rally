@@ -33,6 +33,9 @@ interface TerminalProps {
   onTitleChange?: (title: string) => void;
   /** Called when user Cmd+clicks a file path in terminal output */
   onFileOpen?: OnFileOpen;
+  /** Called when user right-clicks → Kill Terminal. Lets the parent do
+   *  proper cleanup (close pane, stop script, etc.) instead of just killing the PTY. */
+  onKill?: () => void;
 }
 
 // OSC 7 format: \x1b]7;file://hostname/path\x07  (or \x1b\\ as terminator)
@@ -89,19 +92,28 @@ function safeFit(term: XTerminal, fitAddon: FitAddon): boolean {
   if (cols < MIN_COLS || rows < MIN_ROWS) return false;
   if (cols === term.cols && rows === term.rows) return false;
 
+  // Capture viewport anchor: how far from the bottom the user has scrolled.
+  // After resize, restore this distance so content stays visually pinned.
+  const buf = term.buffer.active;
+  const distFromBottom = buf.baseY - buf.viewportY;
+
   // Resize in-place without clearing the renderer first.
   // FitAddon.fit() calls _renderService.clear() before resize, but that
   // blanks the canvas for one frame — visible as flicker when sibling
   // panes are removed and the ResizeObserver fires transiently.
   // xterm's resize() reflows content correctly without a prior clear.
   term.resize(cols, rows);
-  // Keep viewport pinned to the bottom during resize so text doesn't
-  // appear to float/jump as the user drags a split handle.
-  term.scrollToBottom();
+
+  // Restore viewport position relative to the bottom.
+  const newBuf = term.buffer.active;
+  const targetViewport = Math.max(0, newBuf.baseY - distFromBottom);
+  if (newBuf.viewportY !== targetViewport) {
+    term.scrollToLine(targetViewport);
+  }
   return true;
 }
 
-export function Terminal({ cwd, command, initialInput, ptyId: existingPtyId, lockCols: lockColsProp, scriptBufferKey, workspaceId, onPtySpawned, onCwdChanged, onTitleChange, onFileOpen }: TerminalProps) {
+export function Terminal({ cwd, command, initialInput, ptyId: existingPtyId, lockCols: lockColsProp, scriptBufferKey, workspaceId, onPtySpawned, onCwdChanged, onTitleChange, onFileOpen, onKill }: TerminalProps) {
   const theme = useWorkspaceStore((s) => s.theme);
   const themeRef = useRef<ThemeName>(theme);
   themeRef.current = theme;
@@ -115,10 +127,12 @@ export function Terminal({ cwd, command, initialInput, ptyId: existingPtyId, loc
   const osc7TailRef = useRef<string>("");
   const prDetectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const onTitleChangeRef = useRef(onTitleChange);
+  const onKillRef = useRef(onKill);
   const lastPublishedTitleRef = useRef<string | null>(null);
   const claudeLikelyActiveRef = useRef(false);
   const claudeLostPollCountRef = useRef(0);
   onTitleChangeRef.current = onTitleChange;
+  onKillRef.current = onKill;
 
   const emitTitle = useCallback((title: string) => {
     const normalized = normalizeTerminalTitle(title);
@@ -260,7 +274,11 @@ export function Terminal({ cwd, command, initialInput, ptyId: existingPtyId, loc
         {
           label: "Kill Terminal",
           action: () => {
-            if (ptyId) api.killPty(ptyId);
+            if (onKillRef.current) {
+              onKillRef.current();
+            } else if (ptyId) {
+              api.killPty(ptyId);
+            }
           },
         },
       ],
@@ -298,6 +316,7 @@ export function Terminal({ cwd, command, initialInput, ptyId: existingPtyId, loc
       cursorStyle: "bar",
       cursorWidth: 2,
       allowProposedApi: true,
+      fastScrollSensitivity: 5,
     });
 
     const fitAddon = new FitAddon();
@@ -535,6 +554,10 @@ export function Terminal({ cwd, command, initialInput, ptyId: existingPtyId, loc
       if (ev.key === "w") {
         return false;
       }
+      // Let Cmd+Shift+[ / ] bubble to document for tab cycling
+      if (ev.shiftKey && (ev.code === "BracketLeft" || ev.code === "BracketRight")) {
+        return false;
+      }
       return true;
     });
 
@@ -549,6 +572,7 @@ export function Terminal({ cwd, command, initialInput, ptyId: existingPtyId, loc
     const LOCKED_COLS = 80; // Must match ship PTY spawn size
     let ptySpawned = false;
     let rafId: number | null = null;
+    const outputDecoder = new TextDecoder();
 
     /** Fit rows to container, keeping cols locked at LOCKED_COLS. */
     function fitRowsOnly(): boolean {
@@ -556,10 +580,14 @@ export function Terminal({ cwd, command, initialInput, ptyId: existingPtyId, loc
       if (!dims || !Number.isFinite(dims.rows)) return false;
       const rows = Math.max(MIN_ROWS, Math.round(dims.rows));
       if (rows === term.rows && term.cols === LOCKED_COLS) return false;
-      const core = (term as any)._core;
-      if (core?._renderService) core._renderService.clear();
+      const buf = term.buffer.active;
+      const distFromBottom = buf.baseY - buf.viewportY;
       term.resize(LOCKED_COLS, rows);
-      term.scrollToBottom();
+      const newBuf = term.buffer.active;
+      const targetViewport = Math.max(0, newBuf.baseY - distFromBottom);
+      if (newBuf.viewportY !== targetViewport) {
+        term.scrollToLine(targetViewport);
+      }
       return true;
     }
 
@@ -575,7 +603,7 @@ export function Terminal({ cwd, command, initialInput, ptyId: existingPtyId, loc
           appendPtyBuffer(ptyId, chunk);
           // Parse OSC 7 to track shell CWD
           if (onCwdChanged) {
-            const text = new TextDecoder().decode(chunk);
+            const text = outputDecoder.decode(chunk, { stream: true });
             const combined = osc7TailRef.current + text;
             osc7TailRef.current = combined.slice(-OSC7_TAIL_MAX);
             const newCwd = parseLatestOsc7Cwd(combined);

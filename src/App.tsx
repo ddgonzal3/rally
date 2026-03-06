@@ -1201,6 +1201,22 @@ export function App() {
         const activePath = s.getActivePath(wsId);
         s.splitGroup(wsId, groupId, "horizontal", activePath ?? undefined);
       }
+      // Cmd+Shift+[ / Cmd+Shift+]: cycle tabs left/right in active group
+      if (e.metaKey && e.shiftKey && (e.code === "BracketLeft" || e.code === "BracketRight")) {
+        e.preventDefault();
+        const s = useWorkspaceStore.getState();
+        const wsId = s.activeWorkspaceId;
+        if (!wsId) return;
+        const layout = s.getOrCreateLayout(wsId);
+        const groupId = s.activeGroupIds[wsId];
+        if (!groupId) return;
+        const group = layout.groups[groupId];
+        if (!group || group.panes.length < 2) return;
+        const idx = group.panes.findIndex((p) => p.id === group.activePaneId);
+        const delta = e.code === "BracketLeft" ? -1 : 1;
+        const next = (idx + delta + group.panes.length) % group.panes.length;
+        s.setActivePane(wsId, groupId, group.panes[next].id);
+      }
       // Shift+Arrow: navigate between pane groups
       if (e.shiftKey && !e.metaKey && !e.ctrlKey && !e.altKey) {
         const dirMap: Record<string, NavigationDirection> = {

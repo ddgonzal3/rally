@@ -22,6 +22,11 @@ git checkout "$branch" || { echo "Failed to checkout $branch"; exit 1; }
 if [ "$ahead" -gt 0 ]; then
   git reset --hard "$main_branch" || { echo "Failed to reset $branch"; exit 1; }
 fi
+head_before=$(git rev-parse HEAD)
 git rebase "$main_branch" || { echo "Failed to rebase onto $main_branch"; exit 1; }
+head_after=$(git rev-parse HEAD)
+if [ "$head_before" != "$head_after" ]; then
+  git push --force-with-lease 2>/dev/null || true
+fi
 
 echo "$branch synced with $main_branch."

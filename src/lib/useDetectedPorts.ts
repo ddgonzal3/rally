@@ -1,15 +1,11 @@
-import { useMemo } from "react";
 import { useWorkspaceStore } from "../stores/workspaceStore";
 import type { DetectedPort } from "./types";
 
-/**
- * Zustand selector hook for detected ports that avoids infinite re-renders.
- * Uses JSON.stringify for selector stability (new array refs break Object.is).
- */
+const EMPTY_PORTS: DetectedPort[] = [];
+
 export function useDetectedPorts(workspaceId: string | null): DetectedPort[] {
-  const json = useWorkspaceStore((s) => {
-    if (!workspaceId) return "[]";
-    return JSON.stringify(s.detectedPorts[workspaceId] ?? []);
+  return useWorkspaceStore((s) => {
+    if (!workspaceId) return EMPTY_PORTS;
+    return s.detectedPorts[workspaceId] ?? EMPTY_PORTS;
   });
-  return useMemo(() => JSON.parse(json), [json]);
 }
