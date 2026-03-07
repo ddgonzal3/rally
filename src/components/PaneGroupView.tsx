@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef } from "react";
 import { Terminal } from "./Terminal";
 import { ClaudeLauncher } from "./ClaudeLauncher";
 import { ClaudeTerminalWrapper } from "./ClaudeTerminalWrapper";
-import { EditorPane } from "./EditorPane";
+const EditorPane = React.lazy(() => import("./EditorPane").then(m => ({ default: m.EditorPane })));
 import { WebViewPane } from "./WebViewPane";
 
 import { TerminalLauncher } from "./TerminalLauncher";
@@ -1121,7 +1121,9 @@ function PaneContent({
               {pane.type === "webview" && pane.webviewUrl ? (
                 <WebViewPane url={pane.webviewUrl} paneId={pane.id} />
               ) : pane.type === "editor" && pane.filePath ? (
-                <EditorPane filePath={pane.filePath} paneId={pane.id} workspaceId={workspaceId} groupId={groupId} />
+                <React.Suspense fallback={<div style={{ width: '100%', height: '100%', background: 'var(--terminal-bg)' }} />}>
+                  <EditorPane filePath={pane.filePath} paneId={pane.id} workspaceId={workspaceId} groupId={groupId} />
+                </React.Suspense>
               ) : pane.type === "claude-launcher" ? (
                 <ClaudeLauncher
                   workspacePath={paneCwd}

@@ -578,18 +578,26 @@ export function App() {
       },
     );
 
+    // Scale polling intervals with workspace count to avoid IPC flood
+    const pathCount = useWorkspaceStore.getState().workspaces.reduce(
+      (n, ws) => n + ws.paths.length, 0,
+    );
+    const gitMs = pathCount > 6 ? 20000 : 10000;
+    const shipMs = pathCount > 6 ? 10000 : 5000;
+    const fetchMs = pathCount > 6 ? 120000 : 60000;
+
     const gitInterval = setInterval(() => {
       void runGitRefresh();
-    }, 10000);
+    }, gitMs);
     const prInterval = setInterval(() => {
       void runPrRefresh();
     }, 90000);
     const shipInterval = setInterval(() => {
       void runShipPoll();
-    }, 5000);
+    }, shipMs);
     const fetchInterval = setInterval(() => {
       void runFetchAll();
-    }, 60000);
+    }, fetchMs);
 
     return () => {
       cancelled = true;

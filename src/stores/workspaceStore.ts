@@ -63,9 +63,9 @@ export const scriptOutputBuffers = new Map<string, Uint8Array[]>();
  * Allows replaying output when a terminal remounts (e.g. after a split).
  * Limited to MAX_PTY_BUFFER_CHUNKS to prevent unbounded memory growth.
  */
-const MAX_PTY_BUFFER_CHUNKS = 2000;
-const MAX_SHIP_BUFFER_CHUNKS = 2000;
-const MAX_SCRIPT_BUFFER_CHUNKS = 2000;
+const MAX_PTY_BUFFER_CHUNKS = 500;
+const MAX_SHIP_BUFFER_CHUNKS = 500;
+const MAX_SCRIPT_BUFFER_CHUNKS = 500;
 export const ptyOutputBuffers = new Map<string, Uint8Array[]>();
 
 function pushLimitedChunk(
