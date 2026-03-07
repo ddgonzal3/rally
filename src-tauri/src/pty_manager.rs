@@ -1,7 +1,10 @@
 use std::collections::HashMap;
 use std::io::{Read, Write};
-use std::sync::{Arc, Mutex};
 use std::sync::mpsc;
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    Arc, Mutex,
+};
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -20,6 +23,11 @@ pub struct PtyExitPayload {
 }
 
 #[derive(Serialize, Clone)]
+pub struct PtyForegroundPayload {
+    pub process: Option<String>,
+}
+
+#[derive(Serialize, Clone)]
 pub struct PtyInfo {
     pub id: String,
     pub cwd: String,
@@ -31,12 +39,91 @@ struct PtySession {
     write_tx: Option<mpsc::Sender<Vec<u8>>>,
     pair: portable_pty::PtyPair,
     child: Arc<Mutex<Box<dyn portable_pty::Child + Send + Sync>>>,
+    foreground: Arc<Mutex<Option<String>>>,
+    monitor_stop: Arc<AtomicBool>,
     cwd: String,
     command: Option<String>,
 }
 
 pub struct PtyManager {
     sessions: HashMap<String, PtySession>,
+}
+
+fn is_claude_title(name: &str) -> bool {
+    let lower = name.trim().to_ascii_lowercase();
+    lower == "claude" || lower.starts_with("claude ")
+}
+
+fn spawn_foreground_monitor(
+    app_handle: AppHandle,
+    pty_id: String,
+    shell_pid: Option<u32>,
+    foreground: Arc<Mutex<Option<String>>>,
+    monitor_stop: Arc<AtomicBool>,
+) {
+    thread::spawn(move || {
+        const STARTUP_POLL_INTERVAL: Duration = Duration::from_millis(150);
+        const STEADY_POLL_INTERVAL: Duration = Duration::from_millis(1000);
+        const STARTUP_WINDOW: Duration = Duration::from_secs(2);
+        const CLAUDE_LOST_THRESHOLD: u8 = 3;
+
+        let started_at = Instant::now();
+        let mut last_state: Option<String> = None;
+        let mut claude_lost_polls = 0u8;
+        let foreground_event = format!("pty-foreground-{}", pty_id);
+
+        loop {
+            if monitor_stop.load(Ordering::Relaxed) {
+                break;
+            }
+
+            let sampled = match shell_pid {
+                Some(pid) => foreground_child_name(pid),
+                None => None,
+            };
+
+            let next_state = if last_state.as_deref().is_some_and(is_claude_title) {
+                match sampled.as_deref() {
+                    Some(name) if is_claude_title(name) => {
+                        claude_lost_polls = 0;
+                        sampled
+                    }
+                    _ => {
+                        claude_lost_polls = claude_lost_polls.saturating_add(1);
+                        if claude_lost_polls < CLAUDE_LOST_THRESHOLD {
+                            last_state.clone()
+                        } else {
+                            claude_lost_polls = 0;
+                            sampled
+                        }
+                    }
+                }
+            } else {
+                claude_lost_polls = 0;
+                sampled
+            };
+
+            if next_state != last_state {
+                if let Ok(mut cached) = foreground.lock() {
+                    *cached = next_state.clone();
+                }
+                let _ = app_handle.emit(
+                    &foreground_event,
+                    PtyForegroundPayload {
+                        process: next_state.clone(),
+                    },
+                );
+                last_state = next_state;
+            }
+
+            let interval = if started_at.elapsed() < STARTUP_WINDOW {
+                STARTUP_POLL_INTERVAL
+            } else {
+                STEADY_POLL_INTERVAL
+            };
+            thread::sleep(interval);
+        }
+    });
 }
 
 impl PtyManager {
@@ -139,6 +226,7 @@ impl PtyManager {
             .spawn_command(cmd)
             .map_err(|e| format!("Failed to spawn command: {}", e))?;
         let child = Arc::new(Mutex::new(child));
+        let shell_pid = child.lock().map_err(|e| e.to_string())?.process_id();
 
         let writer = pair
             .master
@@ -146,6 +234,15 @@ impl PtyManager {
             .map_err(|e| format!("Failed to get PTY writer: {}", e))?;
 
         let pty_id = uuid::Uuid::new_v4().to_string();
+        let foreground = Arc::new(Mutex::new(None));
+        let monitor_stop = Arc::new(AtomicBool::new(false));
+        spawn_foreground_monitor(
+            app_handle.clone(),
+            pty_id.clone(),
+            shell_pid,
+            foreground.clone(),
+            monitor_stop.clone(),
+        );
 
         // Spawn reader thread
         let reader_id = pty_id.clone();
@@ -163,6 +260,7 @@ impl PtyManager {
         let child_clone = child.clone();
         let reader_id_for_reader = reader_id.clone();
         let tx_exit = tx.clone();
+        let monitor_stop_for_reader = monitor_stop.clone();
         thread::spawn(move || {
             let mut buf = [0u8; 4096];
             loop {
@@ -181,6 +279,7 @@ impl PtyManager {
             }
             // Signal EOF to flusher by dropping tx (receiver will get Disconnected)
             drop(tx);
+            monitor_stop_for_reader.store(true, Ordering::Relaxed);
             let _ = tx_exit; // ensure tx_exit is moved but unused — drop both senders
         });
 
@@ -273,6 +372,8 @@ impl PtyManager {
                 write_tx: Some(write_tx),
                 pair,
                 child,
+                foreground,
+                monitor_stop,
                 cwd: effective_cwd,
                 command,
             },
@@ -313,6 +414,7 @@ impl PtyManager {
 
     pub fn kill(&mut self, pty_id: &str) -> Result<(), String> {
         if let Some(session) = self.sessions.remove(pty_id) {
+            session.monitor_stop.store(true, Ordering::Relaxed);
             if let Ok(mut child) = session.child.lock() {
                 let _ = child.kill();
             }
@@ -339,18 +441,11 @@ impl PtyManager {
             .sessions
             .get(pty_id)
             .ok_or_else(|| format!("PTY session not found: {}", pty_id))?;
-
-        let shell_pid = session
-            .child
+        session
+            .foreground
             .lock()
-            .map_err(|e| e.to_string())?
-            .process_id();
-
-        let Some(pid) = shell_pid else {
-            return Ok(None);
-        };
-
-        Ok(foreground_child_name(pid))
+            .map_err(|e| e.to_string())
+            .map(|cached| cached.clone())
     }
 
     pub fn kill_all(&mut self) {
@@ -441,26 +536,8 @@ pub fn get_pty_foreground_process(
     state: tauri::State<'_, PtyState>,
     pty_id: String,
 ) -> Result<Option<String>, String> {
-    // Extract the shell PID under the lock, then release it immediately.
-    // foreground_child_name() runs expensive subprocess calls (pgrep, ps)
-    // that can take 50-200ms — holding the PtyManager mutex during those
-    // would block all write_pty calls, causing typing lag.
-    let shell_pid = {
-        let manager = state.lock().map_err(|e| e.to_string())?;
-        let session = manager
-            .sessions
-            .get(&pty_id)
-            .ok_or_else(|| format!("PTY session not found: {}", pty_id))?;
-        let child_guard = session.child.lock().map_err(|e| e.to_string())?;
-        let pid = child_guard.process_id();
-        drop(child_guard);
-        pid
-    };
-    // Lock is released here — expensive process tree walk happens without it
-    match shell_pid {
-        Some(pid) => Ok(foreground_child_name(pid)),
-        None => Ok(None),
-    }
+    let manager = state.lock().map_err(|e| e.to_string())?;
+    manager.foreground_process(&pty_id)
 }
 
 /// Check if a single PID is a Claude Code process (by name or node args).
