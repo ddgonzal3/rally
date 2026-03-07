@@ -18,6 +18,7 @@ Rally fixes this with one idea: **workspaces**. Each workspace bundles your repo
 - **Agent-driven shipping** -- `/ship` commits, pushes, creates a PR, runs a Claude review, and auto-merges if clean -- or flags you if human review is needed
 - **CLI shortcuts** -- Rally installs git shortcuts (`gship`, `gmerge`, `gpr`, `grb`, `gsync`, `gfinish`) to `~/.rally/bin/`
 - **Claude Code commands** -- Built-in `/ship`, `/review-pr`, `/merge-pr`, and `/create-pr` commands available in every Claude session
+- **Scripts & watchers** -- Rally auto-discovers scripts from your repo's `scripts/` directory. Pin them to the bottom status bar for one-click run/stop and live build status. Scripts with "watch" in the name get watcher behavior (colored status dot, build timestamps). See [Scripts & Watchers](GETTING_STARTED.md#7-scripts--watchers) for setup
 - **Config at a glance** -- View and edit your `CLAUDE.md` files directly in the app
 - **Minimal by design** -- Only shows what you need. No visual clutter, no unnecessary chrome
 
