@@ -144,6 +144,10 @@ function ScriptDot({
   const kill = () => {
     if (isRunning) stopScript(repoPath, scriptName);
     clearScript(repoPath, scriptName);
+    clearWatcherStatusCache(key);
+    setFlashing(false);
+    setBuiltAt(null);
+    prevStatusRef.current = "idle";
     // Close the drawer if it's showing this script
     if (statusBarDrawer?.repoPath === repoPath && statusBarDrawer?.scriptName === scriptName) {
       useWorkspaceStore.getState().closeStatusBarDrawer();
