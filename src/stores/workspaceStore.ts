@@ -1916,85 +1916,88 @@ export const useWorkspaceStore = create<WorkspaceState>()(
       }
     );
 
-    // Poll for command completion — the shell stays alive after the
-    // command exits, so we detect completion by checking whether the
-    // shell still has a foreground child process. Delay the start to
-    // avoid false positives while the shell is still loading .zshrc.
-    let pollStarted = false;
-    let nullPolls = 0;
-    const pollInterval = setInterval(async () => {
-      if (!pollStarted) {
-        // Wait for the command to actually start (first poll finds a child)
-        try {
-          const fg = await api.getPtyForegroundProcess(ptyId);
-          if (fg !== null) {
-            pollStarted = true;
-            nullPolls = 0;
-          } else {
-            nullPolls++;
-            // If we've polled several times without ever seeing a foreground child,
-            // the command likely started and finished before the first poll.
-            // Check if there's output in the buffer (meaning the shell ran something).
-            if (nullPolls >= 3) {
-              const buf = scriptOutputBuffers.get(key);
-              if (buf && buf.length > 0) {
-                // Output exists but no foreground child — command already finished
-                pollStarted = true;
-              }
-            }
-          }
-        } catch { /* ignore */ }
-        if (!pollStarted) return;
+    const finalizeRun = () => {
+      const current = get().scriptRuns[key];
+      if (!current || current.status !== "running") return;
+      get().removePortsByScript(rootPath, scriptName);
+      const finalStatus = inferScriptCompletionStatus(key, scriptName);
+      set((s) => ({
+        scriptRuns: {
+          ...s.scriptRuns,
+          [key]: {
+            ...s.scriptRuns[key],
+            status: finalStatus,
+            exitCode: finalStatus === "error" ? 1 : 0,
+            watcherBuildStatus: isWatcher
+              ? (s.scriptRuns[key].watcherBuildStatus ?? (finalStatus === "error" ? "error" : "success"))
+              : s.scriptRuns[key].watcherBuildStatus,
+          },
+        },
+      }));
+    };
+
+    const markRunning = () => {
+      const current = get().scriptRuns[key];
+      if (!current || current.status === "running") return;
+      set((s) => ({
+        scriptRuns: {
+          ...s.scriptRuns,
+          [key]: {
+            ...s.scriptRuns[key],
+            status: "running",
+            exitCode: null,
+            watcherBuildStatus: isWatcher ? "building" : s.scriptRuns[key].watcherBuildStatus,
+          },
+        },
+      }));
+    };
+
+    let sawForegroundProcess = false;
+    const syncForegroundProcess = (proc: string | null) => {
+      if (proc !== null) {
+        sawForegroundProcess = true;
+        markRunning();
+        return;
       }
-      try {
-        const fg = await api.getPtyForegroundProcess(ptyId);
-        const current = get().scriptRuns[key];
-        if (fg === null) {
-          // No foreground child → command finished, shell is at prompt
-          if (current && current.status === "running") {
-            // Clean up detected ports from this script
-            get().removePortsByScript(rootPath, scriptName);
-            const finalStatus = inferScriptCompletionStatus(key, scriptName);
-            set((s) => ({
-              scriptRuns: {
-                ...s.scriptRuns,
-                [key]: {
-                  ...s.scriptRuns[key],
-                  status: finalStatus,
-                  exitCode: finalStatus === "error" ? 1 : 0,
-                  watcherBuildStatus: isWatcher
-                    ? (s.scriptRuns[key].watcherBuildStatus ?? (finalStatus === "error" ? "error" : "success"))
-                    : s.scriptRuns[key].watcherBuildStatus,
-                },
-              },
-            }));
-          }
-          // Keep polling — user may re-run the command manually in the shell
-        } else if (current && current.status !== "running") {
-          // Foreground child reappeared — user restarted the command manually
-          set((s) => ({
-            scriptRuns: {
-              ...s.scriptRuns,
-              [key]: {
-                ...s.scriptRuns[key],
-                status: "running",
-                exitCode: null,
-                watcherBuildStatus: isWatcher ? "building" : s.scriptRuns[key].watcherBuildStatus,
-              },
-            },
-          }));
-        }
-      } catch {
-        // PTY gone — stop polling
-        clearInterval(pollInterval);
+      if (!sawForegroundProcess) return;
+      sawForegroundProcess = false;
+      finalizeRun();
+    };
+
+    const unlistenForeground = await listen<{ process: string | null }>(
+      `pty-foreground-${ptyId}`,
+      (event) => {
+        syncForegroundProcess(event.payload.process);
       }
-    }, 1000);
+    );
+
+    api.getPtyForegroundProcess(ptyId)
+      .then((proc) => syncForegroundProcess(proc))
+      .catch(() => {
+        /* PTY might be gone */
+      });
+
+    const startupFallbackTimer = setTimeout(() => {
+      if (sawForegroundProcess) return;
+      api.getPtyForegroundProcess(ptyId)
+        .then((proc) => {
+          if (proc !== null) {
+            syncForegroundProcess(proc);
+            return;
+          }
+          const buf = scriptOutputBuffers.get(key);
+          if (buf && buf.length > 0) finalizeRun();
+        })
+        .catch(() => {
+          /* PTY might be gone */
+        });
+    }, 2500);
 
     // Listen for PTY exit (shell itself exits — e.g. user types `exit`)
     const unlistenExit = await listen<{ code: number | null }>(
       `pty-exit-${ptyId}`,
       (event) => {
-        clearInterval(pollInterval);
+        clearTimeout(startupFallbackTimer);
         const code = event.payload.code;
         const current = get().scriptRuns[key];
         // Only update if still running (poll may have already marked it)
@@ -2016,6 +2019,7 @@ export const useWorkspaceStore = create<WorkspaceState>()(
             },
           }));
         }
+        unlistenForeground();
         unlistenOutput();
         unlistenExit();
       }

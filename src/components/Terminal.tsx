@@ -41,7 +41,6 @@ interface TerminalProps {
 // OSC 7 format: \x1b]7;file://hostname/path\x07  (or \x1b\\ as terminator)
 const OSC7_REGEX = /\x1b\]7;file:\/\/[^/]*(\/[^\x07\x1b]*?)(?:\x07|\x1b\\)/g;
 const OSC7_TAIL_MAX = 4096;
-const CLAUDE_LOST_POLL_THRESHOLD = 3;
 
 function parseLatestOsc7Cwd(text: string): string | null {
   OSC7_REGEX.lastIndex = 0;
@@ -123,6 +122,7 @@ export function Terminal({ cwd, command, initialInput, ptyId: existingPtyId, loc
   const fitAddonRef = useRef<FitAddon | null>(null);
   const unlistenOutputRef = useRef<UnlistenFn | null>(null);
   const unlistenExitRef = useRef<UnlistenFn | null>(null);
+  const unlistenForegroundRef = useRef<UnlistenFn | null>(null);
   const lastCwdRef = useRef<string>(cwd);
   const osc7TailRef = useRef<string>("");
   const prDetectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -130,7 +130,6 @@ export function Terminal({ cwd, command, initialInput, ptyId: existingPtyId, loc
   const onKillRef = useRef(onKill);
   const lastPublishedTitleRef = useRef<string | null>(null);
   const claudeLikelyActiveRef = useRef(false);
-  const claudeLostPollCountRef = useRef(0);
   onTitleChangeRef.current = onTitleChange;
   onKillRef.current = onKill;
 
@@ -140,6 +139,44 @@ export function Terminal({ cwd, command, initialInput, ptyId: existingPtyId, loc
     lastPublishedTitleRef.current = normalized;
     onTitleChangeRef.current?.(normalized);
   }, []);
+
+  const syncForegroundProcess = useCallback((proc: string | null | undefined) => {
+    const name = normalizeTerminalTitle(proc);
+    const term = termRef.current;
+
+    if (isClaudeCodeTitle(name)) {
+      claudeLikelyActiveRef.current = true;
+      if (term) {
+        if (term.options.cursorBlink) term.options.cursorBlink = false;
+        if (term.options.theme?.cursor !== 'transparent') {
+          term.options.theme = { ...term.options.theme, cursor: 'transparent' };
+        }
+      }
+      emitTitle("claude");
+      return;
+    }
+
+    if (claudeLikelyActiveRef.current) {
+      claudeLikelyActiveRef.current = false;
+      if (term) {
+        if (!term.options.cursorBlink) term.options.cursorBlink = true;
+        const cursorColor = getCssVar('--terminal-cursor');
+        if (cursorColor) {
+          term.options.theme = { ...term.options.theme, cursor: cursorColor };
+        }
+      }
+    }
+
+    if (!name) {
+      const ptyId = ptyIdRef.current;
+      if (ptyId && lastPublishedTitleRef.current) {
+        useWorkspaceStore.getState().removePortsByPty(ptyId);
+      }
+      if (!lastPublishedTitleRef.current) return;
+    }
+
+    emitTitle(name);
+  }, [emitTitle]);
 
   useEffect(() => {
     lastCwdRef.current = cwd;
@@ -151,81 +188,6 @@ export function Terminal({ cwd, command, initialInput, ptyId: existingPtyId, loc
       termRef.current.options.theme = getXtermTheme(theme);
     }
   }, [theme]);
-
-  // Poll foreground process to detect Claude Code (or other named processes).
-  // Keep Claude "sticky" until several polls agree it is gone, so transient
-  // shell/title updates cannot knock the tab back to zsh while Claude runs.
-  useEffect(() => {
-    let cancelled = false;
-    let emptyCount = 0;
-    const poll = async () => {
-      const ptyId = ptyIdRef.current;
-      if (!ptyId || cancelled) return;
-      try {
-        const proc = await api.getPtyForegroundProcess(ptyId);
-        const name = normalizeTerminalTitle(proc);
-        if (isClaudeCodeTitle(name)) {
-          claudeLikelyActiveRef.current = true;
-          claudeLostPollCountRef.current = 0;
-          emptyCount = 0;
-          // Hide cursor entirely while Claude Code manages the TUI
-          const term = termRef.current;
-          if (term) {
-            if (term.options.cursorBlink) term.options.cursorBlink = false;
-            if (term.options.theme?.cursor !== 'transparent') {
-              term.options.theme = { ...term.options.theme, cursor: 'transparent' };
-            }
-          }
-          emitTitle("claude");
-          return;
-        }
-
-        if (claudeLikelyActiveRef.current) {
-          // While Claude is active, require repeated non-Claude polls before
-          // downgrading the title. This avoids one-sample bootstrap flicker.
-          claudeLostPollCountRef.current += 1;
-          if (claudeLostPollCountRef.current < CLAUDE_LOST_POLL_THRESHOLD) {
-            return;
-          }
-          claudeLikelyActiveRef.current = false;
-          claudeLostPollCountRef.current = 0;
-          // Restore blinking cursor and visible cursor color now that Claude is gone
-          const term = termRef.current;
-          if (term) {
-            if (!term.options.cursorBlink) term.options.cursorBlink = true;
-            const cursorColor = getCssVar('--terminal-cursor');
-            if (cursorColor) {
-              term.options.theme = { ...term.options.theme, cursor: cursorColor };
-            }
-          }
-        }
-
-        if (!name && !claudeLikelyActiveRef.current && lastPublishedTitleRef.current === "") {
-          emptyCount = 0;
-          return;
-        }
-        // Going from a known process to empty — debounce to avoid flicker
-        if (!name && lastPublishedTitleRef.current) {
-          emptyCount++;
-          if (emptyCount < 2) return;
-          // Foreground process gone (back at shell prompt) — clear detected ports
-          useWorkspaceStore.getState().removePortsByPty(ptyId);
-        }
-        emptyCount = 0;
-        emitTitle(name);
-      } catch {
-        /* PTY might be dead */
-      }
-    };
-    const interval = setInterval(poll, 3000);
-    // Initial poll after a short delay (let PTY spawn first)
-    const initialTimeout = setTimeout(poll, 2000);
-    return () => {
-      cancelled = true;
-      clearInterval(interval);
-      clearTimeout(initialTimeout);
-    };
-  }, [emitTitle]);
 
   const handleContextMenu = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
@@ -417,7 +379,6 @@ export function Terminal({ cwd, command, initialInput, ptyId: existingPtyId, loc
 
       if (isClaudeCodeTitle(normalized)) {
         claudeLikelyActiveRef.current = true;
-        claudeLostPollCountRef.current = 0;
         // Hide cursor entirely when Claude sets the title
         if (term.options.cursorBlink) {
           term.options.cursorBlink = false;
@@ -655,6 +616,21 @@ export function Terminal({ cwd, command, initialInput, ptyId: existingPtyId, loc
         }
       );
 
+      unlistenForegroundRef.current = await listen<{ process: string | null }>(
+        `pty-foreground-${ptyId}`,
+        (event) => {
+          syncForegroundProcess(event.payload.process);
+        }
+      );
+
+      api.getPtyForegroundProcess(ptyId)
+        .then((proc) => {
+          if (ptyIdRef.current === ptyId) syncForegroundProcess(proc);
+        })
+        .catch(() => {
+          /* PTY might be dead */
+        });
+
       // Send keystrokes immediately — no batching/debouncing (matches VSCode).
       // Latency-critical: each keystroke goes directly to PTY.
       term.onData((data) => {
@@ -873,6 +849,7 @@ export function Terminal({ cwd, command, initialInput, ptyId: existingPtyId, loc
       ptyIdRef.current = null;
       unlistenOutputRef.current?.();
       unlistenExitRef.current?.();
+      unlistenForegroundRef.current?.();
       if (prDetectTimerRef.current) clearTimeout(prDetectTimerRef.current);
       term.dispose();
     };
@@ -885,7 +862,7 @@ export function Terminal({ cwd, command, initialInput, ptyId: existingPtyId, loc
 
   return (
     <div
-      style={{ ...styles.container, background: 'var(--terminal-bg)', padding: '4px 4px 0 4px' }}
+      style={{ ...styles.container, background: 'var(--terminal-bg)' }}
       onMouseDown={handleMouseDown}
       onContextMenu={handleContextMenu}
     >
