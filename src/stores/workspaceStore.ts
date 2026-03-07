@@ -368,7 +368,8 @@ interface WorkspaceState {
     workspaceId: string,
     groupId: string,
     direction: SplitDirection,
-    cwd?: string
+    cwd?: string,
+    paneOverride?: Partial<Pane>
   ) => void;
   closePane: (
     workspaceId: string,
@@ -2126,14 +2127,15 @@ export const useWorkspaceStore = create<WorkspaceState>()(
     return layout;
   },
 
-  splitGroup: (workspaceId, groupId, direction, cwd?) => {
+  splitGroup: (workspaceId, groupId, direction, cwd?, paneOverride?) => {
     const layout = get().getOrCreateLayout(workspaceId);
-    // Create a new group with a terminal pane
+    // Create a new group with a terminal pane (or override)
     const newPane: Pane = {
       id: crypto.randomUUID(),
       type: "terminal",
       title: "Terminal",
       ...(cwd ? { cwd } : {}),
+      ...paneOverride,
     };
     const newGroup: PaneGroup = {
       id: crypto.randomUUID(),

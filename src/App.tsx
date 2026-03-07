@@ -716,8 +716,10 @@ export function App() {
     let unlistenNewFile: UnlistenFn | null = null;
     let unlistenNewWorkspace: UnlistenFn | null = null;
     let unlistenAddFolder: UnlistenFn | null = null;
+    let unlistenNewClaude: UnlistenFn | null = null;
     let unlistenNewWindow: UnlistenFn | null = null;
     let unlistenOpenCurrentInNewWindow: UnlistenFn | null = null;
+    let unlistenToggleMode: UnlistenFn | null = null;
     let unlistenWorkspacesUpdated: UnlistenFn | null = null;
 
     listen("rally-menu-new-file", () => {
@@ -774,6 +776,36 @@ export function App() {
         console.error("Failed to listen for add-folder menu event:", e),
       );
 
+    listen("rally-menu-new-claude", () => {
+      const s = useWorkspaceStore.getState();
+      const wsId = s.activeWorkspaceId;
+      if (!wsId) return;
+      const layout = s.getOrCreateLayout(wsId);
+      let groupId: string | undefined = s.activeGroupIds[wsId];
+      if (!groupId || !layout.groups[groupId]) {
+        groupId = findFirstGroupInSubtree(layout.root) ?? undefined;
+      }
+      if (!groupId) return;
+      const group = layout.groups[groupId];
+      const activePane = group?.panes.find((p) => p.id === group.activePaneId);
+      const cwd = activePane?.cwd || s.getActivePath(wsId) || undefined;
+      const pane: Pane = {
+        id: crypto.randomUUID(),
+        type: "claude",
+        title: "Claude Code",
+        command: "claude --dangerously-skip-permissions",
+        cwd,
+      };
+      s.addPaneToGroup(wsId, groupId, pane);
+    })
+      .then((fn) => {
+        if (cancelled) fn();
+        else unlistenNewClaude = fn;
+      })
+      .catch((e) =>
+        console.error("Failed to listen for new-claude menu event:", e),
+      );
+
     listen("rally-menu-new-window", () => {
       openWindow({ blankWorkspace: true });
     })
@@ -808,6 +840,21 @@ export function App() {
         ),
       );
 
+    listen("rally-menu-toggle-mode", () => {
+      const s = useWorkspaceStore.getState();
+      const wsId = s.activeWorkspaceId;
+      if (!wsId) return;
+      const current = s.workspaceModes[wsId] ?? "dev";
+      s.setWorkspaceMode(wsId, current === "product" ? "dev" : "product");
+    })
+      .then((fn) => {
+        if (cancelled) fn();
+        else unlistenToggleMode = fn;
+      })
+      .catch((e) =>
+        console.error("Failed to listen for toggle-mode menu event:", e),
+      );
+
     listen("rally-workspaces-updated", () => {
       void loadWorkspaces({ keepNullActive: forceNoWorkspaceSelection });
     })
@@ -824,8 +871,10 @@ export function App() {
       unlistenNewFile?.();
       unlistenNewWorkspace?.();
       unlistenAddFolder?.();
+      unlistenNewClaude?.();
       unlistenNewWindow?.();
       unlistenOpenCurrentInNewWindow?.();
+      unlistenToggleMode?.();
       unlistenWorkspacesUpdated?.();
     };
   }, [loadWorkspaces, forceNoWorkspaceSelection]);
@@ -1395,21 +1444,7 @@ export function App() {
         style={styles.titlebar}
         onMouseDown={handleDrag}
       >
-        <div style={styles.titlebarLeft}>
-          {activeWorkspaceId && (
-            <button
-              className="activity-btn"
-              style={styles.titlebarModeBtn}
-              onClick={() => {
-                const newMode = isProductMode ? "dev" as const : "product" as const;
-                setWorkspaceMode(activeWorkspaceId, newMode);
-              }}
-              title={isProductMode ? "Switch to dev mode" : "Switch to product mode"}
-            >
-              {isProductMode ? "PRD" : "DEV"}
-            </button>
-          )}
-        </div>
+        <div style={styles.titlebarLeft} />
         <span style={styles.titleText}>{activeWorkspaceName}</span>
         {activePrs.length > 0 && (
           <div style={styles.titlebarRight}>
@@ -1803,21 +1838,6 @@ const styles: Record<string, React.CSSProperties> = {
     alignItems: "center",
     justifyContent: "center",
     borderRadius: 4,
-  },
-  titlebarModeBtn: {
-    background: "none",
-    border: "1px solid var(--border-subtle)",
-    cursor: "pointer",
-    padding: "1px 6px",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    borderRadius: 4,
-    fontSize: 10,
-    fontWeight: 600,
-    color: "var(--text-secondary)",
-    letterSpacing: "0.04em",
-    lineHeight: "16px",
   },
   titleText: {
     fontSize: 13,

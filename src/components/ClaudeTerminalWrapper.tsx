@@ -97,7 +97,8 @@ const styles: Record<string, React.CSSProperties> = {
     alignItems: "center",
     justifyContent: "center",
     zIndex: 10,
-    animation: "claude-fade-in 0.3s ease-out",
+    /* No fade-in — overlay must be opaque immediately to hide the
+       shell command that briefly appears before `clear` runs. */
   },
   content: {
     display: "flex",
