@@ -4,18 +4,25 @@ import type { SplitDirection } from "../lib/types";
 interface ResizeHandleProps {
   direction: SplitDirection;
   ratio: number;
-  onResize: (ratio: number) => void;
+  onResize: (ratio: number, syncPeers?: boolean) => void;
 }
 
 /** Snap threshold in ratio units */
 const SNAP_THRESHOLD = 0.012;
 
+interface PeerHandle {
+  ratio: number;
+  firstPane: HTMLElement;
+  secondPane: HTMLElement;
+  originalFirstFlex: string;
+  originalSecondFlex: string;
+}
+
 /**
- * Collect ratios of peer resize handles in adjacent split containers.
- * For a horizontal (column) resize, find other horizontal handles in sibling rows.
- * For a vertical (row) resize, find other vertical handles in sibling columns.
+ * Collect peer resize handles in adjacent split containers.
+ * Returns both ratios (for snapping) and DOM elements (for Option+drag preview).
  */
-function collectPeerRatios(handle: HTMLElement, direction: SplitDirection): number[] {
+function collectPeerHandles(handle: HTMLElement, direction: SplitDirection): PeerHandle[] {
   const parent = handle.parentElement;
   if (!parent) return [];
 
@@ -23,10 +30,10 @@ function collectPeerRatios(handle: HTMLElement, direction: SplitDirection): numb
   if (!grandparent) return [];
 
   const isVertical = direction === "vertical";
-  const ratios: number[] = [];
+  const peers: PeerHandle[] = [];
 
   const greatGrandparent = grandparent.parentElement;
-  if (!greatGrandparent) return ratios;
+  if (!greatGrandparent) return peers;
 
   const siblingContainers = greatGrandparent.children;
   for (let i = 0; i < siblingContainers.length; i++) {
@@ -52,11 +59,22 @@ function collectPeerRatios(handle: HTMLElement, direction: SplitDirection): numb
         ? peerHandleRect.top - peerParentRect.top
         : peerHandleRect.left - peerParentRect.left;
       const peerRatio = peerPos / peerTotal;
-      ratios.push(peerRatio);
+
+      const firstPane = peerHandle.previousElementSibling as HTMLElement | null;
+      const secondPane = peerHandle.nextElementSibling as HTMLElement | null;
+      if (!firstPane || !secondPane) continue;
+
+      peers.push({
+        ratio: peerRatio,
+        firstPane,
+        secondPane,
+        originalFirstFlex: firstPane.style.flex,
+        originalSecondFlex: secondPane.style.flex,
+      });
     }
   }
 
-  return ratios;
+  return peers;
 }
 
 export function ResizeHandle({ direction, ratio, onResize }: ResizeHandleProps) {
@@ -100,23 +118,40 @@ export function ResizeHandle({ direction, ratio, onResize }: ResizeHandleProps) 
       const secondPane = handle.nextElementSibling as HTMLElement | null;
       let latestRatio = startRatio;
 
-      // Collect peer ratios at drag start for snapping
-      const peerRatios = collectPeerRatios(handle, direction);
+      // Collect peer handles at drag start for snapping and Option+drag sync
+      const peerHandles = collectPeerHandles(handle, direction);
+      let peersAreSynced = false;
 
       const snapRatio = (r: number): number => {
-        for (const peer of peerRatios) {
-          if (Math.abs(r - peer) < SNAP_THRESHOLD) return peer;
+        for (const peer of peerHandles) {
+          if (Math.abs(r - peer.ratio) < SNAP_THRESHOLD) return peer.ratio;
         }
         return r;
       };
 
-      const applyPreview = (nextRatio: number) => {
+      const applyPreview = (nextRatio: number, syncPeers: boolean) => {
         if (!firstPane || !secondPane) return;
         firstPane.style.flex = `${nextRatio} 1 0%`;
         secondPane.style.flex = `${1 - nextRatio} 1 0%`;
+        // Option held: move aligned peer handles too
+        if (syncPeers) {
+          for (const peer of peerHandles) {
+            peer.firstPane.style.flex = `${nextRatio} 1 0%`;
+            peer.secondPane.style.flex = `${1 - nextRatio} 1 0%`;
+          }
+          peersAreSynced = true;
+        } else if (peersAreSynced) {
+          // Option released mid-drag: restore peers to original flex
+          for (const peer of peerHandles) {
+            peer.firstPane.style.flex = peer.originalFirstFlex;
+            peer.secondPane.style.flex = peer.originalSecondFlex;
+          }
+          peersAreSynced = false;
+        }
       };
 
       let pendingRaf: number | null = null;
+      let latestAltKey = false;
 
       const onMouseMove = (ev: MouseEvent) => {
         if (!dragging.current) return;
@@ -125,24 +160,27 @@ export function ResizeHandle({ direction, ratio, onResize }: ResizeHandleProps) 
         let nextRatio = Math.max(0.15, Math.min(0.85, startRatio + delta / usable));
         nextRatio = snapRatio(nextRatio);
         latestRatio = nextRatio;
+        latestAltKey = ev.altKey;
         if (pendingRaf === null) {
           pendingRaf = requestAnimationFrame(() => {
             pendingRaf = null;
-            applyPreview(latestRatio);
+            applyPreview(latestRatio, latestAltKey);
           });
         }
       };
 
-      const onMouseUp = () => {
+      const onMouseUp = (_ev: MouseEvent) => {
         dragging.current = false;
         if (pendingRaf !== null) {
           cancelAnimationFrame(pendingRaf);
           pendingRaf = null;
         }
-        applyPreview(latestRatio);
+        // Use peersAreSynced (set during drag) rather than ev.altKey,
+        // because Option may be released slightly before the mouse button.
+        applyPreview(latestRatio, peersAreSynced);
         document.documentElement.removeAttribute("data-rally-split-drag");
         document.documentElement.removeAttribute("data-rally-split-drag-direction");
-        onResizeRef.current(latestRatio);
+        onResizeRef.current(latestRatio, peersAreSynced);
         document.dispatchEvent(new CustomEvent("rally:split-resize-end"));
         document.documentElement.style.removeProperty("--split-transition");
         document.removeEventListener("mousemove", onMouseMove);
@@ -168,8 +206,8 @@ export function ResizeHandle({ direction, ratio, onResize }: ResizeHandleProps) 
       };
       document.addEventListener("mousemove", trackMouse);
       const origOnMouseUp = onMouseUp;
-      const wrappedMouseUp = () => {
-        origOnMouseUp();
+      const wrappedMouseUp = (ev: MouseEvent) => {
+        origOnMouseUp(ev);
         document.removeEventListener("mousemove", trackMouse);
         delete (window as any).__lastMouseX;
         delete (window as any).__lastMouseY;

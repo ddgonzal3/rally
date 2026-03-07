@@ -13,6 +13,44 @@ import { useDetectedPorts } from "../lib/useDetectedPorts";
 import { PortPill } from "./PortPill";
 import { showContextMenu, type MenuAction } from "../lib/contextMenu";
 
+const watcherActionButtonStyle: React.CSSProperties = {
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+  width: 16,
+  height: 16,
+  padding: 0,
+  margin: 0,
+  background: "none",
+  border: "none",
+  color: "var(--text-secondary)",
+  cursor: "pointer",
+  borderRadius: 3,
+  flexShrink: 0,
+  lineHeight: 0,
+  appearance: "none",
+  WebkitAppearance: "none",
+};
+
+function StopActionIcon() {
+  return (
+    <svg width="13" height="13" viewBox="0 0 13 13" fill="none" aria-hidden="true" style={{ display: "block" }}>
+      <rect x="2" y="2" width="9" height="9" rx="1.5" fill="currentColor" />
+    </svg>
+  );
+}
+
+function RestartActionIcon() {
+  return (
+    <svg width="11" height="11" viewBox="0 0 12 12" fill="none" aria-hidden="true" style={{ display: "block" }}>
+      <path d="M1.5 6a4.5 4.5 0 0 1 8.18-2.6" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
+      <path d="M10.5 6a4.5 4.5 0 0 1-8.18 2.6" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
+      <path d="M9 1.5L9.7 3.4L7.8 3.4" stroke="currentColor" strokeWidth="1.1" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M3 10.5L2.3 8.6L4.2 8.6" stroke="currentColor" strokeWidth="1.1" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
 
 // --- ScriptDot sub-component ---
 
@@ -44,6 +82,7 @@ function ScriptDot({
   openWebView: (workspaceId: string, url: string) => void;
 }) {
   const [flashing, setFlashing] = useState(false);
+  const [hovered, setHovered] = useState(false);
   const prevStatusRef = useRef<WatcherBuildStatus>("idle");
 
   const key = `${repoPath}:${scriptName}`;
@@ -143,6 +182,10 @@ function ScriptDot({
   const kill = () => {
     if (isRunning) stopScript(repoPath, scriptName);
     clearScript(repoPath, scriptName);
+    clearWatcherStatusCache(key);
+    setFlashing(false);
+    setBuiltAt(null);
+    prevStatusRef.current = "idle";
     // Close the drawer if it's showing this script
     if (statusBarDrawer?.repoPath === repoPath && statusBarDrawer?.scriptName === scriptName) {
       useWorkspaceStore.getState().closeStatusBarDrawer();
@@ -173,6 +216,8 @@ function ScriptDot({
 
   return (
     <div
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
       onMouseDown={(e) => {
         if (e.button !== 0) return;
         // Option+click = restart
@@ -219,6 +264,48 @@ function ScriptDot({
       >
         {displayName}
       </span>
+
+      {/* Stop & Restart icons — fade in on hover when running */}
+      {isRunning && (
+        <div style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 0,
+          opacity: hovered ? 1 : 0,
+          maxWidth: hovered ? 32 : 0,
+          overflow: "hidden",
+          transition: "opacity 0.15s ease, max-width 0.15s ease",
+          pointerEvents: hovered ? "auto" : "none",
+          flexShrink: 0,
+          willChange: "opacity, max-width",
+          transform: "translateZ(0)",
+        }}>
+          <button
+            className="tab-action"
+            onMouseDown={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              kill();
+            }}
+            title="Stop"
+            style={{ ...watcherActionButtonStyle, opacity: 0.88 }}
+          >
+            <StopActionIcon />
+          </button>
+          <button
+            className="tab-action"
+            onMouseDown={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              restart();
+            }}
+            title="Restart"
+            style={watcherActionButtonStyle}
+          >
+            <RestartActionIcon />
+          </button>
+        </div>
+      )}
 
       {/* "built at" timestamp — auto-dismisses after 30s */}
       {builtAt && (

@@ -31,9 +31,9 @@ export const SplitContainer = React.memo(function SplitContainer({
 
   // All hooks must be called before any early return (Rules of Hooks)
   const handleRootVerticalResize = useCallback(
-    (ratio: number) => {
+    (ratio: number, syncPeers?: boolean) => {
       if (node.type !== "split") return;
-      updateSplitRatio(workspaceId, node.id, ratio);
+      updateSplitRatio(workspaceId, node.id, ratio, syncPeers);
     },
     [workspaceId, node, updateSplitRatio],
   );
@@ -89,7 +89,7 @@ export const SplitContainer = React.memo(function SplitContainer({
           ratio={node.ratio}
           onResize={isRootVertical
             ? handleRootVerticalResize
-            : (ratio) => updateSplitRatio(workspaceId, node.id, ratio)
+            : (ratio, syncPeers) => updateSplitRatio(workspaceId, node.id, ratio, syncPeers)
           }
         />
       )}

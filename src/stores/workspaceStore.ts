@@ -395,7 +395,8 @@ interface WorkspaceState {
   updateSplitRatio: (
     workspaceId: string,
     splitId: string,
-    ratio: number
+    ratio: number,
+    syncPeers?: boolean
   ) => void;
   transformPane: (
     workspaceId: string,
@@ -2425,7 +2426,7 @@ export const useWorkspaceStore = create<WorkspaceState>()(
     }));
   },
 
-  updateSplitRatio: (workspaceId, splitId, ratio) => {
+  updateSplitRatio: (workspaceId, splitId, ratio, syncPeersFlag) => {
     const layout = get().getOrCreateLayout(workspaceId);
     let clamped = Math.max(0.15, Math.min(0.85, ratio));
     const targetSplit = findSplitById(layout.root, splitId);
@@ -2445,6 +2446,10 @@ export const useWorkspaceStore = create<WorkspaceState>()(
     // Column dividers (horizontal splits) are always independent per row.
     if (targetSplit.direction === "vertical") {
       newRoot = syncPeerVerticalSplits(newRoot, splitId, clamped);
+    }
+    // Option+drag: sync column dividers across rows
+    if (syncPeersFlag && targetSplit.direction === "horizontal") {
+      newRoot = syncPeerHorizontalSplits(newRoot, splitId, clamped);
     }
     set((s) => ({
       layouts: {
@@ -3333,4 +3338,10 @@ function syncPeerVerticalSplits(
   root: LayoutNode, changedSplitId: string, ratio: number
 ): LayoutNode {
   return syncPeers(root, changedSplitId, ratio, "vertical");
+}
+
+function syncPeerHorizontalSplits(
+  root: LayoutNode, changedSplitId: string, ratio: number
+): LayoutNode {
+  return syncPeers(root, changedSplitId, ratio, "horizontal");
 }

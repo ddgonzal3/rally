@@ -40,11 +40,15 @@ git rebase "$main_branch" || {
 }
 head_after=$(git rev-parse HEAD)
 
-if [ "$already_merged" = true ] && [ "$head_before" != "$head_after" ]; then
-  git push --force-with-lease 2>/dev/null || true
+if [ "$head_before" != "$head_after" ]; then
+  # Push if the branch has a remote tracking branch
+  if git rev-parse --verify "origin/$branch" &>/dev/null; then
+    git push --force-with-lease 2>/dev/null || true
+  fi
+fi
+
+if [ "$already_merged" = true ]; then
   echo "$branch synced with $main_branch (reset)."
-elif [ "$already_merged" = true ]; then
-  echo "$branch synced with $main_branch."
 else
   echo "$branch rebased onto $main_branch."
 fi
