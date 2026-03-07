@@ -1325,7 +1325,7 @@ const styles: Record<string, React.CSSProperties> = {
     width: 20,
     minWidth: 20,
     height: 20,
-    background: "none",
+    background: "var(--bg-surface)",
     border: "none",
     color: "var(--text-dim)",
     cursor: "pointer",
