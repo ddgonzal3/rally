@@ -285,11 +285,17 @@ fn main() {
                     "file-add-folder" => {
                         emit_to_focused_window(app, "rally-menu-add-folder");
                     }
+                    "file-new-claude" => {
+                        emit_to_focused_window(app, "rally-menu-new-claude");
+                    }
                     "file-new-window" => {
                         emit_to_focused_window(app, "rally-menu-new-window");
                     }
                     "file-open-current-workspace-new-window" => {
                         emit_to_focused_window(app, "rally-menu-open-current-workspace-new-window");
+                    }
+                    "view-toggle-mode" => {
+                        emit_to_focused_window(app, "rally-menu-toggle-mode");
                     }
                     "view-zoom-in" => {
                         emit_to_focused_window(app, "rally-zoom-in");
@@ -387,6 +393,11 @@ fn main() {
                         .accelerator("CmdOrCtrl+Shift+O")
                         .build(app)?,
                 )
+                .item(
+                    &MenuItemBuilder::with_id("file-new-claude", "New Claude Code")
+                        .accelerator("CmdOrCtrl+Shift+C")
+                        .build(app)?,
+                )
                 .separator()
                 .item(
                     &MenuItemBuilder::with_id("file-new-window", "New Window")
@@ -416,6 +427,12 @@ fn main() {
                 .item(
                     &MenuItemBuilder::with_id("view-zoom-reset", "Actual Size")
                         .accelerator("CmdOrCtrl+0")
+                        .build(app)?,
+                )
+                .separator()
+                .item(
+                    &MenuItemBuilder::with_id("view-toggle-mode", "Toggle Dev/Product Mode")
+                        .accelerator("CmdOrCtrl+Shift+M")
                         .build(app)?,
                 )
                 .separator()
