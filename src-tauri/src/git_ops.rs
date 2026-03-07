@@ -109,11 +109,12 @@ pub async fn rebase_on_main(cwd: &str, main_branch: &str) -> Result<String, Stri
     }
 }
 
-/// Hard-reset + rebase onto main (mirrors gsync script).
+/// Smart sync: rebase onto main, with hard-reset only when safe.
 /// 1. Rejects if working tree is dirty or already on main
 /// 2. Fetches, checks out main, pulls, checks out branch
-/// 3. Hard-resets branch to main if it had commits ahead
-/// 4. Rebases onto main
+/// 3. Checks `git diff main branch` to detect unmerged work
+///    - Empty diff → branch work is already in main (post-merge). Hard-reset + rebase + force-push.
+///    - Non-empty diff → branch has real work. Rebase only, no push.
 /// On rebase failure, auto-aborts to leave repo clean.
 pub async fn sync_branch(cwd: &str, main_branch: &str) -> Result<String, String> {
     let branch = git_cmd(cwd, &["symbolic-ref", "--short", "HEAD"]).await?;
@@ -128,13 +129,6 @@ pub async fn sync_branch(cwd: &str, main_branch: &str) -> Result<String, String>
         return Err("Working tree is dirty. Commit or stash your changes first.".to_string());
     }
 
-    // Count commits ahead of main (to decide whether to hard-reset)
-    let ahead = git_cmd(cwd, &["rev-list", "--count", &format!("{}..{}", main_branch, branch)])
-        .await
-        .unwrap_or_else(|_| "0".to_string())
-        .parse::<u32>()
-        .unwrap_or(0);
-
     // Fetch, checkout main, pull
     fetch(cwd).await?;
     git_cmd(cwd, &["checkout", main_branch]).await
@@ -146,8 +140,13 @@ pub async fn sync_branch(cwd: &str, main_branch: &str) -> Result<String, String>
     git_cmd(cwd, &["checkout", &branch]).await
         .map_err(|e| format!("Failed to checkout {}: {}", branch, e))?;
 
-    // Hard-reset to main if branch had commits ahead
-    if ahead > 0 {
+    // Detect whether branch work is already in main (post-merge) or has real unmerged changes.
+    // `git diff main branch` compares the trees — empty means all work is merged.
+    let diff = git_cmd(cwd, &["diff", "--stat", main_branch, &branch]).await.unwrap_or_default();
+    let already_merged = diff.trim().is_empty();
+
+    if already_merged {
+        // Post-merge: safe to hard-reset (branch commits are stale copies of what's in main)
         git_cmd(cwd, &["reset", "--hard", main_branch]).await
             .map_err(|e| format!("Failed to reset {}: {}", branch, e))?;
     }
@@ -158,12 +157,17 @@ pub async fn sync_branch(cwd: &str, main_branch: &str) -> Result<String, String>
     // Rebase onto main
     match git_cmd(cwd, &["rebase", main_branch]).await {
         Ok(_) => {
-            let head_after = git_cmd(cwd, &["rev-parse", "HEAD"]).await.unwrap_or_default();
-            // Only push if the rebase actually changed commits
-            if head_before != head_after {
-                let _ = git_cmd(cwd, &["push", "--force-with-lease"]).await;
+            if already_merged {
+                // Post-merge: force-push to update remote
+                let head_after = git_cmd(cwd, &["rev-parse", "HEAD"]).await.unwrap_or_default();
+                if head_before != head_after {
+                    let _ = git_cmd(cwd, &["push", "--force-with-lease"]).await;
+                }
+                Ok(format!("{} synced with {} (reset)", branch, main_branch))
+            } else {
+                // In-progress: rebased only, no push
+                Ok(format!("{} rebased onto {}", branch, main_branch))
             }
-            Ok(format!("{} synced with {}", branch, main_branch))
         }
         Err(e) => {
             let _ = git_cmd(cwd, &["rebase", "--abort"]).await;
