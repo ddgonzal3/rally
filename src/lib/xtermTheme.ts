@@ -42,9 +42,9 @@ const xtermAnsiColors: Record<ThemeName, Record<string, string>> = {
   },
 };
 
-export function getXtermTheme(theme: ThemeName): Record<string, string> {
+export function getXtermTheme(theme: ThemeName, variant?: 'popup'): Record<string, string> {
   return {
-    background: getCssVar('--terminal-bg'),
+    background: getCssVar(variant === 'popup' ? '--terminal-popup-bg' : '--terminal-bg'),
     foreground: getCssVar('--terminal-fg'),
     cursor: getCssVar('--terminal-cursor'),
     selectionBackground: getCssVar('--terminal-selection'),
