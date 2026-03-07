@@ -91,6 +91,16 @@ During split-panel drag, the ResizeObserver fires on every pixel. Two expensive 
 
 Also: PTY writes go through a per-session `mpsc::channel` with a dedicated writer thread, so `write_pty` never holds the global `PtyState` mutex during blocking I/O. This prevents write operations from contending with resize or other PTY operations.
 
+## SVG Button Jitter on Hover-Reveal Under CSS Zoom
+
+When revealing hidden SVG buttons (e.g. fade-in on hover) inside a container with CSS `zoom`, the icons micro-shift 1-2px after appearing. Root causes:
+
+1. **Inline SVGs have baseline gaps** — `<svg>` is an inline-replaced element, so the browser reserves space for text baseline alignment. During opacity transitions this alignment can settle differently. **Fix:** Add `display: "block"` on the SVG element.
+2. **Browser default button chrome** — Buttons have user-agent padding, margin, and `appearance` that add invisible offsets. **Fix:** Explicitly set `lineHeight: 0`, `appearance: "none"`, `margin: 0` on the button.
+3. **Mid-transition layer promotion** — Without compositor hints, the browser lazily promotes elements to GPU layers during transitions, causing a repaint that shifts sub-pixel positions. **Fix:** Add `transform: "translateZ(0)"` and `willChange: "opacity, max-width"` on the animated container.
+
+All three must be addressed together — any one alone is insufficient under CSS zoom.
+
 ## Context Menu: Always `stopPropagation()` in Nested Handlers
 
 When a component tree has `onContextMenu` handlers at multiple levels (e.g. a tree node AND its container), the child handler **must** call `e.stopPropagation()` in addition to `e.preventDefault()`. Without it, the event bubbles to the parent, which fires a second `showContextMenu()` call. That second call clears the ghost-event suppression flag, so when the user clicks elsewhere to dismiss, macOS dispatches a ghost `contextmenu` event that opens yet another menu. Symptom: dismissing a right-click menu by clicking elsewhere opens a new menu at the click location.
