@@ -87,8 +87,8 @@ function getStoredZoomLevel(): number {
  *
  * The body has CSS `zoom: Z` but the .xterm element has `zoom: 1/Z`
  * to neutralize it (so xterm's coordinate math works at effective zoom 1.0).
- * Because .xterm is wider than its parent (width: Z*100%), we must
- * multiply the parent's CSS width by Z to get the actual available width.
+ * The parent's CSS dimensions are in the body's zoomed space, so we multiply
+ * by Z to convert to the terminal's internal (unzoomed) coordinate space.
  */
 function zoomProposeDimensions(
   term: XTerminal,
@@ -349,7 +349,6 @@ export function Terminal({ cwd, command, initialInput, ptyId: existingPtyId, loc
     // Body has `zoom: Z`; we apply `zoom: 1/Z` on the .xterm element
     // giving effective zoom 1.0. Font size is scaled to BASE*Z so text
     // appears at the same visual size as the rest of the zoomed UI.
-    // Width/height are scaled to Z*100% to fill the parent visually.
     function applyZoomStyles(z: number) {
       const xtermEl = term.element;
       if (!xtermEl) return;

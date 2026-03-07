@@ -68,9 +68,14 @@ Any new xterm.js `Terminal` instance must read its theme from CSS variables (`--
 
 ## xterm.js Selection Drift with CSS Zoom
 
-The app uses CSS `zoom` on the body container (`App.tsx`) for UI scaling. xterm.js computes selection coordinates as `(event.clientX - rect.left) / css.cell.width`, but `clientX` and `rect` are in viewport pixels (zoomed) while `css.cell.width` is in CSS pixels (unzoomed, from OffscreenCanvas). At zoom ≠ 1.0, selection drifts by a factor of the zoom level.
+The app uses CSS `zoom` on the body container (`App.tsx`) for UI scaling. xterm.js computes selection coordinates as `(event.clientX - rect.left) / css.cell.width`, but `clientX` and `rect` are in viewport pixels (zoomed) while `css.cell.width` is in CSS pixels (unzoomed, from OffscreenCanvas). At zoom ≠ 1.0, selection drifts by a factor of the zoom level. Monkey-patching `mouseService.getCoords()` doesn't fully fix it because `SelectionService._getMouseEventScrollAmount` calls `getCoordsRelativeToElement` directly, bypassing any patches.
 
-**Fix:** `Terminal.tsx` overrides `_mouseService.getCoords()` and `getMouseReportCoords()` after `term.open()` to divide viewport-space offsets by the current CSS zoom before the cell-width division. The zoom is read from `localStorage("rally:zoomLevel")` on each mouse event. At zoom = 1.0, the override falls through to the original implementation.
+**Fix:** `Terminal.tsx` applies `zoom: 1/Z` on the `.xterm` element itself, neutralizing the body zoom at the terminal level (effective zoom = Z × 1/Z = 1.0). This makes ALL of xterm's coordinate math correct without patching individual methods. Font size is scaled to `BASE_FONT_SIZE * Z` so text appears at the intended visual size. The `.xterm` element uses `position: absolute` when zoom ≠ 1 to avoid flex layout conflicts with the percentage-based sizing.
+
+**Important layout details:**
+- Do NOT set explicit `width`/`height` on the `.xterm` element — let xterm size itself from its content. Forcing `width: Z*100%` / `height: Z*100%` creates an element larger than the canvas, and the unfilled area renders as black (canvas clear color).
+- The container div must have `background: var(--terminal-bg)` to cover the small row-quantization gap between the canvas edge and the container edge.
+- The ResizeObserver detects zoom changes (body zoom triggers container resize) and re-applies styles automatically — no extra event listeners needed.
 
 ## Terminal Typing Lag: Background Polling Must Defer During Typing
 
