@@ -245,7 +245,7 @@ function ScriptDot({
         padding: "2px 6px",
         borderRadius: 3,
         cursor: "pointer",
-        background: isDrawerOpen ? "var(--terminal-bg)" : "transparent",
+        background: isDrawerOpen ? "var(--terminal-popup-bg)" : "transparent",
       }}
     >
       {/* Status dot */}

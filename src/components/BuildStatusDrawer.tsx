@@ -87,7 +87,7 @@ export function BuildStatusDrawer() {
       cursorBlink: true,
       fontSize: 12,
       fontFamily: "'SF Mono', 'Menlo', 'Monaco', monospace",
-      theme: getXtermTheme(theme),
+      theme: getXtermTheme(theme, 'popup'),
     });
     const fitAddon = new FitAddon();
     term.loadAddon(fitAddon);
@@ -152,7 +152,7 @@ export function BuildStatusDrawer() {
   // Sync xterm theme when the app theme changes
   useEffect(() => {
     if (xtermRef.current) {
-      xtermRef.current.options.theme = getXtermTheme(theme);
+      xtermRef.current.options.theme = getXtermTheme(theme, 'popup');
     }
   }, [theme]);
 
@@ -188,13 +188,13 @@ export function BuildStatusDrawer() {
       left: 0,
       right: 0,
       height,
-      background: "var(--terminal-bg)",
+      background: "var(--terminal-popup-bg)",
       zIndex: 100,
       display: "flex",
       flexDirection: "column" as const,
       boxShadow: theme === "light"
-        ? "0 -3px 12px rgba(0,0,0,0.08)"
-        : "0 -3px 12px rgba(255,255,255,0.035)",
+        ? "0 -2px 8px rgba(0,0,0,0.05)"
+        : "0 -2px 8px rgba(255,255,255,0.02)",
     }}>
       {/* Combined resize handle + header */}
       <div
@@ -207,7 +207,7 @@ export function BuildStatusDrawer() {
           maxHeight: 29,
           cursor: "row-resize",
           flexShrink: 0,
-          background: "var(--bg-surface)",
+          background: "var(--bg-elevated)",
           boxShadow: "inset 0 -1px 0 var(--bg-elevated)",
           borderTop: "1px solid var(--border)",
           gap: 6,
