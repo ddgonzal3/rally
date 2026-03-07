@@ -36,18 +36,23 @@ Both modes share the same workspace state. Switch between them freely without lo
 
 ---
 
-## 3. Multiple Checkouts (Worktrees)
+## 3. Multiple Checkouts
 
-Rally supports multiple folders per workspace. This is useful for:
-- **Git worktrees** -- work on multiple branches simultaneously
-- **Related repos** -- group a frontend and backend repo together
-- **Split checkouts** -- different copies of the same repo
+Rally supports multiple repo folders per workspace. This is useful for working on multiple branches of the same repo simultaneously, or grouping related repos (e.g., frontend + backend) together.
 
-**To add more folders to a workspace:**
+**To create a new checkout of an existing repo:**
 
-1. Select the workspace
-2. **File > Add Folder to Workspace** (`Cmd+Shift+O`)
-3. Pick the additional folder
+1. Right-click a repo header in the file explorer
+2. Select **New Checkout...**
+3. Name it (e.g., `my-repo-feature-x`)
+4. Rally clones the repo into a sibling directory alongside the original and adds it to your workspace
+
+This creates a full, independent clone -- not a git worktree. Each checkout has its own branch, working tree, and git state. They live side by side in the same parent directory.
+
+**To add an existing folder to a workspace:**
+
+1. **File > Add Folder to Workspace** (`Cmd+Shift+O`)
+2. Pick the folder
 
 The first folder is the "primary" path (used for git operations by default). You can switch active paths via the file explorer.
 
