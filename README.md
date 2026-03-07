@@ -12,7 +12,7 @@ Rally fixes this with one idea: **workspaces**. Each workspace bundles your repo
 
 - **Multitask across agents** -- Run multiple Claude Code sessions side by side, each in its own pane, across different repos or branches
 - **Two modes** -- **Dev mode** gives you full control with terminals, editors, and split panes. **Product mode** gives you a focused chat interface for Claude Code. Toggle with `Cmd+Shift+M` or **View > Toggle Dev/Product Mode**
-- **Multiple checkouts per workspace** -- Work on several branches of the same repo simultaneously using worktrees or separate clones
+- **Multiple checkouts per workspace** -- Clone a repo into a sibling directory to work on multiple branches simultaneously. Right-click any repo in the file explorer and select **New Checkout**
 - **Switch projects without losing state** -- Every workspace preserves its terminal sessions, pane layout, and git context
 - **Streamlined git workflow** -- Built-in GUI for staging, committing, rebasing, creating PRs, and reviewing diffs
 - **Agent-driven shipping** -- `/ship` commits, pushes, creates a PR, runs a Claude review, and auto-merges if clean -- or flags you if human review is needed
