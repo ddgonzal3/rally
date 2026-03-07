@@ -44,6 +44,7 @@ function ScriptDot({
   openWebView: (workspaceId: string, url: string) => void;
 }) {
   const [flashing, setFlashing] = useState(false);
+  const [hovered, setHovered] = useState(false);
   const prevStatusRef = useRef<WatcherBuildStatus>("idle");
 
   const key = `${repoPath}:${scriptName}`;
@@ -173,6 +174,8 @@ function ScriptDot({
 
   return (
     <div
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
       onMouseDown={(e) => {
         if (e.button !== 0) return;
         // Option+click = restart
@@ -219,6 +222,77 @@ function ScriptDot({
       >
         {displayName}
       </span>
+
+      {/* Stop & Restart icons — fade in on hover when running */}
+      {isRunning && (
+        <div style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 0,
+          opacity: hovered ? 1 : 0,
+          maxWidth: hovered ? 32 : 0,
+          overflow: "hidden",
+          transition: "opacity 0.15s ease, max-width 0.15s ease",
+          pointerEvents: hovered ? "auto" : "none",
+        }}>
+          <button
+            className="tab-action"
+            onMouseDown={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              kill();
+            }}
+            title="Stop"
+            style={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              width: 16,
+              height: 16,
+              background: "none",
+              border: "none",
+              color: "var(--text-secondary)",
+              cursor: "pointer",
+              borderRadius: 3,
+              padding: 0,
+              flexShrink: 0,
+            }}
+          >
+            <svg width="11" height="11" viewBox="0 0 14 14" fill="none">
+              <rect x="2.5" y="2.5" width="9" height="9" rx="1.5" fill="currentColor" />
+            </svg>
+          </button>
+          <button
+            className="tab-action"
+            onMouseDown={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              restart();
+            }}
+            title="Restart"
+            style={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              width: 16,
+              height: 16,
+              background: "none",
+              border: "none",
+              color: "var(--text-secondary)",
+              cursor: "pointer",
+              borderRadius: 3,
+              padding: 0,
+              flexShrink: 0,
+            }}
+          >
+            <svg width="12" height="12" viewBox="0 0 16 16" fill="none">
+              <path d="M13 2.5v4h-4" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+              <path d="M3.5 8a4.5 4.5 0 0 1 7.8-3L13 6.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+              <path d="M3.5 8a4.5 4.5 0 0 0 8.2 2" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          </button>
+        </div>
+      )}
 
       {/* "built at" timestamp — auto-dismisses after 30s */}
       {builtAt && (
