@@ -211,7 +211,7 @@ fn known_scripts() -> Vec<(&'static str, &'static str, &'static str)> {
         ("gpr", GPR_SCRIPT, "Push and create PR into main"),
         ("gmerge", GMERGE_SCRIPT, "Squash merge PR + sync local branch"),
         ("gfinish", GFINISH_SCRIPT, "Commit + push + merge after review"),
-        ("gsync", GSYNC_SCRIPT, "Hard reset + rebase onto main"),
+        ("gsync", GSYNC_SCRIPT, "Smart sync: rebase onto main (safe)"),
         ("grb", GRB_SCRIPT, "Safe rebase onto main with stash/pop"),
     ]
 }
