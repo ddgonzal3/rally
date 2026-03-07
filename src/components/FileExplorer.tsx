@@ -8,7 +8,6 @@ import { api } from "../lib/tauri";
 import { showContextMenu, type MenuAction } from "../lib/contextMenu";
 import { startFileDrag } from "../lib/dragContext";
 import { ChevronIcon, FileIcon } from "./FileIcons";
-// TaskPanel removed — scripts now shown in BuildStatusBar
 import { ScrollArea } from "./ScrollArea";
 import { addToast, useToastStore } from "./ToastContainer";
 import { parseUnifiedDiff, type DiffFile } from "../lib/diffParser";

@@ -150,13 +150,13 @@ Git status auto-refreshes every 10 seconds.
 
 ## 7. Scripts & Watchers
 
-Rally auto-discovers shell scripts from your repo's `scripts/` directory and makes them available in the **task panel** (file explorer sidebar). You can pin scripts to the **bottom status bar** for persistent, at-a-glance access.
+Rally auto-discovers shell scripts from your repo's `scripts/` directory and lets you pin them to the **bottom status bar** for one-click access with live status feedback.
 
 ### How to set it up
 
 1. Create a `scripts/` directory in your repo root
 2. Add shell scripts (`.sh`, `.bash`, or `.zsh`) for your common tasks
-3. Rally picks them up automatically in the task panel -- no configuration needed
+3. Pin them to the status bar (see below)
 
 **Example:**
 
@@ -171,7 +171,7 @@ my-repo/
 
 ### Adding scripts to the status bar
 
-Scripts appear in the task panel by default, but the **status bar** (the bar at the bottom of the app) requires you to explicitly add scripts. Two ways:
+To show scripts in the **status bar** (the bar at the bottom of the app), you need to explicitly add them. Two ways:
 
 1. **Right-click** any `.sh` file in the file explorer and select **Add to Status Bar**
 2. **Manually** add a `statusBar` array to your repo's `RALLY.json`:
@@ -196,7 +196,7 @@ Regular scripts show a simple running/stopped state.
 
 ### Hiding scripts
 
-Add a `RALLY.json` file to your repo root to exclude specific scripts or built-in commands from the task panel:
+Add a `RALLY.json` file to your repo root to exclude specific scripts or built-in commands:
 
 ```json
 {
@@ -207,7 +207,7 @@ Add a `RALLY.json` file to your repo root to exclude specific scripts or built-i
 
 ### Built-in Claude Commands
 
-Rally also ships with Claude Code commands that appear in the task panel:
+Rally also ships with built-in Claude Code commands:
 
 | Command | What It Does |
 |---------|-------------|
@@ -216,7 +216,7 @@ Rally also ships with Claude Code commands that appear in the task panel:
 | `/merge-pr` | Merge an existing PR |
 | `/create-pr` | Create a PR from the current branch |
 
-Clicking a built-in command opens it in a Claude pane. These commands are symlinked to `~/.claude/commands/` so they work in any Claude Code session, not just Rally.
+These commands are symlinked to `~/.claude/commands/` so they work in any Claude Code session -- type them directly in a Claude pane (e.g., `/ship`).
 
 ---
 
@@ -270,8 +270,8 @@ Rally lets you edit:
 
 An optional config file in your repo root. Supports:
 - `"statusBar": ["watch.sh", "build.sh"]` -- pin scripts to the bottom status bar (see [Scripts & Watchers](#7-scripts--watchers))
-- `"excludeScripts": ["test.sh"]` -- hide scripts from the task panel
-- `"excludeBuiltins": ["ship"]` -- hide built-in commands from the task panel
+- `"excludeScripts": ["test.sh"]` -- hide scripts from discovery
+- `"excludeBuiltins": ["ship"]` -- hide built-in Claude commands
 
 ---
 
@@ -290,7 +290,7 @@ An optional config file in your repo root. Supports:
 ### Ship It (Automated)
 
 1. Make your changes
-2. Click `/ship` in the task panel (or type `/ship` in a Claude pane)
+2. Type `/ship` in a Claude pane (or click Ship in the PR view)
 3. Watch the status pill -- it handles commit, push, PR, review, and merge
 4. If "manual review" verdict: click the PR link to see what was flagged
 
@@ -318,7 +318,7 @@ An optional config file in your repo root. Supports:
 - **`` Ctrl+` ``** for a quick bottom terminal while you have editors open above
 - **Drag files** from the explorer into terminals to paste paths
 - **Multiple workspaces** keep projects isolated -- each has its own terminals, git state, and layout
-- **Watchers** in the task panel give live build feedback without needing a visible terminal
+- **Watchers** in the status bar give live build feedback without needing a visible terminal
 - **`Cmd+P`** quick-opens files from anywhere in the workspace
 - **Product mode** (`Cmd+Shift+M`) when you just want to talk to Claude without managing panes
 

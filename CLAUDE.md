@@ -95,7 +95,8 @@ Rust Backend (src-tauri/src/)
 | `src/components/Sidebar.tsx` | Workspace list + status badges + Add/Settings buttons |
 | `src/components/GitActions.tsx` | Git operation buttons with result display |
 | `src/components/FileExplorer.tsx` | Lazy-loading directory tree |
-| `src/components/TaskPanel.tsx` | Auto-discovered scripts + built-in commands (Ship, Review PR) |
+| `src/components/BuildStatusBar.tsx` | Script status bar items with watcher build status |
+| `src/components/BuildStatusDrawer.tsx` | Expandable terminal drawer for script output |
 | `src/components/AddWorkspaceModal.tsx` | New workspace form with folder picker + git auto-detect |
 | `src/components/SettingsPanel.tsx` | Monaco editor for CLAUDE.md/skills files |
 | `src/components/ShipStatusPill.tsx` | Floating ship progress pill — PTY-backed (expandable terminal) or headless (status only) |
@@ -121,7 +122,7 @@ PTY events use the pattern `pty-{eventtype}-{ptyid}`. To add a new event:
 
 ## Built-in Commands (Ship, Review PR)
 
-Rally ships with built-in Claude commands (`/ship`, `/review-pr`) that appear in every workspace's task panel alongside auto-discovered scripts from the `scripts/` directory.
+Rally ships with built-in Claude commands (`/ship`, `/review-pr`) symlinked to `~/.claude/commands/` so they work in any Claude Code session. Auto-discovered scripts from the `scripts/` directory are shown in the bottom status bar.
 
 ### File Layout
 
@@ -209,7 +210,7 @@ If a `verdict: "shipping"` signal has a timestamp older than 30 minutes, `pollSh
 |------|------|
 | `src-tauri/src/ship_ops.rs` | Signal file ops, command install + symlinks, post-merge sync |
 | `src-tauri/src/commands.rs` | `list_scripts()` discovers scripts from `scripts/` dir + built-in commands |
-| `src/components/TaskPanel.tsx` | Renders script + command list, routes built-in clicks to Claude panes |
+| `src/components/BuildStatusBar.tsx` | Renders script status items in the bottom status bar |
 | `src/stores/workspaceStore.ts` | `pollShipSignals()`, `handleAutoMerge()`, `openClaudeCommand()` |
 
 ## UI Design Rules
@@ -227,6 +228,10 @@ These rules are non-negotiable. Follow them for every UI change.
 ## Known Pitfalls
 
 Read `PITFALLS.md` before starting any work. Add to it when you discover new pitfalls. These are hard-won lessons — ignoring them wastes time.
+
+## Dead Code
+
+Always remove dead code when possible — unused components, stale imports, orphaned styles, commented-out blocks. Don't leave dead files around "in case we need them later." Git has history. If code is unreachable, delete it.
 
 ## Known Constraints
 
