@@ -82,7 +82,7 @@ export function BuildStatusDrawer() {
     if (!termRef.current || !drawer) return;
 
     const term = new XTerminal({
-      scrollback: 5000,
+      scrollback: 500,
       disableStdin: false,
       cursorBlink: true,
       fontSize: 12,
@@ -112,51 +112,30 @@ export function BuildStatusDrawer() {
     // Focus the terminal so it captures keyboard input (Ctrl+C, etc.)
     requestAnimationFrame(() => term.focus());
 
-    // Replay buffered output in batches to avoid freezing the main thread.
-    // A long-running watcher can accumulate thousands of chunks; writing them
-    // all synchronously blocks the event loop and makes the app unresponsive.
+    // Replay buffered output synchronously. The buffer is capped at
+    // MAX_SCRIPT_BUFFER_CHUNKS (500) so this is fast and avoids visible
+    // scroll flicker that batched async replay would cause.
     const buf = scriptOutputBuffers.get(bufferKey);
     let writtenChunks = 0;
-    let replayDone = false;
-    const REPLAY_BATCH_SIZE = 50;
-
-    const replayBatch = () => {
-      const currentBuf = scriptOutputBuffers.get(bufferKey);
-      if (!currentBuf) { replayDone = true; return; }
-      const end = Math.min(writtenChunks + REPLAY_BATCH_SIZE, currentBuf.length);
-      for (let i = writtenChunks; i < end; i++) {
-        term.write(currentBuf[i]);
-      }
-      writtenChunks = end;
-      if (writtenChunks < currentBuf.length) {
-        requestAnimationFrame(replayBatch);
-      } else {
-        replayDone = true;
-        term.scrollToBottom();
-      }
-    };
 
     if (buf && buf.length > 0) {
-      requestAnimationFrame(replayBatch);
-    } else {
-      replayDone = true;
+      for (let i = 0; i < buf.length; i++) {
+        term.write(buf[i]);
+      }
+      writtenChunks = buf.length;
+      term.scrollToBottom();
     }
 
-    // Listen for new output — queue writes that arrive during replay
-    const pendingChunks: Uint8Array[] = [];
+    // Listen for new output arriving after initial replay
     const handler = (e: Event) => {
       const detail = (e as CustomEvent).detail;
       if (detail?.key === bufferKey) {
         const currentBuf = scriptOutputBuffers.get(bufferKey);
         if (!currentBuf) return;
-        if (replayDone) {
-          for (let i = writtenChunks; i < currentBuf.length; i++) {
-            term.write(currentBuf[i]);
-          }
-          writtenChunks = currentBuf.length;
-        } else {
-          // Replay still in progress — it will catch up via writtenChunks
+        for (let i = writtenChunks; i < currentBuf.length; i++) {
+          term.write(currentBuf[i]);
         }
+        writtenChunks = currentBuf.length;
       }
     };
     document.addEventListener("rally:watcher-output", handler);
