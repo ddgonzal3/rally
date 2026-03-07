@@ -11,7 +11,7 @@ import { useWorkspaceStore } from "./stores/workspaceStore";
 import { api } from "./lib/tauri";
 import { showContextMenu } from "./lib/contextMenu";
 import { AddWorkspaceModal } from "./components/AddWorkspaceModal";
-import { DEFAULT_BOTTOM_RATIO, findFirstGroupInSubtree, findNeighborGroup, replaceNode, type LayoutNode, type NavigationDirection, type Pane, type ThemeName } from "./lib/types";
+import { DEFAULT_BOTTOM_RATIO, findFirstGroupInSubtree, findNeighborGroup, replaceNode, type LayoutNode, type NavigationDirection, type Pane, type PrStatus, type ThemeName } from "./lib/types";
 import {
   startExternalFileDrag,
   updateDragPosition,
@@ -360,7 +360,7 @@ export function App() {
     if (!s.activeWorkspaceId) return "[]";
     const ws = s.workspaces.find((w) => w.id === s.activeWorkspaceId);
     if (!ws) return "[]";
-    const prs: { path: string; repoName: string; pr: import("./lib/types").PrStatus }[] = [];
+    const prs: { path: string; repoName: string; pr: PrStatus }[] = [];
     for (const p of ws.paths) {
       const pr = s.prStatuses[p];
       if (pr && pr.state === "OPEN") {
@@ -370,7 +370,7 @@ export function App() {
     return JSON.stringify(prs);
   });
   const activePrs = React.useMemo(
-    () => JSON.parse(activePrsJson) as { path: string; repoName: string; pr: import("./lib/types").PrStatus }[],
+    () => JSON.parse(activePrsJson) as { path: string; repoName: string; pr: PrStatus }[],
     [activePrsJson],
   );
 

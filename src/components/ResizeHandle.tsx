@@ -120,7 +120,7 @@ export function ResizeHandle({ direction, ratio, onResize }: ResizeHandleProps) 
 
       // Collect peer handles at drag start for snapping and Option+drag sync
       const peerHandles = collectPeerHandles(handle, direction);
-      let peersAresynced = false;
+      let peersAreSynced = false;
 
       const snapRatio = (r: number): number => {
         for (const peer of peerHandles) {
@@ -139,14 +139,14 @@ export function ResizeHandle({ direction, ratio, onResize }: ResizeHandleProps) 
             peer.firstPane.style.flex = `${nextRatio} 1 0%`;
             peer.secondPane.style.flex = `${1 - nextRatio} 1 0%`;
           }
-          peersAresynced = true;
-        } else if (peersAresynced) {
+          peersAreSynced = true;
+        } else if (peersAreSynced) {
           // Option released mid-drag: restore peers to original flex
           for (const peer of peerHandles) {
             peer.firstPane.style.flex = peer.originalFirstFlex;
             peer.secondPane.style.flex = peer.originalSecondFlex;
           }
-          peersAresynced = false;
+          peersAreSynced = false;
         }
       };
 
@@ -175,12 +175,12 @@ export function ResizeHandle({ direction, ratio, onResize }: ResizeHandleProps) 
           cancelAnimationFrame(pendingRaf);
           pendingRaf = null;
         }
-        // Use peersAresynced (set during drag) rather than ev.altKey,
+        // Use peersAreSynced (set during drag) rather than ev.altKey,
         // because Option may be released slightly before the mouse button.
-        applyPreview(latestRatio, peersAresynced);
+        applyPreview(latestRatio, peersAreSynced);
         document.documentElement.removeAttribute("data-rally-split-drag");
         document.documentElement.removeAttribute("data-rally-split-drag-direction");
-        onResizeRef.current(latestRatio, peersAresynced);
+        onResizeRef.current(latestRatio, peersAreSynced);
         document.dispatchEvent(new CustomEvent("rally:split-resize-end"));
         document.documentElement.style.removeProperty("--split-transition");
         document.removeEventListener("mousemove", onMouseMove);

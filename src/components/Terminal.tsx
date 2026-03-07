@@ -104,7 +104,7 @@ function zoomProposeDimensions(
   const scrollbarWidth =
     term.options.scrollback === 0
       ? 0
-      : term.options.overviewRuler?.width || 15;
+      : term.options.overviewRuler?.width ?? 15;
   const parentStyle = window.getComputedStyle(parent);
   const parentHeight = parseInt(parentStyle.getPropertyValue("height"), 10) || parent.clientHeight;
   const parentWidth = parseInt(parentStyle.getPropertyValue("width"), 10) || parent.clientWidth;
