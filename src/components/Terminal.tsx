@@ -67,6 +67,8 @@ function isClaudeCodeTitle(title: string): boolean {
 }
 
 const encoder = new TextEncoder();
+const BASE_FONT_SIZE = 13;
+const BASE_CURSOR_WIDTH = 2;
 
 // Minimum acceptable terminal dimensions.
 // If FitAddon proposes anything smaller, we skip the resize entirely
@@ -74,36 +76,91 @@ const encoder = new TextEncoder();
 const MIN_COLS = 10;
 const MIN_ROWS = 4;
 
+function getStoredZoomLevel(): number {
+  const saved = localStorage.getItem("rally:zoomLevel");
+  const zoom = saved ? Number(saved) : 1;
+  return Number.isFinite(zoom) && zoom > 0 ? zoom : 1;
+}
+
 /**
- * Safe wrapper around FitAddon.fit().
- * Uses proposeDimensions() to get the values, validates them,
- * and only applies the resize if they're reasonable.
- * This prevents xterm from ever resizing to 1-2 columns during
- * transient layout states.
+ * Propose terminal dimensions accounting for CSS zoom.
+ *
+ * The body has CSS `zoom: Z` but the .xterm element has `zoom: 1/Z`
+ * to neutralize it (so xterm's coordinate math works at effective zoom 1.0).
+ * Because .xterm is wider than its parent (width: Z*100%), we must
+ * multiply the parent's CSS width by Z to get the actual available width.
  */
-function safeFit(term: XTerminal, fitAddon: FitAddon): boolean {
-  const dims = fitAddon.proposeDimensions();
+function zoomProposeDimensions(
+  term: XTerminal,
+  zoom: number,
+): { cols: number; rows: number } | null {
+  const element = term.element as HTMLElement | undefined;
+  const parent = element?.parentElement;
+  const dims = (term as any)._core?._renderService?.dimensions;
+  if (!element || !parent || !dims) return null;
+  if (!Number.isFinite(dims.css.cell.width) || !Number.isFinite(dims.css.cell.height)) return null;
+  if (dims.css.cell.width <= 0 || dims.css.cell.height <= 0) return null;
+
+  const scrollbarWidth =
+    term.options.scrollback === 0
+      ? 0
+      : term.options.overviewRuler?.width || 15;
+  const parentStyle = window.getComputedStyle(parent);
+  const parentHeight = parseInt(parentStyle.getPropertyValue("height"), 10) || parent.clientHeight;
+  const parentWidth = parseInt(parentStyle.getPropertyValue("width"), 10) || parent.clientWidth;
+  const elementStyle = window.getComputedStyle(element);
+  const paddingTop = parseInt(elementStyle.getPropertyValue("padding-top"), 10) || 0;
+  const paddingBottom = parseInt(elementStyle.getPropertyValue("padding-bottom"), 10) || 0;
+  const paddingLeft = parseInt(elementStyle.getPropertyValue("padding-left"), 10) || 0;
+  const paddingRight = parseInt(elementStyle.getPropertyValue("padding-right"), 10) || 0;
+  const availableHeight = Math.max(0, parentHeight * zoom - paddingTop - paddingBottom);
+  const availableWidth = Math.max(0, parentWidth * zoom - paddingLeft - paddingRight - scrollbarWidth);
+
+  return {
+    cols: Math.max(2, Math.floor(availableWidth / dims.css.cell.width)),
+    rows: Math.max(1, Math.floor(availableHeight / dims.css.cell.height)),
+  };
+}
+
+/**
+ * Safe wrapper around terminal resize.
+ * Uses zoomProposeDimensions() for zoom-aware fitting, validates the
+ * values, and only applies the resize if they're reasonable.
+ */
+function safeFit(term: XTerminal, fitAddon: FitAddon, zoom = 1): boolean {
+  const dims = zoom === 1
+    ? fitAddon.proposeDimensions()
+    : zoomProposeDimensions(term, zoom);
   if (!dims) return false;
-  // Guard against NaN/Infinity from incomplete layout measurements
   if (!Number.isFinite(dims.cols) || !Number.isFinite(dims.rows)) return false;
   const cols = Math.round(dims.cols);
   const rows = Math.round(dims.rows);
   if (cols < MIN_COLS || rows < MIN_ROWS) return false;
   if (cols === term.cols && rows === term.rows) return false;
 
-  // Capture viewport anchor: how far from the bottom the user has scrolled.
-  // After resize, restore this distance so content stays visually pinned.
   const buf = term.buffer.active;
   const distFromBottom = buf.baseY - buf.viewportY;
 
-  // Resize in-place without clearing the renderer first.
-  // FitAddon.fit() calls _renderService.clear() before resize, but that
-  // blanks the canvas for one frame — visible as flicker when sibling
-  // panes are removed and the ResizeObserver fires transiently.
-  // xterm's resize() reflows content correctly without a prior clear.
   term.resize(cols, rows);
 
-  // Restore viewport position relative to the bottom.
+  const newBuf = term.buffer.active;
+  const targetViewport = Math.max(0, newBuf.baseY - distFromBottom);
+  if (newBuf.viewportY !== targetViewport) {
+    term.scrollToLine(targetViewport);
+  }
+  return true;
+}
+
+function fitRowsWithLockedCols(term: XTerminal, fitAddon: FitAddon, lockedCols: number, zoom = 1): boolean {
+  const dims = zoom === 1
+    ? fitAddon.proposeDimensions()
+    : zoomProposeDimensions(term, zoom);
+  if (!dims || !Number.isFinite(dims.rows)) return false;
+  const rows = Math.max(MIN_ROWS, Math.round(dims.rows));
+  if (rows === term.rows && term.cols === lockedCols) return false;
+  const buf = term.buffer.active;
+  const distFromBottom = buf.baseY - buf.viewportY;
+  term.resize(lockedCols, rows);
   const newBuf = term.buffer.active;
   const targetViewport = Math.max(0, newBuf.baseY - distFromBottom);
   if (newBuf.viewportY !== targetViewport) {
@@ -132,6 +189,7 @@ export function Terminal({ cwd, command, initialInput, ptyId: existingPtyId, loc
   const claudeLikelyActiveRef = useRef(false);
   onTitleChangeRef.current = onTitleChange;
   onKillRef.current = onKill;
+  const uiZoomRef = useRef(getStoredZoomLevel());
 
   const emitTitle = useCallback((title: string) => {
     const normalized = normalizeTerminalTitle(title);
@@ -286,81 +344,38 @@ export function Terminal({ cwd, command, initialInput, ptyId: existingPtyId, loc
 
     term.open(containerRef.current);
 
-    // Patch mouse-to-cell coordinate conversion to account for CSS zoom.
-    // The body container uses CSS `zoom` for app-level scaling (App.tsx).
-    // xterm.js computes selection coordinates as:
-    //   col = (event.clientX - rect.left) / css.cell.width
-    // But clientX and rect are in viewport pixels (zoomed), while
-    // css.cell.width is in CSS pixels (unzoomed, from OffscreenCanvas).
-    // When zoom ≠ 1.0, this gives wrong columns. Fix: divide the
-    // viewport-space offset by zoom before the cell-width division.
-    const mouseService = (term as any)._core?._mouseService;
-    if (mouseService) {
-      const origGetCoords = mouseService.getCoords.bind(mouseService);
-      const origGetMouseReportCoords = mouseService.getMouseReportCoords.bind(mouseService);
-      const getZoom = () => parseFloat(localStorage.getItem("rally:zoomLevel") || "1");
-
-      mouseService.getCoords = function(
-        event: { clientX: number; clientY: number },
-        element: HTMLElement,
-        colCount: number,
-        rowCount: number,
-        isSelection?: boolean,
-      ): [number, number] | undefined {
-        const z = getZoom();
-        if (z === 1) return origGetCoords(event, element, colCount, rowCount, isSelection);
-
-        const renderDims = (term as any)._core._renderService?.dimensions;
-        const cellW = renderDims?.css?.cell?.width;
-        const cellH = renderDims?.css?.cell?.height;
-        if (!cellW || !cellH) return undefined;
-
-        const rect = element.getBoundingClientRect();
-        const style = window.getComputedStyle(element);
-        const padL = parseInt(style.getPropertyValue("padding-left"));
-        const padT = parseInt(style.getPropertyValue("padding-top"));
-
-        // Convert viewport offset → CSS offset by dividing by zoom
-        const relX = (event.clientX - rect.left - padL) / z;
-        const relY = (event.clientY - rect.top - padT) / z;
-
-        let col = Math.ceil((relX + (isSelection ? cellW / 2 : 0)) / cellW);
-        let row = Math.ceil(relY / cellH);
-        col = Math.min(Math.max(col, 1), colCount + (isSelection ? 1 : 0));
-        row = Math.min(Math.max(row, 1), rowCount);
-        return [col, row];
-      };
-
-      mouseService.getMouseReportCoords = function(
-        event: MouseEvent,
-        element: HTMLElement,
-      ): { col: number; row: number; x: number; y: number } | undefined {
-        const z = getZoom();
-        if (z === 1) return origGetMouseReportCoords(event, element);
-
-        const renderDims = (term as any)._core._renderService?.dimensions;
-        const cellW = renderDims?.css?.cell?.width;
-        const cellH = renderDims?.css?.cell?.height;
-        if (!cellW || !cellH) return undefined;
-
-        const rect = element.getBoundingClientRect();
-        const style = window.getComputedStyle(element);
-        const padL = parseInt(style.getPropertyValue("padding-left"));
-        const padT = parseInt(style.getPropertyValue("padding-top"));
-
-        let x = (event.clientX - rect.left - padL) / z;
-        let y = (event.clientY - rect.top - padT) / z;
-        x = Math.min(Math.max(x, 0), renderDims.css.canvas.width - 1);
-        y = Math.min(Math.max(y, 0), renderDims.css.canvas.height - 1);
-
-        return {
-          col: Math.floor(x / cellW),
-          row: Math.floor(y / cellH),
-          x: Math.floor(x),
-          y: Math.floor(y),
-        };
-      };
+    // Neutralize body CSS zoom on the terminal so xterm's coordinate
+    // math (selection, mouse reporting, auto-scroll) works correctly.
+    // Body has `zoom: Z`; we apply `zoom: 1/Z` on the .xterm element
+    // giving effective zoom 1.0. Font size is scaled to BASE*Z so text
+    // appears at the same visual size as the rest of the zoomed UI.
+    // Width/height are scaled to Z*100% to fill the parent visually.
+    function applyZoomStyles(z: number) {
+      const xtermEl = term.element;
+      if (!xtermEl) return;
+      if (z === 1) {
+        xtermEl.style.zoom = "";
+        xtermEl.style.position = "";
+        xtermEl.style.top = "";
+        xtermEl.style.left = "";
+      } else {
+        xtermEl.style.zoom = String(1 / z);
+        // Absolute positioning removes .xterm from flex flow so it
+        // doesn't fight justifyContent/flex sizing. No explicit
+        // width/height — let xterm size itself from its content.
+        // Any gap between .xterm and the container is filled by the
+        // container background (--terminal-bg), not black.
+        xtermEl.style.position = "absolute";
+        xtermEl.style.top = "0";
+        xtermEl.style.left = "0";
+      }
+      term.options.fontSize = Math.round(BASE_FONT_SIZE * z);
+      term.options.cursorWidth = Math.max(1, Math.round(BASE_CURSOR_WIDTH * z));
     }
+
+    const initialZoom = getStoredZoomLevel();
+    uiZoomRef.current = initialZoom;
+    applyZoomStyles(initialZoom);
 
     // Custom link provider: Cmd+click for file paths and URLs
     const noop: OnFileOpen = () => {};
@@ -537,19 +552,7 @@ export function Terminal({ cwd, command, initialInput, ptyId: existingPtyId, loc
 
     /** Fit rows to container, keeping cols locked at LOCKED_COLS. */
     function fitRowsOnly(): boolean {
-      const dims = fitAddon.proposeDimensions();
-      if (!dims || !Number.isFinite(dims.rows)) return false;
-      const rows = Math.max(MIN_ROWS, Math.round(dims.rows));
-      if (rows === term.rows && term.cols === LOCKED_COLS) return false;
-      const buf = term.buffer.active;
-      const distFromBottom = buf.baseY - buf.viewportY;
-      term.resize(LOCKED_COLS, rows);
-      const newBuf = term.buffer.active;
-      const targetViewport = Math.max(0, newBuf.baseY - distFromBottom);
-      if (newBuf.viewportY !== targetViewport) {
-        term.scrollToLine(targetViewport);
-      }
-      return true;
+      return fitRowsWithLockedCols(term, fitAddon, LOCKED_COLS, uiZoomRef.current);
     }
 
     async function connectToPty(ptyId: string) {
@@ -686,7 +689,7 @@ export function Terminal({ cwd, command, initialInput, ptyId: existingPtyId, loc
         if (lockCols) {
           fitRowsOnly();
         } else {
-          safeFit(term, fitAddon);
+          safeFit(term, fitAddon, uiZoomRef.current);
         }
 
         // Replay buffered output from ship session or script run
@@ -732,7 +735,7 @@ export function Terminal({ cwd, command, initialInput, ptyId: existingPtyId, loc
             api.resizePty(existingPtyId, LOCKED_COLS, term.rows);
           }
         } else {
-          safeFit(term, fitAddon);
+          safeFit(term, fitAddon, uiZoomRef.current);
           if (term.cols >= MIN_COLS && term.rows >= MIN_ROWS) {
             api.resizePty(existingPtyId, term.cols, term.rows);
           }
@@ -747,7 +750,7 @@ export function Terminal({ cwd, command, initialInput, ptyId: existingPtyId, loc
       ptySpawned = true;
 
       try {
-        safeFit(term, fitAddon);
+        safeFit(term, fitAddon, uiZoomRef.current);
         // Ensure at least 80x24 — protects against xterm auto-sizing to
         // a tiny container during initial layout settling
         const spawnCols = Math.max(term.cols, 80);
@@ -777,7 +780,7 @@ export function Terminal({ cwd, command, initialInput, ptyId: existingPtyId, loc
         // Clear renderer cache first to ensure mouse-to-cell mapping stays correct.
         const core = (term as any)._core;
         if (core?._renderService) core._renderService.clear();
-        if (safeFit(term, fitAddon)) {
+        if (safeFit(term, fitAddon, uiZoomRef.current)) {
           // safeFit resized xterm, but onResize already forwarded it.
           // No extra action needed.
         } else {
@@ -809,10 +812,16 @@ export function Terminal({ cwd, command, initialInput, ptyId: existingPtyId, loc
       if (rafId !== null) cancelAnimationFrame(rafId);
       rafId = requestAnimationFrame(() => {
         rafId = null;
+        // Sync zoom styles when body zoom changes (triggers ResizeObserver)
+        const currentZoom = getStoredZoomLevel();
+        if (currentZoom !== uiZoomRef.current) {
+          uiZoomRef.current = currentZoom;
+          applyZoomStyles(currentZoom);
+        }
         if (!ptySpawned) {
           initFn();
         } else {
-          lockCols ? fitRowsOnly() : safeFit(term, fitAddon);
+          lockCols ? fitRowsOnly() : safeFit(term, fitAddon, uiZoomRef.current);
         }
       });
     });
@@ -886,5 +895,7 @@ const styles: Record<string, React.CSSProperties> = {
     display: "flex",
     flexDirection: "column",
     justifyContent: "flex-end",
+    position: "relative",
+    background: "var(--terminal-bg)",
   },
 };
