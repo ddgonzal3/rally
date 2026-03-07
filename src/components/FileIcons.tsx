@@ -152,7 +152,7 @@ function isScriptFile(name: string): boolean {
   return lower.endsWith(".sh") || lower.endsWith(".bash") || lower.endsWith(".zsh");
 }
 
-/** Terminal prompt icon (>_) for script files. Shared by file explorer, tabs, and TaskPanel. */
+/** Terminal prompt icon (>_) for script files. Shared by file explorer, tabs, and status bar. */
 export function TerminalPromptIcon({ size, color = "var(--status-green)" }: { size: number; color?: string }) {
   return (
     <svg width={size} height={size} viewBox="0 0 16 16" fill="none" style={{ flexShrink: 0 }}>
