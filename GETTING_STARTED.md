@@ -148,24 +148,66 @@ Git status auto-refreshes every 10 seconds.
 
 ---
 
-## 7. Task Panel (Scripts & Commands)
+## 7. Scripts & Watchers
 
-The task panel appears in the file explorer sidebar and shows two kinds of entries:
+Rally auto-discovers shell scripts from your repo's `scripts/` directory and makes them available in the **task panel** (file explorer sidebar). You can pin scripts to the **bottom status bar** for persistent, at-a-glance access.
 
-### Auto-discovered Scripts
+### How to set it up
 
-Rally scans your workspace's `scripts/` directory and lists any executable scripts it finds. You can:
+1. Create a `scripts/` directory in your repo root
+2. Add shell scripts (`.sh`, `.bash`, or `.zsh`) for your common tasks
+3. Rally picks them up automatically in the task panel -- no configuration needed
 
-- **Click the play button** to run a script
-- **Click the stop button** to kill a running script
-- **Click the script name** to open it in the editor
-- **Right-click** for more options (Reveal in Finder, Rename)
+**Example:**
 
-Scripts named `watch*` (e.g., `watch.sh`, `watch-dev.sh`) are treated as watchers -- they show live build status indicators (idle/building/success/error).
+```
+my-repo/
++-- scripts/
+|   +-- watch.sh          # Dev server / file watcher
+|   +-- build.sh          # Production build
+|   +-- check.sh          # Linting / type-checking
+|   +-- test.sh           # Run tests
+```
+
+### Adding scripts to the status bar
+
+Scripts appear in the task panel by default, but the **status bar** (the bar at the bottom of the app) requires you to explicitly add scripts. Two ways:
+
+1. **Right-click** any `.sh` file in the file explorer and select **Add to Status Bar**
+2. **Manually** add a `statusBar` array to your repo's `RALLY.json`:
+
+```json
+{
+  "statusBar": ["watch.sh", "build.sh"]
+}
+```
+
+Once in the status bar, scripts show a play/stop button and live output. Click the script name to expand a terminal drawer with full output.
+
+### Watchers vs regular scripts
+
+Any script with **"watch" in the name** (e.g., `watch.sh`, `watch-dev.sh`, `watch-tests.sh`) gets special **watcher** behavior:
+
+- **Live build status** -- colored dot shows idle, building, success, or error
+- **Timestamp** of the last successful build
+- Designed for long-running processes (dev servers, file watchers, etc.)
+
+Regular scripts show a simple running/stopped state.
+
+### Hiding scripts
+
+Add a `RALLY.json` file to your repo root to exclude specific scripts or built-in commands from the task panel:
+
+```json
+{
+  "excludeScripts": ["test.sh"],
+  "excludeBuiltins": ["ship"]
+}
+```
 
 ### Built-in Claude Commands
 
-Rally ships with Claude Code commands that appear automatically:
+Rally also ships with Claude Code commands that appear in the task panel:
 
 | Command | What It Does |
 |---------|-------------|
@@ -226,8 +268,10 @@ Rally lets you edit:
 
 ### RALLY.json
 
-An optional config file in your repo root. Currently supports:
-- `"excludeBuiltins": ["ship"]` -- hide specific built-in commands from the task panel
+An optional config file in your repo root. Supports:
+- `"statusBar": ["watch.sh", "build.sh"]` -- pin scripts to the bottom status bar (see [Scripts & Watchers](#7-scripts--watchers))
+- `"excludeScripts": ["test.sh"]` -- hide scripts from the task panel
+- `"excludeBuiltins": ["ship"]` -- hide built-in commands from the task panel
 
 ---
 
