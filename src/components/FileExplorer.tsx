@@ -1455,10 +1455,7 @@ function RootSection({
           style={{
             ...styles.rootRowSticky,
             ...(repoCollapsed
-              ? {
-                  borderRadius: 6,
-                  border: "1px solid var(--border)",
-                }
+              ? { borderRadius: 5 }
               : {}),
           }}
           onMouseDown={(e) => onRootHeaderMouseDown?.(e, rootPath)}
@@ -3098,12 +3095,9 @@ const styles: Record<string, React.CSSProperties> = {
     position: "relative",
     zIndex: 0,
     background: "var(--bg-app)",
-    backgroundClip: "padding-box",
     borderRadius: 6,
-    border: "1px solid transparent",
-    borderRight: "6px solid transparent",
-    borderBottomColor: "var(--border)",
-    padding: 0,
+    border: "1px solid var(--border)",
+    marginRight: 5,
     overflow: "clip",
   },
   cardDragging: {
@@ -3160,11 +3154,8 @@ const styles: Record<string, React.CSSProperties> = {
     position: "sticky" as const,
     top: 0,
     zIndex: 5,
-    borderRadius: "6px 6px 0 0",
+    borderRadius: "5px 5px 0 0",
     overflow: "hidden",
-    border: "1px solid var(--border)",
-    borderBottom: "none",
-    margin: "-1px -1px 0 -1px",
     backdropFilter: "blur(20px) saturate(180%)",
     WebkitBackdropFilter: "blur(20px) saturate(180%)",
   },
