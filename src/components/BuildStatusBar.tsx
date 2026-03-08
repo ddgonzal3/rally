@@ -127,7 +127,7 @@ function ScriptDot({
     if (buildStatus !== "success") {
       setFlashing(false);
     }
-    if (buildStatus === "building" || buildStatus === "error") {
+    if (buildStatus === "error") {
       setBuiltAt(null);
     }
     prevStatusRef.current = buildStatus;
@@ -315,7 +315,7 @@ function ScriptDot({
           </button>
         </div>
 
-      {/* "built at" timestamp — auto-dismisses after 30s */}
+      {/* "built at" timestamp — persists during rebuilds, clears on error */}
       {builtAt && (
         <span
           style={{

@@ -5,6 +5,7 @@ import { useWorkspaceStore, scriptOutputBuffers } from "../stores/workspaceStore
 import { api } from "../lib/tauri";
 import { TerminalPromptIcon } from "./FileIcons";
 import { getXtermTheme } from "../lib/xtermTheme";
+import { showContextMenu } from "../lib/contextMenu";
 
 export function BuildStatusDrawer() {
   const drawer = useWorkspaceStore((s) => s.statusBarDrawer);
@@ -154,24 +155,76 @@ export function BuildStatusDrawer() {
     }
   }, [theme]);
 
-  // ResizeObserver for xterm fit — debounced to avoid lag during drag
+  // ResizeObserver for xterm fit — immediate during drag, debounced otherwise
   useEffect(() => {
     if (!termRef.current || !fitAddonRef.current) return;
     const fitAddon = fitAddonRef.current;
     const term = xtermRef.current;
     let timer: ReturnType<typeof setTimeout>;
+    const doFit = () => {
+      try {
+        fitAddon.fit();
+        term?.scrollToBottom();
+      } catch {}
+    };
     const ro = new ResizeObserver(() => {
-      clearTimeout(timer);
-      timer = setTimeout(() => {
-        try {
-          fitAddon.fit();
-          term?.scrollToBottom();
-        } catch {}
-      }, 60);
+      if (dragging.current) {
+        // During drag: fit immediately for smooth resize
+        doFit();
+      } else {
+        // Non-drag resize (window resize etc.): debounce
+        clearTimeout(timer);
+        timer = setTimeout(doFit, 60);
+      }
     });
     ro.observe(termRef.current);
     return () => { ro.disconnect(); clearTimeout(timer); };
   }, [drawer]);
+
+  const handleContextMenu = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    const term = xtermRef.current;
+    const bufKey = drawer ? `${drawer.repoPath}:${drawer.scriptName}` : "";
+    const encoder = new TextEncoder();
+
+    showContextMenu(
+      [
+        {
+          label: "Copy",
+          accelerator: "CmdOrCtrl+C",
+          action: () => {
+            if (term) {
+              const sel = term.getSelection();
+              if (sel) navigator.clipboard.writeText(sel);
+            }
+          },
+        },
+        {
+          label: "Paste",
+          accelerator: "CmdOrCtrl+V",
+          action: async () => {
+            const run = useWorkspaceStore.getState().scriptRuns[bufKey];
+            if (!run?.ptyId) return;
+            try {
+              const text = await api.readClipboardText();
+              if (text) api.writePty(run.ptyId, Array.from(encoder.encode(text)));
+            } catch {}
+          },
+        },
+        {
+          label: "Select All",
+          accelerator: "CmdOrCtrl+A",
+          action: () => term?.selectAll(),
+        },
+        "separator",
+        {
+          label: "Clear Terminal",
+          action: () => term?.clear(),
+        },
+      ],
+      { x: e.clientX, y: e.clientY },
+    );
+  }, [drawer?.repoPath, drawer?.scriptName]);
 
   if (!drawer) return null;
 
@@ -263,7 +316,7 @@ export function BuildStatusDrawer() {
           </button>
         </div>
       </div>
-      <div ref={termRef} style={{ flex: 1, overflow: "hidden", display: "flex", flexDirection: "column", justifyContent: "flex-end", paddingLeft: 6, paddingRight: 6 }} />
+      <div ref={termRef} onContextMenu={handleContextMenu} style={{ flex: 1, overflow: "hidden", display: "flex", flexDirection: "column", justifyContent: "flex-end", paddingLeft: 6, paddingRight: 6 }} />
     </div>
   );
 }
