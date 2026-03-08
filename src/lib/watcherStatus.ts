@@ -93,7 +93,7 @@ function applyWatcherText(
       nextStatus = "error";
       continue;
     }
-    if (hasSuccess(line)) {
+    if (hasSuccess(line) && nextStatus !== "error") {
       nextStatus = "success";
     }
   }
