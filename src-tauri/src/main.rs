@@ -321,6 +321,9 @@ fn main() {
                 eprintln!("Warning: failed to install default commands: {}", e);
             }
 
+            // Start the CLI server (localhost HTTP listener for `rally` CLI)
+            rally::cli_server::start(app.handle().clone());
+
             // --- Test mode setup ---
             #[cfg(feature = "test-bridge")]
             if is_test_mode() {
