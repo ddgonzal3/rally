@@ -11,7 +11,6 @@ pkill -f "Rally" 2>/dev/null || true
 sleep 0.3
 
 echo "Building..."
-npm run build
 cargo tauri build --bundles app
 
 if [ "$1" = "--no-launch" ]; then
