@@ -155,6 +155,52 @@ export default function QuickOpen(props: QuickOpenProps) {
 
   const [allFiles, setAllFiles] = useState<string[]>([]);
 
+  // --- Path-browsing mode ---
+  const isPathMode = !isCwdMode && (query.startsWith("/") || query.startsWith("~"));
+
+  // Parse path query into directory + filter
+  const { pathDir, pathFilter } = useMemo(() => {
+    if (!isPathMode) return { pathDir: "", pathFilter: "" };
+    const lastSlash = query.lastIndexOf("/");
+    if (lastSlash < 0) return { pathDir: query, pathFilter: "" };
+    return {
+      pathDir: query.substring(0, lastSlash + 1),
+      pathFilter: query.substring(lastSlash + 1),
+    };
+  }, [isPathMode, query]);
+
+  // Whether the filter portion starts with "." (show hidden files)
+  const showHidden = pathFilter.startsWith(".");
+
+  const [dirEntries, setDirEntries] = useState<{ name: string; is_dir: boolean }[]>([]);
+  const [dirError, setDirError] = useState<string | null>(null);
+  // Track which directory we last fetched so we don't re-fetch on filter changes
+  const lastFetchedDir = useRef<string>("");
+
+  useEffect(() => {
+    if (!visible || !isPathMode || !pathDir) {
+      setDirEntries([]);
+      setDirError(null);
+      lastFetchedDir.current = "";
+      return;
+    }
+    // Only re-fetch when the directory portion changes
+    const fetchKey = pathDir + (showHidden ? ":h" : ":v");
+    if (fetchKey === lastFetchedDir.current) return;
+    lastFetchedDir.current = fetchKey;
+    let cancelled = false;
+    setDirError(null);
+    api.listDirectoryEntries(pathDir, showHidden).then((entries) => {
+      if (cancelled) return;
+      setDirEntries(entries);
+    }).catch((err) => {
+      if (cancelled) return;
+      setDirEntries([]);
+      setDirError(String(err));
+    });
+    return () => { cancelled = true; };
+  }, [visible, isPathMode, pathDir, showHidden]);
+
   const ws = workspaces.find((w) => w.id === activeWorkspaceId);
   const workspacePaths = ws?.paths ?? [];
   const cacheKey = [...workspacePaths].sort().join("\n");
@@ -271,6 +317,51 @@ export default function QuickOpen(props: QuickOpenProps) {
       return filtered;
     }
 
+    // --- Path-browsing mode ---
+    if (isPathMode) {
+      if (dirError) return [];
+
+      const filtered = pathFilter
+        ? dirEntries.filter((e) => {
+            const match = fuzzyMatch(pathFilter, e.name);
+            return match !== null;
+          })
+        : dirEntries;
+
+      return filtered.slice(0, MAX_RESULTS).map((entry) => {
+        const match = pathFilter ? fuzzyMatch(pathFilter, entry.name) : null;
+        return {
+          key: pathDir + entry.name,
+          primaryText: entry.name + (entry.is_dir ? "/" : ""),
+          secondaryText: pathDir,
+          score: match?.score ?? 0,
+          matchIndices: new Set<number>(match?.indices ?? []),
+          icon: entry.is_dir ? "folder" as const : "file" as const,
+          onSelect: () => {
+            if (entry.is_dir) {
+              // Drill down — update query to navigate into directory
+              setQuery(pathDir + entry.name + "/");
+              setSelectedIndex(0);
+            } else {
+              // Resolve ~ to absolute path for openFile
+              const fullPath = pathDir + entry.name;
+              if (activeWorkspaceId) {
+                // For paths starting with ~, resolve via homeDir
+                if (fullPath.startsWith("~")) {
+                  api.getHomeDir().then((home) => {
+                    openFile(activeWorkspaceId, home + fullPath.slice(1));
+                  });
+                } else {
+                  openFile(activeWorkspaceId, fullPath);
+                }
+              }
+              onClose();
+            }
+          },
+        };
+      });
+    }
+
     if (!trimmedQuery) {
       return allFiles.slice(0, MAX_RESULTS).map((filePath) => {
         const fileName = baseName(filePath);
@@ -328,6 +419,11 @@ export default function QuickOpen(props: QuickOpenProps) {
   }, [
     query,
     isCwdMode,
+    isPathMode,
+    pathDir,
+    pathFilter,
+    dirEntries,
+    dirError,
     cwdOptions,
     homePrefix,
     allFiles,
@@ -336,6 +432,8 @@ export default function QuickOpen(props: QuickOpenProps) {
     activeWorkspaceId,
     openFile,
     onClose,
+    setQuery,
+    setSelectedIndex,
   ]);
 
   useEffect(() => {
@@ -410,7 +508,11 @@ export default function QuickOpen(props: QuickOpenProps) {
         <div ref={resultsRef} style={styles.resultsList}>
           {results.length === 0 && query.trim() ? (
             <div style={styles.emptyMsg}>
-              {isCwdMode ? "No matching folders" : "No matching files"}
+              {dirError
+                ? "Directory not found"
+                : isCwdMode
+                  ? "No matching folders"
+                  : "No matching files"}
             </div>
           ) : (
             results.map((result, i) => {

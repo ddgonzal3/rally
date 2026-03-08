@@ -46,6 +46,18 @@ function getLanguageFromPath(path: string): string {
   if (name === "makefile" || name === "gnumakefile") return "makefile";
   if (name === ".gitignore" || name === ".dockerignore") return "plaintext";
 
+  // Shell dotfiles
+  const shellDotfiles = new Set([
+    ".zshrc", ".zshenv", ".zprofile", ".zlogin", ".zlogout",
+    ".bashrc", ".bash_profile", ".bash_login", ".bash_logout", ".bash_aliases",
+    ".profile", ".shrc", ".kshrc", ".cshrc", ".tcshrc", ".login",
+  ]);
+  if (shellDotfiles.has(name)) return "shell";
+
+  // INI-style dotfiles
+  if (name === ".gitconfig" || name === ".editorconfig") return "ini";
+  if (name === ".npmrc" || name === ".yarnrc") return "ini";
+
   // Extensionless files in bin/ or scripts/ directories are shell scripts
   if (!name.includes(".")) {
     const dir = path.toLowerCase();

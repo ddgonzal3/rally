@@ -2055,12 +2055,16 @@ export const useWorkspaceStore = create<WorkspaceState>()(
     // Clean up detected ports from this script
     get().removePortsByScript(rootPath, scriptName);
 
-    set((s) => ({
-      scriptRuns: {
-        ...s.scriptRuns,
-        [key]: { ...run, status: "stopped" },
-      },
-    }));
+    // Only update if the run still exists (clearScript may have already removed it)
+    set((s) => {
+      if (!s.scriptRuns[key]) return s;
+      return {
+        scriptRuns: {
+          ...s.scriptRuns,
+          [key]: { ...s.scriptRuns[key], status: "stopped" },
+        },
+      };
+    });
   },
 
   clearScript: (rootPath, scriptName) => {
