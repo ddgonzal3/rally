@@ -1873,7 +1873,11 @@ export const useWorkspaceStore = create<WorkspaceState>()(
     };
     // Throttle the custom event dispatch too — high-frequency watchers can
     // fire hundreds of events per second, each triggering a DOM dispatch.
+    // Accumulate new chunks between rAF dispatches so the drawer can write
+    // them directly instead of tracking buffer indices (which break when
+    // pushLimitedChunk splices old entries from the front).
     let outputEventRafId = 0;
+    let pendingChunksForEvent: Uint8Array[] = [];
 
     const unlistenOutput = await listen<{ data: number[] }>(
       `pty-output-${ptyId}`,
@@ -1883,11 +1887,14 @@ export const useWorkspaceStore = create<WorkspaceState>()(
         const buf = scriptOutputBuffers.get(key);
         if (buf) {
           pushLimitedChunk(buf, chunk, MAX_SCRIPT_BUFFER_CHUNKS);
+          pendingChunksForEvent.push(chunk);
           // Notify drawer that watcher output changed — throttled to once per frame
           if (!outputEventRafId) {
             outputEventRafId = requestAnimationFrame(() => {
               outputEventRafId = 0;
-              document.dispatchEvent(new CustomEvent("rally:watcher-output", { detail: { key } }));
+              const chunks = pendingChunksForEvent;
+              pendingChunksForEvent = [];
+              document.dispatchEvent(new CustomEvent("rally:watcher-output", { detail: { key, chunks } }));
             });
           }
         }
