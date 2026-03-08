@@ -92,6 +92,24 @@ export function clearPtyBuffer(ptyId: string) {
   ptyOutputBuffers.delete(ptyId);
 }
 
+// --- Drawer hover-close timer ---
+let _drawerHoverTimer: ReturnType<typeof setTimeout> | null = null;
+
+export function cancelDrawerHoverClose() {
+  if (_drawerHoverTimer) {
+    clearTimeout(_drawerHoverTimer);
+    _drawerHoverTimer = null;
+  }
+}
+
+export function startDrawerHoverClose(close: () => void, delay = 120) {
+  cancelDrawerHoverClose();
+  _drawerHoverTimer = setTimeout(() => {
+    _drawerHoverTimer = null;
+    close();
+  }, delay);
+}
+
 const WINDOW_PERSIST_KEY = (() => {
   try {
     return `rally-state:${getCurrentWindow().label}`;
@@ -299,7 +317,7 @@ interface WorkspaceState {
   /** Cached RALLY.json configs per repo path (not persisted) */
   rallyConfigs: Record<string, RallyConfig>;
   /** Which script's drawer is currently open, or null */
-  statusBarDrawer: { repoPath: string; scriptName: string } | null;
+  statusBarDrawer: { repoPath: string; scriptName: string; hoverMode: boolean } | null;
   /** Detected localhost ports keyed by workspace ID */
   detectedPorts: Record<string, DetectedPort[]>;
   addDetectedPort: (workspaceId: string, port: DetectedPort) => void;
@@ -318,8 +336,9 @@ interface WorkspaceState {
   loadRallyConfig: (rootPath: string) => Promise<void>;
 
   // Status bar actions
-  openStatusBarDrawer: (repoPath: string, scriptName: string) => void;
+  openStatusBarDrawer: (repoPath: string, scriptName: string, hoverMode?: boolean) => void;
   closeStatusBarDrawer: () => void;
+  closeDrawerIfHover: () => void;
   addToStatusBar: (rootPath: string, scriptName: string) => Promise<void>;
   removeFromStatusBar: (rootPath: string, scriptName: string) => Promise<void>;
 
@@ -862,17 +881,35 @@ export const useWorkspaceStore = create<WorkspaceState>()(
 
   // --- Status bar actions ---
 
-  openStatusBarDrawer: (repoPath, scriptName) => {
+  openStatusBarDrawer: (repoPath, scriptName, hoverMode = false) => {
     const current = get().statusBarDrawer;
-    if (current?.repoPath === repoPath && current?.scriptName === scriptName) {
-      set({ statusBarDrawer: null }); // toggle off if same
+    const isSame = current?.repoPath === repoPath && current?.scriptName === scriptName;
+
+    if (hoverMode) {
+      // Don't override a click-mode drawer for the same script
+      if (isSame && !current!.hoverMode) return;
+      set({ statusBarDrawer: { repoPath, scriptName, hoverMode: true } });
+      return;
+    }
+
+    // Click: if same script in click mode, toggle off; otherwise open in click mode
+    if (isSame && !current!.hoverMode) {
+      set({ statusBarDrawer: null });
     } else {
-      set({ statusBarDrawer: { repoPath, scriptName } });
+      set({ statusBarDrawer: { repoPath, scriptName, hoverMode: false } });
     }
   },
 
   closeStatusBarDrawer: () => {
+    cancelDrawerHoverClose();
     set({ statusBarDrawer: null });
+  },
+
+  closeDrawerIfHover: () => {
+    const current = get().statusBarDrawer;
+    if (current?.hoverMode) {
+      set({ statusBarDrawer: null });
+    }
   },
 
   addToStatusBar: async (rootPath, scriptName) => {

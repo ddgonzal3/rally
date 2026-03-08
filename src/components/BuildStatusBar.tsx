@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef } from "react";
-import { useWorkspaceStore } from "../stores/workspaceStore";
+import { useWorkspaceStore, cancelDrawerHoverClose, startDrawerHoverClose } from "../stores/workspaceStore";
 import { api } from "../lib/tauri";
 import type { ScriptEntry } from "../lib/types";
 import {
@@ -75,8 +75,8 @@ function ScriptDot({
   runScript: (repoPath: string, scriptName: string, command: string) => void;
   stopScript: (repoPath: string, scriptName: string) => void;
   clearScript: (repoPath: string, scriptName: string) => void;
-  openStatusBarDrawer: (repoPath: string, scriptName: string) => void;
-  statusBarDrawer: { repoPath: string; scriptName: string } | null;
+  openStatusBarDrawer: (repoPath: string, scriptName: string, hoverMode?: boolean) => void;
+  statusBarDrawer: { repoPath: string; scriptName: string; hoverMode: boolean } | null;
   detectedPorts: ReturnType<typeof useDetectedPorts>;
   activeWorkspaceId: string | null;
   openWebView: (workspaceId: string, url: string) => void;
@@ -102,6 +102,18 @@ function ScriptDot({
     buildStatus = "error";
   } else {
     buildStatus = "idle";
+  }
+
+  // Sync pulse phase to a global clock so all building dots animate in unison.
+  // Computed once on transition to "building" and held stable across re-renders.
+  const pulseSyncDelayRef = useRef<string | null>(null);
+  const isPulsing = buildStatus === "building" && !flashing;
+  if (isPulsing) {
+    if (pulseSyncDelayRef.current === null) {
+      pulseSyncDelayRef.current = `${-(Date.now() % 1500)}ms`;
+    }
+  } else {
+    pulseSyncDelayRef.current = null;
   }
 
   const displayName = getDisplayName(scriptName);
@@ -222,10 +234,20 @@ function ScriptDot({
       onMouseEnter={() => {
         setHovered(true);
         if (!isRunning) setHasLeftSinceStart(true);
+        // Cancel pending hover-close if re-entering the script area
+        if (isDrawerOpen && statusBarDrawer?.hoverMode) {
+          cancelDrawerHoverClose();
+        }
       }}
       onMouseLeave={() => {
         setHovered(false);
         if (isRunning) setHasLeftSinceStart(true);
+        // Start hover-close timer (drawer's mouseEnter will cancel it)
+        if (isDrawerOpen && statusBarDrawer?.hoverMode) {
+          startDrawerHoverClose(() => {
+            useWorkspaceStore.getState().closeDrawerIfHover();
+          });
+        }
       }}
       onMouseDown={(e) => {
         if (e.button !== 0) return;
@@ -237,9 +259,11 @@ function ScriptDot({
         }
         if (isRunning) {
           e.preventDefault();
+          cancelDrawerHoverClose();
           openStatusBarDrawer(repoPath, scriptName);
         } else if (buildStatus === "error") {
           e.preventDefault();
+          cancelDrawerHoverClose();
           openStatusBarDrawer(repoPath, scriptName);
         } else {
           e.preventDefault();
@@ -258,8 +282,21 @@ function ScriptDot({
         background: isDrawerOpen ? "var(--terminal-popup-bg)" : "transparent",
       }}
     >
-      {/* Status dot */}
-      <span className={buildStatus === "building" && !flashing ? "pulse-sync" : undefined} style={dotStyle} />
+      {/* Status dot — hover opens drawer */}
+      <span
+        onMouseEnter={() => {
+          if (isRunning || buildStatus === "error") {
+            cancelDrawerHoverClose();
+            openStatusBarDrawer(repoPath, scriptName, true);
+          }
+        }}
+        style={isPulsing ? {
+          ...dotStyle,
+          animation: `pulse-sync-kf 1.5s ease-in-out infinite`,
+          animationDelay: pulseSyncDelayRef.current!,
+          willChange: "opacity",
+        } : dotStyle}
+      />
 
       {/* Script name */}
       <span
@@ -275,45 +312,54 @@ function ScriptDot({
         {displayName}
       </span>
 
-      {/* Stop & Restart icons — fade in on hover (only after mouse has left once since start) */}
-      <div style={{
-        display: "flex",
-        alignItems: "center",
-        gap: 2,
-        opacity: isRunning && hovered && hasLeftSinceStart ? 1 : 0,
-        width: isRunning && hovered && hasLeftSinceStart ? 36 : 0,
-        overflow: "hidden",
-        transition: "opacity 0.15s ease, width 0.15s ease",
-        pointerEvents: isRunning && hovered && hasLeftSinceStart ? "auto" : "none",
-        flexShrink: 0,
-        margin: 0,
-        padding: 0,
-      }}>
-          <button
-            className="tab-action"
-            onMouseDown={(e) => {
-              e.preventDefault();
-              e.stopPropagation();
-              kill();
-            }}
-            title="Stop"
-            style={{ ...watcherActionButtonStyle, opacity: 0.88 }}
-          >
-            <StopActionIcon />
-          </button>
-          <button
-            className="tab-action"
-            onMouseDown={(e) => {
-              e.preventDefault();
-              e.stopPropagation();
-              restart();
-            }}
-            title="Restart"
-            style={watcherActionButtonStyle}
-          >
-            <RestartActionIcon />
-          </button>
-        </div>
+      {/* Action icons — fade in on hover */}
+      {(() => {
+        const showRunning = isRunning && hovered && hasLeftSinceStart;
+        const showFailed = !isRunning && buildStatus === "error" && hovered;
+        const show = showRunning || showFailed;
+        return (
+          <div style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 2,
+            opacity: show ? 1 : 0,
+            width: show ? (showRunning ? 36 : 18) : 0,
+            overflow: "hidden",
+            transition: "opacity 0.15s ease, width 0.15s ease",
+            pointerEvents: show ? "auto" : "none",
+            flexShrink: 0,
+            margin: 0,
+            padding: 0,
+          }}>
+            {showRunning && (
+              <button
+                className="tab-action"
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  kill();
+                }}
+                title="Stop"
+                style={{ ...watcherActionButtonStyle, opacity: 0.88 }}
+              >
+                <StopActionIcon />
+              </button>
+            )}
+            <button
+              className="tab-action"
+              onMouseDown={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                restart();
+              }}
+              title="Restart"
+              style={watcherActionButtonStyle}
+            >
+              <RestartActionIcon />
+            </button>
+          </div>
+        );
+      })()}
 
       {/* "built at" timestamp — persists during rebuilds, clears on error */}
       {builtAt && (
@@ -323,6 +369,7 @@ function ScriptDot({
             color: "var(--text-secondary)",
             whiteSpace: "nowrap",
             lineHeight: 1,
+            marginRight: 4,
           }}
         >
           {isWatcher ? "built" : "ran"} at {builtAt}
@@ -418,7 +465,7 @@ export function BuildStatusBar() {
               height: 14,
               background: "var(--border)",
               flexShrink: 0,
-              margin: "0 8px",
+              margin: "0 4px 0 2px",
             }} />
           )}
 
