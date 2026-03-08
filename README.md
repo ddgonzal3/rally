@@ -2,6 +2,8 @@
 
 A native macOS app for calm, focused agentic development across multiple repos and branches.
 
+![Rally](rally-thumbnail.png)
+
 ## Why Rally?
 
 Agentic development is powerful but chaotic. You end up juggling terminals, repos, branches, and Claude sessions across scattered windows. You lose track of what's running where. Context-switching between projects means losing your place. The noise adds up.
