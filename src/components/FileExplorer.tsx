@@ -882,9 +882,6 @@ function PrBadge({
       }}
     >
       <PrIcon color={color} />
-      <span style={{ color, fontWeight: 700, fontSize: 11 }}>
-        {pr.is_draft ? "Draft" : "PR"} #{pr.number}
-      </span>
     </button>
   );
 }
