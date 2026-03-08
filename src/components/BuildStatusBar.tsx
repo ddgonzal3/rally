@@ -1,5 +1,9 @@
 import React, { useState, useEffect, useMemo, useRef } from "react";
-import { useWorkspaceStore } from "../stores/workspaceStore";
+import {
+  useWorkspaceStore,
+  cancelDrawerHoverClose,
+  startDrawerHoverClose,
+} from "../stores/workspaceStore";
 import { api } from "../lib/tauri";
 import type { ScriptEntry } from "../lib/types";
 import {
@@ -34,7 +38,14 @@ const watcherActionButtonStyle: React.CSSProperties = {
 
 function StopActionIcon() {
   return (
-    <svg width="13" height="13" viewBox="0 0 13 13" fill="none" aria-hidden="true" style={{ display: "block" }}>
+    <svg
+      width="13"
+      height="13"
+      viewBox="0 0 13 13"
+      fill="none"
+      aria-hidden="true"
+      style={{ display: "block" }}
+    >
       <rect x="2" y="2" width="9" height="9" rx="1.5" fill="currentColor" />
     </svg>
   );
@@ -42,15 +53,43 @@ function StopActionIcon() {
 
 function RestartActionIcon() {
   return (
-    <svg width="11" height="11" viewBox="0 0 12 12" fill="none" aria-hidden="true" style={{ display: "block" }}>
-      <path d="M1.5 6a4.5 4.5 0 0 1 8.18-2.6" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
-      <path d="M10.5 6a4.5 4.5 0 0 1-8.18 2.6" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
-      <path d="M9 1.5L9.7 3.4L7.8 3.4" stroke="currentColor" strokeWidth="1.1" strokeLinecap="round" strokeLinejoin="round" />
-      <path d="M3 10.5L2.3 8.6L4.2 8.6" stroke="currentColor" strokeWidth="1.1" strokeLinecap="round" strokeLinejoin="round" />
+    <svg
+      width="11"
+      height="11"
+      viewBox="0 0 12 12"
+      fill="none"
+      aria-hidden="true"
+      style={{ display: "block" }}
+    >
+      <path
+        d="M1.5 6a4.5 4.5 0 0 1 8.18-2.6"
+        stroke="currentColor"
+        strokeWidth="1.2"
+        strokeLinecap="round"
+      />
+      <path
+        d="M10.5 6a4.5 4.5 0 0 1-8.18 2.6"
+        stroke="currentColor"
+        strokeWidth="1.2"
+        strokeLinecap="round"
+      />
+      <path
+        d="M9 1.5L9.7 3.4L7.8 3.4"
+        stroke="currentColor"
+        strokeWidth="1.1"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <path
+        d="M3 10.5L2.3 8.6L4.2 8.6"
+        stroke="currentColor"
+        strokeWidth="1.1"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
     </svg>
   );
 }
-
 
 // --- ScriptDot sub-component ---
 
@@ -75,8 +114,16 @@ function ScriptDot({
   runScript: (repoPath: string, scriptName: string, command: string) => void;
   stopScript: (repoPath: string, scriptName: string) => void;
   clearScript: (repoPath: string, scriptName: string) => void;
-  openStatusBarDrawer: (repoPath: string, scriptName: string) => void;
-  statusBarDrawer: { repoPath: string; scriptName: string } | null;
+  openStatusBarDrawer: (
+    repoPath: string,
+    scriptName: string,
+    hoverMode?: boolean,
+  ) => void;
+  statusBarDrawer: {
+    repoPath: string;
+    scriptName: string;
+    hoverMode: boolean;
+  } | null;
   detectedPorts: ReturnType<typeof useDetectedPorts>;
   activeWorkspaceId: string | null;
   openWebView: (workspaceId: string, url: string) => void;
@@ -104,8 +151,22 @@ function ScriptDot({
     buildStatus = "idle";
   }
 
+  // Sync pulse phase to a global clock so all building dots animate in unison.
+  // Computed once on transition to "building" and held stable across re-renders.
+  const pulseSyncDelayRef = useRef<string | null>(null);
+  const isPulsing = buildStatus === "building" && !flashing;
+  if (isPulsing) {
+    if (pulseSyncDelayRef.current === null) {
+      pulseSyncDelayRef.current = `${-(Date.now() % 1500)}ms`;
+    }
+  } else {
+    pulseSyncDelayRef.current = null;
+  }
+
   const displayName = getDisplayName(scriptName);
-  const isDrawerOpen = statusBarDrawer?.repoPath === repoPath && statusBarDrawer?.scriptName === scriptName;
+  const isDrawerOpen =
+    statusBarDrawer?.repoPath === repoPath &&
+    statusBarDrawer?.scriptName === scriptName;
   const scriptEntry = scriptCache[repoPath]?.find((e) => e.name === scriptName);
   const command = scriptEntry?.command ?? scriptName;
 
@@ -119,7 +180,9 @@ function ScriptDot({
       const timer = setTimeout(() => setFlashing(false), 3000);
       // Show completion timestamp
       const now = new Date();
-      const timeStr = now.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }).toLowerCase();
+      const timeStr = now
+        .toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })
+        .toLowerCase();
       setBuiltAt(timeStr);
       prevStatusRef.current = buildStatus;
       return () => clearTimeout(timer);
@@ -127,7 +190,7 @@ function ScriptDot({
     if (buildStatus !== "success") {
       setFlashing(false);
     }
-    if (buildStatus === "building" || buildStatus === "error") {
+    if (buildStatus === "error") {
       setBuiltAt(null);
     }
     prevStatusRef.current = buildStatus;
@@ -190,7 +253,10 @@ function ScriptDot({
     setHasLeftSinceStart(false);
     prevStatusRef.current = "idle";
     // Close the drawer if it's showing this script
-    if (statusBarDrawer?.repoPath === repoPath && statusBarDrawer?.scriptName === scriptName) {
+    if (
+      statusBarDrawer?.repoPath === repoPath &&
+      statusBarDrawer?.scriptName === scriptName
+    ) {
       useWorkspaceStore.getState().closeStatusBarDrawer();
     }
   };
@@ -222,10 +288,20 @@ function ScriptDot({
       onMouseEnter={() => {
         setHovered(true);
         if (!isRunning) setHasLeftSinceStart(true);
+        // Cancel pending hover-close if re-entering the script area
+        if (isDrawerOpen && statusBarDrawer?.hoverMode) {
+          cancelDrawerHoverClose();
+        }
       }}
       onMouseLeave={() => {
         setHovered(false);
         if (isRunning) setHasLeftSinceStart(true);
+        // Start hover-close timer (drawer's mouseEnter will cancel it)
+        if (isDrawerOpen && statusBarDrawer?.hoverMode) {
+          startDrawerHoverClose(() => {
+            useWorkspaceStore.getState().closeDrawerIfHover();
+          });
+        }
       }}
       onMouseDown={(e) => {
         if (e.button !== 0) return;
@@ -237,9 +313,11 @@ function ScriptDot({
         }
         if (isRunning) {
           e.preventDefault();
+          cancelDrawerHoverClose();
           openStatusBarDrawer(repoPath, scriptName);
         } else if (buildStatus === "error") {
           e.preventDefault();
+          cancelDrawerHoverClose();
           openStatusBarDrawer(repoPath, scriptName);
         } else {
           e.preventDefault();
@@ -258,15 +336,33 @@ function ScriptDot({
         background: isDrawerOpen ? "var(--terminal-popup-bg)" : "transparent",
       }}
     >
-      {/* Status dot */}
-      <span className={buildStatus === "building" && !flashing ? "pulse-sync" : undefined} style={dotStyle} />
+      {/* Status dot — hover opens drawer */}
+      <span
+        onMouseEnter={() => {
+          if (isRunning || buildStatus === "error") {
+            cancelDrawerHoverClose();
+            openStatusBarDrawer(repoPath, scriptName, true);
+          }
+        }}
+        style={
+          isPulsing
+            ? {
+                ...dotStyle,
+                animation: `pulse-sync-kf 1.5s ease-in-out infinite`,
+                animationDelay: pulseSyncDelayRef.current!,
+                willChange: "opacity",
+              }
+            : dotStyle
+        }
+      />
 
       {/* Script name */}
       <span
         style={{
           fontSize: 13,
           fontWeight: 500,
-          color: "var(--text-secondary)",
+          color: "var(--text-primary)",
+          opacity: 0.8,
           whiteSpace: "nowrap",
           userSelect: "none",
           lineHeight: 1,
@@ -275,54 +371,66 @@ function ScriptDot({
         {displayName}
       </span>
 
-      {/* Stop & Restart icons — fade in on hover (only after mouse has left once since start) */}
-      <div style={{
-        display: "flex",
-        alignItems: "center",
-        gap: 2,
-        opacity: isRunning && hovered && hasLeftSinceStart ? 1 : 0,
-        width: isRunning && hovered && hasLeftSinceStart ? 36 : 0,
-        overflow: "hidden",
-        transition: "opacity 0.15s ease, width 0.15s ease",
-        pointerEvents: isRunning && hovered && hasLeftSinceStart ? "auto" : "none",
-        flexShrink: 0,
-        margin: 0,
-        padding: 0,
-      }}>
-          <button
-            className="tab-action"
-            onMouseDown={(e) => {
-              e.preventDefault();
-              e.stopPropagation();
-              kill();
+      {/* Action icons — fade in on hover */}
+      {(() => {
+        const showRunning = isRunning && hovered && hasLeftSinceStart;
+        const showFailed = !isRunning && buildStatus === "error" && hovered;
+        const show = showRunning || showFailed;
+        return (
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 2,
+              opacity: show ? 1 : 0,
+              width: show ? (showRunning ? 36 : 18) : 0,
+              overflow: "hidden",
+              transition: "opacity 0.15s ease, width 0.15s ease",
+              pointerEvents: show ? "auto" : "none",
+              flexShrink: 0,
+              margin: 0,
+              padding: 0,
             }}
-            title="Stop"
-            style={{ ...watcherActionButtonStyle, opacity: 0.88 }}
           >
-            <StopActionIcon />
-          </button>
-          <button
-            className="tab-action"
-            onMouseDown={(e) => {
-              e.preventDefault();
-              e.stopPropagation();
-              restart();
-            }}
-            title="Restart"
-            style={watcherActionButtonStyle}
-          >
-            <RestartActionIcon />
-          </button>
-        </div>
+            {showRunning && (
+              <button
+                className="tab-action"
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  kill();
+                }}
+                title="Stop"
+                style={{ ...watcherActionButtonStyle, opacity: 0.88 }}
+              >
+                <StopActionIcon />
+              </button>
+            )}
+            <button
+              className="tab-action"
+              onMouseDown={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                restart();
+              }}
+              title="Restart"
+              style={watcherActionButtonStyle}
+            >
+              <RestartActionIcon />
+            </button>
+          </div>
+        );
+      })()}
 
-      {/* "built at" timestamp — auto-dismisses after 30s */}
+      {/* "built at" timestamp — persists during rebuilds, clears on error */}
       {builtAt && (
         <span
           style={{
             fontSize: 12,
-            color: "var(--text-secondary)",
+            color: "var(--text-primary)",
             whiteSpace: "nowrap",
             lineHeight: 1,
+            marginRight: 4,
           }}
         >
           {isWatcher ? "built" : "ran"} at {builtAt}
@@ -330,11 +438,21 @@ function ScriptDot({
       )}
 
       {/* Detected localhost port pills */}
-      {activeWorkspaceId && detectedPorts
-        .filter((p) => p.source.type === "script" && p.source.repoPath === repoPath && p.source.scriptName === scriptName)
-        .map((p) => (
-          <PortPill key={p.port} port={p} onClick={(url) => openWebView(activeWorkspaceId, url)} />
-        ))}
+      {activeWorkspaceId &&
+        detectedPorts
+          .filter(
+            (p) =>
+              p.source.type === "script" &&
+              p.source.repoPath === repoPath &&
+              p.source.scriptName === scriptName,
+          )
+          .map((p) => (
+            <PortPill
+              key={p.port}
+              port={p}
+              onClick={(url) => openWebView(activeWorkspaceId, url)}
+            />
+          ))}
     </div>
   );
 }
@@ -362,7 +480,9 @@ export function BuildStatusBar() {
   const openWebView = useWorkspaceStore((s) => s.openWebView);
 
   // Script entries cache per repo path
-  const [scriptCache, setScriptCache] = useState<Record<string, ScriptEntry[]>>({});
+  const [scriptCache, setScriptCache] = useState<Record<string, ScriptEntry[]>>(
+    {},
+  );
 
   // Load RALLY.json configs and scripts for ALL repo paths in the workspace
   const loadRallyConfig = useWorkspaceStore((s) => s.loadRallyConfig);
@@ -371,18 +491,23 @@ export function BuildStatusBar() {
       if (!rallyConfigs[path]) {
         loadRallyConfig(path);
       }
-      api.listScripts(path).then((entries) => {
-        setScriptCache((prev) => ({ ...prev, [path]: entries }));
-      }).catch(() => {});
+      api
+        .listScripts(path)
+        .then((entries) => {
+          setScriptCache((prev) => ({ ...prev, [path]: entries }));
+        })
+        .catch(() => {});
     }
   }, [workspacePaths, loadRallyConfig, rallyConfigs]);
 
   // Build the list of repos that have statusBar scripts configured
   const reposWithStatusBar = useMemo(() => {
-    const result: { repoPath: string; repoName: string; scripts: string[] }[] = [];
+    const result: { repoPath: string; repoName: string; scripts: string[] }[] =
+      [];
     for (const repoPath of workspacePaths) {
       const config = rallyConfigs[repoPath];
-      if (!config || !config.statusBar || config.statusBar.length === 0) continue;
+      if (!config || !config.statusBar || config.statusBar.length === 0)
+        continue;
       const repoName = repoPath.split("/").pop() ?? repoPath;
       result.push({ repoPath, repoName, scripts: config.statusBar });
     }
@@ -392,46 +517,54 @@ export function BuildStatusBar() {
   if (!activeWorkspaceId || reposWithStatusBar.length === 0) return null;
 
   return (
-    <div data-statusbar="" onContextMenu={(e) => e.preventDefault()} style={{
-      height: 28,
-      background: "var(--bg-surface)",
-      borderTop: "1px solid var(--border)",
-      display: "flex",
-      alignItems: "center",
-      gap: 0,
-      paddingLeft: 8,
-      paddingRight: 10,
-      paddingBottom: 2,
-      flexShrink: 0,
-      overflowX: "auto",
-      overflowY: "hidden",
-      userSelect: "none" as const,
-      WebkitUserSelect: "none" as const,
-      scrollbarWidth: "none" as const,
-    }}>
+    <div
+      data-statusbar=""
+      onContextMenu={(e) => e.preventDefault()}
+      style={{
+        height: 28,
+        background: "var(--bg-surface)",
+        borderTop: "1px solid var(--border)",
+        display: "flex",
+        alignItems: "center",
+        gap: 0,
+        paddingLeft: 8,
+        paddingRight: 10,
+        paddingBottom: 2,
+        flexShrink: 0,
+        overflowX: "auto",
+        overflowY: "hidden",
+        userSelect: "none" as const,
+        WebkitUserSelect: "none" as const,
+        scrollbarWidth: "none" as const,
+      }}
+    >
       {reposWithStatusBar.map(({ repoPath, repoName, scripts }, repoIdx) => (
         <React.Fragment key={repoPath}>
           {/* Repo divider */}
           {repoIdx > 0 && (
-            <div style={{
-              width: 1,
-              height: 14,
-              background: "var(--border)",
-              flexShrink: 0,
-              margin: "0 8px",
-            }} />
+            <div
+              style={{
+                width: 1,
+                height: 14,
+                background: "var(--border)",
+                flexShrink: 0,
+                margin: "0 4px 0 2px",
+              }}
+            />
           )}
 
           {/* Repo name */}
-          <span style={{
-            fontSize: 13,
-            fontWeight: 600,
-            color: "var(--text-primary)",
-            whiteSpace: "nowrap",
-            lineHeight: 1,
-            flexShrink: 0,
-            marginRight: 5,
-          }}>
+          <span
+            style={{
+              fontSize: 13,
+              fontWeight: 600,
+              color: "var(--text-primary)",
+              whiteSpace: "nowrap",
+              lineHeight: 1,
+              flexShrink: 0,
+              marginRight: 5,
+            }}
+          >
             {repoName}
           </span>
 

@@ -1665,7 +1665,7 @@ export function App() {
                 />
               </div>
             )}
-            <div style={{ display: isProductMode ? "none" : "flex", flex: 1, flexDirection: "column" as const, minWidth: 0, minHeight: 0, position: "relative" as const }}>
+            <div style={{ display: isProductMode ? "none" : "flex", flex: 1, flexDirection: "column" as const, minWidth: 0, minHeight: 0, position: "relative" as const, overflow: "hidden" }}>
               <PaneLayout />
               <BuildStatusDrawer />
             </div>

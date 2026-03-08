@@ -1,10 +1,11 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { Terminal as XTerminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
-import { useWorkspaceStore, scriptOutputBuffers } from "../stores/workspaceStore";
+import { useWorkspaceStore, scriptOutputBuffers, cancelDrawerHoverClose, startDrawerHoverClose } from "../stores/workspaceStore";
 import { api } from "../lib/tauri";
 import { TerminalPromptIcon } from "./FileIcons";
 import { getXtermTheme } from "../lib/xtermTheme";
+import { showContextMenu } from "../lib/contextMenu";
 
 export function BuildStatusDrawer() {
   const drawer = useWorkspaceStore((s) => s.statusBarDrawer);
@@ -21,6 +22,37 @@ export function BuildStatusDrawer() {
   const [height, setHeight] = useState(233);
   const [pinned, setPinned] = useState(false);
   const dragging = useRef(false);
+
+  // Slide animation state
+  const [animState, setAnimState] = useState<"hidden" | "entering" | "visible" | "exiting">("hidden");
+  const prevDrawerRef = useRef(drawer);
+
+  useEffect(() => {
+    let raf1 = 0;
+    let raf2 = 0;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+
+    if (drawer && !prevDrawerRef.current) {
+      // Opening
+      setAnimState("entering");
+      raf1 = requestAnimationFrame(() => {
+        raf2 = requestAnimationFrame(() => setAnimState("visible"));
+      });
+    } else if (!drawer && prevDrawerRef.current) {
+      // Closing
+      setAnimState("exiting");
+      timer = setTimeout(() => setAnimState("hidden"), 100);
+    } else if (drawer && prevDrawerRef.current) {
+      // Switching scripts — keep visible
+      setAnimState("visible");
+    }
+    prevDrawerRef.current = drawer;
+    return () => {
+      cancelAnimationFrame(raf1);
+      cancelAnimationFrame(raf2);
+      if (timer !== undefined) clearTimeout(timer);
+    };
+  }, [drawer]);
 
   const onHandleMouseDown = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
@@ -154,33 +186,102 @@ export function BuildStatusDrawer() {
     }
   }, [theme]);
 
-  // ResizeObserver for xterm fit — debounced to avoid lag during drag
+  // ResizeObserver for xterm fit — immediate during drag, debounced otherwise
   useEffect(() => {
     if (!termRef.current || !fitAddonRef.current) return;
     const fitAddon = fitAddonRef.current;
     const term = xtermRef.current;
     let timer: ReturnType<typeof setTimeout>;
+    const doFit = () => {
+      try {
+        fitAddon.fit();
+        term?.scrollToBottom();
+      } catch {}
+    };
     const ro = new ResizeObserver(() => {
-      clearTimeout(timer);
-      timer = setTimeout(() => {
-        try {
-          fitAddon.fit();
-          term?.scrollToBottom();
-        } catch {}
-      }, 60);
+      if (dragging.current) {
+        // During drag: fit immediately for smooth resize
+        doFit();
+      } else {
+        // Non-drag resize (window resize etc.): debounce
+        clearTimeout(timer);
+        timer = setTimeout(doFit, 60);
+      }
     });
     ro.observe(termRef.current);
     return () => { ro.disconnect(); clearTimeout(timer); };
   }, [drawer]);
 
-  if (!drawer) return null;
+  const handleContextMenu = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    const term = xtermRef.current;
+    const bufKey = drawer ? `${drawer.repoPath}:${drawer.scriptName}` : "";
+    const encoder = new TextEncoder();
 
-  const bufferKey = `${drawer.repoPath}:${drawer.scriptName}`;
+    showContextMenu(
+      [
+        {
+          label: "Copy",
+          accelerator: "CmdOrCtrl+C",
+          action: () => {
+            if (term) {
+              const sel = term.getSelection();
+              if (sel) navigator.clipboard.writeText(sel);
+            }
+          },
+        },
+        {
+          label: "Paste",
+          accelerator: "CmdOrCtrl+V",
+          action: async () => {
+            const run = useWorkspaceStore.getState().scriptRuns[bufKey];
+            if (!run?.ptyId) return;
+            try {
+              const text = await api.readClipboardText();
+              if (text) api.writePty(run.ptyId, Array.from(encoder.encode(text)));
+            } catch {}
+          },
+        },
+        {
+          label: "Select All",
+          accelerator: "CmdOrCtrl+A",
+          action: () => term?.selectAll(),
+        },
+        "separator",
+        {
+          label: "Clear Terminal",
+          action: () => term?.clear(),
+        },
+      ],
+      { x: e.clientX, y: e.clientY },
+    );
+  }, [drawer?.repoPath, drawer?.scriptName]);
+
+  // Use drawer or prevDrawerRef for rendering during exit animation
+  const activeDrawer = drawer ?? prevDrawerRef.current;
+  if (!activeDrawer) return null;
+  // Only hide when animation finished AND drawer is actually closed
+  if (animState === "hidden" && !drawer) return null;
+
+  const bufferKey = `${activeDrawer.repoPath}:${activeDrawer.scriptName}`;
   const currentRun = scriptRuns[bufferKey];
   const isRunning = currentRun?.status === "running";
 
+  const isSliding = animState !== "visible";
+
   return (
-    <div ref={panelRef} style={{
+    <div ref={panelRef}
+      onMouseEnter={() => {
+        cancelDrawerHoverClose();
+      }}
+      onMouseLeave={() => {
+        if (activeDrawer.hoverMode) {
+          startDrawerHoverClose(() => {
+            useWorkspaceStore.getState().closeDrawerIfHover();
+          });
+        }
+      }}
+      style={{
       position: "absolute" as const,
       bottom: 0,
       left: 0,
@@ -188,6 +289,10 @@ export function BuildStatusDrawer() {
       height,
       background: "var(--terminal-popup-bg)",
       zIndex: 100,
+      transform: isSliding ? "translateY(100%)" : "translateY(0)",
+      opacity: isSliding ? 0 : 1,
+      transition: "transform 0.1s ease-out, opacity 0.1s ease-out",
+      pointerEvents: isSliding ? "none" : "auto",
       display: "flex",
       flexDirection: "column" as const,
       boxShadow: theme === "light"
@@ -213,7 +318,7 @@ export function BuildStatusDrawer() {
         {/* Identity — left side */}
         <TerminalPromptIcon size={14} />
         <span style={{ fontSize: 13, fontWeight: 600, color: "var(--text-primary)" }}>
-          {drawer.scriptName}
+          {activeDrawer.scriptName}
         </span>
         <div style={{ flex: 1 }} />
         {/* Actions — right side */}
@@ -249,9 +354,9 @@ export function BuildStatusDrawer() {
             onClick={(e) => {
               e.stopPropagation();
               if (isRunning) {
-                stopScript(drawer.repoPath, drawer.scriptName);
+                stopScript(activeDrawer.repoPath, activeDrawer.scriptName);
               }
-              clearScript(drawer.repoPath, drawer.scriptName);
+              clearScript(activeDrawer.repoPath, activeDrawer.scriptName);
               closeStatusBarDrawer();
             }}
             title="Kill process"
@@ -263,7 +368,7 @@ export function BuildStatusDrawer() {
           </button>
         </div>
       </div>
-      <div ref={termRef} style={{ flex: 1, overflow: "hidden", display: "flex", flexDirection: "column", justifyContent: "flex-end", paddingLeft: 6, paddingRight: 6 }} />
+      <div ref={termRef} onContextMenu={handleContextMenu} style={{ flex: 1, overflow: "hidden", display: "flex", flexDirection: "column", justifyContent: "flex-end", paddingLeft: 6, paddingRight: 6 }} />
     </div>
   );
 }
