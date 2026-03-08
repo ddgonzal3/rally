@@ -185,6 +185,57 @@ pub async fn replace_in_files(
     })
 }
 
+/// Entry in a directory listing (file or directory).
+#[derive(Debug, serde::Serialize, Clone)]
+pub struct DirEntry {
+    pub name: String,
+    pub is_dir: bool,
+}
+
+/// List immediate children of a directory. Expands `~` to home dir.
+/// If `show_hidden` is true, includes dotfiles/dotdirs.
+/// Returns directories first, then files, alphabetical within each group.
+#[tauri::command]
+pub async fn list_directory_entries(path: String, show_hidden: bool) -> Result<Vec<DirEntry>, String> {
+    let expanded = if path.starts_with('~') {
+        let home = std::env::var("HOME").map_err(|_| "Cannot resolve home directory".to_string())?;
+        std::path::PathBuf::from(&home).join(path.strip_prefix("~/").unwrap_or(&path[1..]))
+    } else {
+        std::path::PathBuf::from(&path)
+    };
+
+    let read_dir = std::fs::read_dir(&expanded)
+        .map_err(|e| format!("Cannot read directory {}: {}", expanded.display(), e))?;
+
+    let mut dirs_list: Vec<DirEntry> = Vec::new();
+    let mut files_list: Vec<DirEntry> = Vec::new();
+
+    for entry in read_dir {
+        let entry = match entry {
+            Ok(e) => e,
+            Err(_) => continue,
+        };
+        let name = entry.file_name().to_string_lossy().to_string();
+
+        if !show_hidden && name.starts_with('.') {
+            continue;
+        }
+
+        let is_dir = entry.file_type().map(|ft| ft.is_dir()).unwrap_or(false);
+        let item = DirEntry { name, is_dir };
+        if is_dir {
+            dirs_list.push(item);
+        } else {
+            files_list.push(item);
+        }
+    }
+
+    dirs_list.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+    files_list.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+    dirs_list.append(&mut files_list);
+    Ok(dirs_list)
+}
+
 /// List all files (tracked + untracked non-ignored) across the given workspace paths.
 #[tauri::command]
 pub async fn list_all_files(paths: Vec<String>) -> Result<Vec<String>, String> {

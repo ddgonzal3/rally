@@ -241,6 +241,9 @@ export const api = {
   listAllFiles: (paths: string[]) =>
     invoke<string[]>("list_all_files", { paths }),
 
+  listDirectoryEntries: (path: string, showHidden: boolean) =>
+    invoke<{ name: string; is_dir: boolean }[]>("list_directory_entries", { path, showHidden }),
+
   // Rally config
   readRallyConfig: (rootPath: string) =>
     invoke<RallyConfig>("read_rally_config", { rootPath }),

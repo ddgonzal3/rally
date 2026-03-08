@@ -223,6 +223,7 @@ fn main() {
         rally::search_ops::search_in_files,
         rally::search_ops::replace_in_files,
         rally::search_ops::list_all_files,
+        rally::search_ops::list_directory_entries,
     ]);
 
     builder

@@ -83,6 +83,7 @@ function ScriptDot({
 }) {
   const [flashing, setFlashing] = useState(false);
   const [hovered, setHovered] = useState(false);
+  const [hasLeftSinceStart, setHasLeftSinceStart] = useState(false);
   const prevStatusRef = useRef<WatcherBuildStatus>("idle");
 
   const key = `${repoPath}:${scriptName}`;
@@ -174,6 +175,7 @@ function ScriptDot({
     clearWatcherStatusCache(key);
     setFlashing(false);
     setBuiltAt(null);
+    setHasLeftSinceStart(false);
     prevStatusRef.current = "idle";
     // Small delay to let the PTY clean up before respawning
     setTimeout(() => runScript(repoPath, scriptName, command), 100);
@@ -185,6 +187,7 @@ function ScriptDot({
     clearWatcherStatusCache(key);
     setFlashing(false);
     setBuiltAt(null);
+    setHasLeftSinceStart(false);
     prevStatusRef.current = "idle";
     // Close the drawer if it's showing this script
     if (statusBarDrawer?.repoPath === repoPath && statusBarDrawer?.scriptName === scriptName) {
@@ -216,8 +219,14 @@ function ScriptDot({
 
   return (
     <div
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
+      onMouseEnter={() => {
+        setHovered(true);
+        if (!isRunning) setHasLeftSinceStart(true);
+      }}
+      onMouseLeave={() => {
+        setHovered(false);
+        if (isRunning) setHasLeftSinceStart(true);
+      }}
       onMouseDown={(e) => {
         if (e.button !== 0) return;
         // Option+click = restart
@@ -234,6 +243,7 @@ function ScriptDot({
           openStatusBarDrawer(repoPath, scriptName);
         } else {
           e.preventDefault();
+          setHasLeftSinceStart(false);
           runScript(repoPath, scriptName, command);
         }
       }}
@@ -242,7 +252,7 @@ function ScriptDot({
         display: "flex",
         alignItems: "center",
         gap: 5,
-        padding: "2px 6px",
+        padding: "2px 3px",
         borderRadius: 3,
         cursor: "pointer",
         background: isDrawerOpen ? "var(--terminal-popup-bg)" : "transparent",
@@ -265,21 +275,20 @@ function ScriptDot({
         {displayName}
       </span>
 
-      {/* Stop & Restart icons — fade in on hover when running */}
-      {isRunning && (
-        <div style={{
-          display: "flex",
-          alignItems: "center",
-          gap: 0,
-          opacity: hovered ? 1 : 0,
-          maxWidth: hovered ? 32 : 0,
-          overflow: "hidden",
-          transition: "opacity 0.15s ease, max-width 0.15s ease",
-          pointerEvents: hovered ? "auto" : "none",
-          flexShrink: 0,
-          willChange: "opacity, max-width",
-          transform: "translateZ(0)",
-        }}>
+      {/* Stop & Restart icons — fade in on hover (only after mouse has left once since start) */}
+      <div style={{
+        display: "flex",
+        alignItems: "center",
+        gap: 2,
+        opacity: isRunning && hovered && hasLeftSinceStart ? 1 : 0,
+        width: isRunning && hovered && hasLeftSinceStart ? 36 : 0,
+        overflow: "hidden",
+        transition: "opacity 0.15s ease, width 0.15s ease",
+        pointerEvents: isRunning && hovered && hasLeftSinceStart ? "auto" : "none",
+        flexShrink: 0,
+        margin: 0,
+        padding: 0,
+      }}>
           <button
             className="tab-action"
             onMouseDown={(e) => {
@@ -305,7 +314,6 @@ function ScriptDot({
             <RestartActionIcon />
           </button>
         </div>
-      )}
 
       {/* "built at" timestamp — auto-dismisses after 30s */}
       {builtAt && (
@@ -422,7 +430,7 @@ export function BuildStatusBar() {
             whiteSpace: "nowrap",
             lineHeight: 1,
             flexShrink: 0,
-            marginRight: 2,
+            marginRight: 5,
           }}>
             {repoName}
           </span>
