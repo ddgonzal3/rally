@@ -265,7 +265,7 @@ export function BuildStatusDrawer() {
           </button>
         </div>
       </div>
-      <div ref={termRef} style={{ flex: 1, overflow: "hidden", display: "flex", flexDirection: "column", justifyContent: "flex-end" }} />
+      <div ref={termRef} style={{ flex: 1, overflow: "hidden", display: "flex", flexDirection: "column", justifyContent: "flex-end", paddingLeft: 6, paddingRight: 6 }} />
     </div>
   );
 }
