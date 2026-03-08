@@ -1,3 +1,4 @@
+pub mod cli_server;
 pub mod commands;
 pub mod config_ops;
 pub mod git_ops;

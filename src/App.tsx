@@ -879,6 +879,36 @@ export function App() {
     };
   }, [loadWorkspaces, forceNoWorkspaceSelection]);
 
+  // CLI: open files sent from `rally <file>` command
+  useEffect(() => {
+    let unlisten: UnlistenFn | null = null;
+    let cancelled = false;
+
+    listen<string>("rally-cli-open-file", (event) => {
+      const s = useWorkspaceStore.getState();
+      const wsId = s.activeWorkspaceId;
+      if (!wsId) return;
+      s.openFile(wsId, event.payload);
+      // Blur the terminal so the new editor pane becomes the focused group.
+      // Without this, xterm keeps DOM focus and Cmd+W closes the terminal instead.
+      if (document.activeElement instanceof HTMLElement) {
+        document.activeElement.blur();
+      }
+    })
+      .then((fn) => {
+        if (cancelled) fn();
+        else unlisten = fn;
+      })
+      .catch((e) =>
+        console.error("Failed to listen for cli-open-file event:", e),
+      );
+
+    return () => {
+      cancelled = true;
+      unlisten?.();
+    };
+  }, []);
+
   // Ensure file explorer is visible when a file is opened (e.g. Cmd+click in terminal)
   useEffect(() => {
     const handler = () => {

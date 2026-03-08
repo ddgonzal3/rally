@@ -161,6 +161,9 @@ pub fn ensure_default_commands() -> Result<(), String> {
     // Install `ship` CLI script to ~/.rally/bin/ (available in all Rally terminals)
     install_ship_script(&home)?;
 
+    // Install `rally` CLI for opening files from any terminal
+    install_rally_cli(&home)?;
+
     Ok(())
 }
 
@@ -191,6 +194,68 @@ fn install_script(bin_dir: &Path, name: &str, content: &str) -> Result<(), Strin
         return Ok(()); // User may have customized — don't overwrite
     }
     write_executable(&script_path, content)
+}
+
+/// Install the `rally` CLI script to ~/.rally/bin/.
+/// Always overwrites to keep in sync with the app.
+fn install_rally_cli(home: &str) -> Result<(), String> {
+    let bin_dir = PathBuf::from(home).join(".rally").join("bin");
+    fs::create_dir_all(&bin_dir)
+        .map_err(|e| format!("Failed to create ~/.rally/bin: {}", e))?;
+
+    let script = r#"#!/bin/bash
+# Rally CLI — open files in the running Rally app
+RALLY_PORT=21547
+
+if [ $# -eq 0 ]; then
+    echo "Usage: rally <file>"
+    exit 1
+fi
+
+FILE="$1"
+
+# Expand ~
+if [[ "$FILE" == ~* ]]; then
+    FILE="${HOME}${FILE:1}"
+fi
+
+# Make absolute
+if [[ "$FILE" != /* ]]; then
+    FILE="$(cd "$(dirname "$FILE")" 2>/dev/null && pwd)/$(basename "$FILE")"
+fi
+
+# Try to send to running Rally
+RESPONSE=$(curl -s -o /dev/null -w "%{http_code}" -X POST -d "$FILE" "http://127.0.0.1:${RALLY_PORT}/open" 2>/dev/null)
+if [ "$RESPONSE" = "200" ]; then
+    exit 0
+fi
+
+# Rally not running — launch it and retry
+open -a Rally 2>/dev/null
+for i in {1..20}; do
+    sleep 0.5
+    RESPONSE=$(curl -s -o /dev/null -w "%{http_code}" -X POST -d "$FILE" "http://127.0.0.1:${RALLY_PORT}/open" 2>/dev/null)
+    if [ "$RESPONSE" = "200" ]; then
+        exit 0
+    fi
+done
+
+echo "Failed to connect to Rally"
+exit 1
+"#;
+
+    write_executable(&bin_dir.join("rally"), script)?;
+
+    // Symlink to /usr/local/bin/rally if possible (makes it available system-wide)
+    let usr_local_bin = PathBuf::from("/usr/local/bin");
+    if usr_local_bin.is_dir() {
+        let link = usr_local_bin.join("rally");
+        let target = bin_dir.join("rally");
+        // Use the same safe symlink logic — don't overwrite real files
+        let _ = symlink_command(&target, &link);
+    }
+
+    Ok(())
 }
 
 // --- Script editor: list + restore Rally scripts ---
