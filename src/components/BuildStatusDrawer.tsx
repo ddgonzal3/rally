@@ -116,26 +116,24 @@ export function BuildStatusDrawer() {
     // MAX_SCRIPT_BUFFER_CHUNKS (500) so this is fast and avoids visible
     // scroll flicker that batched async replay would cause.
     const buf = scriptOutputBuffers.get(bufferKey);
-    let writtenChunks = 0;
 
     if (buf && buf.length > 0) {
       for (let i = 0; i < buf.length; i++) {
         term.write(buf[i]);
       }
-      writtenChunks = buf.length;
       term.scrollToBottom();
     }
 
-    // Listen for new output arriving after initial replay
+    // Listen for new output arriving after initial replay.
+    // The event carries the actual new chunks directly, avoiding the
+    // stale-index bug where pushLimitedChunk's splice would shift
+    // buffer indices and cause all new output to be silently dropped.
     const handler = (e: Event) => {
       const detail = (e as CustomEvent).detail;
-      if (detail?.key === bufferKey) {
-        const currentBuf = scriptOutputBuffers.get(bufferKey);
-        if (!currentBuf) return;
-        for (let i = writtenChunks; i < currentBuf.length; i++) {
-          term.write(currentBuf[i]);
+      if (detail?.key === bufferKey && detail.chunks) {
+        for (const chunk of detail.chunks as Uint8Array[]) {
+          term.write(chunk);
         }
-        writtenChunks = currentBuf.length;
       }
     };
     document.addEventListener("rally:watcher-output", handler);
