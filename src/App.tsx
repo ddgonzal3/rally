@@ -612,7 +612,7 @@ export function App() {
     }, gitMs);
     const prInterval = setInterval(() => {
       void runPrRefresh();
-    }, 90000);
+    }, 30000);
     const shipInterval = setInterval(() => {
       void runShipPoll();
     }, shipMs);
