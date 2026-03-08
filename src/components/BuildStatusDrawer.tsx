@@ -28,21 +28,30 @@ export function BuildStatusDrawer() {
   const prevDrawerRef = useRef(drawer);
 
   useEffect(() => {
+    let raf1 = 0;
+    let raf2 = 0;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+
     if (drawer && !prevDrawerRef.current) {
       // Opening
       setAnimState("entering");
-      requestAnimationFrame(() => requestAnimationFrame(() => setAnimState("visible")));
+      raf1 = requestAnimationFrame(() => {
+        raf2 = requestAnimationFrame(() => setAnimState("visible"));
+      });
     } else if (!drawer && prevDrawerRef.current) {
       // Closing
       setAnimState("exiting");
-      const timer = setTimeout(() => setAnimState("hidden"), 100);
-      prevDrawerRef.current = drawer;
-      return () => clearTimeout(timer);
+      timer = setTimeout(() => setAnimState("hidden"), 100);
     } else if (drawer && prevDrawerRef.current) {
       // Switching scripts — keep visible
       setAnimState("visible");
     }
     prevDrawerRef.current = drawer;
+    return () => {
+      cancelAnimationFrame(raf1);
+      cancelAnimationFrame(raf2);
+      if (timer !== undefined) clearTimeout(timer);
+    };
   }, [drawer]);
 
   const onHandleMouseDown = useCallback((e: React.MouseEvent) => {
