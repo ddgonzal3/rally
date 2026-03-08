@@ -250,7 +250,13 @@ export function Terminal({ cwd, command, initialInput, ptyId: existingPtyId, loc
   // Sync xterm theme when the app theme changes
   useEffect(() => {
     if (termRef.current) {
-      termRef.current.options.theme = getXtermTheme(theme);
+      const newTheme = getXtermTheme(theme);
+      // Preserve cursor hiding when Claude Code is active — getXtermTheme
+      // returns the visible cursor color which would overwrite 'transparent'.
+      if (claudeLikelyActiveRef.current) {
+        newTheme.cursor = 'transparent';
+      }
+      termRef.current.options.theme = newTheme;
     }
   }, [theme]);
 
@@ -693,6 +699,14 @@ export function Terminal({ cwd, command, initialInput, ptyId: existingPtyId, loc
       ptySpawned = true;
 
       try {
+        // Check foreground process BEFORE replaying output to avoid a
+        // cursor flash when reconnecting to a PTY running Claude Code.
+        // The cached state on the Rust side makes this fast (~lock + clone).
+        try {
+          const proc = await api.getPtyForegroundProcess(existingPtyId);
+          syncForegroundProcess(proc);
+        } catch { /* PTY might be dead — proceed anyway */ }
+
         if (lockCols) {
           fitRowsOnly();
         } else {
