@@ -11,7 +11,17 @@ import { useWorkspaceStore } from "./stores/workspaceStore";
 import { api } from "./lib/tauri";
 import { showContextMenu } from "./lib/contextMenu";
 import { AddWorkspaceModal } from "./components/AddWorkspaceModal";
-import { DEFAULT_BOTTOM_RATIO, findFirstGroupInSubtree, findNeighborGroup, replaceNode, type LayoutNode, type NavigationDirection, type Pane, type PrStatus, type ThemeName } from "./lib/types";
+import {
+  DEFAULT_BOTTOM_RATIO,
+  findFirstGroupInSubtree,
+  findNeighborGroup,
+  replaceNode,
+  type LayoutNode,
+  type NavigationDirection,
+  type Pane,
+  type PrStatus,
+  type ThemeName,
+} from "./lib/types";
 import {
   startExternalFileDrag,
   updateDragPosition,
@@ -36,7 +46,9 @@ const WS_DRAG_SCROLL_EDGE = 28;
 const WS_DRAG_MAX_SCROLL_STEP = 14;
 const WS_REORDER_TRANSITION = "transform 170ms cubic-bezier(0.2, 0, 0, 1)";
 
-function wsClamp(v: number, lo: number, hi: number) { return Math.max(lo, Math.min(hi, v)); }
+function wsClamp(v: number, lo: number, hi: number) {
+  return Math.max(lo, Math.min(hi, v));
+}
 
 function wsAutoScroll(listEl: HTMLElement | null, pointerY: number) {
   if (!listEl) return;
@@ -45,12 +57,18 @@ function wsAutoScroll(listEl: HTMLElement | null, pointerY: number) {
     const s = (r.top + WS_DRAG_SCROLL_EDGE - pointerY) / WS_DRAG_SCROLL_EDGE;
     listEl.scrollTop -= Math.ceil(s * WS_DRAG_MAX_SCROLL_STEP);
   } else if (pointerY > r.bottom - WS_DRAG_SCROLL_EDGE) {
-    const s = (pointerY - (r.bottom - WS_DRAG_SCROLL_EDGE)) / WS_DRAG_SCROLL_EDGE;
+    const s =
+      (pointerY - (r.bottom - WS_DRAG_SCROLL_EDGE)) / WS_DRAG_SCROLL_EDGE;
     listEl.scrollTop += Math.ceil(s * WS_DRAG_MAX_SCROLL_STEP);
   }
 }
 
-function wsInsertIndex(ids: string[], dragId: string, refs: Map<string, HTMLDivElement>, pointerY: number) {
+function wsInsertIndex(
+  ids: string[],
+  dragId: string,
+  refs: Map<string, HTMLDivElement>,
+  pointerY: number,
+) {
   if (ids.length <= 1) return 0;
   let idx = 0;
   for (const id of ids) {
@@ -93,7 +111,10 @@ function WorkspacePicker({ onSelect }: { onSelect: (id: string) => void }) {
   const commitRename = useCallback(() => {
     if (!renamingId) return;
     const trimmed = renameValue.trim();
-    if (trimmed && trimmed !== workspaces.find((w) => w.id === renamingId)?.name) {
+    if (
+      trimmed &&
+      trimmed !== workspaces.find((w) => w.id === renamingId)?.name
+    ) {
       renameWorkspace(renamingId, trimmed);
     }
     setRenamingId(null);
@@ -131,7 +152,12 @@ function WorkspacePicker({ onSelect }: { onSelect: (id: string) => void }) {
         if (!dragging) return;
         ev.preventDefault();
         wsAutoScroll(listRef.current, ev.clientY);
-        dropIndex = wsInsertIndex(orderedIds, wsId, itemRefs.current, ev.clientY);
+        dropIndex = wsInsertIndex(
+          orderedIds,
+          wsId,
+          itemRefs.current,
+          ev.clientY,
+        );
         setDragOffsetY(dy);
         setDragToIndex(dropIndex);
       };
@@ -149,7 +175,9 @@ function WorkspacePicker({ onSelect }: { onSelect: (id: string) => void }) {
             console.error("Failed to reorder workspaces:", err),
           );
         }
-        setTimeout(() => { suppressClickRef.current = false; }, 0);
+        setTimeout(() => {
+          suppressClickRef.current = false;
+        }, 0);
       };
 
       document.addEventListener("mousemove", onMove);
@@ -158,13 +186,38 @@ function WorkspacePicker({ onSelect }: { onSelect: (id: string) => void }) {
     [workspaces, renamingId, reorderWorkspace],
   );
 
-  const draggingFromIndex = draggingId ? workspaces.findIndex((w) => w.id === draggingId) : -1;
+  const draggingFromIndex = draggingId
+    ? workspaces.findIndex((w) => w.id === draggingId)
+    : -1;
 
   return (
     <>
-      <div className="no-select" style={{ display: "flex", flexDirection: "column", height: "100%", background: "var(--bg-surface)" }}>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "8px 8px 8px 12px" }}>
-          <span style={{ fontSize: 11, fontWeight: 700, color: "var(--text-primary)", textTransform: "uppercase" as const, letterSpacing: "0.06em" }}>
+      <div
+        className="no-select"
+        style={{
+          display: "flex",
+          flexDirection: "column",
+          height: "100%",
+          background: "var(--bg-surface)",
+        }}
+      >
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            padding: "8px 8px 8px 12px",
+          }}
+        >
+          <span
+            style={{
+              fontSize: 11,
+              fontWeight: 700,
+              color: "var(--text-primary)",
+              textTransform: "uppercase" as const,
+              letterSpacing: "0.06em",
+            }}
+          >
             Workspaces
           </span>
           <button
@@ -185,8 +238,19 @@ function WorkspacePicker({ onSelect }: { onSelect: (id: string) => void }) {
               padding: 0,
             }}
           >
-            <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
-              <path d="M6 2v8M2 6h8" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+            <svg
+              width="12"
+              height="12"
+              viewBox="0 0 12 12"
+              fill="none"
+              aria-hidden="true"
+            >
+              <path
+                d="M6 2v8M2 6h8"
+                stroke="currentColor"
+                strokeWidth="1.4"
+                strokeLinecap="round"
+              />
             </svg>
           </button>
         </div>
@@ -197,7 +261,10 @@ function WorkspacePicker({ onSelect }: { onSelect: (id: string) => void }) {
             if ((e.target as HTMLElement).closest(".ws-item")) return;
             e.preventDefault();
             showContextMenu([
-              { label: "New Workspace...", action: () => setShowAddModal(true) },
+              {
+                label: "New Workspace...",
+                action: () => setShowAddModal(true),
+              },
             ]);
           }}
         >
@@ -210,9 +277,17 @@ function WorkspacePicker({ onSelect }: { onSelect: (id: string) => void }) {
             if (draggingId && dragToIndex !== null && draggingFromIndex >= 0) {
               if (isDragging) {
                 transform = `translateY(${dragOffsetY}px)`;
-              } else if (draggingFromIndex < dragToIndex && index > draggingFromIndex && index <= dragToIndex) {
+              } else if (
+                draggingFromIndex < dragToIndex &&
+                index > draggingFromIndex &&
+                index <= dragToIndex
+              ) {
                 transform = `translateY(${-dragItemHeight}px)`;
-              } else if (draggingFromIndex > dragToIndex && index >= dragToIndex && index < draggingFromIndex) {
+              } else if (
+                draggingFromIndex > dragToIndex &&
+                index >= dragToIndex &&
+                index < draggingFromIndex
+              ) {
                 transform = `translateY(${dragItemHeight}px)`;
               }
             }
@@ -220,7 +295,10 @@ function WorkspacePicker({ onSelect }: { onSelect: (id: string) => void }) {
             return (
               <div
                 key={ws.id}
-                ref={(node) => { if (node) itemRefs.current.set(ws.id, node); else itemRefs.current.delete(ws.id); }}
+                ref={(node) => {
+                  if (node) itemRefs.current.set(ws.id, node);
+                  else itemRefs.current.delete(ws.id);
+                }}
                 className={`ws-item sidebar-btn`}
                 onMouseDown={(e) => handleMouseDown(e, ws.id)}
                 onClick={() => {
@@ -231,11 +309,20 @@ function WorkspacePicker({ onSelect }: { onSelect: (id: string) => void }) {
                   e.preventDefault();
                   e.stopPropagation();
                   showContextMenu([
-                    { label: "Open in New Window", action: () => openWindow({ workspaceId: ws.id }) },
+                    {
+                      label: "Open in New Window",
+                      action: () => openWindow({ workspaceId: ws.id }),
+                    },
                     "separator",
-                    { label: "Rename", action: () => startRename(ws.id, ws.name) },
+                    {
+                      label: "Rename",
+                      action: () => startRename(ws.id, ws.name),
+                    },
                     "separator",
-                    { label: "Remove Workspace", action: () => removeWorkspace(ws.id) },
+                    {
+                      label: "Remove Workspace",
+                      action: () => removeWorkspace(ws.id),
+                    },
                   ]);
                 }}
                 style={{
@@ -246,10 +333,16 @@ function WorkspacePicker({ onSelect }: { onSelect: (id: string) => void }) {
                   padding: "8px 12px",
                   border: "none",
                   background: isActive ? "var(--bg-hover)" : "transparent",
-                  color: isActive ? "var(--text-primary)" : "var(--text-secondary)",
+                  color: isActive
+                    ? "var(--text-primary)"
+                    : "var(--text-secondary)",
                   fontSize: 13,
                   fontWeight: isActive ? 600 : 500,
-                  cursor: isRenaming ? "text" : isDragging ? "grabbing" : "pointer",
+                  cursor: isRenaming
+                    ? "text"
+                    : isDragging
+                      ? "grabbing"
+                      : "pointer",
                   textAlign: "left" as const,
                   position: "relative" as const,
                   willChange: "transform",
@@ -257,12 +350,40 @@ function WorkspacePicker({ onSelect }: { onSelect: (id: string) => void }) {
                   transition: isDragging
                     ? "box-shadow 120ms, background-color 120ms"
                     : `${WS_REORDER_TRANSITION}, background-color 120ms`,
-                  ...(isDragging ? { zIndex: 4, boxShadow: "0 8px 20px var(--shadow)", opacity: 0.96 } : {}),
+                  ...(isDragging
+                    ? {
+                        zIndex: 4,
+                        boxShadow: "0 8px 20px var(--shadow)",
+                        opacity: 0.96,
+                      }
+                    : {}),
                 }}
               >
-                <svg width="14" height="14" viewBox="0 0 16 16" fill="none" style={{ flexShrink: 0 }}>
-                  <rect x="1.5" y="3" width="13" height="10" rx="1.5" stroke={isActive ? "var(--text-primary)" : "var(--text-dim)"} strokeWidth="1.0" />
-                  <path d="M1.5 5.5h13" stroke={isActive ? "var(--text-primary)" : "var(--text-dim)"} strokeWidth="1.0" />
+                <svg
+                  width="14"
+                  height="14"
+                  viewBox="0 0 16 16"
+                  fill="none"
+                  style={{ flexShrink: 0 }}
+                >
+                  <rect
+                    x="1.5"
+                    y="3"
+                    width="13"
+                    height="10"
+                    rx="1.5"
+                    stroke={
+                      isActive ? "var(--text-primary)" : "var(--text-dim)"
+                    }
+                    strokeWidth="1.0"
+                  />
+                  <path
+                    d="M1.5 5.5h13"
+                    stroke={
+                      isActive ? "var(--text-primary)" : "var(--text-dim)"
+                    }
+                    strokeWidth="1.0"
+                  />
                 </svg>
                 {isRenaming ? (
                   <input
@@ -273,8 +394,10 @@ function WorkspacePicker({ onSelect }: { onSelect: (id: string) => void }) {
                     onBlur={commitRename}
                     onClick={(e) => e.stopPropagation()}
                     onKeyDown={(e) => {
-                      if (e.key === "Enter") { e.preventDefault(); commitRename(); }
-                      else if (e.key === "Escape") setRenamingId(null);
+                      if (e.key === "Enter") {
+                        e.preventDefault();
+                        commitRename();
+                      } else if (e.key === "Escape") setRenamingId(null);
                     }}
                     style={{
                       flex: 1,
@@ -349,7 +472,9 @@ export function App() {
   const loadRallyConfig = useWorkspaceStore((s) => s.loadRallyConfig);
   const isProductMode = workspaceMode === "product";
   const activeRootPath = useWorkspaceStore((s) => {
-    return s.activeWorkspaceId ? (s.getActivePath(s.activeWorkspaceId) ?? "") : "";
+    return s.activeWorkspaceId
+      ? (s.getActivePath(s.activeWorkspaceId) ?? "")
+      : "";
   });
   const gitPanelOpen = useWorkspaceStore((s) => s.unifiedGitPanelOpen);
   const openUnifiedGitPanel = useWorkspaceStore((s) => s.openUnifiedGitPanel);
@@ -370,7 +495,12 @@ export function App() {
     return JSON.stringify(prs);
   });
   const activePrs = React.useMemo(
-    () => JSON.parse(activePrsJson) as { path: string; repoName: string; pr: PrStatus }[],
+    () =>
+      JSON.parse(activePrsJson) as {
+        path: string;
+        repoName: string;
+        pr: PrStatus;
+      }[],
     [activePrsJson],
   );
 
@@ -382,7 +512,9 @@ export function App() {
     return saved ? Number(saved) : 1.0;
   });
   type ExplorerView = "files" | "search" | "claude" | "scripts" | "workspaces";
-  const explorerViewPerWorkspaceRef = useRef<Map<string, ExplorerView>>(new Map());
+  const explorerViewPerWorkspaceRef = useRef<Map<string, ExplorerView>>(
+    new Map(),
+  );
   const prevExplorerWsRef = useRef<string | null>(null);
   const [explorerView, setExplorerView] = useState<ExplorerView>("files");
 
@@ -398,7 +530,7 @@ export function App() {
       setExplorerView(saved);
       prevExplorerWsRef.current = wsId;
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeWorkspaceId]);
   const [quickOpenVisible, setQuickOpenVisible] = useState(false);
   const [newTerminalCwdRequest, setNewTerminalCwdRequest] =
@@ -459,7 +591,12 @@ export function App() {
       }
 
       // Auto-restore on snap past half screen (if we auto-collapsed earlier)
-      if (isSnap && w > halfScreen && fileExplorerCollapsed && autoCollapsedRef.current) {
+      if (
+        isSnap &&
+        w > halfScreen &&
+        fileExplorerCollapsed &&
+        autoCollapsedRef.current
+      ) {
         autoCollapsedRef.current = false;
         setFileExplorerCollapsed(false);
         return;
@@ -468,10 +605,7 @@ export function App() {
       if (mainWidth < MIN_MAIN_WIDTH && !fileExplorerCollapsed) {
         // Shrink explorer to fit
         const available =
-          w -
-          ACTIVITY_BAR_WIDTH -
-          RESIZE_HANDLE_WIDTH -
-          MIN_MAIN_WIDTH;
+          w - ACTIVITY_BAR_WIDTH - RESIZE_HANDLE_WIDTH - MIN_MAIN_WIDTH;
         if (available >= MIN_EXPLORER_WIDTH) {
           setFileExplorerWidth(available);
         } else {
@@ -513,7 +647,10 @@ export function App() {
     document.addEventListener("pointerdown", markInteraction, {
       passive: true,
     });
-    document.addEventListener("keydown", markInteraction, { passive: true, capture: true });
+    document.addEventListener("keydown", markInteraction, {
+      passive: true,
+      capture: true,
+    });
     document.addEventListener("wheel", markInteraction, { passive: true });
     document.addEventListener("scroll", markInteraction, {
       passive: true,
@@ -588,9 +725,9 @@ export function App() {
     // Kill all orphaned PTYs from a previous session. On reload/restart the
     // frontend loses all xterm state and event listeners, so existing PTYs
     // can never be reconnected — they'd leak as zombie processes.
-    api.killAllPtys().catch((e: unknown) =>
-      console.error("Failed to kill orphaned PTYs:", e),
-    );
+    api
+      .killAllPtys()
+      .catch((e: unknown) => console.error("Failed to kill orphaned PTYs:", e));
 
     loadWorkspaces({ keepNullActive: forceNoWorkspaceSelection }).then(
       async () => {
@@ -600,9 +737,9 @@ export function App() {
     );
 
     // Scale polling intervals with workspace count to avoid IPC flood
-    const pathCount = useWorkspaceStore.getState().workspaces.reduce(
-      (n, ws) => n + ws.paths.length, 0,
-    );
+    const pathCount = useWorkspaceStore
+      .getState()
+      .workspaces.reduce((n, ws) => n + ws.paths.length, 0);
     const gitMs = pathCount > 6 ? 20000 : 10000;
     const shipMs = pathCount > 6 ? 10000 : 5000;
     const fetchMs = pathCount > 6 ? 120000 : 60000;
@@ -657,7 +794,8 @@ export function App() {
       const config = s.rallyConfigs[rootPath];
       // Only auto-set mode from config if the user hasn't explicitly chosen one
       if (config?.mode && !s.workspaceModes[activeWorkspaceId]) {
-        const mode = config.mode === "product" ? "product" as const : "dev" as const;
+        const mode =
+          config.mode === "product" ? ("product" as const) : ("dev" as const);
         s.setWorkspaceMode(activeWorkspaceId, mode);
       }
     });
@@ -888,7 +1026,7 @@ export function App() {
       const s = useWorkspaceStore.getState();
       const wsId = s.activeWorkspaceId;
       if (!wsId) return;
-      s.openFile(wsId, event.payload);
+      s.openFile(wsId, event.payload, { skipReveal: true });
       // Blur the terminal so the new editor pane becomes the focused group.
       // Without this, xterm keeps DOM focus and Cmd+W closes the terminal instead.
       if (document.activeElement instanceof HTMLElement) {
@@ -914,10 +1052,11 @@ export function App() {
     const handler = () => {
       setFileExplorerCollapsed(false);
       // Keep search panel open when clicking search results
-      setExplorerView((prev) => prev === "search" ? prev : "files");
+      setExplorerView((prev) => (prev === "search" ? prev : "files"));
     };
     document.addEventListener("rally-ensure-explorer-visible", handler);
-    return () => document.removeEventListener("rally-ensure-explorer-visible", handler);
+    return () =>
+      document.removeEventListener("rally-ensure-explorer-visible", handler);
   }, []);
 
   // Finder drag-and-drop: bridge Tauri file drop events into the drag context
@@ -949,15 +1088,22 @@ export function App() {
           // viewport logical dimensions, it's physical and needs DPR scaling.
           const rawX = event.payload.position.x;
           const rawY = event.payload.position.y;
-          const exceedsLogical = rawX > window.innerWidth * 1.15 || rawY > window.innerHeight * 1.15;
+          const exceedsLogical =
+            rawX > window.innerWidth * 1.15 || rawY > window.innerHeight * 1.15;
           coordScale = exceedsLogical ? dpr : 1;
           const { x, y } = toLogical(rawX, rawY);
           startExternalFileDrag(event.payload.paths, x, y);
         } else if (type === "over") {
-          const { x, y } = toLogical(event.payload.position.x, event.payload.position.y);
+          const { x, y } = toLogical(
+            event.payload.position.x,
+            event.payload.position.y,
+          );
           updateDragPosition(x, y);
         } else if (type === "drop") {
-          const { x, y } = toLogical(event.payload.position.x, event.payload.position.y);
+          const { x, y } = toLogical(
+            event.payload.position.x,
+            event.payload.position.y,
+          );
           updateDragPosition(x, y);
 
           // Check if we're dropping onto a terminal — if so, write paths
@@ -966,12 +1112,18 @@ export function App() {
           // space to avoid DPR rounding issues with elementFromPoint.
           const filePaths = event.payload.paths;
           if (filePaths.length > 0) {
-            const groupEls = document.querySelectorAll<HTMLElement>("[data-group-id]");
+            const groupEls =
+              document.querySelectorAll<HTMLElement>("[data-group-id]");
             let bestGroup: HTMLElement | null = null;
             let bestArea = Infinity;
             for (const el of groupEls) {
               const rect = el.getBoundingClientRect();
-              if (x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom) {
+              if (
+                x >= rect.left &&
+                x <= rect.right &&
+                y >= rect.top &&
+                y <= rect.bottom
+              ) {
                 // Pick the smallest matching group (most specific)
                 const area = rect.width * rect.height;
                 if (area < bestArea) {
@@ -986,10 +1138,21 @@ export function App() {
               const wsId = s.activeWorkspaceId;
               if (wsId) {
                 const grp = s.layouts[wsId]?.groups[gid];
-                const activePane = grp?.panes.find((p) => p.id === grp.activePaneId);
-                if (activePane?.ptyId && (activePane.type === "terminal" || activePane.type === "claude")) {
-                  const escaped = filePaths.map((p: string) => p.includes(" ") ? `'${p}'` : p).join(" ");
-                  api.writePty(activePane.ptyId, Array.from(new TextEncoder().encode(escaped)));
+                const activePane = grp?.panes.find(
+                  (p) => p.id === grp.activePaneId,
+                );
+                if (
+                  activePane?.ptyId &&
+                  (activePane.type === "terminal" ||
+                    activePane.type === "claude")
+                ) {
+                  const escaped = filePaths
+                    .map((p: string) => (p.includes(" ") ? `'${p}'` : p))
+                    .join(" ");
+                  api.writePty(
+                    activePane.ptyId,
+                    Array.from(new TextEncoder().encode(escaped)),
+                  );
                   endDrag();
                   return;
                 }
@@ -1097,7 +1260,10 @@ export function App() {
         const group = layout.groups[activeGroupId];
         if (!group) return;
         const pane = group.panes.find((p) => p.id === group.activePaneId);
-        if (pane?.ptyId && (pane.type === "claude" || pane.type === "terminal")) {
+        if (
+          pane?.ptyId &&
+          (pane.type === "claude" || pane.type === "terminal")
+        ) {
           const { ask } = await import("@tauri-apps/plugin-dialog");
           const confirmed = await ask("Close this terminal session?", {
             title: "Close Terminal",
@@ -1134,10 +1300,9 @@ export function App() {
           const groupId = root.groupId;
           const group = layout.groups[groupId];
           const activePane = group?.panes.find(
-            (p) => p.id === group.activePaneId
+            (p) => p.id === group.activePaneId,
           );
-          const cwd =
-            activePane?.cwd || s.getActivePath(wsId) || undefined;
+          const cwd = activePane?.cwd || s.getActivePath(wsId) || undefined;
 
           const newPane: Pane = {
             id: crypto.randomUUID(),
@@ -1189,21 +1354,32 @@ export function App() {
         }
 
         const isCollapsed = !!s.bottomPanelCollapsed[wsId];
-        const rootVSplit = root.type === "split" && root.direction === "vertical"
-          ? root as Extract<LayoutNode, { type: "split" }>
-          : null;
+        const rootVSplit =
+          root.type === "split" && root.direction === "vertical"
+            ? (root as Extract<LayoutNode, { type: "split" }>)
+            : null;
 
         if (isCollapsed) {
           // Collapsed → expand to golden ratio
           if (rootVSplit) {
             // Repopulate empty bottom groups with a terminal
-            const bottomGroupId = findFirstGroupInSubtree(rootVSplit.children[1]);
-            const bottomGroup = bottomGroupId ? layout.groups[bottomGroupId] : null;
-            if (bottomGroupId && bottomGroup && bottomGroup.panes.length === 0) {
+            const bottomGroupId = findFirstGroupInSubtree(
+              rootVSplit.children[1],
+            );
+            const bottomGroup = bottomGroupId
+              ? layout.groups[bottomGroupId]
+              : null;
+            if (
+              bottomGroupId &&
+              bottomGroup &&
+              bottomGroup.panes.length === 0
+            ) {
               const activeGroupId = s.activeGroupIds[wsId];
-              const activeGroup = activeGroupId ? layout.groups[activeGroupId] : null;
+              const activeGroup = activeGroupId
+                ? layout.groups[activeGroupId]
+                : null;
               const activePane = activeGroup?.panes.find(
-                (p) => p.id === activeGroup.activePaneId
+                (p) => p.id === activeGroup.activePaneId,
               );
               const cwd = activePane?.cwd || s.getActivePath(wsId) || undefined;
               const newPane: Pane = {
@@ -1231,22 +1407,30 @@ export function App() {
               ratio: DEFAULT_BOTTOM_RATIO,
             });
             useWorkspaceStore.setState({
-              bottomPanelCollapsed: { ...s.bottomPanelCollapsed, [wsId]: false },
+              bottomPanelCollapsed: {
+                ...s.bottomPanelCollapsed,
+                [wsId]: false,
+              },
               layouts: { ...s.layouts, [wsId]: { ...layout, root: newRoot } },
             });
 
             // Focus the bottom terminal
-            const focusGroupId = findFirstGroupInSubtree(rootVSplit.children[1]);
+            const focusGroupId = findFirstGroupInSubtree(
+              rootVSplit.children[1],
+            );
             if (focusGroupId) {
               setTimeout(() => {
                 window.dispatchEvent(
-                  new CustomEvent("rally-focus-group", { detail: focusGroupId }),
+                  new CustomEvent("rally-focus-group", {
+                    detail: focusGroupId,
+                  }),
                 );
               }, 50);
             }
           }
         } else if (rootVSplit) {
-          const bottomIsBiggerThanGolden = rootVSplit.ratio < DEFAULT_BOTTOM_RATIO - 0.02;
+          const bottomIsBiggerThanGolden =
+            rootVSplit.ratio < DEFAULT_BOTTOM_RATIO - 0.02;
           if (bottomIsBiggerThanGolden) {
             // Bottom panel larger than golden → snap to golden first
             const newRoot = replaceNode(layout.root, rootVSplit.id, {
@@ -1279,7 +1463,11 @@ export function App() {
         }
       }
       // Cmd+E: toggle file explorer
-      if ((e.metaKey || e.ctrlKey) && !e.shiftKey && e.key.toLowerCase() === "e") {
+      if (
+        (e.metaKey || e.ctrlKey) &&
+        !e.shiftKey &&
+        e.key.toLowerCase() === "e"
+      ) {
         e.preventDefault();
         if (fileExplorerCollapsed) {
           setExplorerView("files");
@@ -1310,7 +1498,11 @@ export function App() {
         s.splitGroup(wsId, groupId, "horizontal", activePath ?? undefined);
       }
       // Cmd+Shift+[ / Cmd+Shift+]: cycle tabs left/right in active group
-      if (e.metaKey && e.shiftKey && (e.code === "BracketLeft" || e.code === "BracketRight")) {
+      if (
+        e.metaKey &&
+        e.shiftKey &&
+        (e.code === "BracketLeft" || e.code === "BracketRight")
+      ) {
         e.preventDefault();
         const s = useWorkspaceStore.getState();
         const wsId = s.activeWorkspaceId;
@@ -1342,7 +1534,11 @@ export function App() {
           const layout = s.getOrCreateLayout(wsId);
           const activeGroupId = s.activeGroupIds[wsId];
           if (!activeGroupId) return;
-          const targetGroupId = findNeighborGroup(layout.root, activeGroupId, direction);
+          const targetGroupId = findNeighborGroup(
+            layout.root,
+            activeGroupId,
+            direction,
+          );
           if (!targetGroupId || targetGroupId === activeGroupId) return;
           // Update active group and dispatch focus event
           useWorkspaceStore.setState({
@@ -1363,7 +1559,9 @@ export function App() {
       const detail = (event as CustomEvent<RequestNewTerminalCwdDetail>).detail;
       if (!detail?.workspaceId || !detail?.groupId) return;
       // If workspace has only one repo, skip the picker and open terminal directly
-      const ws = useWorkspaceStore.getState().workspaces.find((w) => w.id === detail.workspaceId);
+      const ws = useWorkspaceStore
+        .getState()
+        .workspaces.find((w) => w.id === detail.workspaceId);
       if (ws && ws.paths.length === 1) {
         const pane: Pane = {
           id: crypto.randomUUID(),
@@ -1441,7 +1639,9 @@ export function App() {
         // Keep resizingRef true briefly so the auto-shrink effect
         // (which re-runs when fileExplorerWidth changes) doesn't
         // immediately override the user's chosen width.
-        setTimeout(() => { resizingRef.current = false; }, 100);
+        setTimeout(() => {
+          resizingRef.current = false;
+        }, 100);
         document.removeEventListener("mousemove", onMouseMove);
         document.removeEventListener("mouseup", onMouseUp);
         document.body.style.cursor = "";
@@ -1466,7 +1666,6 @@ export function App() {
     [appWindow],
   );
 
-
   return (
     <div style={styles.app}>
       <div
@@ -1486,20 +1685,66 @@ export function App() {
                 onClick={() => openUnifiedGitPanel(path, "pr")}
                 title={`${pr.title} (#${pr.number})`}
               >
-                <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor" style={{ flexShrink: 0 }}>
-                  <path fillRule="evenodd" clipRule="evenodd" d="M5.61588 4.92781C5.34298 5.33911 4.95312 5.66074 4.49699 5.84982C4.34885 5.91025 4.03891 5.98822 4.03891 5.98822V10.9959C4.1968 11.0271 4.3508 11.0739 4.49894 11.1363C4.95507 11.3273 5.34298 11.647 5.61783 12.0583C5.89073 12.4696 6.03693 12.953 6.03693 13.4462C6.04472 13.7893 5.9804 14.1304 5.84785 14.4462C5.72309 14.7483 5.53986 15.0232 5.30789 15.2551C5.07788 15.4871 4.80108 15.6703 4.49894 15.7951C4.18316 15.9276 3.84203 15.9919 3.49896 15.9842C3.00579 15.9861 2.52237 15.8399 2.11107 15.5651C1.69977 15.2922 1.37814 14.9023 1.18906 14.4462C1.00192 13.9881 0.953192 13.4852 1.04871 12.9998C1.14422 12.5144 1.38009 12.068 1.72901 11.7172C2.07793 11.3741 2.51847 11.1382 2.99799 11.0369V5.94923C2.52042 5.84592 2.07988 5.61201 1.72901 5.26893C1.38009 4.91806 1.14422 4.47168 1.04871 3.9863C0.951243 3.50093 0.999975 2.99802 1.18906 2.53993C1.37814 2.0838 1.69977 1.69394 2.11107 1.42105C2.52042 1.1462 3.00384 1 3.49896 1C3.84008 0.994152 4.18121 1.05848 4.49699 1.18908C4.79913 1.31383 5.07398 1.49707 5.30594 1.72903C5.53791 1.961 5.72114 2.2378 5.8459 2.53993C5.97845 2.85572 6.04277 3.19684 6.03498 3.53992C6.03693 4.03309 5.89073 4.51651 5.61588 4.92781ZM4.85956 12.7893C4.73091 12.5495 4.53988 12.3487 4.30791 12.2103C4.07595 12.07 3.80889 11.9959 3.53794 11.9998C3.24165 11.9998 2.95316 12.0856 2.70755 12.2493C2.45999 12.417 2.26506 12.6528 2.1481 12.9296C2.03699 13.2025 2.0097 13.5008 2.06818 13.7893C2.12471 14.0797 2.26701 14.3487 2.47753 14.5592C2.68806 14.7697 2.95511 14.912 3.2475 14.9686C3.53599 15.0271 3.83423 14.9998 4.10713 14.8887C4.38393 14.7717 4.6198 14.5768 4.78744 14.3292C4.93753 14.1031 5.0233 13.8399 5.03694 13.569C5.04864 13.298 4.98821 13.029 4.85956 12.7893ZM2.70755 4.74068C2.95511 4.90247 3.2436 4.99019 3.53794 4.99019C3.80889 4.99019 4.07595 4.91611 4.30791 4.77966C4.53988 4.63931 4.73091 4.44049 4.85956 4.20073C4.98821 3.96096 5.05059 3.69196 5.03694 3.42101C5.0233 3.15006 4.93753 2.88691 4.78744 2.66079C4.6198 2.41323 4.38393 2.2183 4.10713 2.10135C3.83423 1.99024 3.53599 1.96295 3.2475 2.02142C2.95706 2.07795 2.68806 2.22025 2.47753 2.43077C2.26701 2.6413 2.12471 2.90835 2.06818 3.20074C2.0097 3.48924 2.03699 3.78748 2.1481 4.06038C2.26506 4.33718 2.45999 4.57304 2.70755 4.74068ZM13.0368 11.0369C13.5163 11.1344 13.9588 11.3722 14.3058 11.7172C14.7716 12.187 15.0348 12.8244 15.0309 13.4832C15.0328 13.9764 14.8866 14.4598 14.6118 14.8711C14.3389 15.2824 13.949 15.6041 13.4929 15.7931C13.0368 15.9842 12.5319 16.0349 12.0465 15.9393C11.5612 15.8438 11.1148 15.606 10.7639 15.2551C10.415 14.9043 10.1752 14.4579 10.0797 13.9725C9.98419 13.4871 10.0349 12.9842 10.2259 12.5261C10.4189 12.0739 10.7386 11.684 11.146 11.4073C11.413 11.224 11.7171 11.0993 12.0348 11.0369V5.48922C12.0348 5.09157 11.8769 4.70951 11.5962 4.42881C11.3155 4.14811 10.9335 3.99022 10.5358 3.99022H8.68597L9.95495 5.25921L9.24541 5.96875L7.11679 3.84013V3.14033L9.24736 1.00977L9.9569 1.72125L8.68791 2.99024H10.5378C10.8653 2.98829 11.1908 3.05262 11.4949 3.17737C11.799 3.30212 12.0758 3.48731 12.3077 3.71927C12.5397 3.95124 12.7249 4.22803 12.8496 4.53212C12.9744 4.83426 13.0387 5.15979 13.0368 5.48922V11.0369ZM13.5943 14.5456C13.8399 14.3019 13.9919 13.9803 14.027 13.6353C14.0621 13.2922 13.9763 12.9452 13.7853 12.6567C13.6177 12.4092 13.3818 12.2143 13.105 12.0973C12.8321 11.9862 12.5339 11.9589 12.2454 12.0174C11.9549 12.0739 11.6859 12.2162 11.4754 12.4267C11.2649 12.6372 11.1226 12.9043 11.066 13.1967C11.0076 13.4852 11.0349 13.7834 11.146 14.0563C11.2629 14.3331 11.4578 14.569 11.7054 14.7366C11.9939 14.9277 12.3389 15.0134 12.6839 14.9783C13.027 14.9433 13.3506 14.7912 13.5943 14.5456Z" />
+                <svg
+                  width="14"
+                  height="14"
+                  viewBox="0 0 16 16"
+                  fill="#ddd"
+                  style={{ flexShrink: 0 }}
+                >
+                  <path
+                    fillRule="evenodd"
+                    clipRule="evenodd"
+                    d="M5.61588 4.92781C5.34298 5.33911 4.95312 5.66074 4.49699 5.84982C4.34885 5.91025 4.03891 5.98822 4.03891 5.98822V10.9959C4.1968 11.0271 4.3508 11.0739 4.49894 11.1363C4.95507 11.3273 5.34298 11.647 5.61783 12.0583C5.89073 12.4696 6.03693 12.953 6.03693 13.4462C6.04472 13.7893 5.9804 14.1304 5.84785 14.4462C5.72309 14.7483 5.53986 15.0232 5.30789 15.2551C5.07788 15.4871 4.80108 15.6703 4.49894 15.7951C4.18316 15.9276 3.84203 15.9919 3.49896 15.9842C3.00579 15.9861 2.52237 15.8399 2.11107 15.5651C1.69977 15.2922 1.37814 14.9023 1.18906 14.4462C1.00192 13.9881 0.953192 13.4852 1.04871 12.9998C1.14422 12.5144 1.38009 12.068 1.72901 11.7172C2.07793 11.3741 2.51847 11.1382 2.99799 11.0369V5.94923C2.52042 5.84592 2.07988 5.61201 1.72901 5.26893C1.38009 4.91806 1.14422 4.47168 1.04871 3.9863C0.951243 3.50093 0.999975 2.99802 1.18906 2.53993C1.37814 2.0838 1.69977 1.69394 2.11107 1.42105C2.52042 1.1462 3.00384 1 3.49896 1C3.84008 0.994152 4.18121 1.05848 4.49699 1.18908C4.79913 1.31383 5.07398 1.49707 5.30594 1.72903C5.53791 1.961 5.72114 2.2378 5.8459 2.53993C5.97845 2.85572 6.04277 3.19684 6.03498 3.53992C6.03693 4.03309 5.89073 4.51651 5.61588 4.92781ZM4.85956 12.7893C4.73091 12.5495 4.53988 12.3487 4.30791 12.2103C4.07595 12.07 3.80889 11.9959 3.53794 11.9998C3.24165 11.9998 2.95316 12.0856 2.70755 12.2493C2.45999 12.417 2.26506 12.6528 2.1481 12.9296C2.03699 13.2025 2.0097 13.5008 2.06818 13.7893C2.12471 14.0797 2.26701 14.3487 2.47753 14.5592C2.68806 14.7697 2.95511 14.912 3.2475 14.9686C3.53599 15.0271 3.83423 14.9998 4.10713 14.8887C4.38393 14.7717 4.6198 14.5768 4.78744 14.3292C4.93753 14.1031 5.0233 13.8399 5.03694 13.569C5.04864 13.298 4.98821 13.029 4.85956 12.7893ZM2.70755 4.74068C2.95511 4.90247 3.2436 4.99019 3.53794 4.99019C3.80889 4.99019 4.07595 4.91611 4.30791 4.77966C4.53988 4.63931 4.73091 4.44049 4.85956 4.20073C4.98821 3.96096 5.05059 3.69196 5.03694 3.42101C5.0233 3.15006 4.93753 2.88691 4.78744 2.66079C4.6198 2.41323 4.38393 2.2183 4.10713 2.10135C3.83423 1.99024 3.53599 1.96295 3.2475 2.02142C2.95706 2.07795 2.68806 2.22025 2.47753 2.43077C2.26701 2.6413 2.12471 2.90835 2.06818 3.20074C2.0097 3.48924 2.03699 3.78748 2.1481 4.06038C2.26506 4.33718 2.45999 4.57304 2.70755 4.74068ZM13.0368 11.0369C13.5163 11.1344 13.9588 11.3722 14.3058 11.7172C14.7716 12.187 15.0348 12.8244 15.0309 13.4832C15.0328 13.9764 14.8866 14.4598 14.6118 14.8711C14.3389 15.2824 13.949 15.6041 13.4929 15.7931C13.0368 15.9842 12.5319 16.0349 12.0465 15.9393C11.5612 15.8438 11.1148 15.606 10.7639 15.2551C10.415 14.9043 10.1752 14.4579 10.0797 13.9725C9.98419 13.4871 10.0349 12.9842 10.2259 12.5261C10.4189 12.0739 10.7386 11.684 11.146 11.4073C11.413 11.224 11.7171 11.0993 12.0348 11.0369V5.48922C12.0348 5.09157 11.8769 4.70951 11.5962 4.42881C11.3155 4.14811 10.9335 3.99022 10.5358 3.99022H8.68597L9.95495 5.25921L9.24541 5.96875L7.11679 3.84013V3.14033L9.24736 1.00977L9.9569 1.72125L8.68791 2.99024H10.5378C10.8653 2.98829 11.1908 3.05262 11.4949 3.17737C11.799 3.30212 12.0758 3.48731 12.3077 3.71927C12.5397 3.95124 12.7249 4.22803 12.8496 4.53212C12.9744 4.83426 13.0387 5.15979 13.0368 5.48922V11.0369ZM13.5943 14.5456C13.8399 14.3019 13.9919 13.9803 14.027 13.6353C14.0621 13.2922 13.9763 12.9452 13.7853 12.6567C13.6177 12.4092 13.3818 12.2143 13.105 12.0973C12.8321 11.9862 12.5339 11.9589 12.2454 12.0174C11.9549 12.0739 11.6859 12.2162 11.4754 12.4267C11.2649 12.6372 11.1226 12.9043 11.066 13.1967C11.0076 13.4852 11.0349 13.7834 11.146 14.0563C11.2629 14.3331 11.4578 14.569 11.7054 14.7366C11.9939 14.9277 12.3389 15.0134 12.6839 14.9783C13.027 14.9433 13.3506 14.7912 13.5943 14.5456Z"
+                  />
                 </svg>
-                <span style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", lineHeight: 1, position: "relative", top: 1 }}>
+                <span
+                  style={{
+                    whiteSpace: "nowrap",
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                    lineHeight: 1,
+                    position: "relative",
+                    top: 1,
+                  }}
+                >
                   {repoName} #{pr.number}
                 </span>
                 {pr.review_decision === "APPROVED" && (
-                  <span style={{ color: "var(--status-green)", fontSize: 11, lineHeight: 1, flexShrink: 0 }}>✓</span>
+                  <span
+                    style={{
+                      color: "var(--status-green)",
+                      fontSize: 11,
+                      lineHeight: 1,
+                      flexShrink: 0,
+                    }}
+                  >
+                    ✓
+                  </span>
                 )}
                 {pr.review_decision === "CHANGES_REQUESTED" && (
-                  <span style={{ color: "var(--status-amber)", fontSize: 11, lineHeight: 1, flexShrink: 0 }}>●</span>
+                  <span
+                    style={{
+                      color: "var(--status-amber)",
+                      fontSize: 11,
+                      lineHeight: 1,
+                      flexShrink: 0,
+                    }}
+                  >
+                    ●
+                  </span>
                 )}
                 {pr.checks_status === "fail" && (
-                  <span style={{ color: "var(--status-red)", fontSize: 11, lineHeight: 1, flexShrink: 0 }}>✕</span>
+                  <span
+                    style={{
+                      color: "var(--status-red)",
+                      fontSize: 11,
+                      lineHeight: 1,
+                      flexShrink: 0,
+                    }}
+                  >
+                    ✕
+                  </span>
                 )}
               </button>
             ))}
@@ -1515,10 +1760,50 @@ export function App() {
                 title: "Workspaces",
                 icon: (active: boolean) => (
                   <svg width="18" height="18" viewBox="0 0 16 16" fill="none">
-                    <rect x="1.5" y="1.5" width="5.5" height="5.5" rx="1.2" stroke={active ? "var(--text-primary)" : "var(--text-secondary)"} strokeWidth="1.0" />
-                    <rect x="9" y="1.5" width="5.5" height="5.5" rx="1.2" stroke={active ? "var(--text-primary)" : "var(--text-secondary)"} strokeWidth="1.0" />
-                    <rect x="1.5" y="9" width="5.5" height="5.5" rx="1.2" stroke={active ? "var(--text-primary)" : "var(--text-secondary)"} strokeWidth="1.0" />
-                    <rect x="9" y="9" width="5.5" height="5.5" rx="1.2" stroke={active ? "var(--text-primary)" : "var(--text-secondary)"} strokeWidth="1.0" />
+                    <rect
+                      x="1.5"
+                      y="1.5"
+                      width="5.5"
+                      height="5.5"
+                      rx="1.2"
+                      stroke={
+                        active ? "var(--text-primary)" : "var(--text-secondary)"
+                      }
+                      strokeWidth="1.0"
+                    />
+                    <rect
+                      x="9"
+                      y="1.5"
+                      width="5.5"
+                      height="5.5"
+                      rx="1.2"
+                      stroke={
+                        active ? "var(--text-primary)" : "var(--text-secondary)"
+                      }
+                      strokeWidth="1.0"
+                    />
+                    <rect
+                      x="1.5"
+                      y="9"
+                      width="5.5"
+                      height="5.5"
+                      rx="1.2"
+                      stroke={
+                        active ? "var(--text-primary)" : "var(--text-secondary)"
+                      }
+                      strokeWidth="1.0"
+                    />
+                    <rect
+                      x="9"
+                      y="9"
+                      width="5.5"
+                      height="5.5"
+                      rx="1.2"
+                      stroke={
+                        active ? "var(--text-primary)" : "var(--text-secondary)"
+                      }
+                      strokeWidth="1.0"
+                    />
                   </svg>
                 ),
               },
@@ -1526,7 +1811,14 @@ export function App() {
                 view: "files" as const,
                 title: "Files",
                 icon: (active: boolean) => (
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill={active ? "var(--text-primary)" : "var(--text-secondary)"}>
+                  <svg
+                    width="18"
+                    height="18"
+                    viewBox="0 0 24 24"
+                    fill={
+                      active ? "var(--text-primary)" : "var(--text-secondary)"
+                    }
+                  >
                     <path d="M17.5 0H8.5L7 1.5V6H2.5L1 7.5V22.5699L2.5 24H14.5699L16 22.5699V18H20.7L22 16.5699V4.5L17.5 0ZM17.5 2.12L19.88 4.5H17.5V2.12ZM14.5 22.5H2.5V7.5H7V16.5699L8.5 18H14.5V22.5ZM20.5 16.5H8.5V1.5H16V6H20.5V16.5Z" />
                   </svg>
                 ),
@@ -1536,8 +1828,26 @@ export function App() {
                 title: "Search",
                 icon: (active: boolean) => (
                   <svg width="18" height="18" viewBox="0 0 16 16" fill="none">
-                    <circle cx="7" cy="7" r="4.5" stroke={active ? "var(--text-primary)" : "var(--text-secondary)"} strokeWidth="1.0" />
-                    <line x1="10.5" y1="10.5" x2="14" y2="14" stroke={active ? "var(--text-primary)" : "var(--text-secondary)"} strokeWidth="1.0" strokeLinecap="round" />
+                    <circle
+                      cx="7"
+                      cy="7"
+                      r="4.5"
+                      stroke={
+                        active ? "var(--text-primary)" : "var(--text-secondary)"
+                      }
+                      strokeWidth="1.0"
+                    />
+                    <line
+                      x1="10.5"
+                      y1="10.5"
+                      x2="14"
+                      y2="14"
+                      stroke={
+                        active ? "var(--text-primary)" : "var(--text-secondary)"
+                      }
+                      strokeWidth="1.0"
+                      strokeLinecap="round"
+                    />
                   </svg>
                 ),
               },
@@ -1549,7 +1859,9 @@ export function App() {
                     width="17"
                     height="17"
                     viewBox="0 0 24 24"
-                    fill={active ? "var(--text-primary)" : "var(--text-secondary)"}
+                    fill={
+                      active ? "var(--text-primary)" : "var(--text-secondary)"
+                    }
                     style={{ opacity: active ? 1 : 0.85 }}
                     aria-hidden="true"
                   >
@@ -1568,13 +1880,43 @@ export function App() {
                     fill="none"
                     aria-hidden="true"
                   >
-                    <path d="M2 3L6.5 8L2 13" stroke={active ? "var(--text-primary)" : "var(--text-secondary)"} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" opacity="0.3" />
-                    <path d="M4.5 3L9 8L4.5 13" stroke={active ? "var(--text-primary)" : "var(--text-secondary)"} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" opacity="0.6" />
-                    <path d="M7 3L11.5 8L7 13" stroke={active ? "var(--text-primary)" : "var(--text-secondary)"} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                    <path
+                      d="M2 3L6.5 8L2 13"
+                      stroke={
+                        active ? "var(--text-primary)" : "var(--text-secondary)"
+                      }
+                      strokeWidth="1.5"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      opacity="0.3"
+                    />
+                    <path
+                      d="M4.5 3L9 8L4.5 13"
+                      stroke={
+                        active ? "var(--text-primary)" : "var(--text-secondary)"
+                      }
+                      strokeWidth="1.5"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      opacity="0.6"
+                    />
+                    <path
+                      d="M7 3L11.5 8L7 13"
+                      stroke={
+                        active ? "var(--text-primary)" : "var(--text-secondary)"
+                      }
+                      strokeWidth="1.5"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    />
                   </svg>
                 ),
               },
-            ] as { view: typeof explorerView; title: string; icon: (active: boolean) => React.ReactNode }[]
+            ] as {
+              view: typeof explorerView;
+              title: string;
+              icon: (active: boolean) => React.ReactNode;
+            }[]
           ).map(({ view, title, icon }) => {
             const isActive = !fileExplorerCollapsed && explorerView === view;
             return (
@@ -1606,66 +1948,103 @@ export function App() {
           <div style={{ flex: 1 }} />
           <ThemeCycleButton />
         </div>
-        {!fileExplorerCollapsed && (() => {
-          return (
+        {!fileExplorerCollapsed &&
+          (() => {
+            return (
+              <div
+                style={{
+                  display: "flex",
+                  flexShrink: 0,
+                }}
+              >
+                <div
+                  ref={explorerRef}
+                  style={{
+                    width: fileExplorerWidth,
+                    minWidth: fileExplorerWidth,
+                    flexShrink: 0,
+                  }}
+                >
+                  {explorerView === "workspaces" && (
+                    <WorkspacePicker
+                      onSelect={(id) => {
+                        setActiveWorkspace(id);
+                        setExplorerView("files");
+                      }}
+                    />
+                  )}
+                  <div
+                    style={{
+                      display: explorerView === "search" ? undefined : "none",
+                      height: "100%",
+                    }}
+                  >
+                    <SearchPanel
+                      onCollapse={() => setFileExplorerCollapsed(true)}
+                      flushLeft
+                    />
+                  </div>
+                  {explorerView === "claude" && <GlobalConfigExplorer />}
+                  {explorerView === "scripts" && <ScriptEditor />}
+                  <div
+                    style={{
+                      display: explorerView === "files" ? undefined : "none",
+                      height: "100%",
+                    }}
+                  >
+                    <FileExplorer
+                      onCollapse={() => setFileExplorerCollapsed(true)}
+                      flushLeft
+                    />
+                  </div>
+                </div>
+                <div
+                  onMouseDown={handleExplorerResize}
+                  style={styles.explorerResizeHandle}
+                >
+                  <div style={styles.resizeLine} />
+                  <div style={styles.explorerResizeHeaderBorder} />
+                </div>
+              </div>
+            );
+          })()}
+        <div style={styles.main}>
           <div
             style={{
+              flex: 1,
+              minWidth: 0,
               display: "flex",
-              flexShrink: 0,
+              flexDirection: "column",
+              position: "relative",
             }}
           >
-            <div
-              ref={explorerRef}
-              style={{
-                width: fileExplorerWidth,
-                minWidth: fileExplorerWidth,
-                flexShrink: 0,
-              }}
-            >
-              {explorerView === "workspaces" && (
-                <WorkspacePicker
-                  onSelect={(id) => {
-                    setActiveWorkspace(id);
-                    setExplorerView("files");
-                  }}
-                />
-              )}
-              <div style={{ display: explorerView === "search" ? undefined : "none", height: "100%" }}>
-                <SearchPanel
-                  onCollapse={() => setFileExplorerCollapsed(true)}
-                  flushLeft
-                />
-              </div>
-              {explorerView === "claude" && <GlobalConfigExplorer />}
-              {explorerView === "scripts" && <ScriptEditor />}
-              <div style={{ display: explorerView === "files" ? undefined : "none", height: "100%" }}>
-                <FileExplorer
-                  onCollapse={() => setFileExplorerCollapsed(true)}
-                  flushLeft
-                />
-              </div>
-            </div>
-            <div
-              onMouseDown={handleExplorerResize}
-              style={styles.explorerResizeHandle}
-            >
-              <div style={styles.resizeLine} />
-              <div style={styles.explorerResizeHeaderBorder} />
-            </div>
-          </div>
-          );
-        })()}
-        <div style={styles.main}>
-          <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", position: "relative" }}>
             {activeWorkspaceId && activeRootPath && (
-              <div style={{ display: isProductMode ? "flex" : "none", flex: 1, flexDirection: "column" as const, minWidth: 0, minHeight: 0 }}>
+              <div
+                style={{
+                  display: isProductMode ? "flex" : "none",
+                  flex: 1,
+                  flexDirection: "column" as const,
+                  minWidth: 0,
+                  minHeight: 0,
+                }}
+              >
                 <ProductChatPanel
                   rootPath={activeRootPath}
                   workspaceId={activeWorkspaceId}
                 />
               </div>
             )}
-            <div style={{ display: isProductMode ? "none" : "flex", flex: 1, flexDirection: "column" as const, minWidth: 0, minHeight: 0, position: "relative" as const, overflow: "hidden" }}>
+            <div
+              style={{
+                display: isProductMode ? "none" : "flex",
+                flex: 1,
+                flexDirection: "column" as const,
+                minWidth: 0,
+                minHeight: 0,
+                position: "relative" as const,
+                overflow: "hidden",
+              }}
+            >
               <PaneLayout />
               <BuildStatusDrawer />
             </div>
@@ -1719,19 +2098,35 @@ function ThemeIcon({ t, size = 18 }: { t: ThemeName; size?: number }) {
     return (
       <svg width={size} height={size} viewBox="0 0 24 24" fill="none">
         <circle cx="12" cy="12" r="4" stroke="currentColor" strokeWidth="1.5" />
-        <path d="M12 2v3M12 19v3M4.22 4.22l2.12 2.12M17.66 17.66l2.12 2.12M2 12h3M19 12h3M4.22 19.78l2.12-2.12M17.66 6.34l2.12-2.12" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+        <path
+          d="M12 2v3M12 19v3M4.22 4.22l2.12 2.12M17.66 17.66l2.12 2.12M2 12h3M19 12h3M4.22 19.78l2.12-2.12M17.66 6.34l2.12-2.12"
+          stroke="currentColor"
+          strokeWidth="1.5"
+          strokeLinecap="round"
+        />
       </svg>
     );
   if (t === "dimmed")
     return (
       <svg width={size} height={size} viewBox="0 0 24 24" fill="none">
         <circle cx="12" cy="12" r="4" stroke="currentColor" strokeWidth="1.5" />
-        <path d="M12 2v3M12 19v3M2 12h3M19 12h3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+        <path
+          d="M12 2v3M12 19v3M2 12h3M19 12h3"
+          stroke="currentColor"
+          strokeWidth="1.5"
+          strokeLinecap="round"
+        />
       </svg>
     );
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none">
-      <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+      <path
+        d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
     </svg>
   );
 }
@@ -1747,7 +2142,8 @@ function ThemeCycleButton() {
   React.useEffect(() => {
     if (!open) return;
     const handler = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+      if (ref.current && !ref.current.contains(e.target as Node))
+        setOpen(false);
     };
     document.addEventListener("mousedown", handler);
     return () => document.removeEventListener("mousedown", handler);
@@ -1773,7 +2169,15 @@ function ThemeCycleButton() {
   const below = ordered.slice(currentIdx + 1);
 
   return (
-    <div ref={ref} style={{ display: "flex", flexDirection: "column", alignItems: "center", marginBottom: 4 }}>
+    <div
+      ref={ref}
+      style={{
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
+        marginBottom: 4,
+      }}
+    >
       <div
         style={{
           display: "flex",
@@ -1789,7 +2193,10 @@ function ThemeCycleButton() {
             key={t}
             className="activity-btn"
             style={btnStyle}
-            onClick={() => { setTheme(t); setOpen(false); }}
+            onClick={() => {
+              setTheme(t);
+              setOpen(false);
+            }}
             title={t.charAt(0).toUpperCase() + t.slice(1)}
           >
             <ThemeIcon t={t} />
@@ -1798,7 +2205,10 @@ function ThemeCycleButton() {
       </div>
       <button
         className="activity-btn"
-        style={{ ...btnStyle, ...(open ? { color: "var(--text-primary)" } : {}) }}
+        style={{
+          ...btnStyle,
+          ...(open ? { color: "var(--text-primary)" } : {}),
+        }}
         onClick={() => setOpen(!open)}
         title="Theme"
       >
@@ -1819,7 +2229,10 @@ function ThemeCycleButton() {
             key={t}
             className="activity-btn"
             style={btnStyle}
-            onClick={() => { setTheme(t); setOpen(false); }}
+            onClick={() => {
+              setTheme(t);
+              setOpen(false);
+            }}
             title={t.charAt(0).toUpperCase() + t.slice(1)}
           >
             <ThemeIcon t={t} />
@@ -1888,17 +2301,17 @@ const styles: Record<string, React.CSSProperties> = {
   prPill: {
     display: "flex",
     alignItems: "center",
-    gap: 4,
+    gap: 5,
     background: "none",
-    border: "1px solid var(--border-subtle)",
+    border: "1px solid rgba(255, 255, 255, 0.25)",
     cursor: "pointer",
-    padding: "3px 8px 3px 5px",
+    padding: "3px 8px 3px 6px",
     borderRadius: 4,
-    fontSize: 12,
-    fontWeight: 500,
+    fontSize: 13,
+    fontWeight: 700,
     color: "var(--text-secondary)",
     lineHeight: 1,
-    maxWidth: 180,
+    maxWidth: 200,
     overflow: "hidden",
   },
   body: {
@@ -1943,7 +2356,8 @@ const styles: Record<string, React.CSSProperties> = {
     width: 2,
     minWidth: 2,
     cursor: "col-resize",
-    background: "linear-gradient(to bottom, var(--bg-surface) 28px, var(--bg-elevated) 28px, var(--bg-elevated) 29px, var(--bg-surface) 29px)",
+    background:
+      "linear-gradient(to bottom, var(--bg-surface) 28px, var(--bg-elevated) 28px, var(--bg-elevated) 29px, var(--bg-surface) 29px)",
     flexShrink: 0,
     zIndex: 10,
     display: "flex",
