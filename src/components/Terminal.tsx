@@ -108,13 +108,20 @@ function zoomProposeDimensions(
   const parentStyle = window.getComputedStyle(parent);
   const parentHeight = parseInt(parentStyle.getPropertyValue("height"), 10) || parent.clientHeight;
   const parentWidth = parseInt(parentStyle.getPropertyValue("width"), 10) || parent.clientWidth;
+  // Read padding from both the parent container and the .xterm element.
+  // The parent container holds left/right padding for visual inset; the
+  // .xterm element may have its own padding too.  Both reduce available space.
+  const pPadTop = parseInt(parentStyle.getPropertyValue("padding-top"), 10) || 0;
+  const pPadBottom = parseInt(parentStyle.getPropertyValue("padding-bottom"), 10) || 0;
+  const pPadLeft = parseInt(parentStyle.getPropertyValue("padding-left"), 10) || 0;
+  const pPadRight = parseInt(parentStyle.getPropertyValue("padding-right"), 10) || 0;
   const elementStyle = window.getComputedStyle(element);
-  const paddingTop = parseInt(elementStyle.getPropertyValue("padding-top"), 10) || 0;
-  const paddingBottom = parseInt(elementStyle.getPropertyValue("padding-bottom"), 10) || 0;
-  const paddingLeft = parseInt(elementStyle.getPropertyValue("padding-left"), 10) || 0;
-  const paddingRight = parseInt(elementStyle.getPropertyValue("padding-right"), 10) || 0;
-  const availableHeight = Math.max(0, parentHeight * zoom - paddingTop - paddingBottom);
-  const availableWidth = Math.max(0, parentWidth * zoom - paddingLeft - paddingRight - scrollbarWidth);
+  const ePadTop = parseInt(elementStyle.getPropertyValue("padding-top"), 10) || 0;
+  const ePadBottom = parseInt(elementStyle.getPropertyValue("padding-bottom"), 10) || 0;
+  const ePadLeft = parseInt(elementStyle.getPropertyValue("padding-left"), 10) || 0;
+  const ePadRight = parseInt(elementStyle.getPropertyValue("padding-right"), 10) || 0;
+  const availableHeight = Math.max(0, parentHeight * zoom - pPadTop - pPadBottom - ePadTop - ePadBottom);
+  const availableWidth = Math.max(0, parentWidth * zoom - pPadLeft - pPadRight - ePadLeft - ePadRight - scrollbarWidth);
 
   return {
     cols: Math.max(2, Math.floor(availableWidth / dims.css.cell.width)),
@@ -343,6 +350,7 @@ export function Terminal({ cwd, command, initialInput, ptyId: existingPtyId, loc
     term.loadAddon(fitAddon);
 
     term.open(containerRef.current);
+
 
     // Neutralize body CSS zoom on the terminal so xterm's coordinate
     // math (selection, mouse reporting, auto-scroll) works correctly.
@@ -896,5 +904,7 @@ const styles: Record<string, React.CSSProperties> = {
     justifyContent: "flex-end",
     position: "relative",
     background: "var(--terminal-bg)",
+    paddingLeft: 6,
+    paddingRight: 6,
   },
 };
