@@ -2,7 +2,7 @@
 
 A native macOS app for calm, focused agentic development across multiple repos and branches.
 
-![Rally](rally-thumbnail.png)
+![Rally](rally-thumbnail-v2.png)
 
 ## Why Rally?
 
