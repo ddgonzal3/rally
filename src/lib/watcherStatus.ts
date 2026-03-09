@@ -30,12 +30,13 @@ const SCRIPT_ERROR_PATTERNS = [
   /^error:/i,
   /^error\s/i,
 ] as const;
-const SUCCESS_PATTERNS = /\b(built in|compiled successfully|successfully compiled|ready in|bundle generation complete|build complete|compiled in)\b/i;
-const BUILDING_PATTERNS = /\b(rebuilding|compiling|bundling|transforming|generating .*bundles?|building|starting incremental watcher|nx run .*--watch|phase:\s*(setup|build|emit))\b/i;
+const SUCCESS_PATTERNS = /\b(built in|compiled successfully|successfully compiled|ready in|bundle generation complete|bundle complete|build complete|build synced|safe to reload|generation complete|compiled in)\b/i;
+const BUILDING_PATTERNS = /\b(rebuilding|compiling|bundling|transforming|generating\b|building|starting incremental watcher|nx run .*--watch|phase:\s*(setup|build|emit))\b/i;
 
 interface CachedWatcherStatus {
   status: WatcherBuildStatus;
   chunkCount: number;
+  buildCompletionCount: number;
 }
 
 function normalizeLine(line: string): string {
@@ -75,14 +76,15 @@ function decodeChunks(chunks: Uint8Array[]): string {
 }
 
 function createInitialWatcherStatus(): CachedWatcherStatus {
-  return { status: "building", chunkCount: 0 };
+  return { status: "building", chunkCount: 0, buildCompletionCount: 0 };
 }
 
 function applyWatcherText(
   status: WatcherBuildStatus,
   text: string,
-): WatcherBuildStatus {
+): { status: WatcherBuildStatus; completions: number } {
   let nextStatus = status;
+  let completions = 0;
   for (const raw of text.split("\n")) {
     const line = normalizeLine(raw);
     if (!line) continue;
@@ -94,10 +96,13 @@ function applyWatcherText(
       continue;
     }
     if (hasSuccess(line) && nextStatus !== "error") {
+      if (nextStatus === "building") {
+        completions++;
+      }
       nextStatus = "success";
     }
   }
-  return nextStatus;
+  return { status: nextStatus, completions };
 }
 
 /**
@@ -106,17 +111,24 @@ function applyWatcherText(
  */
 const watcherStatusCache = new Map<string, CachedWatcherStatus>();
 
+export interface WatcherObservation {
+  status: WatcherBuildStatus;
+  buildCompletionCount: number;
+}
+
 export function observeWatcherOutput(
   bufferKey: string,
   text: string,
-): WatcherBuildStatus {
+): WatcherObservation {
   const cached = watcherStatusCache.get(bufferKey) ?? createInitialWatcherStatus();
-  const status = applyWatcherText(cached.status, text);
+  const { status, completions } = applyWatcherText(cached.status, text);
+  const buildCompletionCount = cached.buildCompletionCount + completions;
   watcherStatusCache.set(bufferKey, {
     status,
     chunkCount: cached.chunkCount + 1,
+    buildCompletionCount,
   });
-  return status;
+  return { status, buildCompletionCount };
 }
 
 export function getWatcherBuildStatus(bufferKey: string): WatcherBuildStatus {
@@ -133,14 +145,17 @@ export function getWatcherBuildStatus(bufferKey: string): WatcherBuildStatus {
 
   const startIdx = cached?.chunkCount ?? 0;
   let currentStatus = cached?.status ?? createInitialWatcherStatus().status;
+  let completionCount = cached?.buildCompletionCount ?? 0;
 
   if (buf.length > startIdx) {
     const newChunks = buf.slice(startIdx);
     const text = decodeChunks(newChunks);
-    currentStatus = applyWatcherText(currentStatus, text);
+    const result = applyWatcherText(currentStatus, text);
+    currentStatus = result.status;
+    completionCount += result.completions;
   }
 
-  watcherStatusCache.set(bufferKey, { status: currentStatus, chunkCount: buf.length });
+  watcherStatusCache.set(bufferKey, { status: currentStatus, chunkCount: buf.length, buildCompletionCount: completionCount });
   return currentStatus;
 }
 
