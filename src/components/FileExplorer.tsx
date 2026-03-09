@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef } from "react";
+import React, { useState, useEffect, useCallback, useRef, useSyncExternalStore } from "react";
 import { createPortal } from "react-dom";
 import { useWorkspaceStore } from "../stores/workspaceStore";
 import { invoke } from "@tauri-apps/api/core";
@@ -125,6 +125,17 @@ function fetchGitIgnored(dirPath: string) {
 
 /** Currently selected paths in the file tree (supports Cmd+click multi-select) */
 let selectedFilePaths = new Set<string>();
+const selectionListeners = new Set<() => void>();
+
+function notifySelectionListeners() {
+  for (const cb of selectionListeners) cb();
+  document.dispatchEvent(new Event("rally:selection-change"));
+}
+
+function subscribeSelection(cb: () => void) {
+  selectionListeners.add(cb);
+  return () => { selectionListeners.delete(cb); };
+}
 
 function toggleSelectedFilePath(path: string, additive: boolean) {
   if (additive) {
@@ -138,14 +149,23 @@ function toggleSelectedFilePath(path: string, additive: boolean) {
   } else {
     selectedFilePaths = new Set([path]);
   }
-  document.dispatchEvent(new Event("rally:selection-change"));
+  notifySelectionListeners();
 }
 
 function clearSelectedFilePaths() {
   selectedFilePaths = new Set();
-  document.dispatchEvent(new Event("rally:selection-change"));
+  notifySelectionListeners();
 }
 
+/** Targeted hook: only re-renders when this specific path's selected state changes */
+function useIsSelected(path: string): boolean {
+  return useSyncExternalStore(
+    subscribeSelection,
+    () => selectedFilePaths.has(path),
+  );
+}
+
+/** Full set hook — only used by components that need the entire selection (e.g. global key handlers) */
 function useSelectedFilePaths() {
   const [, setTick] = useState(0);
   useEffect(() => {
@@ -186,6 +206,12 @@ let inlineEdit: InlineEditState = null;
 let inlineEditVersion = 0;
 
 let inlineEditCooldown = false;
+const inlineEditListeners = new Set<() => void>();
+
+function subscribeInlineEdit(cb: () => void) {
+  inlineEditListeners.add(cb);
+  return () => { inlineEditListeners.delete(cb); };
+}
 
 function setInlineEdit(state: InlineEditState) {
   inlineEdit = state;
@@ -198,10 +224,27 @@ function setInlineEdit(state: InlineEditState) {
       inlineEditCooldown = false;
     }, 50);
   }
+  for (const cb of inlineEditListeners) cb();
   document.dispatchEvent(new Event("rally:inline-edit"));
 }
 
-/** Hook to subscribe to inline edit changes */
+/** Targeted hook: only re-renders when this specific node's rename state changes */
+function useIsRenaming(path: string): boolean {
+  return useSyncExternalStore(
+    subscribeInlineEdit,
+    () => inlineEdit?.type === "rename" && inlineEdit.path === path,
+  );
+}
+
+/** Targeted hook: only re-renders when this specific node's create-here state changes */
+function useIsCreatingHere(parentPath: string): boolean {
+  return useSyncExternalStore(
+    subscribeInlineEdit,
+    () => inlineEdit?.type === "create" && inlineEdit.parentPath === parentPath,
+  );
+}
+
+/** Full state hook — only used by components that need the full edit state (e.g. RootSection) */
 function useInlineEdit() {
   const [, setTick] = useState(0);
   useEffect(() => {
@@ -434,26 +477,19 @@ const FileTreeNode = React.memo(
     const btnRef = useRef<HTMLButtonElement>(null);
     const renameTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-    const editState = useInlineEdit();
-    const isRenaming =
-      editState?.type === "rename" && editState.path === entry.path;
-    const isCreatingHere =
-      editState?.type === "create" && editState.parentPath === entry.path;
-    const selectedPaths = useSelectedFilePaths();
-    const isSelected = selectedPaths.has(entry.path);
+    // Targeted hooks — only re-render this node when ITS specific state changes
+    const isRenaming = useIsRenaming(entry.path);
+    const isCreatingHere = useIsCreatingHere(entry.path);
+    const isSelected = useIsSelected(entry.path);
 
     // Check if this entry is gitignored (by checking parent directory's cache)
     const parentPath = entry.path.replace(/\/[^/]+$/, "");
     const isGitIgnored = gitIgnoredCache.get(parentPath)?.has(entry.name) ?? false;
 
     const isActiveFile = !entry.is_dir && entry.path === activeFilePath;
-    // Check if this directory is an ancestor of a file being explicitly revealed
-    const revealPath = useWorkspaceStore((s) => s.revealedFilePath);
-    const isAncestorOfReveal =
-      entry.is_dir &&
-      revealPath !== null &&
-      revealPath.startsWith(entry.path + "/");
-    const isRevealTarget = !entry.is_dir && entry.path === revealPath;
+    // Derived boolean selectors — only re-render when this node's reveal status changes
+    const isRevealTarget = useWorkspaceStore((s) => !entry.is_dir && s.revealedFilePath === entry.path);
+    const isAncestorOfReveal = useWorkspaceStore((s) => entry.is_dir && !!s.revealedFilePath && s.revealedFilePath.startsWith(entry.path + "/"));
 
     // Auto-load children when remounting a previously-expanded folder
     useEffect(() => {
@@ -589,6 +625,20 @@ const FileTreeNode = React.memo(
       }
     }, [isCreatingHere]); // eslint-disable-line react-hooks/exhaustive-deps
 
+    // Re-read children from cache when a rename updates it (instant, no IPC)
+    useEffect(() => {
+      if (!entry.is_dir || !expanded) return;
+      const handler = (e: Event) => {
+        const detail = (e as CustomEvent).detail;
+        if (detail?.path === entry.path) {
+          const cached = directoryCache.get(entry.path);
+          if (cached) setChildren(cached);
+        }
+      };
+      document.addEventListener("rally:dir-refresh", handler);
+      return () => document.removeEventListener("rally:dir-refresh", handler);
+    }, [entry.is_dir, entry.path, expanded]);
+
     // Re-fetch directory listing when filesystem changes are detected
     useEffect(() => {
       if (!entry.is_dir || !expanded) return;
@@ -659,23 +709,46 @@ const FileTreeNode = React.memo(
               const newPath = parentDir(entry.path) + "/" + newName;
               try {
                 await api.renameFile(entry.path, newPath);
-                // Update caches
+                // Optimistic update: replace entry in cache so it appears instantly
                 const parent = parentDir(entry.path);
-                directoryCache.delete(parent);
-                // Notify parent to refresh
-                removeChild?.(entry.path);
-                // Re-list parent to get the renamed entry
-                const entries = await invoke<FileEntry[]>("list_directory", {
-                  path: parent,
-                });
-                directoryCache.set(parent, entries);
-                fetchGitIgnored(parent);
-                // Force re-render via a DOM event
+                const cached = directoryCache.get(parent);
+                if (cached) {
+                  directoryCache.set(parent, cached.map(e =>
+                    e.path === entry.path
+                      ? { ...e, name: newName, path: newPath }
+                      : e
+                  ));
+                }
+                // Update expanded paths if renamed a directory
+                if (entry.is_dir) {
+                  for (const ep of [...expandedPaths]) {
+                    if (ep === entry.path || ep.startsWith(entry.path + "/")) {
+                      expandedPaths.delete(ep);
+                      expandedPaths.add(entry.path === ep ? newPath : ep.replace(entry.path, newPath));
+                    }
+                  }
+                  saveExpandedPaths();
+                  // Update directory cache keys for renamed subtree
+                  for (const [key, val] of [...directoryCache]) {
+                    if (key === entry.path || key.startsWith(entry.path + "/")) {
+                      directoryCache.delete(key);
+                      directoryCache.set(key === entry.path ? newPath : key.replace(entry.path, newPath), val);
+                    }
+                  }
+                }
+                // Force parent re-render with updated cache
                 document.dispatchEvent(
                   new CustomEvent("rally:dir-refresh", {
                     detail: { path: parent },
                   }),
                 );
+                // Background: re-list to pick up any server-side changes
+                invoke<FileEntry[]>("list_directory", { path: parent })
+                  .then((entries) => {
+                    directoryCache.set(parent, entries);
+                    fetchGitIgnored(parent);
+                  })
+                  .catch(() => {});
               } catch (e) {
                 console.error("Rename failed:", e);
               }
@@ -780,21 +853,24 @@ const FileTreeNode = React.memo(
             </span>
           </button>
         )}
-        {expanded && isCreatingHere && editState.type === "create" && (
+        {expanded && isCreatingHere && inlineEdit?.type === "create" && (
           <InlineInput
             defaultValue=""
             depth={depth + 1}
-            isDir={editState.isDir}
+            isDir={inlineEdit.isDir}
             onCommit={async (name) => {
+              // Capture values before async gap (inlineEdit may be cleared)
+              const createState = inlineEdit?.type === "create" ? inlineEdit : null;
+              if (!createState) return;
               const newPath = entry.path + "/" + name;
               try {
-                if (editState.isDir) {
+                if (createState.isDir) {
                   await api.createDirectory(newPath);
                 } else {
-                  await api.writeFileContent(newPath, editState.template ?? "");
+                  await api.writeFileContent(newPath, createState.template ?? "");
                 }
                 refreshChildren();
-                if (!editState.isDir && activeWorkspaceId) {
+                if (!createState.isDir && activeWorkspaceId) {
                   onOpenFile(activeWorkspaceId, newPath);
                 }
               } catch (e) {
@@ -1208,7 +1284,15 @@ function RootSection({
   useEffect(() => {
     const handler = (e: Event) => {
       const detail = (e as CustomEvent).detail;
-      if (detail?.path === rootPath) refreshRootEntries();
+      if (detail?.path === rootPath) {
+        // Instant update from cache (optimistic rename already updated it)
+        const cached = directoryCache.get(rootPath);
+        if (cached) {
+          setFsEntries(cached);
+        }
+        // Background: fetch fresh listing to reconcile
+        refreshRootEntries();
+      }
     };
     document.addEventListener("rally:dir-refresh", handler);
     return () => document.removeEventListener("rally:dir-refresh", handler);
