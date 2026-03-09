@@ -1883,14 +1883,16 @@ export const useWorkspaceStore = create<WorkspaceState>()(
     // Throttle watcher status updates to avoid excessive Zustand set() calls
     // and React re-renders when a noisy watcher fires many chunks per second.
     let pendingWatcherStatus: typeof undefined | string = undefined;
+    let pendingBuildCompletionCount = 0;
     let watcherStatusRafId = 0;
     const flushWatcherStatus = () => {
       watcherStatusRafId = 0;
       if (pendingWatcherStatus === undefined) return;
       const nextStatus = pendingWatcherStatus as string;
+      const nextCount = pendingBuildCompletionCount;
       pendingWatcherStatus = undefined;
       const currentRun = get().scriptRuns[key];
-      if (currentRun && currentRun.watcherBuildStatus !== nextStatus) {
+      if (currentRun && (currentRun.watcherBuildStatus !== nextStatus || (currentRun.buildCompletionCount ?? 0) !== nextCount)) {
         set((s) => {
           const run = s.scriptRuns[key];
           if (!run) return s;
@@ -1902,6 +1904,7 @@ export const useWorkspaceStore = create<WorkspaceState>()(
                 status: "running",
                 exitCode: null,
                 watcherBuildStatus: nextStatus as any,
+                buildCompletionCount: nextCount,
               },
             },
           };
@@ -1936,8 +1939,9 @@ export const useWorkspaceStore = create<WorkspaceState>()(
           }
         }
         if (isWatcher) {
-          const nextWatcherBuildStatus = observeWatcherOutput(key, text);
-          pendingWatcherStatus = nextWatcherBuildStatus;
+          const obs = observeWatcherOutput(key, text);
+          pendingWatcherStatus = obs.status;
+          pendingBuildCompletionCount = obs.buildCompletionCount;
           if (!watcherStatusRafId) {
             watcherStatusRafId = requestAnimationFrame(flushWatcherStatus);
           }

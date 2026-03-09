@@ -172,6 +172,8 @@ function ScriptDot({
 
   // "built at" timestamp — shown when watcher finishes a build, dismissed after 30s
   const [builtAt, setBuiltAt] = useState<string | null>(null);
+  const buildCompletionCount = run?.buildCompletionCount ?? 0;
+  const prevCompletionCountRef = useRef(buildCompletionCount);
 
   // Flash detection: building -> success triggers a 3s flash
   useEffect(() => {
@@ -195,6 +197,23 @@ function ScriptDot({
     }
     prevStatusRef.current = buildStatus;
   }, [buildStatus, isWatcher]);
+
+  // Detect rebuild completions via buildCompletionCount — handles cases where
+  // building→success transitions are lost due to rAF throttling or single-chunk output
+  useEffect(() => {
+    if (buildCompletionCount > prevCompletionCountRef.current && isWatcher) {
+      const now = new Date();
+      const timeStr = now
+        .toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })
+        .toLowerCase();
+      setBuiltAt(timeStr);
+      if (!flashing) {
+        setFlashing(true);
+        setTimeout(() => setFlashing(false), 3000);
+      }
+    }
+    prevCompletionCountRef.current = buildCompletionCount;
+  }, [buildCompletionCount, isWatcher]);
 
   // Auto-dismiss "built at" after 120s
   useEffect(() => {

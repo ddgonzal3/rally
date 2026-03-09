@@ -235,6 +235,7 @@ export interface ScriptRun {
   status: "running" | "success" | "error" | "stopped";
   exitCode: number | null;
   watcherBuildStatus?: "idle" | "building" | "success" | "error";
+  buildCompletionCount?: number;
 }
 
 export interface DetectedPort {
