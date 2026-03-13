@@ -40,7 +40,7 @@ Rally fixes this with one idea: **workspaces**. Each workspace bundles your repo
 
 ```bash
 # 1. Clone the repo
-git clone https://github.com/anthropics/rally.git
+git clone https://github.com/ddgonzal3/rally.git
 cd rally
 
 # 2. Install frontend dependencies
