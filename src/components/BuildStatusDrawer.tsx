@@ -113,17 +113,28 @@ export function BuildStatusDrawer() {
   useEffect(() => {
     if (!termRef.current || !drawer) return;
 
+    const zoom = parseFloat(localStorage.getItem("rally:zoomLevel") || "1");
     const term = new XTerminal({
       scrollback: 500,
       disableStdin: false,
       cursorBlink: true,
-      fontSize: 12,
+      fontSize: Math.round(12 * zoom),
       fontFamily: "'SF Mono', 'Menlo', 'Monaco', monospace",
       theme: getXtermTheme(theme, 'popup'),
     });
     const fitAddon = new FitAddon();
     term.loadAddon(fitAddon);
     term.open(termRef.current);
+
+    // Apply zoom neutralization — same technique as main Terminal.tsx
+    // Body has CSS zoom:Z; we apply zoom:1/Z on .xterm so coordinates are correct.
+    const xtermEl = term.element;
+    if (xtermEl && zoom !== 1) {
+      xtermEl.style.zoom = String(1 / zoom);
+      xtermEl.style.position = "absolute";
+      xtermEl.style.top = "0";
+      xtermEl.style.left = "0";
+    }
 
     try { fitAddon.fit(); } catch {}
 
@@ -372,7 +383,7 @@ export function BuildStatusDrawer() {
           </button>
         </div>
       </div>
-      <div ref={termRef} onContextMenu={handleContextMenu} style={{ flex: 1, overflow: "hidden", display: "flex", flexDirection: "column", justifyContent: "flex-end", paddingLeft: 6, paddingRight: 6 }} />
+      <div ref={termRef} onContextMenu={handleContextMenu} style={{ flex: 1, overflow: "hidden", display: "flex", flexDirection: "column", justifyContent: "flex-end", position: "relative", paddingLeft: 6 }} />
     </div>
   );
 }

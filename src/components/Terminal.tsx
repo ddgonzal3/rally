@@ -147,13 +147,22 @@ function safeFit(term: XTerminal, fitAddon: FitAddon, zoom = 1): boolean {
 
   const buf = term.buffer.active;
   const distFromBottom = buf.baseY - buf.viewportY;
+  const wasAtBottom = distFromBottom <= 1;
 
   term.resize(cols, rows);
 
   const newBuf = term.buffer.active;
-  const targetViewport = Math.max(0, newBuf.baseY - distFromBottom);
-  if (newBuf.viewportY !== targetViewport) {
-    term.scrollToLine(targetViewport);
+  if (wasAtBottom) {
+    // User was at the bottom — keep them there
+    if (newBuf.viewportY !== newBuf.baseY) {
+      term.scrollToBottom();
+    }
+  } else {
+    // User had scrolled up — preserve their position relative to bottom
+    const targetViewport = Math.max(0, newBuf.baseY - distFromBottom);
+    if (newBuf.viewportY !== targetViewport) {
+      term.scrollToLine(targetViewport);
+    }
   }
   return true;
 }

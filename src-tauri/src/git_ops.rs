@@ -40,21 +40,36 @@ fn resolve_bin(name: &str) -> String {
     name.to_string() // fallback: let the OS try
 }
 
-/// Run a git command in a given directory and return stdout (async)
+/// Run a git command in a given directory and return stdout (async).
+/// Automatically retries up to 3 times if a git lock file conflict is detected
+/// ("Another git process seems to be running"), with exponential backoff.
 pub async fn git_cmd(cwd: &str, args: &[&str]) -> Result<String, String> {
-    let output = Command::new(resolve_bin("git"))
-        .args(args)
-        .env("PATH", full_path())
-        .current_dir(cwd)
-        .output()
-        .await
-        .map_err(|e| format!("Failed to run git: {}", e))?;
+    let max_retries = 3;
+    let mut attempt = 0;
+    loop {
+        let output = Command::new(resolve_bin("git"))
+            .args(args)
+            .env("PATH", full_path())
+            .current_dir(cwd)
+            .output()
+            .await
+            .map_err(|e| format!("Failed to run git: {}", e))?;
 
-    if output.status.success() {
-        Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
-    } else {
+        if output.status.success() {
+            return Ok(String::from_utf8_lossy(&output.stdout).trim().to_string());
+        }
+
         let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
-        Err(format!("git {} failed: {}", args.join(" "), stderr))
+
+        // Retry on git lock file conflicts (another git process is running)
+        if attempt < max_retries && stderr.contains("Another git process seems to be running") {
+            attempt += 1;
+            let delay_ms = 200 * (1 << attempt); // 400ms, 800ms, 1600ms
+            tokio::time::sleep(Duration::from_millis(delay_ms)).await;
+            continue;
+        }
+
+        return Err(format!("git {} failed: {}", args.join(" "), stderr));
     }
 }
 
