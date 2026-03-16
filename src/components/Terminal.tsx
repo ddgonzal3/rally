@@ -101,9 +101,9 @@ function zoomProposeDimensions(
   if (!Number.isFinite(dims.css.cell.width) || !Number.isFinite(dims.css.cell.height)) return null;
   if (dims.css.cell.width <= 0 || dims.css.cell.height <= 0) return null;
 
-  // xterm handles scrollbar width internally — don't subtract it again
-  // or we get dead space to the right of the scrollbar.
-  const scrollbarWidth = 0;
+  // Subtract scrollbar width so text doesn't render under the scrollbar.
+  // Must match the CSS width set on .xterm-viewport::-webkit-scrollbar.
+  const scrollbarWidth = term.options.scrollback === 0 ? 0 : 8;
   const parentStyle = window.getComputedStyle(parent);
   const parentHeight = parseInt(parentStyle.getPropertyValue("height"), 10) || parent.clientHeight;
   const parentWidth = parseInt(parentStyle.getPropertyValue("width"), 10) || parent.clientWidth;
@@ -134,9 +134,10 @@ function zoomProposeDimensions(
  * values, and only applies the resize if they're reasonable.
  */
 function safeFit(term: XTerminal, fitAddon: FitAddon, zoom = 1): boolean {
-  const dims = zoom === 1
-    ? fitAddon.proposeDimensions()
-    : zoomProposeDimensions(term, zoom);
+  // Always use our custom dimension calculator so scrollbar width is
+  // consistent (8px from CSS). FitAddon assumes 15px native scrollbar.
+  const dims = zoomProposeDimensions(term, zoom)
+    ?? (zoom === 1 ? fitAddon.proposeDimensions() : null);
   if (!dims) return false;
   if (!Number.isFinite(dims.cols) || !Number.isFinite(dims.rows)) return false;
   const cols = Math.round(dims.cols);
@@ -167,9 +168,10 @@ function safeFit(term: XTerminal, fitAddon: FitAddon, zoom = 1): boolean {
 }
 
 function fitRowsWithLockedCols(term: XTerminal, fitAddon: FitAddon, lockedCols: number, zoom = 1): boolean {
-  const dims = zoom === 1
-    ? fitAddon.proposeDimensions()
-    : zoomProposeDimensions(term, zoom);
+  // Always use our custom dimension calculator so scrollbar width is
+  // consistent (8px from CSS). FitAddon assumes 15px native scrollbar.
+  const dims = zoomProposeDimensions(term, zoom)
+    ?? (zoom === 1 ? fitAddon.proposeDimensions() : null);
   if (!dims || !Number.isFinite(dims.rows)) return false;
   const rows = Math.max(MIN_ROWS, Math.round(dims.rows));
   if (rows === term.rows && term.cols === lockedCols) return false;
@@ -388,7 +390,7 @@ export function Terminal({ cwd, command, initialInput, ptyId: existingPtyId, loc
         // container background (--terminal-bg), not black.
         xtermEl.style.position = "absolute";
         xtermEl.style.top = "0";
-        xtermEl.style.left = "0";
+        xtermEl.style.left = "6px";
       }
       term.options.fontSize = Math.round(BASE_FONT_SIZE * z);
       term.options.cursorWidth = Math.max(1, Math.round(BASE_CURSOR_WIDTH * z));
