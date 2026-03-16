@@ -135,7 +135,16 @@ pub async fn detect_git_info(path: String) -> Result<GitRepoInfo, String> {
 
 #[tauri::command]
 pub fn list_workspaces() -> Vec<Workspace> {
-    workspace::load_workspaces()
+    let workspaces = workspace::load_workspaces();
+    // Sync command symlinks: remove Rally's global symlinks for commands
+    // that are overridden by repo-level commands or excluded via RALLY.json.
+    let all_paths: Vec<String> = workspaces.iter()
+        .flat_map(|ws| ws.paths.clone())
+        .collect();
+    if let Err(e) = crate::ship_ops::sync_command_symlinks(&all_paths) {
+        eprintln!("Warning: failed to sync command symlinks: {}", e);
+    }
+    workspaces
 }
 
 #[tauri::command]

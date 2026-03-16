@@ -116,6 +116,90 @@ pub fn rally_commands_dir() -> Result<PathBuf, String> {
     Ok(dir)
 }
 
+/// Built-in command filenames that Rally manages.
+const BUILTIN_COMMAND_FILES: &[&str] = &["ship.md", "review-pr.md"];
+
+/// Remove Rally's global symlinks for commands that are overridden by repo-level
+/// commands or excluded via RALLY.json. This ensures Claude Code sees the repo's
+/// version instead of Rally's when both exist.
+///
+/// Called when workspaces are loaded or changed.
+pub fn sync_command_symlinks(repo_paths: &[String]) -> Result<(), String> {
+    let home = std::env::var("HOME").map_err(|_| "HOME not set".to_string())?;
+    let claude_dir = PathBuf::from(&home).join(".claude").join("commands");
+    let rally_dir = rally_commands_dir()?;
+
+    for filename in BUILTIN_COMMAND_FILES {
+        let global_link = claude_dir.join(filename);
+
+        // Only manage our own symlinks — skip if it's a real file
+        let is_rally_symlink = global_link.symlink_metadata()
+            .ok()
+            .map(|m| m.file_type().is_symlink())
+            .unwrap_or(false)
+            && global_link.read_link()
+                .ok()
+                .map(|target| target.starts_with(&rally_dir))
+                .unwrap_or(false);
+
+        if !is_rally_symlink {
+            continue; // Not our symlink — leave it alone
+        }
+
+        // Check if ANY repo has its own version of this command
+        let mut repo_has_override = false;
+        for repo_path in repo_paths {
+            let repo_cmd = Path::new(repo_path).join(".claude").join("commands").join(filename);
+            if repo_cmd.exists() {
+                // Check it's a real file, not a symlink back to Rally
+                let is_repo_symlink = repo_cmd.symlink_metadata()
+                    .ok()
+                    .map(|m| m.file_type().is_symlink())
+                    .unwrap_or(false)
+                    && repo_cmd.read_link()
+                        .ok()
+                        .map(|target| target.starts_with(&rally_dir))
+                        .unwrap_or(false);
+                if !is_repo_symlink {
+                    repo_has_override = true;
+                    break;
+                }
+            }
+        }
+
+        // Also check if any repo's RALLY.json excludes this command
+        let cmd_name = filename.trim_end_matches(".md");
+        for repo_path in repo_paths {
+            let rally_json = Path::new(repo_path).join("RALLY.json");
+            if rally_json.exists() {
+                if let Ok(content) = fs::read_to_string(&rally_json) {
+                    if let Ok(config) = serde_json::from_str::<serde_json::Value>(&content) {
+                        if let Some(excludes) = config.get("excludeBuiltins").and_then(|v| v.as_array()) {
+                            for exclude in excludes {
+                                if exclude.as_str() == Some(cmd_name) {
+                                    repo_has_override = true;
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            if repo_has_override { break; }
+        }
+
+        if repo_has_override {
+            // Remove Rally's global symlink so Claude Code sees the repo's version
+            let _ = fs::remove_file(&global_link);
+        } else {
+            // No override — ensure the symlink exists
+            symlink_command(&rally_dir.join(filename), &global_link)?;
+        }
+    }
+
+    Ok(())
+}
+
 /// Ensure default commands (ship.md, review-pr.md) are installed.
 /// - Actual files live in ~/.rally/commands/ (app's domain)
 /// - Symlinks in ~/.claude/commands/ point to them (so Claude Code finds them)
