@@ -816,7 +816,7 @@ export function PaneGroupView({
             <button
               className="tab-action"
               style={styles.actionBtn}
-              onClick={() => toggleBottomPanel(workspaceId)}
+              onClick={(e) => { e.stopPropagation(); toggleBottomPanel(workspaceId); }}
               title={bottomCollapsed ? "Expand panel (Ctrl+`)" : "Collapse panel (Ctrl+`)"}
             >
               <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
