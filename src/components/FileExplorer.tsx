@@ -3442,7 +3442,7 @@ const styles: Record<string, React.CSSProperties> = {
     whiteSpace: "nowrap" as const,
   },
   changeFileName: {
-    fontWeight: 500,
+    fontWeight: 600,
     color: "var(--text-primary)",
   },
   changeFileDir: {

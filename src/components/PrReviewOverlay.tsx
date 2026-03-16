@@ -1165,7 +1165,7 @@ const st: Record<string, React.CSSProperties> = {
     textOverflow: "ellipsis",
     whiteSpace: "nowrap" as const,
     color: "var(--text-primary)",
-    fontWeight: 500,
+    fontWeight: 600,
   },
   treeDir: {
     display: "flex",
@@ -1202,7 +1202,7 @@ const st: Record<string, React.CSSProperties> = {
     textOverflow: "ellipsis",
     whiteSpace: "nowrap" as const,
     color: "var(--text-primary)",
-    fontWeight: 500,
+    fontWeight: 600,
   },
   prResizeHandle: {
     width: 6,
