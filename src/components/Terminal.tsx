@@ -101,10 +101,9 @@ function zoomProposeDimensions(
   if (!Number.isFinite(dims.css.cell.width) || !Number.isFinite(dims.css.cell.height)) return null;
   if (dims.css.cell.width <= 0 || dims.css.cell.height <= 0) return null;
 
-  const scrollbarWidth =
-    term.options.scrollback === 0
-      ? 0
-      : term.options.overviewRuler?.width ?? 15;
+  // xterm handles scrollbar width internally — don't subtract it again
+  // or we get dead space to the right of the scrollbar.
+  const scrollbarWidth = 0;
   const parentStyle = window.getComputedStyle(parent);
   const parentHeight = parseInt(parentStyle.getPropertyValue("height"), 10) || parent.clientHeight;
   const parentWidth = parseInt(parentStyle.getPropertyValue("width"), 10) || parent.clientWidth;
