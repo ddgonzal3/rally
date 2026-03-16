@@ -122,40 +122,40 @@ PTY events use the pattern `pty-{eventtype}-{ptyid}`. To add a new event:
 
 ## Built-in Commands (Ship, Review PR)
 
-Rally ships with built-in Claude commands (`/ship`, `/review-pr`) symlinked to `~/.claude/commands/` so they work in any Claude Code session. Auto-discovered scripts from the `scripts/` directory are shown in the bottom status bar.
+Rally ships with built-in Claude commands (`/rally-ship`, `/rally-review-pr`) symlinked to `~/.claude/commands/` so they work in any Claude Code session. The `rally-` prefix prevents conflicts with repo-level commands that share the same base name. Auto-discovered scripts from the `scripts/` directory are shown in the bottom status bar.
 
 ### File Layout
 
 ```
 ~/.rally/commands/               ← Actual files (app's domain, written on startup)
-  ship.md                          Embedded in binary via include_str!()
-  review-pr.md                     Version markers control update logic
+  rally-ship.md                    Embedded in binary via include_str!()
+  rally-review-pr.md               Version markers control update logic
 
 ~/.claude/commands/              ← Symlinks (so Claude Code finds them as slash commands)
-  ship.md → ~/.rally/commands/ship.md
-  review-pr.md → ~/.rally/commands/review-pr.md
+  rally-ship.md → ~/.rally/commands/rally-ship.md
+  rally-review-pr.md → ~/.rally/commands/rally-review-pr.md
 
 src-tauri/resources/commands/    ← Source .md files (compiled into binary)
-  ship.md
-  review-pr.md
+  rally-ship.md
+  rally-review-pr.md
 ```
 
 ### Key Design Decisions
 
 - **Symlinks, not copies**: The app never writes real files into `~/.claude/`. If the user has their own `ship.md` (a real file, not a symlink), the app leaves it alone.
 - **Version markers**: Each .md starts with `<!-- rally-ship-v1 -->`. The app only overwrites if the version is older.
-- **All built-ins shown by default**: Ship, Review PR, and Merge PR appear in every workspace automatically. To hide specific commands, use `"excludeBuiltins": ["ship"]` in RALLY.json.
+- **All built-ins shown by default**: Ship, Review PR, and Merge PR appear in every workspace automatically. To hide specific commands, use `"excludeBuiltins": ["rally-ship"]` in RALLY.json.
 - **No focus steal**: Clicking a built-in command opens a Claude pane but does not switch focus away from the current pane.
 
 ### Ship Signal Protocol
 
-The `/ship` command (commit → push → PR → review → merge) communicates with the app via signal files:
+The `/rally-ship` command (commit → push → PR → review → merge) communicates with the app via signal files:
 
 ```
 ~/.rally/ship-signals/<sanitized-repo-path>.json
 ```
 
-`ship.md` writes/updates the signal file **at every phase change** (not just at the end). This allows Rally to track progress regardless of where `/ship` is running — from Rally's Ship button, an external Claude Code terminal, or any other context.
+`rally-ship.md` writes/updates the signal file **at every phase change** (not just at the end). This allows Rally to track progress regardless of where `/ship` is running — from Rally's Ship button, an external Claude Code terminal, or any other context.
 
 #### Signal File Format
 
@@ -178,24 +178,24 @@ The `/ship` command (commit → push → PR → review → merge) communicates w
 
 | Verdict | Meaning | App Behavior |
 |---------|---------|-------------|
-| `shipping` | In-progress — `/ship` is running | Creates a "headless" `ShipSession` (no PTY). Shows status pill with phase updates. |
+| `shipping` | In-progress — `/rally-ship` is running | Creates a "headless" `ShipSession` (no PTY). Shows status pill with phase updates. |
 | `auto_merge` | Review passed — ready to merge | Merges PR → syncs shipping branch to main → marks related repos as needing sync → deletes signal |
 | `manual_review` | Flagged items need attention | Shows amber "Review Needed" badge — no auto-open, no focus steal |
 
 #### Two Session Types
 
 1. **PTY-backed session** (Rally Ship button): Rally owns the PTY, parses output for phase markers as a fast path (~instant updates). Also gets signal-file updates as a fallback.
-2. **Headless session** (external `/ship`): No PTY. `pollShipSignals` detects `verdict: "shipping"` and creates a lightweight session. Phase updates come from signal file polling (~5s intervals). No terminal view, no dock button.
+2. **Headless session** (external `/rally-ship`): No PTY. `pollShipSignals` detects `verdict: "shipping"` and creates a lightweight session. Phase updates come from signal file polling (~5s intervals). No terminal view, no dock button.
 
 #### Staleness Handling
 
-If a `verdict: "shipping"` signal has a timestamp older than 30 minutes, `pollShipSignals` treats it as stale — clears the signal file and dismisses any headless session for that repo. This handles the case where an external `/ship` process crashes without writing a final signal.
+If a `verdict: "shipping"` signal has a timestamp older than 30 minutes, `pollShipSignals` treats it as stale — clears the signal file and dismisses any headless session for that repo. This handles the case where an external `/rally-ship` process crashes without writing a final signal.
 
 #### Edge Cases
 
-- **External `/ship` while Rally session running**: Existing PTY session takes precedence — headless session is not created.
+- **External `/rally-ship` while Rally session running**: Existing PTY session takes precedence — headless session is not created.
 - **Rally Ship button while headless session exists**: `startShipSession` returns early — user must dismiss the headless pill first.
-- **User dismisses headless pill**: Clears `shipSession` (no PTY to kill). If `/ship` is still running, the next poll recreates the session.
+- **User dismisses headless pill**: Clears `shipSession` (no PTY to kill). If `/rally-ship` is still running, the next poll recreates the session.
 
 ### Adding New Built-in Commands
 
@@ -246,7 +246,7 @@ Always remove dead code when possible — unused components, stale imports, orph
 2. Run `./scripts/check.sh` to verify types
 3. Run `./scripts/reload.sh` for frontend changes (or `./scripts/run.sh` if Rust changed)
 4. Test in the app
-5. Use `/review-pr` command before opening PRs
+5. Use `/rally-review-pr` command before opening PRs
 
 ## Dependencies
 

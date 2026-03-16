@@ -135,16 +135,7 @@ pub async fn detect_git_info(path: String) -> Result<GitRepoInfo, String> {
 
 #[tauri::command]
 pub fn list_workspaces() -> Vec<Workspace> {
-    let workspaces = workspace::load_workspaces();
-    // Sync command symlinks: remove Rally's global symlinks for commands
-    // that are overridden by repo-level commands or excluded via RALLY.json.
-    let all_paths: Vec<String> = workspaces.iter()
-        .flat_map(|ws| ws.paths.clone())
-        .collect();
-    if let Err(e) = crate::ship_ops::sync_command_symlinks(&all_paths) {
-        eprintln!("Warning: failed to sync command symlinks: {}", e);
-    }
-    workspaces
+    workspace::load_workspaces()
 }
 
 #[tauri::command]
@@ -794,18 +785,18 @@ fn builtin_commands() -> Vec<ScriptEntry> {
 
     vec![
         ScriptEntry {
-            name: "ship".to_string(),
-            label: "/ship".to_string(),
-            command: "claude:/ship".to_string(),
+            name: "rally-ship".to_string(),
+            label: "/rally-ship".to_string(),
+            command: "claude:/rally-ship".to_string(),
             builtin: true,
-            file_path: Some(cmd_dir.join("ship.md").to_string_lossy().to_string()),
+            file_path: Some(cmd_dir.join("rally-ship.md").to_string_lossy().to_string()),
         },
         ScriptEntry {
-            name: "review-pr".to_string(),
-            label: "/review-pr".to_string(),
-            command: "claude:/review-pr".to_string(),
+            name: "rally-review-pr".to_string(),
+            label: "/rally-review-pr".to_string(),
+            command: "claude:/rally-review-pr".to_string(),
             builtin: true,
-            file_path: Some(cmd_dir.join("review-pr.md").to_string_lossy().to_string()),
+            file_path: Some(cmd_dir.join("rally-review-pr.md").to_string_lossy().to_string()),
         },
     ]
 }

@@ -334,7 +334,7 @@ export function PrReviewContent({
   const handleShip = useCallback(() => {
     if (!activeWorkspaceId) return;
     onClose?.();
-    openClaudeCommand(activeWorkspaceId, rootPath, "/ship", "Ship");
+    openClaudeCommand(activeWorkspaceId, rootPath, "/rally-ship", "Ship");
   }, [activeWorkspaceId, rootPath, onClose, openClaudeCommand]);
 
   const handleClosePr = useCallback(async () => {
