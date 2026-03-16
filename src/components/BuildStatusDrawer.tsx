@@ -276,6 +276,10 @@ export function BuildStatusDrawer() {
       }}
       onMouseLeave={() => {
         if (activeDrawer.hoverMode) {
+          // Don't collapse while user is selecting text (mouse held down with selection)
+          const selection = window.getSelection();
+          const isSelecting = selection && selection.toString().length > 0;
+          if (isSelecting) return;
           startDrawerHoverClose(() => {
             useWorkspaceStore.getState().closeDrawerIfHover();
           });

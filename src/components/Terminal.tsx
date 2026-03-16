@@ -919,6 +919,7 @@ const styles: Record<string, React.CSSProperties> = {
     position: "relative",
     background: "var(--terminal-bg)",
     paddingLeft: 6,
-    paddingRight: 6,
+    // No paddingRight — let xterm's scrollbar sit flush against the right edge.
+    // The scrollbar was appearing inset from the right, leaving empty padding.
   },
 };
