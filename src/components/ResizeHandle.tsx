@@ -7,8 +7,8 @@ interface ResizeHandleProps {
   onResize: (ratio: number, syncPeers?: boolean) => void;
 }
 
-/** Snap threshold in ratio units — wide enough to feel magnetic when near a peer divider */
-const SNAP_THRESHOLD = 0.025;
+/** Snap threshold in ratio units */
+const SNAP_THRESHOLD = 0.012;
 
 interface PeerHandle {
   ratio: number;
