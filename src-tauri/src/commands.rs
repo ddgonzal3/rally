@@ -561,6 +561,32 @@ pub fn reveal_in_finder(path: String) -> Result<(), String> {
     Ok(())
 }
 
+/// Kill the process listening on a given port using lsof + kill
+#[tauri::command]
+pub fn kill_port(port: u16) -> Result<(), String> {
+    // Use lsof to find the PID listening on the port
+    let output = Command::new("lsof")
+        .args(["-ti", &format!(":{}", port)])
+        .output()
+        .map_err(|e| format!("Failed to run lsof: {}", e))?;
+
+    let pids = String::from_utf8_lossy(&output.stdout);
+    let pids: Vec<&str> = pids.trim().split('\n').filter(|s| !s.is_empty()).collect();
+
+    if pids.is_empty() {
+        return Err(format!("No process found on port {}", port));
+    }
+
+    for pid in &pids {
+        Command::new("kill")
+            .args(["-9", pid])
+            .output()
+            .map_err(|e| format!("Failed to kill PID {}: {}", pid, e))?;
+    }
+
+    Ok(())
+}
+
 #[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct SetupConfig {
     #[serde(default)]

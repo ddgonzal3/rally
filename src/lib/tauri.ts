@@ -186,6 +186,9 @@ export const api = {
   pathStatus: (path: string) =>
     invoke<{ exists: boolean; is_dir: boolean }>("path_status", { path }),
 
+  killPort: (port: number) =>
+    invoke<void>("kill_port", { port }),
+
   // Ship operations
   checkShipSignal: (repoPath: string) =>
     invoke<ShipSignal | null>("check_ship_signal", { repoPath }),

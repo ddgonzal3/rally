@@ -549,6 +549,25 @@ export function PaneGroupView({
                         label: `Open :${dp.port} in New Window`,
                         action: () => openInNewWindow(dp.url, `localhost:${dp.port}`),
                       });
+                      items.push({
+                        label: `Kill :${dp.port}`,
+                        action: async () => {
+                          // Try to kill the process listening on this port using lsof + kill
+                          try {
+                            await api.killPort(dp.port);
+                          } catch {
+                            // Fallback: send Ctrl+C to the PTY that owns this port
+                            if (pane.ptyId) {
+                              const encoder = new TextEncoder();
+                              api.writePty(pane.ptyId, Array.from(encoder.encode("\x03")));
+                            }
+                          }
+                          // Remove the port from detected ports
+                          if (pane.ptyId) {
+                            useWorkspaceStore.getState().removePortsByPty(pane.ptyId);
+                          }
+                        },
+                      });
                     }
                     items.push("separator");
                   }

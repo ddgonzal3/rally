@@ -191,6 +191,7 @@ fn main() {
         commands::trash_file,
         commands::rename_file,
         commands::reveal_in_finder,
+        commands::kill_port,
         commands::list_scripts,
         commands::read_rally_config,
         commands::update_rally_config_status_bar,
