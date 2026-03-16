@@ -132,16 +132,16 @@ export function WebViewPane({ url, paneId }: WebViewPaneProps) {
     setZoom(1);
   }, []);
 
-  // Execute search in iframe
+  // Execute search in iframe using window.find() — a non-standard but
+  // widely-supported API. TypeScript doesn't include it in its DOM types.
   const executeSearch = useCallback((query: string) => {
     if (!iframeRef.current) return;
     try {
-      const iframeWindow = iframeRef.current.contentWindow;
-      if (iframeWindow) {
-        // Clear previous selection first
-        iframeWindow.getSelection()?.removeAllRanges();
+      const w = iframeRef.current.contentWindow as any;
+      if (w) {
+        w.getSelection()?.removeAllRanges();
         if (query) {
-          iframeWindow.find(query, false, false, true);
+          w.find(query, false, false, true);
         }
       }
     } catch {
@@ -152,21 +152,16 @@ export function WebViewPane({ url, paneId }: WebViewPaneProps) {
   const handleSearchNext = useCallback(() => {
     if (!searchQuery || !iframeRef.current) return;
     try {
-      const iframeWindow = iframeRef.current.contentWindow;
-      if (iframeWindow) {
-        iframeWindow.find(searchQuery, false, false, true);
-      }
+      const w = iframeRef.current.contentWindow as any;
+      if (w) w.find(searchQuery, false, false, true);
     } catch {}
   }, [searchQuery]);
 
   const handleSearchPrev = useCallback(() => {
     if (!searchQuery || !iframeRef.current) return;
     try {
-      const iframeWindow = iframeRef.current.contentWindow;
-      if (iframeWindow) {
-        // find with backwards=true
-        iframeWindow.find(searchQuery, false, true, true);
-      }
+      const w = iframeRef.current.contentWindow as any;
+      if (w) w.find(searchQuery, false, true, true);
     } catch {}
   }, [searchQuery]);
 
