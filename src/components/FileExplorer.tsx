@@ -105,6 +105,24 @@ export function setExpandedPaths(paths: string[], roots?: string[]): void {
   document.dispatchEvent(new Event("rally:expanded-paths-changed"));
 }
 
+// Listen for folder expand events from terminal Cmd+click on directories.
+// Expands the folder and all parent paths in the file explorer.
+document.addEventListener("rally:expand-folder", (e: Event) => {
+  const detail = (e as CustomEvent).detail;
+  if (!detail?.path) return;
+  const folderPath = detail.path as string;
+  // Expand all parent segments leading to this folder
+  const parts = folderPath.split("/");
+  for (let i = 1; i <= parts.length; i++) {
+    const segment = parts.slice(0, i).join("/");
+    if (segment && !expandedPaths.has(segment)) {
+      expandedPaths.add(segment);
+    }
+  }
+  saveExpandedPaths();
+  document.dispatchEvent(new Event("rally:expanded-paths-changed"));
+});
+
 /** Module-level cache of directory listings — survives component unmount/remount */
 const directoryCache = new Map<string, FileEntry[]>();
 
