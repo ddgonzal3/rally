@@ -561,6 +561,32 @@ pub fn reveal_in_finder(path: String) -> Result<(), String> {
     Ok(())
 }
 
+/// Kill the process listening on a given port using lsof + kill
+#[tauri::command]
+pub fn kill_port(port: u16) -> Result<(), String> {
+    // Use lsof to find the PID listening on the port
+    let output = Command::new("lsof")
+        .args(["-ti", &format!(":{}", port)])
+        .output()
+        .map_err(|e| format!("Failed to run lsof: {}", e))?;
+
+    let pids = String::from_utf8_lossy(&output.stdout);
+    let pids: Vec<&str> = pids.trim().split('\n').filter(|s| !s.is_empty()).collect();
+
+    if pids.is_empty() {
+        return Err(format!("No process found on port {}", port));
+    }
+
+    for pid in &pids {
+        Command::new("kill")
+            .args(["-9", pid])
+            .output()
+            .map_err(|e| format!("Failed to kill PID {}: {}", pid, e))?;
+    }
+
+    Ok(())
+}
+
 #[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct SetupConfig {
     #[serde(default)]
@@ -759,18 +785,18 @@ fn builtin_commands() -> Vec<ScriptEntry> {
 
     vec![
         ScriptEntry {
-            name: "ship".to_string(),
-            label: "/ship".to_string(),
-            command: "claude:/ship".to_string(),
+            name: "rally-ship".to_string(),
+            label: "/rally-ship".to_string(),
+            command: "claude:/rally-ship".to_string(),
             builtin: true,
-            file_path: Some(cmd_dir.join("ship.md").to_string_lossy().to_string()),
+            file_path: Some(cmd_dir.join("rally-ship.md").to_string_lossy().to_string()),
         },
         ScriptEntry {
-            name: "review-pr".to_string(),
-            label: "/review-pr".to_string(),
-            command: "claude:/review-pr".to_string(),
+            name: "rally-review-pr".to_string(),
+            label: "/rally-review-pr".to_string(),
+            command: "claude:/rally-review-pr".to_string(),
             builtin: true,
-            file_path: Some(cmd_dir.join("review-pr.md").to_string_lossy().to_string()),
+            file_path: Some(cmd_dir.join("rally-review-pr.md").to_string_lossy().to_string()),
         },
     ]
 }

@@ -725,7 +725,7 @@ export function UnifiedGitPanel() {
                 style={{
                   fontSize: 11,
                   color: "var(--text-primary)",
-                  fontWeight: 500,
+                  fontWeight: 600,
                   flex: 1,
                   minWidth: 0,
                   overflow: "hidden",
@@ -1371,7 +1371,7 @@ const ms: Record<string, React.CSSProperties> = {
     textOverflow: "ellipsis",
     whiteSpace: "nowrap" as const,
     color: "var(--text-primary)",
-    fontWeight: 500,
+    fontWeight: 600,
   },
   fileList: {
     flex: 1,
@@ -1410,7 +1410,7 @@ const ms: Record<string, React.CSSProperties> = {
     flexShrink: 0,
     whiteSpace: "nowrap" as const,
     color: "var(--text-primary)",
-    fontWeight: 500,
+    fontWeight: 600,
   },
   fileDir: {
     flex: 1,

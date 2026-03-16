@@ -6,9 +6,9 @@ use std::path::{Path, PathBuf};
 use crate::git_ops;
 
 const SHIP_COMMAND_VERSION: &str = "<!-- rally-ship-v8 -->";
-const SHIP_COMMAND_CONTENT: &str = include_str!("../resources/commands/ship.md");
+const SHIP_COMMAND_CONTENT: &str = include_str!("../resources/commands/rally-ship.md");
 const REVIEW_COMMAND_VERSION: &str = "<!-- rally-review-pr-v5 -->";
-const REVIEW_COMMAND_CONTENT: &str = include_str!("../resources/commands/review-pr.md");
+const REVIEW_COMMAND_CONTENT: &str = include_str!("../resources/commands/rally-review-pr.md");
 
 const GSHIP_SCRIPT: &str = include_str!("../resources/scripts/gship");
 const GPR_SCRIPT: &str = include_str!("../resources/scripts/gpr");
@@ -116,9 +116,41 @@ pub fn rally_commands_dir() -> Result<PathBuf, String> {
     Ok(dir)
 }
 
-/// Ensure default commands (ship.md, review-pr.md) are installed.
+/// Old (unprefixed) command filenames that Rally used to install.
+/// These are cleaned up on startup to avoid conflicts with repo-level commands.
+const OLD_COMMAND_FILES: &[&str] = &["ship.md", "review-pr.md", "create-pr.md", "merge-pr.md"];
+
+/// Clean up old unprefixed command symlinks from ~/.claude/commands/.
+/// Only removes symlinks that point to ~/.rally/commands/ (our own).
+fn cleanup_old_command_symlinks(claude_dir: &Path, rally_dir: &Path) {
+    for filename in OLD_COMMAND_FILES {
+        let link = claude_dir.join(filename);
+        // Only remove if it's a symlink pointing to our rally commands dir
+        let is_rally_symlink = link.symlink_metadata()
+            .ok()
+            .map(|m| m.file_type().is_symlink())
+            .unwrap_or(false)
+            && link.read_link()
+                .ok()
+                .map(|target| target.starts_with(rally_dir))
+                .unwrap_or(false);
+        if is_rally_symlink {
+            let _ = fs::remove_file(&link);
+        }
+    }
+    // Also clean up old unprefixed files from ~/.rally/commands/
+    for filename in OLD_COMMAND_FILES {
+        let old_file = rally_dir.join(filename);
+        if old_file.exists() {
+            let _ = fs::remove_file(&old_file);
+        }
+    }
+}
+
+/// Ensure default commands (rally-ship.md, rally-review-pr.md) are installed.
 /// - Actual files live in ~/.rally/commands/ (app's domain)
 /// - Symlinks in ~/.claude/commands/ point to them (so Claude Code finds them)
+/// - All commands use the `rally-` prefix to avoid conflicts with repo-level commands
 pub fn ensure_default_commands() -> Result<(), String> {
     // Ensure signals directory exists
     let sig_dir = signals_dir();
@@ -128,15 +160,18 @@ pub fn ensure_default_commands() -> Result<(), String> {
 
     // Write actual files to ~/.rally/commands/
     let app_dir = rally_commands_dir()?;
-    install_command(&app_dir, "ship.md", SHIP_COMMAND_VERSION, SHIP_COMMAND_CONTENT)?;
-    install_command(&app_dir, "review-pr.md", REVIEW_COMMAND_VERSION, REVIEW_COMMAND_CONTENT)?;
+    install_command(&app_dir, "rally-ship.md", SHIP_COMMAND_VERSION, SHIP_COMMAND_CONTENT)?;
+    install_command(&app_dir, "rally-review-pr.md", REVIEW_COMMAND_VERSION, REVIEW_COMMAND_CONTENT)?;
 
     // Symlink from ~/.claude/commands/ → ~/.rally/commands/
     let claude_dir = PathBuf::from(&home).join(".claude").join("commands");
     fs::create_dir_all(&claude_dir)
         .map_err(|e| format!("Failed to create ~/.claude/commands: {}", e))?;
 
-    for filename in &["ship.md", "review-pr.md"] {
+    // Clean up old unprefixed symlinks (ship.md, review-pr.md, etc.)
+    cleanup_old_command_symlinks(&claude_dir, &app_dir);
+
+    for filename in &["rally-ship.md", "rally-review-pr.md"] {
         symlink_command(&app_dir.join(filename), &claude_dir.join(filename))?;
     }
 

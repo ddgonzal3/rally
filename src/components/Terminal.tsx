@@ -101,10 +101,9 @@ function zoomProposeDimensions(
   if (!Number.isFinite(dims.css.cell.width) || !Number.isFinite(dims.css.cell.height)) return null;
   if (dims.css.cell.width <= 0 || dims.css.cell.height <= 0) return null;
 
-  const scrollbarWidth =
-    term.options.scrollback === 0
-      ? 0
-      : term.options.overviewRuler?.width ?? 15;
+  // Subtract scrollbar width so text doesn't render under the scrollbar.
+  // Must match the CSS width set on .xterm-viewport::-webkit-scrollbar.
+  const scrollbarWidth = term.options.scrollback === 0 ? 0 : 8;
   const parentStyle = window.getComputedStyle(parent);
   const parentHeight = parseInt(parentStyle.getPropertyValue("height"), 10) || parent.clientHeight;
   const parentWidth = parseInt(parentStyle.getPropertyValue("width"), 10) || parent.clientWidth;
@@ -135,9 +134,10 @@ function zoomProposeDimensions(
  * values, and only applies the resize if they're reasonable.
  */
 function safeFit(term: XTerminal, fitAddon: FitAddon, zoom = 1): boolean {
-  const dims = zoom === 1
-    ? fitAddon.proposeDimensions()
-    : zoomProposeDimensions(term, zoom);
+  // Always use our custom dimension calculator so scrollbar width is
+  // consistent (8px from CSS). FitAddon assumes 15px native scrollbar.
+  const dims = zoomProposeDimensions(term, zoom)
+    ?? (zoom === 1 ? fitAddon.proposeDimensions() : null);
   if (!dims) return false;
   if (!Number.isFinite(dims.cols) || !Number.isFinite(dims.rows)) return false;
   const cols = Math.round(dims.cols);
@@ -147,21 +147,31 @@ function safeFit(term: XTerminal, fitAddon: FitAddon, zoom = 1): boolean {
 
   const buf = term.buffer.active;
   const distFromBottom = buf.baseY - buf.viewportY;
+  const wasAtBottom = distFromBottom <= 1;
 
   term.resize(cols, rows);
 
   const newBuf = term.buffer.active;
-  const targetViewport = Math.max(0, newBuf.baseY - distFromBottom);
-  if (newBuf.viewportY !== targetViewport) {
-    term.scrollToLine(targetViewport);
+  if (wasAtBottom) {
+    // User was at the bottom — keep them there
+    if (newBuf.viewportY !== newBuf.baseY) {
+      term.scrollToBottom();
+    }
+  } else {
+    // User had scrolled up — preserve their position relative to bottom
+    const targetViewport = Math.max(0, newBuf.baseY - distFromBottom);
+    if (newBuf.viewportY !== targetViewport) {
+      term.scrollToLine(targetViewport);
+    }
   }
   return true;
 }
 
 function fitRowsWithLockedCols(term: XTerminal, fitAddon: FitAddon, lockedCols: number, zoom = 1): boolean {
-  const dims = zoom === 1
-    ? fitAddon.proposeDimensions()
-    : zoomProposeDimensions(term, zoom);
+  // Always use our custom dimension calculator so scrollbar width is
+  // consistent (8px from CSS). FitAddon assumes 15px native scrollbar.
+  const dims = zoomProposeDimensions(term, zoom)
+    ?? (zoom === 1 ? fitAddon.proposeDimensions() : null);
   if (!dims || !Number.isFinite(dims.rows)) return false;
   const rows = Math.max(MIN_ROWS, Math.round(dims.rows));
   if (rows === term.rows && term.cols === lockedCols) return false;
@@ -380,7 +390,7 @@ export function Terminal({ cwd, command, initialInput, ptyId: existingPtyId, loc
         // container background (--terminal-bg), not black.
         xtermEl.style.position = "absolute";
         xtermEl.style.top = "0";
-        xtermEl.style.left = "0";
+        xtermEl.style.left = "6px";
       }
       term.options.fontSize = Math.round(BASE_FONT_SIZE * z);
       term.options.cursorWidth = Math.max(1, Math.round(BASE_CURSOR_WIDTH * z));
@@ -919,6 +929,7 @@ const styles: Record<string, React.CSSProperties> = {
     position: "relative",
     background: "var(--terminal-bg)",
     paddingLeft: 6,
-    paddingRight: 6,
+    // No paddingRight — let xterm's scrollbar sit flush against the right edge.
+    // The scrollbar was appearing inset from the right, leaving empty padding.
   },
 };

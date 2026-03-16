@@ -8,8 +8,8 @@ const URL_REGEX = /https?:\/\/[^\s'")\]}>]+/g;
 
 // File paths: supports absolute (/foo), relative with prefix (./foo, ../foo),
 // implicit relative with slash (src/foo.ts), and bare filenames (foo.ts).
-// Must end with a file extension. Optional :line or :line:col suffix.
-const FILE_PATH_REGEX = /(?:\.\.?\/|\/|[a-zA-Z0-9_@.-]+\/)[^\s'"()[\]{}<>,;!?`|]+?\.[a-zA-Z0-9]{1,10}(?::\d+(?::\d+)?)?/g;
+// Must end with a file extension or trailing slash (for directories). Optional :line or :line:col suffix.
+const FILE_PATH_REGEX = /(?:\.\.?\/|\/|[a-zA-Z0-9_@.-]+\/)[^\s'"()[\]{}<>,;!?`|]+?(?:\.[a-zA-Z0-9]{1,10}(?::\d+(?::\d+)?)?|\/)/g;
 const BARE_FILE_REGEX = /(?<![/\w.-])[a-zA-Z0-9_@.-]+\.[a-zA-Z0-9]{1,10}(?::\d+(?::\d+)?)?(?![/\w.-])/g;
 
 interface LinkMatch {
@@ -107,6 +107,9 @@ function resolvePath(filePath: string, cwd: string): string {
 
 export type OnFileOpen = (path: string, line?: number, col?: number) => void;
 
+/** Custom event to request the file explorer to expand/reveal a folder path. */
+export const EXPAND_FOLDER_EVENT = "rally:expand-folder";
+
 /**
  * Custom link provider for xterm.js that handles both web URLs and file paths.
  * Decorations (underline + pointer cursor) only appear when Cmd is held.
@@ -145,17 +148,51 @@ export class TerminalLinkProvider implements ILinkProvider {
       return;
     }
 
-    const text = line.translateToString(true);
-    const matches = findLinksInText(text);
+    // Collect wrapped lines: join current line with any continuation lines below.
+    // xterm marks continuation lines with isWrapped=true.
+    const lineTexts: string[] = [];
+    const lineWidths: number[] = [];
+    const startLineIdx = bufferLineNumber - 1;
+
+    lineTexts.push(line.translateToString(true));
+    lineWidths.push(lineTexts[0].length);
+
+    // Gather subsequent wrapped lines
+    for (let i = startLineIdx + 1; i < buffer.length; i++) {
+      const nextLine = buffer.getLine(i);
+      if (!nextLine || !nextLine.isWrapped) break;
+      const nextText = nextLine.translateToString(true);
+      lineTexts.push(nextText);
+      lineWidths.push(nextText.length);
+    }
+
+    const fullText = lineTexts.join("");
+    const matches = findLinksInText(fullText);
     if (matches.length === 0) {
       callback(undefined);
       return;
     }
 
+    // Helper: convert a character offset in the combined text to {line, col}
+    function offsetToPosition(offset: number): { line: number; col: number } {
+      let remaining = offset;
+      for (let i = 0; i < lineWidths.length; i++) {
+        if (remaining < lineWidths[i]) {
+          return { line: bufferLineNumber + i, col: remaining + 1 };
+        }
+        remaining -= lineWidths[i];
+      }
+      // Past end — clamp to last line
+      const lastIdx = lineWidths.length - 1;
+      return { line: bufferLineNumber + lastIdx, col: lineWidths[lastIdx] + 1 };
+    }
+
     const links: ILink[] = matches.map((match) => {
+      const startPos = offsetToPosition(match.startIndex);
+      const endPos = offsetToPosition(match.startIndex + match.text.length);
       const range: IBufferRange = {
-        start: { x: match.startIndex + 1, y: bufferLineNumber },
-        end: { x: match.startIndex + match.text.length + 1, y: bufferLineNumber },
+        start: { x: startPos.col, y: startPos.line },
+        end: { x: endPos.col, y: endPos.line },
       };
 
       const link: ILink = {
@@ -177,8 +214,14 @@ export class TerminalLinkProvider implements ILinkProvider {
           } else {
             const { path, line: ln, col } = parseFilePath(linkText);
             const resolved = resolvePath(path, this.getCwd());
-            api.fileExists(resolved).then((exists) => {
-              if (exists) {
+            api.pathStatus(resolved).then((status) => {
+              if (!status.exists) return;
+              if (status.is_dir) {
+                // Dispatch event to expand this folder in the file explorer
+                document.dispatchEvent(new CustomEvent(EXPAND_FOLDER_EVENT, {
+                  detail: { path: resolved },
+                }));
+              } else {
                 this.onFileOpen(resolved, ln, col);
               }
             }).catch(() => {});

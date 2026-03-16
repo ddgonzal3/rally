@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
+import { createPortal } from "react-dom";
 import { api } from "../lib/tauri";
 import { addToast } from "./ToastContainer";
 import { useWorkspaceStore } from "../stores/workspaceStore";
@@ -143,7 +144,7 @@ export function CommitModal({
 
   if (!open) return null;
 
-  return renderModal();
+  return createPortal(renderModal(), document.body);
 
   function renderModal() {
 
@@ -337,7 +338,7 @@ export function CommitModal({
 
 const st: Record<string, React.CSSProperties> = {
   backdrop: {
-    position: "absolute",
+    position: "fixed",
     inset: 0,
     zIndex: 10000,
     background: "transparent",

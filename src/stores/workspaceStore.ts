@@ -1601,7 +1601,7 @@ export const useWorkspaceStore = create<WorkspaceState>()(
       // the PTY when opened — going wider is clean, going narrower garbles.
       const ptyId = await api.spawnPty(
         repoPath,
-        'claude --dangerously-skip-permissions "/ship"',
+        'claude --dangerously-skip-permissions "/rally-ship"',
         80,
         24
       );

@@ -222,6 +222,21 @@
         100% { background: var(--status-green); opacity: 0.4; }
       }
 
+      /* Fix xterm scrollbar: make it sit at the far right edge of the terminal
+         container, not at the right edge of the text area. Without this, there's
+         empty space between the scrollbar and the container edge because xterm
+         sizes its viewport to cols*cellWidth which rarely fills 100% of the parent. */
+      .xterm-viewport { right: 0 !important; }
+      .xterm-viewport::-webkit-scrollbar { width: 8px; }
+      .xterm-viewport::-webkit-scrollbar-thumb {
+        background: var(--scrollbar-thumb);
+        border-radius: 4px;
+      }
+      .xterm-viewport::-webkit-scrollbar-thumb:hover {
+        background: var(--scrollbar-thumb-hover);
+      }
+      .xterm-viewport::-webkit-scrollbar-track { background: transparent; }
+
       .status-bar-slot:hover { background: var(--bg-hover); }
       .status-bar-tab:hover { background: var(--bg-hover); }
 
