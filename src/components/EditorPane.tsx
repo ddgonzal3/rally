@@ -174,6 +174,14 @@ function ImageViewer({ filePath }: { filePath: string }) {
 }
 
 /** Text editor — Monaco with syntax highlighting */
+const BASE_FONT_SIZE = 13;
+
+function getStoredZoomLevel(): number {
+  const saved = localStorage.getItem("rally:zoomLevel");
+  const zoom = saved ? Number(saved) : 1;
+  return Number.isFinite(zoom) && zoom > 0 ? zoom : 1;
+}
+
 function TextEditor({ filePath, paneId, workspaceId, groupId }: { filePath: string; paneId: string; workspaceId: string; groupId: string }) {
   const [content, setContent] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -184,6 +192,12 @@ function TextEditor({ filePath, paneId, workspaceId, groupId }: { filePath: stri
   const markDirty = useWorkspaceStore((s) => s.markPaneDirty);
   const markClean = useWorkspaceStore((s) => s.markPaneClean);
   const appTheme = useWorkspaceStore((s) => s.theme);
+
+  // Neutralize body CSS zoom on Monaco's DOM element so coordinate math
+  // (click-to-position, double-click selection) works correctly.
+  // Same technique as Terminal.tsx: body has zoom:Z, we apply zoom:1/Z
+  // on Monaco's element, then scale font size by Z to compensate visually.
+  const zoomRef = useRef(getStoredZoomLevel());
 
   // Subscribe to initialLine/initialCol/editorViewMode from pane data (set via Cmd+click)
   // Direct lookup by workspaceId/groupId avoids iterating all layouts/groups
@@ -339,6 +353,16 @@ function TextEditor({ filePath, paneId, workspaceId, groupId }: { filePath: stri
         monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS,
         () => handleSave()
       );
+
+      // Neutralize body CSS zoom on Monaco's DOM element
+      const domNode = editor.getDomNode();
+      if (domNode) {
+        const z = getStoredZoomLevel();
+        if (z !== 1) {
+          domNode.style.zoom = String(1 / z);
+        }
+      }
+
       // Jump to line:col if specified (e.g. from Cmd+click in terminal)
       if (initialLine) {
         editor.revealLineInCenter(initialLine);
@@ -348,6 +372,28 @@ function TextEditor({ filePath, paneId, workspaceId, groupId }: { filePath: stri
     },
     [handleSave, initialLine, initialCol]
   );
+
+  // Keep zoom neutralization in sync when body zoom changes
+  useEffect(() => {
+    const editor = editorRef.current;
+    if (!editor) return;
+    const domNode = editor.getDomNode();
+    if (!domNode) return;
+    const parentEl = domNode.parentElement;
+    if (!parentEl) return;
+
+    const ro = new ResizeObserver(() => {
+      const z = getStoredZoomLevel();
+      if (z !== zoomRef.current) {
+        zoomRef.current = z;
+        domNode.style.zoom = z === 1 ? "" : String(1 / z);
+        editor.updateOptions({ fontSize: Math.round(BASE_FONT_SIZE * z) });
+        editor.layout();
+      }
+    });
+    ro.observe(parentEl);
+    return () => ro.disconnect();
+  }, []);
 
   // Jump to line:col when it changes on an already-mounted editor
   useEffect(() => {
@@ -392,9 +438,10 @@ function TextEditor({ filePath, paneId, workspaceId, groupId }: { filePath: stri
   }, []);
 
   const editorOptions = useMemo(() => ({
+    automaticLayout: true,
     contextmenu: false,
     minimap: { enabled: false },
-    fontSize: 13,
+    fontSize: Math.round(BASE_FONT_SIZE * getStoredZoomLevel()),
     fontFamily: "'SF Mono', 'Fira Code', 'Cascadia Code', monospace",
     lineNumbers: "on" as const,
     wordWrap: "off" as const,
@@ -626,9 +673,8 @@ const styles: Record<string, React.CSSProperties> = {
     minWidth: 0,
     minHeight: 0,
     position: "relative",
-    contain: "strict",
-    isolation: "isolate",
-    transform: "translateZ(0)",
+    contain: "layout paint",
+    overflow: "hidden",
   },
   center: {
     display: "flex",
