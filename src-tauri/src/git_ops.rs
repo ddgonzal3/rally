@@ -1,9 +1,24 @@
-use std::sync::OnceLock;
+use std::collections::HashMap;
+use std::sync::{Mutex, OnceLock};
 use std::time::Duration;
 
 use tokio::process::Command;
+use tokio::sync::Semaphore;
 
 use crate::workspace::{ChangedFile, ChangesSummary, CommitEntry, GitStatus, PrComment, PrCommit, PrDetails, PrReview, PrStatus, PushResult};
+
+/// Per-repo semaphore to serialize git operations.
+/// Prevents Rally's background polls (status, fetch, PR) from running
+/// concurrently on the same repo, which causes index.lock conflicts.
+/// Permits = 1 means only one git operation per repo at a time.
+fn repo_semaphore(cwd: &str) -> std::sync::Arc<Semaphore> {
+    static REPO_LOCKS: OnceLock<Mutex<HashMap<String, std::sync::Arc<Semaphore>>>> = OnceLock::new();
+    let map = REPO_LOCKS.get_or_init(|| Mutex::new(HashMap::new()));
+    let mut guard = map.lock().unwrap();
+    guard.entry(cwd.to_string())
+        .or_insert_with(|| std::sync::Arc::new(Semaphore::new(1)))
+        .clone()
+}
 
 /// Get the full login shell PATH, cached for the process lifetime.
 /// When launched as a .app bundle, macOS gives a minimal PATH (/usr/bin:/bin:/usr/sbin:/sbin).
@@ -40,37 +55,32 @@ fn resolve_bin(name: &str) -> String {
     name.to_string() // fallback: let the OS try
 }
 
-/// Run a git command in a given directory and return stdout (async).
-/// Automatically retries up to 3 times if a git lock file conflict is detected
-/// ("Another git process seems to be running"), with exponential backoff.
-pub async fn git_cmd(cwd: &str, args: &[&str]) -> Result<String, String> {
-    let max_retries = 3;
-    let mut attempt = 0;
-    loop {
-        let output = Command::new(resolve_bin("git"))
-            .args(args)
-            .env("PATH", full_path())
-            .current_dir(cwd)
-            .output()
-            .await
-            .map_err(|e| format!("Failed to run git: {}", e))?;
+/// Run a git command without the per-repo lock. Used internally.
+async fn git_cmd_unlocked(cwd: &str, args: &[&str]) -> Result<String, String> {
+    let output = Command::new(resolve_bin("git"))
+        .args(args)
+        .env("PATH", full_path())
+        .current_dir(cwd)
+        .output()
+        .await
+        .map_err(|e| format!("Failed to run git: {}", e))?;
 
-        if output.status.success() {
-            return Ok(String::from_utf8_lossy(&output.stdout).trim().to_string());
-        }
-
+    if output.status.success() {
+        Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
+    } else {
         let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
-
-        // Retry on git lock file conflicts (another git process is running)
-        if attempt < max_retries && stderr.contains("Another git process seems to be running") {
-            attempt += 1;
-            let delay_ms = 200 * (1 << attempt); // 400ms, 800ms, 1600ms
-            tokio::time::sleep(Duration::from_millis(delay_ms)).await;
-            continue;
-        }
-
-        return Err(format!("git {} failed: {}", args.join(" "), stderr));
+        Err(format!("git {} failed: {}", args.join(" "), stderr))
     }
+}
+
+/// Run a git command in a given directory and return stdout (async).
+/// Acquires a per-repo semaphore so only one Rally git operation runs
+/// per repo at a time — prevents index.lock conflicts between Rally's
+/// background polls and user-initiated git commands in the terminal.
+pub async fn git_cmd(cwd: &str, args: &[&str]) -> Result<String, String> {
+    let sem = repo_semaphore(cwd);
+    let _permit = sem.acquire().await.map_err(|_| "semaphore closed".to_string())?;
+    git_cmd_unlocked(cwd, args).await
 }
 
 /// Run gh CLI command in a given directory (async, with timeout for network ops)
@@ -611,6 +621,8 @@ pub async fn merge_pr(cwd: &str, method: &str) -> Result<String, String> {
 /// NOTE: Cannot use git_cmd() here because it trims output, which strips
 /// the leading space that distinguishes unstaged-only files (e.g. " M file").
 pub async fn changes(cwd: &str) -> Result<ChangesSummary, String> {
+    let sem = repo_semaphore(cwd);
+    let _permit = sem.acquire().await.map_err(|_| "semaphore closed".to_string())?;
     let raw = Command::new(resolve_bin("git"))
         .args(&["status", "--porcelain"])
         .env("PATH", full_path())
@@ -709,6 +721,8 @@ pub async fn discard_file(cwd: &str, file_path: &str, is_untracked: bool) -> Res
 /// Apply a patch via stdin to `git apply`.
 /// `reverse` = true for reverting changes, `cached` = true for staging hunks.
 pub async fn apply_patch(cwd: &str, patch: &str, reverse: bool, cached: bool) -> Result<String, String> {
+    let sem = repo_semaphore(cwd);
+    let _permit = sem.acquire().await.map_err(|_| "semaphore closed".to_string())?;
     let mut args = vec!["apply"];
     if reverse {
         args.push("--reverse");
@@ -749,6 +763,8 @@ pub async fn apply_patch(cwd: &str, patch: &str, reverse: bool, cached: bool) ->
 
 /// Get unified diff output for staged or unstaged changes.
 pub async fn diff(cwd: &str, staged: bool) -> Result<String, String> {
+    let sem = repo_semaphore(cwd);
+    let _permit = sem.acquire().await.map_err(|_| "semaphore closed".to_string())?;
     let mut args = vec!["diff", "--unified=3"];
     if staged {
         args.push("--cached");
@@ -769,6 +785,8 @@ pub async fn diff(cwd: &str, staged: bool) -> Result<String, String> {
 
 /// Get total line additions and deletions across staged and unstaged changes.
 pub async fn diff_stat(cwd: &str) -> Result<(i64, i64), String> {
+    let sem = repo_semaphore(cwd);
+    let _permit = sem.acquire().await.map_err(|_| "semaphore closed".to_string())?;
     let mut total_add: i64 = 0;
     let mut total_del: i64 = 0;
 
