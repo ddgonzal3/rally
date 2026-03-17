@@ -8,8 +8,11 @@ const URL_REGEX = /https?:\/\/[^\s'")\]}>]+/g;
 
 // File paths: supports absolute (/foo), relative with prefix (./foo, ../foo),
 // implicit relative with slash (src/foo.ts), and bare filenames (foo.ts).
-// Must end with a file extension or trailing slash (for directories). Optional :line or :line:col suffix.
-const FILE_PATH_REGEX = /(?:\.\.?\/|\/|[a-zA-Z0-9_@.-]+\/)[^\s'"()[\]{}<>,;!?`|]+?(?:\.[a-zA-Z0-9]{1,10}(?::\d+(?::\d+)?)?|\/)/g;
+// Must end with a file extension. Optional :line or :line:col suffix.
+// Also matches directory paths ending with /
+const FILE_PATH_REGEX = /(?:\.\.?\/|\/|[a-zA-Z0-9_@.-]+\/)[^\s'"()[\]{}<>,;!?`|]+\.[a-zA-Z0-9]{1,10}(?::\d+(?::\d+)?)?/g;
+// Directory paths: must start with a path prefix and end with /
+const DIR_PATH_REGEX = /(?:\.\.?\/|\/|[a-zA-Z0-9_@.-]+\/)[^\s'"()[\]{}<>,;!?`|]*\//g;
 const BARE_FILE_REGEX = /(?<![/\w.-])[a-zA-Z0-9_@.-]+\.[a-zA-Z0-9]{1,10}(?::\d+(?::\d+)?)?(?![/\w.-])/g;
 
 interface LinkMatch {
@@ -46,6 +49,23 @@ function findLinksInText(text: string): LinkMatch[] {
       (um) => um.kind === "url" && startIdx < um.startIndex + um.text.length && endIdx > um.startIndex
     );
     if (overlapsUrl) continue;
+
+    matches.push({ text: matchText, startIndex: startIdx, kind: "file" });
+  }
+
+  // Directory paths (ending with /) — matched separately so they don't
+  // interfere with file path matching (greedy / would eat file extensions)
+  DIR_PATH_REGEX.lastIndex = 0;
+  while ((m = DIR_PATH_REGEX.exec(text)) !== null) {
+    const matchText = m[0];
+    const startIdx = m.index;
+    const endIdx = startIdx + matchText.length;
+
+    // Skip if overlaps with any existing match
+    const overlaps = matches.some(
+      (um) => startIdx < um.startIndex + um.text.length && endIdx > um.startIndex
+    );
+    if (overlaps) continue;
 
     matches.push({ text: matchText, startIndex: startIdx, kind: "file" });
   }
@@ -209,20 +229,35 @@ export class TerminalLinkProvider implements ILinkProvider {
           // the mouseup event that xterm passes to activate().
           if (!this._cmdHeld) return;
 
+          // Use the original match text, not xterm's linkText — xterm may
+          // truncate it for wrapped links or modify whitespace.
+          const fullText = match.text;
+          console.log("[rally-link] activate:", { fullText, linkText, kind: match.kind, cmdHeld: this._cmdHeld, cwd: this.getCwd() });
+
           if (match.kind === "url") {
-            openUrl(linkText);
+            openUrl(fullText);
           } else {
-            const { path, line: ln, col } = parseFilePath(linkText);
+            const { path, line: ln, col } = parseFilePath(fullText);
             const resolved = resolvePath(path, this.getCwd());
+            // Try the resolved path first; if it doesn't exist, try
+            // with the raw text as-is (handles absolute paths and edge cases)
             api.pathStatus(resolved).then((status) => {
-              if (!status.exists) return;
-              if (status.is_dir) {
-                // Dispatch event to expand this folder in the file explorer
-                document.dispatchEvent(new CustomEvent(EXPAND_FOLDER_EVENT, {
-                  detail: { path: resolved },
-                }));
+              console.log("[rally-link] pathStatus:", { resolved, path, status });
+              if (status.exists) {
+                if (status.is_dir) {
+                  document.dispatchEvent(new CustomEvent(EXPAND_FOLDER_EVENT, {
+                    detail: { path: resolved },
+                  }));
+                } else {
+                  this.onFileOpen(resolved, ln, col);
+                }
               } else {
-                this.onFileOpen(resolved, ln, col);
+                // Fallback: try the raw path without resolution
+                api.pathStatus(path).then((s2) => {
+                  if (s2.exists && !s2.is_dir) {
+                    this.onFileOpen(path, ln, col);
+                  }
+                }).catch(() => {});
               }
             }).catch(() => {});
           }
