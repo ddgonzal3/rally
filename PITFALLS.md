@@ -101,6 +101,12 @@ When revealing hidden SVG buttons (e.g. fade-in on hover) inside a container wit
 
 All three must be addressed together — any one alone is insufficient under CSS zoom.
 
+## Multi-Window: Never Kill All PTYs from Secondary Windows
+
+All Tauri windows share a single `PtyManager` instance. If `killAllPtys()` runs on mount (to clean up orphaned PTYs from a previous session), it must **only run in the main/primary window**. Secondary windows (opened via "Open in New Window" with `workspaceId` or `blankWorkspace` URL params) must skip this call — otherwise they kill PTYs belonging to the primary window and every other open window.
+
+Detect secondary windows by checking URL search params: `initialWorkspaceId` or `forceNoWorkspaceSelection`.
+
 ## Context Menu: Always `stopPropagation()` in Nested Handlers
 
 When a component tree has `onContextMenu` handlers at multiple levels (e.g. a tree node AND its container), the child handler **must** call `e.stopPropagation()` in addition to `e.preventDefault()`. Without it, the event bubbles to the parent, which fires a second `showContextMenu()` call. That second call clears the ghost-event suppression flag, so when the user clicks elsewhere to dismiss, macOS dispatches a ghost `contextmenu` event that opens yet another menu. Symptom: dismissing a right-click menu by clicking elsewhere opens a new menu at the click location.
