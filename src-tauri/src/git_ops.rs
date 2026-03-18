@@ -83,8 +83,13 @@ pub async fn git_cmd(cwd: &str, args: &[&str]) -> Result<String, String> {
     git_cmd_unlocked(cwd, args).await
 }
 
-/// Run gh CLI command in a given directory (async, with timeout for network ops)
+/// Run gh CLI command in a given directory (async, with timeout for network ops).
+/// Acquires the same per-repo semaphore as git_cmd() — `gh` internally runs
+/// git operations (rev-list, config, etc.) that conflict with concurrent git commands.
 async fn gh(cwd: &str, args: &[&str]) -> Result<String, String> {
+    let sem = repo_semaphore(cwd);
+    let _permit = sem.acquire().await.map_err(|_| "semaphore closed".to_string())?;
+
     let output = tokio::time::timeout(
         Duration::from_secs(30),
         Command::new(resolve_bin("gh"))
