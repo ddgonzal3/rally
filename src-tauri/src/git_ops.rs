@@ -60,6 +60,7 @@ async fn git_cmd_unlocked(cwd: &str, args: &[&str]) -> Result<String, String> {
     let output = Command::new(resolve_bin("git"))
         .args(args)
         .env("PATH", full_path())
+        .env("GIT_OPTIONAL_LOCKS", "0")
         .current_dir(cwd)
         .output()
         .await
