@@ -440,50 +440,60 @@ export function findNeighborGroup(
   direction: NavigationDirection,
 ): string | null {
   const allBounds = computeGroupBounds(root);
-  const active = allBounds.get(activeGroupId);
-  if (!active) return null;
+  const activeBounds = allBounds.get(activeGroupId);
+  if (!activeBounds) return null;
 
+  // Alias with definite type so inner function doesn't need null checks
+  const active: GroupBounds = activeBounds;
   const aCx = active.x + active.w / 2;
   const aCy = active.y + active.h / 2;
 
-  let best: string | null = null;
-  let bestPrimary = Infinity;
-  let bestOrthogonal = Infinity;
+  function findBest(requireOverlap: boolean): string | null {
+    let best: string | null = null;
+    let bestPrimary = Infinity;
+    let bestOrthogonal = Infinity;
 
-  for (const [groupId, b] of allBounds) {
-    if (groupId === activeGroupId) continue;
-    const cx = b.x + b.w / 2;
-    const cy = b.y + b.h / 2;
+    for (const [groupId, b] of allBounds) {
+      if (groupId === activeGroupId) continue;
+      const cx = b.x + b.w / 2;
+      const cy = b.y + b.h / 2;
 
-    // Candidate must overlap on the orthogonal axis.
-    // For left/right: must share vertical space. For up/down: must share horizontal space.
-    const EPS = 1e-9;
-    if (direction === "left" || direction === "right") {
-      if (b.y + b.h <= active.y + EPS || b.y >= active.y + active.h - EPS) continue;
-    } else {
-      if (b.x + b.w <= active.x + EPS || b.x >= active.x + active.w - EPS) continue;
+      if (requireOverlap) {
+        // Candidate must overlap on the orthogonal axis.
+        // For left/right: must share vertical space. For up/down: must share horizontal space.
+        const EPS = 1e-9;
+        if (direction === "left" || direction === "right") {
+          if (b.y + b.h <= active.y + EPS || b.y >= active.y + active.h - EPS) continue;
+        } else {
+          if (b.x + b.w <= active.x + EPS || b.x >= active.x + active.w - EPS) continue;
+        }
+      }
+
+      let primary: number;
+      let orthogonal: number;
+      switch (direction) {
+        case "right":  primary = cx - aCx; orthogonal = Math.abs(cy - aCy); break;
+        case "left":   primary = aCx - cx; orthogonal = Math.abs(cy - aCy); break;
+        case "down":   primary = cy - aCy; orthogonal = Math.abs(cx - aCx); break;
+        case "up":     primary = aCy - cy; orthogonal = Math.abs(cx - aCx); break;
+      }
+
+      if (primary <= 0) continue; // Not in the requested direction
+
+      // Pick closest in primary direction, then closest orthogonally as tiebreaker
+      if (primary < bestPrimary || (primary === bestPrimary && orthogonal < bestOrthogonal)) {
+        best = groupId;
+        bestPrimary = primary;
+        bestOrthogonal = orthogonal;
+      }
     }
-
-    let primary: number;
-    let orthogonal: number;
-    switch (direction) {
-      case "right":  primary = cx - aCx; orthogonal = Math.abs(cy - aCy); break;
-      case "left":   primary = aCx - cx; orthogonal = Math.abs(cy - aCy); break;
-      case "down":   primary = cy - aCy; orthogonal = Math.abs(cx - aCx); break;
-      case "up":     primary = aCy - cy; orthogonal = Math.abs(cx - aCx); break;
-    }
-
-    if (primary <= 0) continue; // Not in the requested direction
-
-    // Pick closest in primary direction, then closest orthogonally as tiebreaker
-    if (primary < bestPrimary || (primary === bestPrimary && orthogonal < bestOrthogonal)) {
-      best = groupId;
-      bestPrimary = primary;
-      bestOrthogonal = orthogonal;
-    }
+    return best;
   }
 
-  return best;
+  // First pass: strict overlap on orthogonal axis (e.g., left/right requires
+  // shared vertical space). Falls back to any group in the requested direction
+  // when strict overlap finds nothing — handles edge-sharing adjacent groups.
+  return findBest(true) ?? findBest(false);
 }
 
 // --- Default Layout Factory ---

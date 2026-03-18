@@ -123,6 +123,7 @@
       .file-node { contain: inline-size style; }
       .file-node:hover { background: var(--bg-elevated) !important; }
       .file-node-active { background: var(--bg-input) !important; color: var(--text-primary) !important; }
+      .file-node-drop-target { outline: 1px solid var(--text-secondary); outline-offset: -1px; background: var(--bg-elevated) !important; }
       .tab-close { opacity: 0; }
       .tab-close-active { opacity: 1; color: var(--text-secondary) !important; }
       .pane-tab:hover .tab-close { opacity: 1; }
@@ -225,7 +226,10 @@
       /* Fix xterm scrollbar: make it sit at the far right edge of the terminal
          container, not at the right edge of the text area. Without this, there's
          empty space between the scrollbar and the container edge because xterm
-         sizes its viewport to cols*cellWidth which rarely fills 100% of the parent. */
+         sizes its viewport to cols*cellWidth which rarely fills 100% of the parent.
+         Making .xterm fill 100% width ensures the viewport (and its scrollbar)
+         extend all the way to the container's right edge. */
+      .xterm { width: 100% !important; }
       .xterm-viewport { right: 0 !important; }
       .xterm-viewport::-webkit-scrollbar { width: 8px; }
       .xterm-viewport::-webkit-scrollbar-thumb {

@@ -1477,6 +1477,11 @@ export function App() {
         }
       }
       // Cmd+P: toggle quick open
+      // Cmd+S: save the active editor pane (works from any focused element)
+      if ((e.metaKey || e.ctrlKey) && !e.shiftKey && e.key === "s") {
+        e.preventDefault();
+        window.dispatchEvent(new CustomEvent("rally:save-active-editor"));
+      }
       if ((e.metaKey || e.ctrlKey) && !e.shiftKey && e.key === "p") {
         e.preventDefault();
         setNewTerminalCwdRequest(null);

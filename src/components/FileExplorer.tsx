@@ -6,7 +6,7 @@ import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { open } from "@tauri-apps/plugin-dialog";
 import { api } from "../lib/tauri";
 import { showContextMenu, type MenuAction } from "../lib/contextMenu";
-import { startFileDrag } from "../lib/dragContext";
+import { startFileDrag, getDragState } from "../lib/dragContext";
 import { ChevronIcon, FileIcon } from "./FileIcons";
 import { ScrollArea } from "./ScrollArea";
 import { addToast, useToastStore } from "./ToastContainer";
@@ -194,6 +194,37 @@ function useSelectedFilePaths() {
   }, []);
   return selectedFilePaths;
 }
+
+// --- File drag drop target state (module-level) ---
+// Tracks which folder is being hovered during a file drag for visual highlighting
+
+let dropTargetPath: string | null = null;
+const dropTargetListeners = new Set<() => void>();
+
+function subscribeDropTarget(cb: () => void) {
+  dropTargetListeners.add(cb);
+  return () => { dropTargetListeners.delete(cb); };
+}
+
+function setDropTarget(path: string | null) {
+  if (dropTargetPath === path) return;
+  dropTargetPath = path;
+  for (const cb of dropTargetListeners) cb();
+}
+
+function useIsDropTarget(path: string): boolean {
+  return useSyncExternalStore(
+    subscribeDropTarget,
+    () => dropTargetPath === path,
+  );
+}
+
+// Clear drop target when any mouseup occurs (drag ended)
+document.addEventListener("mouseup", () => setDropTarget(null));
+
+/** Dispatched when filesystem changes are detected (via git watcher or file move).
+ *  RootSection + FileTreeNode listen for this to re-fetch directory listings. */
+const FS_CHANGED_EVENT = "rally:fs-changed";
 
 interface FileEntry {
   name: string;
@@ -499,6 +530,7 @@ const FileTreeNode = React.memo(
     const isRenaming = useIsRenaming(entry.path);
     const isCreatingHere = useIsCreatingHere(entry.path);
     const isSelected = useIsSelected(entry.path);
+    const isDropTarget = useIsDropTarget(entry.path);
 
     // Check if this entry is gitignored (by checking parent directory's cache)
     const parentPath = entry.path.replace(/\/[^/]+$/, "");
@@ -677,9 +709,61 @@ const FileTreeNode = React.memo(
       startedAt: number;
     } | null>(null);
 
+    // Track drop target for file-to-folder drag
+    const handleDragMouseEnter = useCallback(() => {
+      if (!entry.is_dir) return;
+      const dragState = getDragState();
+      if (!dragState.isDragging || dragState.type !== "file") return;
+      // Don't allow dropping into self or child of dragged item
+      const draggedPaths = dragState.filePaths;
+      if (draggedPaths.some(p => p === entry.path || entry.path.startsWith(p + "/"))) return;
+      setDropTarget(entry.path);
+    }, [entry.is_dir, entry.path]);
+
+    const handleDragMouseLeave = useCallback(() => {
+      if (dropTargetPath === entry.path) {
+        setDropTarget(null);
+      }
+    }, [entry.path]);
+
+    const handleDropOnFolder = useCallback(async () => {
+      if (!entry.is_dir) return;
+      const dragState = getDragState();
+      if (!dragState.isDragging || dragState.type !== "file") return;
+      const filePaths = dragState.filePaths;
+      if (filePaths.length === 0) return;
+      // Don't allow dropping into self or child of dragged item
+      if (filePaths.some(p => p === entry.path || entry.path.startsWith(p + "/"))) return;
+
+      setDropTarget(null);
+      let movedCount = 0;
+      for (const srcPath of filePaths) {
+        const fileName = srcPath.split("/").pop();
+        if (!fileName) continue;
+        const destPath = entry.path + "/" + fileName;
+        if (srcPath === destPath) continue;
+        try {
+          await api.renameFile(srcPath, destPath);
+          movedCount++;
+        } catch (e) {
+          addToast({
+            type: "warning",
+            title: "Move failed",
+            message: `Could not move ${fileName}: ${e instanceof Error ? e.message : String(e)}`,
+          });
+        }
+      }
+      if (movedCount > 0) {
+        // Trigger filesystem change to refresh directory listings
+        document.dispatchEvent(
+          new CustomEvent(FS_CHANGED_EVENT, { detail: { rootPath } }),
+        );
+      }
+    }, [entry.is_dir, entry.path, rootPath]);
+
     const handleMouseDown = useCallback(
       (e: React.MouseEvent) => {
-        if (entry.is_dir || e.button !== 0) return;
+        if (e.button !== 0) return;
         const startX = e.clientX;
         const startY = e.clientY;
         dragStartRef.current = { x: startX, y: startY, startedAt: Date.now() };
@@ -777,7 +861,7 @@ const FileTreeNode = React.memo(
         ) : (
           <button
             ref={btnRef}
-            className={`file-node${(isActiveFile || isRevealTarget || (isSelected && !entry.is_dir)) ? " file-node-active" : ""}`}
+            className={`file-node${(isActiveFile || isRevealTarget || (isSelected && !entry.is_dir)) ? " file-node-active" : ""}${isDropTarget ? " file-node-drop-target" : ""}`}
             onClick={handleClick}
             onDoubleClick={() => {
               if (renameTimerRef.current) {
@@ -786,6 +870,9 @@ const FileTreeNode = React.memo(
               }
             }}
             onMouseDown={handleMouseDown}
+            onMouseEnter={handleDragMouseEnter}
+            onMouseLeave={handleDragMouseLeave}
+            onMouseUp={handleDropOnFolder}
             onContextMenu={(e) => {
               e.preventDefault();
               // If right-clicked item isn't in current multi-selection, start fresh
@@ -1795,8 +1882,8 @@ const STATUS_COLORS: Record<string, string> = {
 const GIT_CHANGES_REFRESH_EVENT = "rally:git-changes-refresh";
 const BACKEND_GIT_CHANGES_UPDATED_EVENT = "git-changes-updated";
 /** Dispatched when filesystem changes are detected (via git watcher).
- *  RootSection + FileTreeNode listen for this to re-fetch directory listings. */
-const FS_CHANGED_EVENT = "rally:fs-changed";
+ *  RootSection + FileTreeNode listen for this to re-fetch directory listings.
+ *  NOTE: Defined earlier in the file — kept here as a comment for discoverability. */
 
 function ChangeStatusGlyph({ status }: { status: string }) {
   const color = STATUS_COLORS[status] ?? "#888";

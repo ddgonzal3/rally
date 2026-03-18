@@ -245,10 +245,35 @@ function TextEditor({ filePath, paneId, workspaceId, groupId }: { filePath: stri
         content: contentRef.current,
       });
       markClean(paneId);
+      addToast({ type: "info", title: "Saved", message: filePath.split("/").pop() ?? filePath, duration: 2000 });
     } catch (e) {
       addToast({ type: "warning", title: "Save failed", message: String(e instanceof Error ? e.message : e) });
     }
   }, [filePath, paneId, markClean]);
+
+  // Use a ref so the global save event and Monaco command always call the latest handleSave
+  const handleSaveRef = useRef(handleSave);
+  handleSaveRef.current = handleSave;
+
+  // Listen for global Cmd+S event (dispatched from App.tsx when Cmd+S is pressed
+  // from any focused element — terminals, sidebar, etc.)
+  useEffect(() => {
+    const onGlobalSave = () => {
+      // Only respond if this editor's pane is the active pane in the active group
+      const s = useWorkspaceStore.getState();
+      const wsId = s.activeWorkspaceId;
+      if (!wsId) return;
+      const activeGroupId = s.activeGroupIds[wsId];
+      if (!activeGroupId) return;
+      const layout = s.layouts[wsId];
+      if (!layout) return;
+      const group = layout.groups[activeGroupId];
+      if (!group || group.activePaneId !== paneId) return;
+      handleSaveRef.current();
+    };
+    window.addEventListener("rally:save-active-editor", onGlobalSave);
+    return () => window.removeEventListener("rally:save-active-editor", onGlobalSave);
+  }, [paneId]);
 
   const handleBeforeMount: BeforeMount = useCallback((monaco) => {
     monaco.languages.typescript.typescriptDefaults.setDiagnosticsOptions({
@@ -351,7 +376,7 @@ function TextEditor({ filePath, paneId, workspaceId, groupId }: { filePath: stri
       editorRef.current = editor;
       editor.addCommand(
         monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS,
-        () => handleSave()
+        () => handleSaveRef.current()
       );
 
       // Neutralize body CSS zoom on Monaco's DOM element
@@ -370,7 +395,7 @@ function TextEditor({ filePath, paneId, workspaceId, groupId }: { filePath: stri
         editor.focus();
       }
     },
-    [handleSave, initialLine, initialCol]
+    [initialLine, initialCol]
   );
 
   // Keep zoom neutralization in sync when body zoom changes
