@@ -725,9 +725,15 @@ export function App() {
     // Kill all orphaned PTYs from a previous session. On reload/restart the
     // frontend loses all xterm state and event listeners, so existing PTYs
     // can never be reconnected — they'd leak as zombie processes.
-    api
-      .killAllPtys()
-      .catch((e: unknown) => console.error("Failed to kill orphaned PTYs:", e));
+    // ONLY do this for the main window — secondary windows (opened via "Open
+    // in New Window" with workspaceId or blankWorkspace params) must NOT kill
+    // PTYs that belong to the primary window or other windows.
+    const isSecondaryWindow = !!initialWorkspaceId || forceNoWorkspaceSelection;
+    if (!isSecondaryWindow) {
+      api
+        .killAllPtys()
+        .catch((e: unknown) => console.error("Failed to kill orphaned PTYs:", e));
+    }
 
     loadWorkspaces({ keepNullActive: forceNoWorkspaceSelection }).then(
       async () => {
@@ -1477,6 +1483,11 @@ export function App() {
         }
       }
       // Cmd+P: toggle quick open
+      // Cmd+S: save the active editor pane (works from any focused element)
+      if ((e.metaKey || e.ctrlKey) && !e.shiftKey && e.key === "s") {
+        e.preventDefault();
+        window.dispatchEvent(new CustomEvent("rally:save-active-editor"));
+      }
       if ((e.metaKey || e.ctrlKey) && !e.shiftKey && e.key === "p") {
         e.preventDefault();
         setNewTerminalCwdRequest(null);
