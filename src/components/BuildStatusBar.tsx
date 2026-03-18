@@ -131,7 +131,6 @@ function ScriptDot({
   const [flashing, setFlashing] = useState(false);
   const [hovered, setHovered] = useState(false);
   const [hasLeftSinceStart, setHasLeftSinceStart] = useState(false);
-  const [restarting, setRestarting] = useState(false);
   const prevStatusRef = useRef<WatcherBuildStatus>("idle");
 
   const key = `${repoPath}:${scriptName}`;
@@ -259,15 +258,12 @@ function ScriptDot({
     setFlashing(false);
     setBuiltAt(null);
     setHasLeftSinceStart(false);
-    setRestarting(true);
     prevStatusRef.current = "idle";
     // Small delay to let the PTY clean up before respawning
     setTimeout(() => {
       runScript(repoPath, scriptName, command);
       // Auto-open the drawer so the user can see output streaming
       setTimeout(() => openStatusBarDrawer(repoPath, scriptName), 50);
-      // Clear restarting indicator after the script starts
-      setTimeout(() => setRestarting(false), 1500);
     }, 100);
   };
 
@@ -449,24 +445,8 @@ function ScriptDot({
         );
       })()}
 
-      {/* Restarting indicator */}
-      {restarting && (
-        <span
-          style={{
-            fontSize: 12,
-            color: "var(--status-amber)",
-            whiteSpace: "nowrap",
-            lineHeight: 1,
-            marginRight: 4,
-            animation: "pulse-sync-kf 1s ease-in-out infinite",
-          }}
-        >
-          reloading…
-        </span>
-      )}
-
       {/* "built at" timestamp — persists during rebuilds, clears on error */}
-      {!restarting && builtAt && (
+      {builtAt && (
         <span
           style={{
             fontSize: 12,
