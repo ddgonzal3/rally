@@ -41,20 +41,28 @@ const WorkspaceFlightView = React.memo(function WorkspaceFlightView({
   useEffect(() => {
     const el = containerRef.current;
     if (!el) return;
-    // Scroll/wheel handler:
-    // - Option+scroll or pinch (ctrlKey) = zoom
-    // - Scroll on empty canvas = enter pan mode (pans even over pods for 1.5s)
-    // - Scroll inside pod (no pan mode) = terminal scrolls normally
-    let panModeActive = false;
-    let panModeTimer: ReturnType<typeof setTimeout> | null = null;
-    const PAN_MODE_TIMEOUT = 750; // ms of no scrolling before pan mode ends
+    // Scroll behavior depends on where the user last clicked:
+    // - Clicked on empty canvas → scroll pans
+    // - Clicked inside a terminal → scroll goes to terminal
+    let canvasFocused = true; // Start with canvas focused (no terminal active)
+
+    // Track clicks to determine scroll target
+    const clickTracker = (e: MouseEvent) => {
+      const insidePod = !!(e.target as HTMLElement).closest("[data-flight-pod]");
+      if (insidePod) {
+        canvasFocused = false;
+        el.classList.remove("flight-panning");
+      } else {
+        canvasFocused = true;
+        el.classList.add("flight-panning");
+      }
+    };
+    el.addEventListener("mousedown", clickTracker, true); // capture phase
 
     const wheelHandler = (e: WheelEvent) => {
-      const isInsidePod = !!(e.target as HTMLElement).closest("[data-flight-pod]");
-
-      // Option+scroll or pinch = zoom (always)
+      // Option+scroll or pinch = zoom (always, regardless of focus)
       if (e.altKey || e.ctrlKey) {
-        if (e.altKey) zoomActiveWithOption = true; // Block pod drag while Option held
+        if (e.altKey) zoomActiveWithOption = true;
         e.preventDefault();
         const store = useWorkspaceStore.getState();
         const vp = store.flightLayouts[workspaceId]?.viewport;
@@ -91,14 +99,8 @@ const WorkspaceFlightView = React.memo(function WorkspaceFlightView({
         return;
       }
 
-      // Scroll on empty canvas = activate pan mode
-      if (!isInsidePod) {
-        panModeActive = true;
-        el.classList.add("flight-panning");
-      }
-
-      // If pan mode is active, pan (even over pods)
-      if (panModeActive) {
+      // If canvas is focused (last click was on empty canvas), scroll pans
+      if (canvasFocused) {
         e.preventDefault();
         const store = useWorkspaceStore.getState();
         const vp = store.flightLayouts[workspaceId]?.viewport;
@@ -108,17 +110,10 @@ const WorkspaceFlightView = React.memo(function WorkspaceFlightView({
             panY: vp.panY - e.deltaY,
           });
         }
-        // Reset the timeout — pan mode stays active while scrolling
-        if (panModeTimer) clearTimeout(panModeTimer);
-        panModeTimer = setTimeout(() => {
-          panModeActive = false;
-          panModeTimer = null;
-          el.classList.remove("flight-panning");
-        }, PAN_MODE_TIMEOUT);
         return;
       }
 
-      // Otherwise: inside a pod, no modifiers, no pan mode → let terminal scroll
+      // Otherwise: terminal is focused → let terminal scroll normally
     };
     el.addEventListener("wheel", wheelHandler, { passive: false });
 
@@ -236,6 +231,7 @@ const WorkspaceFlightView = React.memo(function WorkspaceFlightView({
 
     return () => {
       el.removeEventListener("wheel", wheelHandler);
+      el.removeEventListener("mousedown", clickTracker, true);
       el.removeEventListener("mousemove", moveHandler);
       window.removeEventListener("keyup", keyUpHandler);
     };
