@@ -135,10 +135,13 @@ export const FlightPod = React.memo(function FlightPod({
     return parts[parts.length - 1] || podCwd;
   }, [podCwd]);
 
-  const handlePodMouseDown = useCallback((e: React.MouseEvent) => {
-    // Don't steal focus from interactive elements
-    if ((e.target as HTMLElement).closest("button")) return;
-    bringPodToFront(workspaceId, podId);
+  // Use capture phase so we see mousedown before xterm's stopPropagation
+  React.useEffect(() => {
+    const el = podRef.current;
+    if (!el) return;
+    const handler = () => bringPodToFront(workspaceId, podId);
+    el.addEventListener("mousedown", handler, true); // capture: true
+    return () => el.removeEventListener("mousedown", handler, true);
   }, [bringPodToFront, workspaceId, podId]);
 
   const handleHeaderMouseDown = useCallback((e: React.MouseEvent) => {
