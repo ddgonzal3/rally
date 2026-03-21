@@ -924,6 +924,103 @@ export const useWorkspaceStore = create<WorkspaceState>()(
   // --- Mode actions ---
 
   setWorkspaceMode: (workspaceId, mode) => {
+    const prevMode = get().workspaceModes[workspaceId] ?? "flight";
+
+    // When switching from Flight → Dev, carry active Flight PTYs into Dev layout
+    if (prevMode === "flight" && mode === "dev") {
+      const flightLayout = get().flightLayouts[workspaceId];
+      if (flightLayout) {
+        const activePods = flightLayout.pods.filter((p) => p.ptyId);
+        if (activePods.length > 0) {
+          const devLayout = get().getOrCreateLayout(workspaceId);
+          // Find the first group in the dev layout to add panes to
+          const firstGroupId = findFirstGroupInSubtree(devLayout.root);
+          if (firstGroupId && devLayout.groups[firstGroupId]) {
+            const group = devLayout.groups[firstGroupId];
+            const newPanes: Pane[] = activePods.map((pod) => ({
+              id: crypto.randomUUID(),
+              type: pod.type === "claude" ? "claude" as const : "terminal" as const,
+              title: pod.title,
+              cwd: pod.cwd,
+              ptyId: pod.ptyId,
+            }));
+            const updatedGroup: PaneGroup = {
+              ...group,
+              panes: [...group.panes, ...newPanes],
+              activePaneId: newPanes[0].id,
+            };
+            set((s) => ({
+              layouts: {
+                ...s.layouts,
+                [workspaceId]: {
+                  ...devLayout,
+                  groups: { ...devLayout.groups, [firstGroupId]: updatedGroup },
+                },
+              },
+            }));
+          }
+        }
+      }
+    }
+
+    // When switching from Dev → Flight, carry active Dev PTYs into Flight layout
+    if (prevMode === "dev" && mode === "flight") {
+      const devLayout = get().layouts[workspaceId];
+      if (devLayout) {
+        const activePanes: Pane[] = [];
+        for (const group of Object.values(devLayout.groups)) {
+          for (const pane of group.panes) {
+            if (pane.ptyId && (pane.type === "claude" || pane.type === "terminal")) {
+              activePanes.push(pane);
+            }
+          }
+        }
+        if (activePanes.length > 0) {
+          const flightLayout = get().getOrCreateFlightLayout(workspaceId);
+          // Check which PTYs are already in flight pods
+          const existingPtyIds = new Set(flightLayout.pods.map((p) => p.ptyId).filter(Boolean));
+          const newPods: FlightPod[] = [];
+          let offset = 0;
+          for (const pane of activePanes) {
+            if (existingPtyIds.has(pane.ptyId)) continue; // Already in flight
+            const pod: FlightPod = pane.type === "claude" ? {
+              id: crypto.randomUUID(), type: "claude",
+              x: 100 + offset * 40, y: 100 + offset * 40,
+              width: FLIGHT_DEFAULT_CLAUDE_WIDTH, height: FLIGHT_DEFAULT_CLAUDE_HEIGHT,
+              cwd: pane.cwd ?? "", title: pane.title,
+              zIndex: (get().flightNextZIndex[workspaceId] ?? 1) + offset + 1,
+              shellExpanded: false, shellHeight: FLIGHT_DEFAULT_SHELL_HEIGHT,
+              ptyId: pane.ptyId,
+            } : {
+              id: crypto.randomUUID(), type: "terminal",
+              x: 100 + offset * 40, y: 100 + offset * 40,
+              width: FLIGHT_DEFAULT_TERMINAL_WIDTH, height: FLIGHT_DEFAULT_TERMINAL_HEIGHT,
+              cwd: pane.cwd ?? "", title: pane.title,
+              zIndex: (get().flightNextZIndex[workspaceId] ?? 1) + offset + 1,
+              ptyId: pane.ptyId,
+            };
+            newPods.push(pod);
+            offset++;
+          }
+          if (newPods.length > 0) {
+            set((s) => ({
+              flightLayouts: {
+                ...s.flightLayouts,
+                [workspaceId]: {
+                  ...flightLayout,
+                  pods: [...flightLayout.pods, ...newPods],
+                },
+              },
+              flightNextZIndex: {
+                ...s.flightNextZIndex,
+                [workspaceId]: (s.flightNextZIndex[workspaceId] ?? 1) + newPods.length,
+              },
+            }));
+          }
+        }
+      }
+    }
+
     set((s) => ({ workspaceModes: { ...s.workspaceModes, [workspaceId]: mode } }));
   },
 
