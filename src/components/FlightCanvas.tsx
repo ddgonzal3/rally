@@ -264,7 +264,9 @@ const WorkspaceFlightView = React.memo(function WorkspaceFlightView({
       canvasY = (cy - vp.panY) / vp.zoom;
     }
 
-    setContextMenu({ screenX: e.clientX, screenY: e.clientY, canvasX, canvasY });
+    // Divide by body CSS zoom so fixed-position popup aligns with cursor
+    const bodyZoom = parseFloat(getComputedStyle(document.body).zoom) || 1;
+    setContextMenu({ screenX: e.clientX / bodyZoom, screenY: e.clientY / bodyZoom, canvasX, canvasY });
   }, [workspaceId]);
 
   // Close popup when clicking outside
