@@ -1529,6 +1529,13 @@ export function App() {
         const next = (idx + delta + group.panes.length) % group.panes.length;
         s.setActivePane(wsId, groupId, group.panes[next].id);
       }
+      // Cmd+0: reset Flight Mode zoom to 100% and pan to origin
+      if (e.metaKey && !e.shiftKey && e.key === "0") {
+        e.preventDefault();
+        const s = useWorkspaceStore.getState();
+        const wsId = s.activeWorkspaceId;
+        if (wsId) s.setFlightViewport(wsId, { panX: 0, panY: 0, zoom: 1.0 });
+      }
       // Shift+Arrow: navigate between pane groups
       if (e.shiftKey && !e.metaKey && !e.ctrlKey && !e.altKey) {
         const dirMap: Record<string, NavigationDirection> = {
