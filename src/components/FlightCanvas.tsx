@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useMemo, useCallback, useState } from "react";
+import ReactDOM from "react-dom";
 import { useWorkspaceStore } from "../stores/workspaceStore";
 import { FlightPod, snapToNeighbors, preventOverlap } from "./FlightPod";
 import { FlightHUD } from "./FlightHUD";
@@ -264,8 +265,8 @@ const WorkspaceFlightView = React.memo(function WorkspaceFlightView({
       canvasY = (cy - vp.panY) / vp.zoom;
     }
 
-    // Use position relative to the canvas container (avoids CSS zoom issues with fixed positioning)
-    setContextMenu({ screenX: cx, screenY: cy, canvasX, canvasY });
+    // Store raw clientX/clientY for popup positioning
+    setContextMenu({ screenX: e.clientX, screenY: e.clientY, canvasX, canvasY });
   }, [workspaceId]);
 
   // Close popup when clicking outside
@@ -310,12 +311,12 @@ const WorkspaceFlightView = React.memo(function WorkspaceFlightView({
       </div>
       {isActive && <FlightHUD workspaceId={workspaceId} zoom={zoom} />}
 
-      {/* Frosted glass context menu */}
-      {contextMenu && (
+      {/* Frosted glass context menu — rendered as portal to avoid CSS zoom offset */}
+      {contextMenu && ReactDOM.createPortal(
         <div
           ref={menuRef}
           style={{
-            position: "absolute",
+            position: "fixed",
             left: contextMenu.screenX,
             top: contextMenu.screenY,
             background: "rgba(36, 36, 36, 0.78)",
@@ -368,7 +369,8 @@ const WorkspaceFlightView = React.memo(function WorkspaceFlightView({
               {paths.length > 1 && <span style={menuStyles.itemPath}>{shortenPath(p)}</span>}
             </div>
           ))}
-        </div>
+        </div>,
+        document.body,
       )}
     </div>
   );
