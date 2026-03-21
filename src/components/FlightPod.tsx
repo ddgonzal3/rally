@@ -625,7 +625,7 @@ const EdgeSpawnButtons = React.memo(function EdgeSpawnButtons({
               style={edgeBtnStyle}
             >
               <svg width="14" height="14" viewBox="-2 -1 28 26" fill="none">
-                <path d={CLAUDE_PATH} fill="currentColor" fillRule="nonzero" />
+                <path d={CLAUDE_PATH} fill="#D97757" fillRule="nonzero" />
               </svg>
             </button>
             <button
