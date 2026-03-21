@@ -247,11 +247,31 @@ export const FlightPod = React.memo(function FlightPod({
     updateFlightPod(workspaceId, podId, { shellPtyId: ptyId } as Partial<FlightPodType>);
   }, [updateFlightPod, workspaceId, podId]);
 
+  const setFlightViewport = useWorkspaceStore((s) => s.setFlightViewport);
+
   const handleFocusClick = useCallback(() => {
+    // When zoomed out past threshold, click zooms to fit this pod in the viewport
+    if (zoom < ZOOM_TO_FIT_THRESHOLD) {
+      // Calculate zoom to fit pod with some padding (80% of viewport)
+      const container = podRef.current?.closest("[style*='overflow: hidden']") as HTMLElement | null;
+      if (container) {
+        const rect = container.getBoundingClientRect();
+        const viewW = rect.width * 0.8;
+        const viewH = rect.height * 0.8;
+        const fitZoom = Math.min(viewW / podWidth, viewH / podHeight, 1.0);
+        // Center the pod in the viewport
+        const centerX = rect.width / 2;
+        const centerY = rect.height / 2;
+        const panX = centerX - (podX + podWidth / 2) * fitZoom;
+        const panY = centerY - (podY + podHeight / 2) * fitZoom;
+        setFlightViewport(workspaceId, { panX, panY, zoom: fitZoom });
+      }
+      return;
+    }
     if (!podRef.current) return;
     const textarea = podRef.current.querySelector("textarea.xterm-helper-textarea") as HTMLTextAreaElement | null;
     if (textarea) textarea.focus();
-  }, []);
+  }, [zoom, podX, podY, podWidth, podHeight, workspaceId, setFlightViewport]);
 
   if (!podType) return null;
 
@@ -418,12 +438,13 @@ export const FlightPod = React.memo(function FlightPod({
   );
 });
 
-const EDGE_ZONE_SIZE = 24;
+const EDGE_ZONE_SIZE = 40;
 const SPAWN_GAP = 8;
+const ZOOM_TO_FIT_THRESHOLD = 0.65; // Below this zoom level, clicking a pod zooms to fit it
 
 const edgeBtnStyle: React.CSSProperties = {
-  width: 18,
-  height: 18,
+  width: 28,
+  height: 28,
   display: "flex",
   alignItems: "center",
   justifyContent: "center",
@@ -552,7 +573,7 @@ const EdgeSpawnButtons = React.memo(function EdgeSpawnButtons({
               title="Add Claude pod"
               style={edgeBtnStyle}
             >
-              <svg width="10" height="10" viewBox="0 0 12 12" fill="none">
+              <svg width="16" height="16" viewBox="0 0 12 12" fill="none">
                 <circle cx="6" cy="6" r="4.5" stroke="currentColor" strokeWidth="1.2" />
                 <text x="6" y="8.5" textAnchor="middle" fontSize="6" fill="currentColor" fontFamily="monospace">C</text>
               </svg>
@@ -563,7 +584,7 @@ const EdgeSpawnButtons = React.memo(function EdgeSpawnButtons({
               title="Add Terminal pod"
               style={edgeBtnStyle}
             >
-              <svg width="10" height="10" viewBox="0 0 12 12" fill="none">
+              <svg width="16" height="16" viewBox="0 0 12 12" fill="none">
                 <polyline points="2,3.5 5,6 2,8.5" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" />
                 <line x1="6" y1="8.5" x2="10" y2="8.5" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
               </svg>
