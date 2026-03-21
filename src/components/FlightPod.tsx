@@ -299,7 +299,7 @@ export const FlightPod = React.memo(function FlightPod({
       return;
     }
     // If showing the launcher, start Claude on click
-    if (isClaudePod && !claudeLaunched && !podPtyId) {
+    if (podType === "claude" && !claudeLaunched && !podPtyId) {
       setClaudeLaunched(true);
       return;
     }
@@ -307,7 +307,7 @@ export const FlightPod = React.memo(function FlightPod({
     if (!podRef.current) return;
     const mainTerminal = podRef.current.querySelector("[data-main-terminal] textarea.xterm-helper-textarea") as HTMLTextAreaElement | null;
     if (mainTerminal) mainTerminal.focus();
-  }, [zoom, podX, podY, podWidth, podHeight, workspaceId, setFlightViewport, isClaudePod, claudeLaunched, podPtyId]);
+  }, [zoom, podX, podY, podWidth, podHeight, workspaceId, setFlightViewport, podType, claudeLaunched, podPtyId]);
 
   if (!podType) return null;
 
