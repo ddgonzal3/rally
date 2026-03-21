@@ -41,45 +41,81 @@ const WorkspaceFlightView = React.memo(function WorkspaceFlightView({
   useEffect(() => {
     const el = containerRef.current;
     if (!el) return;
-    // Wheel handler — ONLY for zoom (Option+scroll or pinch)
-    // Regular scroll always goes to terminals, never pans
+    // Scroll/wheel handler:
+    // - Option+scroll or pinch (ctrlKey) = zoom
+    // - Scroll on empty canvas = enter pan mode (pans even over pods for 1.5s)
+    // - Scroll inside pod (no pan mode) = terminal scrolls normally
+    let panModeActive = false;
+    let panModeTimer: ReturnType<typeof setTimeout> | null = null;
+    const PAN_MODE_TIMEOUT = 1500; // ms of no scrolling before pan mode ends
+
     const wheelHandler = (e: WheelEvent) => {
-      // Only intercept Option+scroll or pinch (ctrlKey)
-      if (!e.altKey && !e.ctrlKey) return;
+      const isInsidePod = !!(e.target as HTMLElement).closest("[data-flight-pod]");
 
-      e.preventDefault();
-      const store = useWorkspaceStore.getState();
-      const vp = store.flightLayouts[workspaceId]?.viewport;
-      if (!vp) return;
+      // Option+scroll or pinch = zoom (always)
+      if (e.altKey || e.ctrlKey) {
+        e.preventDefault();
+        const store = useWorkspaceStore.getState();
+        const vp = store.flightLayouts[workspaceId]?.viewport;
+        if (!vp) return;
 
-      const zoomFactor = 1 - e.deltaY * (e.ctrlKey ? 0.01 : 0.003);
-      const newZoom = Math.max(FLIGHT_ZOOM_MIN, Math.min(FLIGHT_ZOOM_MAX, vp.zoom * zoomFactor));
-      const rect = el.getBoundingClientRect();
-      const parentZoom = rect.width / el.offsetWidth;
-      const cx = (e.clientX - rect.left) / parentZoom;
-      const cy = (e.clientY - rect.top) / parentZoom;
+        const zoomFactor = 1 - e.deltaY * (e.ctrlKey ? 0.01 : 0.003);
+        const newZoom = Math.max(FLIGHT_ZOOM_MIN, Math.min(FLIGHT_ZOOM_MAX, vp.zoom * zoomFactor));
+        const rect = el.getBoundingClientRect();
+        const parentZoom = rect.width / el.offsetWidth;
+        const cx = (e.clientX - rect.left) / parentZoom;
+        const cy = (e.clientY - rect.top) / parentZoom;
 
-      let pointX: number, pointY: number;
-      if (vp.zoom >= 1.0) {
-        pointX = cx / vp.zoom - vp.panX;
-        pointY = cy / vp.zoom - vp.panY;
-      } else {
-        pointX = (cx - vp.panX) / vp.zoom;
-        pointY = (cy - vp.panY) / vp.zoom;
+        let pointX: number, pointY: number;
+        if (vp.zoom >= 1.0) {
+          pointX = cx / vp.zoom - vp.panX;
+          pointY = cy / vp.zoom - vp.panY;
+        } else {
+          pointX = (cx - vp.panX) / vp.zoom;
+          pointY = (cy - vp.panY) / vp.zoom;
+        }
+
+        let newPanX: number, newPanY: number;
+        if (newZoom >= 1.0) {
+          newPanX = cx / newZoom - pointX;
+          newPanY = cy / newZoom - pointY;
+        } else {
+          newPanX = cx - pointX * newZoom;
+          newPanY = cy - pointY * newZoom;
+        }
+
+        store.setFlightViewport(workspaceId, {
+          panX: newPanX, panY: newPanY, zoom: newZoom,
+        });
+        return;
       }
 
-      let newPanX: number, newPanY: number;
-      if (newZoom >= 1.0) {
-        newPanX = cx / newZoom - pointX;
-        newPanY = cy / newZoom - pointY;
-      } else {
-        newPanX = cx - pointX * newZoom;
-        newPanY = cy - pointY * newZoom;
+      // Scroll on empty canvas = activate pan mode
+      if (!isInsidePod) {
+        panModeActive = true;
       }
 
-      store.setFlightViewport(workspaceId, {
-        panX: newPanX, panY: newPanY, zoom: newZoom,
-      });
+      // If pan mode is active, pan (even over pods)
+      if (panModeActive) {
+        e.preventDefault();
+        const store = useWorkspaceStore.getState();
+        const vp = store.flightLayouts[workspaceId]?.viewport;
+        if (vp) {
+          store.setFlightViewport(workspaceId, {
+            panX: vp.panX - e.deltaX,
+            panY: vp.panY - e.deltaY,
+          });
+        }
+        // Reset the timeout — pan mode stays active while scrolling
+        if (panModeTimer) clearTimeout(panModeTimer);
+        panModeTimer = setTimeout(() => {
+          panModeActive = false;
+          panModeTimer = null;
+        }, PAN_MODE_TIMEOUT);
+        return;
+      }
+
+      // Otherwise: inside a pod, no modifiers, no pan mode → let terminal scroll
     };
     el.addEventListener("wheel", wheelHandler, { passive: false });
 
