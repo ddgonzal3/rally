@@ -528,6 +528,7 @@ export const FlightPod = React.memo(function FlightPod({
       </div>
     </div>
 
+    {/* Edge spawn buttons disabled — use right-click on canvas instead
     <EdgeSpawnButtons
       podX={podX}
       podY={podY}
@@ -537,7 +538,7 @@ export const FlightPod = React.memo(function FlightPod({
       podCwd={podCwd}
       workspaceId={workspaceId}
       podId={podId}
-    />
+    /> */}
     </>
   );
 });
