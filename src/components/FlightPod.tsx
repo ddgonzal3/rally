@@ -298,11 +298,16 @@ export const FlightPod = React.memo(function FlightPod({
       }
       return;
     }
+    // If showing the launcher, start Claude on click
+    if (isClaudePod && !claudeLaunched && !podPtyId) {
+      setClaudeLaunched(true);
+      return;
+    }
     // Focus the MAIN terminal (first one, not shell)
     if (!podRef.current) return;
     const mainTerminal = podRef.current.querySelector("[data-main-terminal] textarea.xterm-helper-textarea") as HTMLTextAreaElement | null;
     if (mainTerminal) mainTerminal.focus();
-  }, [zoom, podX, podY, podWidth, podHeight, workspaceId, setFlightViewport]);
+  }, [zoom, podX, podY, podWidth, podHeight, workspaceId, setFlightViewport, isClaudePod, claudeLaunched, podPtyId]);
 
   if (!podType) return null;
 
@@ -435,12 +440,6 @@ export const FlightPod = React.memo(function FlightPod({
               </svg>
               <span style={shellFooterStyles.label}>{cwdBasename}</span>
             </div>
-            <svg
-              width="10" height="10" viewBox="0 0 10 10" fill="none"
-              style={{ flexShrink: 0, transform: shellExpanded ? "rotate(180deg)" : "none", transition: "transform 150ms ease" }}
-            >
-              <path d="M2 4l3 3 3-3" stroke="#666" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" />
-            </svg>
           </div>
 
           {/* Expandable shell terminal */}
