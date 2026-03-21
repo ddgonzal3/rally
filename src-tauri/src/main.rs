@@ -457,6 +457,10 @@ fn main() {
 
             let win = app.get_webview_window("main").unwrap();
 
+            // Make webview background transparent so vibrancy shows through
+            use tauri::webview::Color;
+            let _ = win.set_background_color(Some(Color(0, 0, 0, 0)));
+
             // Apply frosted glass vibrancy effect — native macOS NSVisualEffectView
             use tauri::window::{Effect, EffectState, EffectsBuilder};
             let _ = win.set_effects(
