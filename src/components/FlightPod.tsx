@@ -856,6 +856,7 @@ const headerStyles: Record<string, React.CSSProperties> = {
     cursor: "grab",
     flexShrink: 0,
     borderBottom: "1px solid rgba(255, 255, 255, 0.06)",
+    background: "rgb(30, 30, 30)",
   },
   left: {
     display: "flex",
@@ -1023,6 +1024,7 @@ const shellFooterStyles: Record<string, React.CSSProperties> = {
     cursor: "pointer",
     userSelect: "none",
     flexShrink: 0,
+    background: "rgb(30, 30, 30)",
   },
   left: {
     display: "flex",
