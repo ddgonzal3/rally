@@ -2,6 +2,7 @@ import React, { useRef, useCallback, useMemo } from "react";
 import { useWorkspaceStore } from "../stores/workspaceStore";
 import { Terminal } from "./Terminal";
 import { ClaudeTerminalWrapper } from "./ClaudeTerminalWrapper";
+import { CLAUDE_PATH } from "./FileIcons";
 import type { FlightPod as FlightPodType } from "../lib/types";
 import {
   FLIGHT_MIN_CLAUDE_WIDTH,
@@ -312,9 +313,8 @@ export const FlightPod = React.memo(function FlightPod({
         {/* Left: icon + title */}
         <div style={headerStyles.left}>
           {isClaudePod ? (
-            <svg width="12" height="12" viewBox="0 0 12 12" fill="none" style={headerStyles.icon}>
-              <circle cx="6" cy="6" r="5" stroke="#999" strokeWidth="1.2" />
-              <text x="6" y="9" textAnchor="middle" fontSize="7" fill="#999" fontFamily="monospace">C</text>
+            <svg width="14" height="14" viewBox="-2 -1 28 26" style={{ ...headerStyles.icon, flexShrink: 0 }}>
+              <path d={CLAUDE_PATH} fill="#D97757" fillRule="nonzero" />
             </svg>
           ) : (
             <svg width="12" height="12" viewBox="0 0 12 12" fill="none" style={headerStyles.icon}>
@@ -433,6 +433,7 @@ export const FlightPod = React.memo(function FlightPod({
       podZIndex={podZIndex}
       podCwd={podCwd}
       workspaceId={workspaceId}
+      podId={podId}
     />
     </>
   );
@@ -464,6 +465,7 @@ const EdgeSpawnButtons = React.memo(function EdgeSpawnButtons({
   podZIndex,
   podCwd,
   workspaceId,
+  podId,
 }: {
   podX: number;
   podY: number;
@@ -472,8 +474,37 @@ const EdgeSpawnButtons = React.memo(function EdgeSpawnButtons({
   podZIndex: number;
   podCwd: string;
   workspaceId: string;
+  podId: string;
 }) {
   const addFlightPodAt = useWorkspaceStore((s) => s.addFlightPodAt);
+
+  const blockedEdges = useWorkspaceStore((s) => {
+    const pods = s.flightLayouts[workspaceId]?.pods;
+    if (!pods) return "";
+    const blocked: string[] = [];
+    const ADJACENT_THRESHOLD = 20;
+    for (const p of pods) {
+      if (p.id === podId) continue;
+      // Check if p overlaps vertically with our pod (for left/right adjacency)
+      const vOverlap = p.y < podY + podHeight && p.y + p.height > podY;
+      // Check if p overlaps horizontally with our pod (for top/bottom adjacency)
+      const hOverlap = p.x < podX + podWidth && p.x + p.width > podX;
+
+      if (vOverlap) {
+        // Right edge blocked if another pod's left edge is close to our right edge
+        if (Math.abs(p.x - (podX + podWidth)) < ADJACENT_THRESHOLD) blocked.push("right");
+        // Left edge blocked if another pod's right edge is close to our left edge
+        if (Math.abs((p.x + p.width) - podX) < ADJACENT_THRESHOLD) blocked.push("left");
+      }
+      if (hOverlap) {
+        // Bottom edge blocked if another pod's top edge is close to our bottom edge
+        if (Math.abs(p.y - (podY + podHeight)) < ADJACENT_THRESHOLD) blocked.push("bottom");
+        // Top edge blocked if another pod's bottom edge is close to our top edge
+        if (Math.abs((p.y + p.height) - podY) < ADJACENT_THRESHOLD) blocked.push("top");
+      }
+    }
+    return blocked.join(",");
+  });
 
   const spawn = useCallback(
     (type: "claude" | "terminal", edge: "top" | "right" | "bottom" | "left") => {
@@ -558,9 +589,11 @@ const EdgeSpawnButtons = React.memo(function EdgeSpawnButtons({
     },
   ];
 
+  const blockedSet = new Set(blockedEdges ? blockedEdges.split(",") : []);
+
   return (
     <>
-      {edges.map(({ edge, zoneStyle, btnContainerStyle }) => (
+      {edges.filter(({ edge }) => !blockedSet.has(edge)).map(({ edge, zoneStyle, btnContainerStyle }) => (
         <div
           key={edge}
           className="flight-edge-zone"
@@ -573,9 +606,8 @@ const EdgeSpawnButtons = React.memo(function EdgeSpawnButtons({
               title="Add Claude pod"
               style={edgeBtnStyle}
             >
-              <svg width="16" height="16" viewBox="0 0 12 12" fill="none">
-                <circle cx="6" cy="6" r="4.5" stroke="currentColor" strokeWidth="1.2" />
-                <text x="6" y="8.5" textAnchor="middle" fontSize="6" fill="currentColor" fontFamily="monospace">C</text>
+              <svg width="14" height="14" viewBox="-2 -1 28 26" fill="none">
+                <path d={CLAUDE_PATH} fill="currentColor" fillRule="nonzero" />
               </svg>
             </button>
             <button
