@@ -1999,7 +1999,6 @@ export function App() {
                     width: fileExplorerWidth,
                     minWidth: fileExplorerWidth,
                     flexShrink: 0,
-                    background: "var(--bg-app)",
                   }}
                 >
                   {explorerView === "workspaces" && (
@@ -2287,7 +2286,7 @@ const styles: Record<string, React.CSSProperties> = {
     height: "100vh",
     width: "100vw",
     overflow: "hidden",
-    background: "transparent",
+    background: "var(--bg-app)",
   },
   titlebar: {
     height: 34,
@@ -2299,7 +2298,6 @@ const styles: Record<string, React.CSSProperties> = {
     userSelect: "none",
     position: "relative",
     paddingLeft: 70,
-    background: "var(--bg-app)",
   },
   titlebarLeft: {
     position: "absolute",

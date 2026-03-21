@@ -19,8 +19,7 @@
         "decorations": true,
         "titleBarStyle": "Overlay",
         "hiddenTitle": true,
-        "acceptFirstMouse": true,
-        "transparent": true
+        "acceptFirstMouse": true
       }
     ],
     "withGlobalTauri": true,
