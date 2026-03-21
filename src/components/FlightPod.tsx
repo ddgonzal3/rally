@@ -8,6 +8,10 @@ import {
   FLIGHT_MIN_CLAUDE_HEIGHT,
   FLIGHT_MIN_TERMINAL_WIDTH,
   FLIGHT_MIN_TERMINAL_HEIGHT,
+  FLIGHT_DEFAULT_CLAUDE_WIDTH,
+  FLIGHT_DEFAULT_CLAUDE_HEIGHT,
+  FLIGHT_DEFAULT_TERMINAL_WIDTH,
+  FLIGHT_DEFAULT_TERMINAL_HEIGHT,
 } from "../lib/types";
 
 const SNAP_THRESHOLD = 12; // pixels in canvas space
@@ -257,6 +261,7 @@ export const FlightPod = React.memo(function FlightPod({
     : podHeight - 32;
 
   return (
+    <>
     <div
       ref={podRef}
       data-flight-pod={podId}
@@ -399,6 +404,174 @@ export const FlightPod = React.memo(function FlightPod({
         </svg>
       </div>
     </div>
+
+    <EdgeSpawnButtons
+      podX={podX}
+      podY={podY}
+      podWidth={podWidth}
+      podHeight={podHeight}
+      podZIndex={podZIndex}
+      podCwd={podCwd}
+      workspaceId={workspaceId}
+    />
+    </>
+  );
+});
+
+const EDGE_ZONE_SIZE = 24;
+const SPAWN_GAP = 8;
+
+const edgeBtnStyle: React.CSSProperties = {
+  width: 18,
+  height: 18,
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+  background: "none",
+  border: "none",
+  cursor: "pointer",
+  borderRadius: 4,
+  padding: 0,
+  color: "#666",
+};
+
+const EdgeSpawnButtons = React.memo(function EdgeSpawnButtons({
+  podX,
+  podY,
+  podWidth,
+  podHeight,
+  podZIndex,
+  podCwd,
+  workspaceId,
+}: {
+  podX: number;
+  podY: number;
+  podWidth: number;
+  podHeight: number;
+  podZIndex: number;
+  podCwd: string;
+  workspaceId: string;
+}) {
+  const addFlightPodAt = useWorkspaceStore((s) => s.addFlightPodAt);
+
+  const spawn = useCallback(
+    (type: "claude" | "terminal", edge: "top" | "right" | "bottom" | "left") => {
+      const defaultW = type === "claude" ? FLIGHT_DEFAULT_CLAUDE_WIDTH : FLIGHT_DEFAULT_TERMINAL_WIDTH;
+      const defaultH = type === "claude" ? FLIGHT_DEFAULT_CLAUDE_HEIGHT : FLIGHT_DEFAULT_TERMINAL_HEIGHT;
+      let x: number, y: number, w: number, h: number;
+      switch (edge) {
+        case "right":
+          x = podX + podWidth + SPAWN_GAP; y = podY; w = defaultW; h = podHeight; break;
+        case "left":
+          x = podX - defaultW - SPAWN_GAP; y = podY; w = defaultW; h = podHeight; break;
+        case "bottom":
+          x = podX; y = podY + podHeight + SPAWN_GAP; w = podWidth; h = defaultH; break;
+        case "top":
+          x = podX; y = podY - defaultH - SPAWN_GAP; w = podWidth; h = defaultH; break;
+      }
+      addFlightPodAt(workspaceId, type, x, y, w, h, podCwd);
+    },
+    [addFlightPodAt, podX, podY, podWidth, podHeight, podCwd, workspaceId],
+  );
+
+  const edges: Array<{
+    edge: "top" | "right" | "bottom" | "left";
+    zoneStyle: React.CSSProperties;
+    btnContainerStyle: React.CSSProperties;
+  }> = [
+    {
+      edge: "right",
+      zoneStyle: {
+        position: "absolute",
+        left: podX + podWidth,
+        top: podY,
+        width: EDGE_ZONE_SIZE,
+        height: podHeight,
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+      },
+      btnContainerStyle: { display: "flex", flexDirection: "column", gap: 2 },
+    },
+    {
+      edge: "left",
+      zoneStyle: {
+        position: "absolute",
+        left: podX - EDGE_ZONE_SIZE,
+        top: podY,
+        width: EDGE_ZONE_SIZE,
+        height: podHeight,
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+      },
+      btnContainerStyle: { display: "flex", flexDirection: "column", gap: 2 },
+    },
+    {
+      edge: "bottom",
+      zoneStyle: {
+        position: "absolute",
+        left: podX,
+        top: podY + podHeight,
+        width: podWidth,
+        height: EDGE_ZONE_SIZE,
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+      },
+      btnContainerStyle: { display: "flex", flexDirection: "row", gap: 2 },
+    },
+    {
+      edge: "top",
+      zoneStyle: {
+        position: "absolute",
+        left: podX,
+        top: podY - EDGE_ZONE_SIZE,
+        width: podWidth,
+        height: EDGE_ZONE_SIZE,
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+      },
+      btnContainerStyle: { display: "flex", flexDirection: "row", gap: 2 },
+    },
+  ];
+
+  return (
+    <>
+      {edges.map(({ edge, zoneStyle, btnContainerStyle }) => (
+        <div
+          key={edge}
+          className="flight-edge-zone"
+          style={{ ...zoneStyle, zIndex: podZIndex + 1, cursor: "default" }}
+        >
+          <div className="flight-edge-btns" style={btnContainerStyle}>
+            <button
+              className="flight-edge-btn"
+              onClick={(e) => { e.stopPropagation(); spawn("claude", edge); }}
+              title="Add Claude pod"
+              style={edgeBtnStyle}
+            >
+              <svg width="10" height="10" viewBox="0 0 12 12" fill="none">
+                <circle cx="6" cy="6" r="4.5" stroke="currentColor" strokeWidth="1.2" />
+                <text x="6" y="8.5" textAnchor="middle" fontSize="6" fill="currentColor" fontFamily="monospace">C</text>
+              </svg>
+            </button>
+            <button
+              className="flight-edge-btn"
+              onClick={(e) => { e.stopPropagation(); spawn("terminal", edge); }}
+              title="Add Terminal pod"
+              style={edgeBtnStyle}
+            >
+              <svg width="10" height="10" viewBox="0 0 12 12" fill="none">
+                <polyline points="2,3.5 5,6 2,8.5" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" />
+                <line x1="6" y1="8.5" x2="10" y2="8.5" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
+              </svg>
+            </button>
+          </div>
+        </div>
+      ))}
+    </>
   );
 });
 

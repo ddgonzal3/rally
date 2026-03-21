@@ -531,6 +531,7 @@ interface WorkspaceState {
   // Flight Mode actions
   getOrCreateFlightLayout: (workspaceId: string) => FlightLayout;
   addFlightPod: (workspaceId: string, type: "claude" | "terminal") => void;
+  addFlightPodAt: (workspaceId: string, type: "claude" | "terminal", x: number, y: number, width: number, height: number, cwd: string) => void;
   removeFlightPod: (workspaceId: string, podId: string) => void;
   updateFlightPod: (workspaceId: string, podId: string, updates: Partial<FlightPod>) => void;
   setFlightViewport: (workspaceId: string, viewport: Partial<FlightViewport>) => void;
@@ -3264,6 +3265,25 @@ export const useWorkspaceStore = create<WorkspaceState>()(
       id: crypto.randomUUID(), type: "terminal",
       x: -vp.panX / vp.zoom + 100 + staggerX, y: -vp.panY / vp.zoom + 100 + staggerY,
       width, height, cwd, title: cwd.split("/").pop() || "Terminal", zIndex: nextZ,
+    };
+    set((s) => ({
+      flightLayouts: { ...s.flightLayouts, [workspaceId]: { ...layout, pods: [...layout.pods, pod] } },
+      flightNextZIndex: { ...s.flightNextZIndex, [workspaceId]: nextZ },
+    }));
+  },
+
+  addFlightPodAt: (workspaceId: string, type: "claude" | "terminal", x: number, y: number, width: number, height: number, cwd: string) => {
+    const layout = get().getOrCreateFlightLayout(workspaceId);
+    const nextZ = (get().flightNextZIndex[workspaceId] ?? 1) + 1;
+    const pod: FlightPod = type === "claude" ? {
+      id: crypto.randomUUID(), type: "claude",
+      x, y, width, height, cwd,
+      title: cwd.split("/").pop() || "Claude Code",
+      zIndex: nextZ, shellExpanded: false, shellHeight: FLIGHT_DEFAULT_SHELL_HEIGHT,
+    } : {
+      id: crypto.randomUUID(), type: "terminal",
+      x, y, width, height, cwd,
+      title: cwd.split("/").pop() || "Terminal", zIndex: nextZ,
     };
     set((s) => ({
       flightLayouts: { ...s.flightLayouts, [workspaceId]: { ...layout, pods: [...layout.pods, pod] } },
