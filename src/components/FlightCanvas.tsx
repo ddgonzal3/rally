@@ -83,15 +83,19 @@ const WorkspaceFlightView = React.memo(function WorkspaceFlightView({
     };
     el.addEventListener("wheel", wheelHandler, { passive: false });
 
-    // Shift+mousemove to pan — no click needed, just hold Shift and move
+    // Modifier+mousemove gestures:
+    // Shift+move = pan canvas, Option+move = drag pod under cursor
     let lastX = 0;
     let lastY = 0;
     let isPanning = false;
+    let isDraggingPod = false;
+    let dragPodId: string | null = null;
 
     const moveHandler = (e: MouseEvent) => {
-      if (e.shiftKey) {
+      // Shift+move = pan
+      if (e.shiftKey && !e.altKey) {
+        if (isDraggingPod) { isDraggingPod = false; dragPodId = null; }
         if (!isPanning) {
-          // Start panning
           isPanning = true;
           lastX = e.clientX;
           lastY = e.clientY;
@@ -103,13 +107,57 @@ const WorkspaceFlightView = React.memo(function WorkspaceFlightView({
         lastX = e.clientX;
         lastY = e.clientY;
         if (dx !== 0 || dy !== 0) {
-          useWorkspaceStore.getState().setFlightViewport(workspaceId, {
-            panX: (useWorkspaceStore.getState().flightLayouts[workspaceId]?.viewport.panX ?? 0) + dx,
-            panY: (useWorkspaceStore.getState().flightLayouts[workspaceId]?.viewport.panY ?? 0) + dy,
+          const s = useWorkspaceStore.getState();
+          s.setFlightViewport(workspaceId, {
+            panX: (s.flightLayouts[workspaceId]?.viewport.panX ?? 0) + dx,
+            panY: (s.flightLayouts[workspaceId]?.viewport.panY ?? 0) + dy,
           });
         }
-      } else if (isPanning) {
+        return;
+      }
+      if (isPanning && !e.shiftKey) {
         isPanning = false;
+        el.style.cursor = "";
+      }
+
+      // Option+move = drag pod under cursor
+      if (e.altKey && !e.shiftKey) {
+        if (!isDraggingPod) {
+          // Find which pod the cursor is over
+          const podEl = (e.target as HTMLElement).closest("[data-flight-pod]");
+          if (!podEl) return;
+          dragPodId = podEl.getAttribute("data-flight-pod");
+          if (!dragPodId) return;
+          isDraggingPod = true;
+          lastX = e.clientX;
+          lastY = e.clientY;
+          el.style.cursor = "move";
+          // Bring to front
+          useWorkspaceStore.getState().bringPodToFront(workspaceId, dragPodId);
+          return;
+        }
+        if (!dragPodId) return;
+        const s = useWorkspaceStore.getState();
+        const vp = s.flightLayouts[workspaceId]?.viewport;
+        const z = vp?.zoom ?? 1;
+        const dx = (e.clientX - lastX) / z;
+        const dy = (e.clientY - lastY) / z;
+        lastX = e.clientX;
+        lastY = e.clientY;
+        if (dx !== 0 || dy !== 0) {
+          const pod = s.flightLayouts[workspaceId]?.pods.find((p) => p.id === dragPodId);
+          if (pod) {
+            s.updateFlightPod(workspaceId, dragPodId, {
+              x: pod.x + dx,
+              y: pod.y + dy,
+            } as any);
+          }
+        }
+        return;
+      }
+      if (isDraggingPod && !e.altKey) {
+        isDraggingPod = false;
+        dragPodId = null;
         el.style.cursor = "";
       }
     };
@@ -117,6 +165,11 @@ const WorkspaceFlightView = React.memo(function WorkspaceFlightView({
     const keyUpHandler = (e: KeyboardEvent) => {
       if (e.key === "Shift" && isPanning) {
         isPanning = false;
+        el.style.cursor = "";
+      }
+      if (e.key === "Alt" && isDraggingPod) {
+        isDraggingPod = false;
+        dragPodId = null;
         el.style.cursor = "";
       }
     };
