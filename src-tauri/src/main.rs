@@ -456,6 +456,15 @@ fn main() {
             app.set_menu(menu)?;
 
             let win = app.get_webview_window("main").unwrap();
+
+            // Apply frosted glass vibrancy effect — native macOS NSVisualEffectView
+            use tauri::window::{Effect, EffectState, EffectsBuilder};
+            let _ = win.set_effects(
+                EffectsBuilder::new()
+                    .effect(Effect::UnderWindowBackground)
+                    .state(EffectState::Active)
+                    .build(),
+            );
             // Only position on largest monitor's left half on first launch.
             // On subsequent launches, tauri_plugin_window_state restores the
             // saved position/size before setup runs — we must not override it.
