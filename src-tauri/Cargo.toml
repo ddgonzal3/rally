@@ -21,6 +21,10 @@ uuid = { version = "1", features = ["v4"] }
 base64 = "0.22"
 regex = "1.12.3"
 trash = "5"
+objc2 = "0.6"
+objc2-foundation = { version = "0.3", features = ["NSString", "NSValue"] }
+objc2-app-kit = { version = "0.3", features = ["NSColor", "NSWindow", "NSView", "NSVisualEffectView", "NSResponder"] }
+objc2-web-kit = { version = "0.3", features = ["WKWebView"] }
 notify = "6"
 tiny_http = { version = "0.12", optional = true }
 

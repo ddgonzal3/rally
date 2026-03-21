@@ -149,7 +149,7 @@ const canvasStyles: Record<string, React.CSSProperties> = {
     flex: 1,
     position: "relative",
     overflow: "hidden",
-    background: "radial-gradient(ellipse at 30% 20%, rgba(30, 32, 38, 1) 0%, rgba(14, 14, 16, 1) 70%)",
+    background: "transparent",
     cursor: "default",
   },
   viewport: {
