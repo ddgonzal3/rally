@@ -427,12 +427,18 @@ export const FlightPod = React.memo(function FlightPod({
       {/* Shell footer + expandable panel (Claude pods only) */}
       {isClaudePod && (
         <>
-          {/* Footer bar — click to toggle, drag to resize when expanded */}
+          {/* Footer bar — click to toggle, top edge drag to resize when expanded */}
           <div
             onClick={(e) => { if (!shellResizeRef.current) { e.stopPropagation(); handleShellToggle(e); } }}
-            onMouseDown={shellExpanded ? handleShellResizeStart : undefined}
-            style={{ ...shellFooterStyles.bar, cursor: shellExpanded ? "ns-resize" : "pointer" }}
+            style={{ ...shellFooterStyles.bar, cursor: "pointer", position: "relative" as const }}
           >
+            {/* Thin resize handle at top edge of footer (only when expanded) */}
+            {shellExpanded && (
+              <div
+                onMouseDown={handleShellResizeStart}
+                style={{ position: "absolute", top: -2, left: 0, right: 0, height: 6, cursor: "ns-resize", zIndex: 2 }}
+              />
+            )}
             <div style={shellFooterStyles.left}>
               <svg width="12" height="12" viewBox="0 0 16 16" fill="none" style={{ flexShrink: 0 }}>
                 <path d="M4 5l3 3-3 3" stroke="var(--status-green)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
@@ -732,8 +738,9 @@ const headerStyles: Record<string, React.CSSProperties> = {
     flexShrink: 0,
   },
   title: {
-    fontSize: 12,
-    color: "#999",
+    fontSize: 13,
+    fontWeight: 500,
+    color: "var(--text-primary)",
     overflow: "hidden",
     textOverflow: "ellipsis",
     whiteSpace: "nowrap",
@@ -830,10 +837,12 @@ const shellFooterStyles: Record<string, React.CSSProperties> = {
     gap: 5,
   },
   label: {
-    fontSize: 10,
-    fontWeight: 600,
-    color: "#666",
-    letterSpacing: "0.03em",
-    textTransform: "uppercase" as const,
+    fontSize: 13,
+    fontWeight: 500,
+    color: "var(--text-primary)",
+    overflow: "hidden",
+    textOverflow: "ellipsis",
+    whiteSpace: "nowrap" as const,
+    lineHeight: 1,
   },
 };
