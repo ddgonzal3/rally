@@ -54,6 +54,7 @@ const WorkspaceFlightView = React.memo(function WorkspaceFlightView({
 
       // Option+scroll or pinch = zoom (always)
       if (e.altKey || e.ctrlKey) {
+        if (e.altKey) zoomActiveWithOption = true; // Block pod drag while Option held
         e.preventDefault();
         const store = useWorkspaceStore.getState();
         const vp = store.flightLayouts[workspaceId]?.viewport;
@@ -128,6 +129,7 @@ const WorkspaceFlightView = React.memo(function WorkspaceFlightView({
     let isPanning = false;
     let isDraggingPod = false;
     let dragPodId: string | null = null;
+    let zoomActiveWithOption = false; // Set when Option+scroll zooms — blocks pod drag until Option released
 
     const moveHandler = (e: MouseEvent) => {
       // Shift+move = pan
@@ -160,8 +162,8 @@ const WorkspaceFlightView = React.memo(function WorkspaceFlightView({
         el.classList.remove("flight-panning");
       }
 
-      // Option+move = drag pod under cursor
-      if (e.altKey && !e.shiftKey) {
+      // Option+move = drag pod under cursor (but NOT if we just zoomed with Option)
+      if (e.altKey && !e.shiftKey && !zoomActiveWithOption) {
         if (!isDraggingPod) {
           // Find which pod the cursor is over
           const podEl = (e.target as HTMLElement).closest("[data-flight-pod]");
@@ -219,10 +221,13 @@ const WorkspaceFlightView = React.memo(function WorkspaceFlightView({
         el.style.cursor = "";
         el.classList.remove("flight-panning");
       }
-      if (e.key === "Alt" && isDraggingPod) {
-        isDraggingPod = false;
-        dragPodId = null;
-        el.style.cursor = "";
+      if (e.key === "Alt") {
+        zoomActiveWithOption = false; // Reset zoom lock when Option released
+        if (isDraggingPod) {
+          isDraggingPod = false;
+          dragPodId = null;
+          el.style.cursor = "";
+        }
       }
     };
 
