@@ -48,25 +48,18 @@ const WorkspaceFlightView = React.memo(function WorkspaceFlightView({
       if (e.altKey || e.ctrlKey) {
         const zoomFactor = 1 - e.deltaY * (e.ctrlKey ? 0.01 : 0.002);
         const newZoom = Math.max(FLIGHT_ZOOM_MIN, Math.min(FLIGHT_ZOOM_MAX, vp.zoom * zoomFactor));
-        // The viewport div uses CSS zoom (not transform scale) for crisp text.
-        // getBoundingClientRect() returns viewport pixels (affected by parent CSS zoom).
-        // clientX/clientY are always in viewport pixels.
-        // We need cursor position in canvas coordinates (pre-flight-zoom).
+        // Viewport uses: transform: translate3d(panX, panY, 0) + CSS zoom.
+        // With CSS zoom on same element as translate, the visual position of
+        // a canvas point P in the container is: (panX + P.x) * zoom.
+        // To keep the point under cursor fixed when zoom changes:
+        //   panX' = panX + cursorInContainer * (1/newZoom - 1/oldZoom)
         const rect = el.getBoundingClientRect();
-        // el is the canvas container (parent of the zoomed viewport).
-        // Effective zoom from ancestor CSS zooms (body zoom, NOT our flight zoom):
         const parentZoom = rect.width / el.offsetWidth;
-        // Cursor position relative to canvas in canvas CSS pixels:
-        const cursorX = (e.clientX - rect.left) / parentZoom;
-        const cursorY = (e.clientY - rect.top) / parentZoom;
-        // The viewport is translated by panX/panY (in CSS pixels) then CSS-zoomed.
-        // A canvas point P maps to screen as: screenPos = pan + P * zoom
-        // To keep the point under cursor fixed: pan' + P * zoom' = pan + P * zoom
-        // Solving: pan' = cursorPos - (cursorPos - pan) * (zoom' / zoom)
-        // But with CSS zoom, cursorPos is in the PARENT's coord space, while pan is too.
+        const cursorInContainerX = (e.clientX - rect.left) / parentZoom;
+        const cursorInContainerY = (e.clientY - rect.top) / parentZoom;
         store.setFlightViewport(workspaceId, {
-          panX: cursorX - (cursorX - vp.panX) * (newZoom / vp.zoom),
-          panY: cursorY - (cursorY - vp.panY) * (newZoom / vp.zoom),
+          panX: vp.panX + cursorInContainerX * (1 / newZoom - 1 / vp.zoom),
+          panY: vp.panY + cursorInContainerY * (1 / newZoom - 1 / vp.zoom),
           zoom: newZoom,
         });
       } else {
