@@ -10,6 +10,72 @@ import {
   FLIGHT_MIN_TERMINAL_HEIGHT,
 } from "../lib/types";
 
+const SNAP_THRESHOLD = 12; // pixels in canvas space
+
+interface SnapEdges {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+/** Snap a pod's edges to nearby pod edges. Returns adjusted x/y (and optionally w/h for resize). */
+function snapToNeighbors(
+  moving: SnapEdges,
+  others: SnapEdges[],
+  mode: "drag" | "resize",
+): SnapEdges {
+  let { x, y, width, height } = moving;
+  const left = x;
+  const right = x + width;
+  const top = y;
+  const bottom = y + height;
+
+  let snappedX = false;
+  let snappedY = false;
+
+  for (const o of others) {
+    const oLeft = o.x;
+    const oRight = o.x + o.width;
+    const oTop = o.y;
+    const oBottom = o.y + o.height;
+
+    if (!snappedX) {
+      if (mode === "drag") {
+        // Left edge → other left or right edge
+        if (Math.abs(left - oLeft) < SNAP_THRESHOLD) { x = oLeft; snappedX = true; }
+        else if (Math.abs(left - oRight) < SNAP_THRESHOLD) { x = oRight; snappedX = true; }
+        // Right edge → other left or right edge
+        else if (Math.abs(right - oLeft) < SNAP_THRESHOLD) { x = oLeft - width; snappedX = true; }
+        else if (Math.abs(right - oRight) < SNAP_THRESHOLD) { x = oRight - width; snappedX = true; }
+      } else {
+        // Resize: right edge snaps
+        if (Math.abs(right - oLeft) < SNAP_THRESHOLD) { width = oLeft - x; snappedX = true; }
+        else if (Math.abs(right - oRight) < SNAP_THRESHOLD) { width = oRight - x; snappedX = true; }
+      }
+    }
+
+    if (!snappedY) {
+      if (mode === "drag") {
+        // Top edge → other top or bottom edge
+        if (Math.abs(top - oTop) < SNAP_THRESHOLD) { y = oTop; snappedY = true; }
+        else if (Math.abs(top - oBottom) < SNAP_THRESHOLD) { y = oBottom; snappedY = true; }
+        // Bottom edge → other top or bottom edge
+        else if (Math.abs(bottom - oTop) < SNAP_THRESHOLD) { y = oTop - height; snappedY = true; }
+        else if (Math.abs(bottom - oBottom) < SNAP_THRESHOLD) { y = oBottom - height; snappedY = true; }
+      } else {
+        // Resize: bottom edge snaps
+        if (Math.abs(bottom - oTop) < SNAP_THRESHOLD) { height = oTop - y; snappedY = true; }
+        else if (Math.abs(bottom - oBottom) < SNAP_THRESHOLD) { height = oBottom - y; snappedY = true; }
+      }
+    }
+
+    if (snappedX && snappedY) break;
+  }
+
+  return { x, y, width, height };
+}
+
 interface FlightPodProps {
   podId: string;
   workspaceId: string;
@@ -89,9 +155,18 @@ export const FlightPod = React.memo(function FlightPod({
       if (!dragState.current) return;
       const dx = (me.clientX - dragState.current.startX) / zoom;
       const dy = (me.clientY - dragState.current.startY) / zoom;
+      const rawX = dragState.current.origX + dx;
+      const rawY = dragState.current.origY + dy;
+
+      // Get other pods for snapping
+      const store = useWorkspaceStore.getState();
+      const pods = store.flightLayouts[workspaceId]?.pods ?? [];
+      const others = pods.filter((p) => p.id !== podId).map((p) => ({ x: p.x, y: p.y, width: p.width, height: p.height }));
+      const snapped = snapToNeighbors({ x: rawX, y: rawY, width: podWidth, height: podHeight }, others, "drag");
+
       updateFlightPod(workspaceId, podId, {
-        x: dragState.current.origX + dx,
-        y: dragState.current.origY + dy,
+        x: snapped.x,
+        y: snapped.y,
       } as Partial<FlightPodType>);
     };
 
@@ -106,7 +181,7 @@ export const FlightPod = React.memo(function FlightPod({
 
     window.addEventListener("mousemove", onMouseMove);
     window.addEventListener("mouseup", onMouseUp);
-  }, [bringPodToFront, podId, podX, podY, updateFlightPod, workspaceId, zoom]);
+  }, [bringPodToFront, podId, podX, podY, podWidth, podHeight, updateFlightPod, workspaceId, zoom]);
 
   const handleResizeMouseDown = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
@@ -125,9 +200,18 @@ export const FlightPod = React.memo(function FlightPod({
       if (!resizeState.current) return;
       const dx = (me.clientX - resizeState.current.startX) / zoom;
       const dy = (me.clientY - resizeState.current.startY) / zoom;
+      const rawW = Math.max(minW, resizeState.current.origW + dx);
+      const rawH = Math.max(minH, resizeState.current.origH + dy);
+
+      // Get other pods for snapping
+      const store = useWorkspaceStore.getState();
+      const pods = store.flightLayouts[workspaceId]?.pods ?? [];
+      const others = pods.filter((p) => p.id !== podId).map((p) => ({ x: p.x, y: p.y, width: p.width, height: p.height }));
+      const snapped = snapToNeighbors({ x: podX, y: podY, width: rawW, height: rawH }, others, "resize");
+
       updateFlightPod(workspaceId, podId, {
-        width: Math.max(minW, resizeState.current.origW + dx),
-        height: Math.max(minH, resizeState.current.origH + dy),
+        width: Math.max(minW, snapped.width),
+        height: Math.max(minH, snapped.height),
       } as Partial<FlightPodType>);
     };
 
@@ -139,7 +223,7 @@ export const FlightPod = React.memo(function FlightPod({
 
     window.addEventListener("mousemove", onMouseMove);
     window.addEventListener("mouseup", onMouseUp);
-  }, [podHeight, podId, podType, podWidth, updateFlightPod, workspaceId, zoom]);
+  }, [podHeight, podId, podType, podWidth, podX, podY, updateFlightPod, workspaceId, zoom]);
 
   const handleClose = useCallback((e: React.MouseEvent) => {
     e.stopPropagation();
