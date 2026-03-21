@@ -866,7 +866,6 @@ export function App() {
     let unlistenNewClaude: UnlistenFn | null = null;
     let unlistenNewWindow: UnlistenFn | null = null;
     let unlistenOpenCurrentInNewWindow: UnlistenFn | null = null;
-    let unlistenToggleMode: UnlistenFn | null = null;
     let unlistenWorkspacesUpdated: UnlistenFn | null = null;
 
     listen("rally-menu-new-file", () => {
@@ -987,21 +986,28 @@ export function App() {
         ),
       );
 
-    listen("rally-menu-toggle-mode", () => {
+    let unlistenFlightMode: UnlistenFn | undefined;
+    let unlistenDevMode: UnlistenFn | undefined;
+    listen("rally-menu-flight-mode", () => {
       const s = useWorkspaceStore.getState();
       const wsId = s.activeWorkspaceId;
-      if (!wsId) return;
-      const current = s.workspaceModes[wsId] ?? "flight";
-      const next = current === "flight" ? "dev" : current === "dev" ? "product" : "flight";
-      s.setWorkspaceMode(wsId, next);
+      if (wsId) s.setWorkspaceMode(wsId, "flight");
     })
       .then((fn) => {
         if (cancelled) fn();
-        else unlistenToggleMode = fn;
+        else unlistenFlightMode = fn;
       })
-      .catch((e) =>
-        console.error("Failed to listen for toggle-mode menu event:", e),
-      );
+      .catch(() => {});
+    listen("rally-menu-dev-mode", () => {
+      const s = useWorkspaceStore.getState();
+      const wsId = s.activeWorkspaceId;
+      if (wsId) s.setWorkspaceMode(wsId, "dev");
+    })
+      .then((fn) => {
+        if (cancelled) fn();
+        else unlistenDevMode = fn;
+      })
+      .catch(() => {});
 
     listen("rally-workspaces-updated", () => {
       void loadWorkspaces({ keepNullActive: forceNoWorkspaceSelection });
@@ -1022,7 +1028,8 @@ export function App() {
       unlistenNewClaude?.();
       unlistenNewWindow?.();
       unlistenOpenCurrentInNewWindow?.();
-      unlistenToggleMode?.();
+      unlistenFlightMode?.();
+      unlistenDevMode?.();
       unlistenWorkspacesUpdated?.();
     };
   }, [loadWorkspaces, forceNoWorkspaceSelection]);
@@ -2058,23 +2065,6 @@ export function App() {
               position: "relative",
             }}
           >
-            {/* Product Mode */}
-            {activeWorkspaceId && activeRootPath && (
-              <div
-                style={{
-                  display: isProductMode ? "flex" : "none",
-                  flex: 1,
-                  flexDirection: "column" as const,
-                  minWidth: 0,
-                  minHeight: 0,
-                }}
-              >
-                <ProductChatPanel
-                  rootPath={activeRootPath}
-                  workspaceId={activeWorkspaceId}
-                />
-              </div>
-            )}
             {/* Flight Mode */}
             <div
               style={{

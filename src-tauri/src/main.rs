@@ -296,8 +296,11 @@ fn main() {
                     "file-open-current-workspace-new-window" => {
                         emit_to_focused_window(app, "rally-menu-open-current-workspace-new-window");
                     }
-                    "view-toggle-mode" => {
-                        emit_to_focused_window(app, "rally-menu-toggle-mode");
+                    "view-flight-mode" => {
+                        emit_to_focused_window(app, "rally-menu-flight-mode");
+                    }
+                    "view-dev-mode" => {
+                        emit_to_focused_window(app, "rally-menu-dev-mode");
                     }
                     "view-zoom-in" => {
                         emit_to_focused_window(app, "rally-zoom-in");
@@ -436,8 +439,13 @@ fn main() {
                 )
                 .separator()
                 .item(
-                    &MenuItemBuilder::with_id("view-toggle-mode", "Cycle View Mode (Flight/Dev/Product)")
-                        .accelerator("CmdOrCtrl+Shift+M")
+                    &MenuItemBuilder::with_id("view-flight-mode", "Flight Mode")
+                        .accelerator("CmdOrCtrl+Shift+F")
+                        .build(app)?,
+                )
+                .item(
+                    &MenuItemBuilder::with_id("view-dev-mode", "Dev Mode")
+                        .accelerator("CmdOrCtrl+Shift+D")
                         .build(app)?,
                 )
                 .separator()
