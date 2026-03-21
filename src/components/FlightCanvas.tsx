@@ -47,8 +47,8 @@ const WorkspaceFlightView = React.memo(function WorkspaceFlightView({
       if (!vp) return;
 
       const isInsidePod = !!(e.target as HTMLElement).closest("[data-flight-pod]");
-      const isZoom = e.ctrlKey; // Pinch gesture
-      const isPan = e.altKey || !isInsidePod; // Option+scroll OR scroll on empty canvas
+      const isZoom = e.ctrlKey || e.altKey; // Pinch gesture OR Option+scroll
+      const isPan = !isInsidePod; // Scroll on empty canvas
 
       // If scrolling inside a pod without modifiers, let the terminal handle it
       if (isInsidePod && !e.altKey && !e.ctrlKey) return;
@@ -56,7 +56,7 @@ const WorkspaceFlightView = React.memo(function WorkspaceFlightView({
       e.preventDefault();
 
       if (isZoom) {
-        const zoomFactor = 1 - e.deltaY * 0.01;
+        const zoomFactor = 1 - e.deltaY * (e.ctrlKey ? 0.01 : 0.003);
         const newZoom = Math.max(FLIGHT_ZOOM_MIN, Math.min(FLIGHT_ZOOM_MAX, vp.zoom * zoomFactor));
         const rect = el.getBoundingClientRect();
         const parentZoom = rect.width / el.offsetWidth;
