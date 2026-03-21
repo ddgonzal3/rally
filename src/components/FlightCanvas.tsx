@@ -49,8 +49,11 @@ const WorkspaceFlightView = React.memo(function WorkspaceFlightView({
         const zoomFactor = 1 - e.deltaY * (e.ctrlKey ? 0.01 : 0.002);
         const newZoom = Math.max(FLIGHT_ZOOM_MIN, Math.min(FLIGHT_ZOOM_MAX, vp.zoom * zoomFactor));
         const rect = el.getBoundingClientRect();
-        const cursorX = e.clientX - rect.left;
-        const cursorY = e.clientY - rect.top;
+        // Account for CSS zoom on the body — getBoundingClientRect() returns
+        // zoomed coords, but clientX/clientY are in viewport (unzoomed) space.
+        const cssZoom = parseFloat(getComputedStyle(el).zoom) || 1;
+        const cursorX = (e.clientX - rect.left) / cssZoom;
+        const cursorY = (e.clientY - rect.top) / cssZoom;
         store.setFlightViewport(workspaceId, {
           panX: cursorX - (cursorX - vp.panX) * (newZoom / vp.zoom),
           panY: cursorY - (cursorY - vp.panY) * (newZoom / vp.zoom),
