@@ -14,6 +14,7 @@ import { showContextMenu } from "./lib/contextMenu";
 import { AddWorkspaceModal } from "./components/AddWorkspaceModal";
 import {
   DEFAULT_BOTTOM_RATIO,
+  FLIGHT_DEFAULT_SHELL_HEIGHT,
   findFirstGroupInSubtree,
   findNeighborGroup,
   replaceNode,
@@ -1299,8 +1300,32 @@ export function App() {
         const wsId = s.activeWorkspaceId;
         if (!wsId) return;
 
+        const mode = s.workspaceModes[wsId] ?? "flight";
+
+        // In Flight Mode: toggle shell on the focused pod
+        if (mode === "flight") {
+          const flightLayout = s.flightLayouts[wsId];
+          if (!flightLayout) return;
+          // Find the pod with the highest zIndex (focused pod)
+          const focusedPod = flightLayout.pods
+            .filter((p) => p.type === "claude")
+            .sort((a, b) => b.zIndex - a.zIndex)[0];
+          if (!focusedPod) return;
+
+          if (!focusedPod.shellExpanded) {
+            // Collapsed → expand to default height
+            s.togglePodShell(wsId, focusedPod.id);
+          } else if (focusedPod.shellHeight > FLIGHT_DEFAULT_SHELL_HEIGHT + 10) {
+            // Bigger than default → snap to default
+            s.updateFlightPod(wsId, focusedPod.id, { shellHeight: FLIGHT_DEFAULT_SHELL_HEIGHT } as any);
+          } else {
+            // At default → collapse
+            s.togglePodShell(wsId, focusedPod.id);
+          }
+          return;
+        }
+
         // In product mode, toggle the shell panel
-        const mode = s.workspaceModes[wsId];
         if (mode === "product") {
           const rootPath = s.getActivePath(wsId);
           if (rootPath) {

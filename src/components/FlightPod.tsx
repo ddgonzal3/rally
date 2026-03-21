@@ -244,6 +244,30 @@ export const FlightPod = React.memo(function FlightPod({
     togglePodShell(workspaceId, podId);
   }, [togglePodShell, workspaceId, podId]);
 
+  // Drag the footer bar to resize the shell panel
+  const shellResizeRef = useRef<{ startY: number; origHeight: number } | null>(null);
+  const handleShellResizeStart = useCallback((e: React.MouseEvent) => {
+    if (!shellExpanded) return; // Only resize when expanded
+    e.preventDefault();
+    e.stopPropagation();
+    shellResizeRef.current = { startY: e.clientY, origHeight: shellHeight };
+
+    const onMove = (me: MouseEvent) => {
+      if (!shellResizeRef.current) return;
+      // Dragging UP = larger shell (negative dy = increase height)
+      const dy = (me.clientY - shellResizeRef.current.startY) / zoom;
+      const newH = Math.max(80, shellResizeRef.current.origHeight - dy);
+      updateFlightPod(workspaceId, podId, { shellHeight: newH } as Partial<FlightPodType>);
+    };
+    const onUp = () => {
+      shellResizeRef.current = null;
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+    };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+  }, [shellExpanded, shellHeight, zoom, workspaceId, podId, updateFlightPod]);
+
   const handlePtySpawned = useCallback((ptyId: string) => {
     updateFlightPod(workspaceId, podId, { ptyId } as Partial<FlightPodType>);
   }, [updateFlightPod, workspaceId, podId]);
@@ -398,17 +422,18 @@ export const FlightPod = React.memo(function FlightPod({
       {/* Shell footer + expandable panel (Claude pods only) */}
       {isClaudePod && (
         <>
-          {/* Footer bar — always visible, click to toggle shell */}
+          {/* Footer bar — click to toggle, drag to resize when expanded */}
           <div
-            onClick={(e) => { e.stopPropagation(); handleShellToggle(e); }}
-            style={shellFooterStyles.bar}
+            onClick={(e) => { if (!shellResizeRef.current) { e.stopPropagation(); handleShellToggle(e); } }}
+            onMouseDown={shellExpanded ? handleShellResizeStart : undefined}
+            style={{ ...shellFooterStyles.bar, cursor: shellExpanded ? "ns-resize" : "pointer" }}
           >
             <div style={shellFooterStyles.left}>
               <svg width="12" height="12" viewBox="0 0 16 16" fill="none" style={{ flexShrink: 0 }}>
                 <path d="M4 5l3 3-3 3" stroke="var(--status-green)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
                 <line x1="9" y1="11" x2="13" y2="11" stroke="var(--status-green)" strokeWidth="1.5" strokeLinecap="round" />
               </svg>
-              <span style={shellFooterStyles.label}>Terminal</span>
+              <span style={shellFooterStyles.label}>{cwdBasename}</span>
             </div>
             <svg
               width="10" height="10" viewBox="0 0 10 10" fill="none"
@@ -428,19 +453,8 @@ export const FlightPod = React.memo(function FlightPod({
               minHeight: 0,
               background: "var(--terminal-bg)",
               overflow: "hidden",
-              position: "relative",
             }}
           >
-            {/* Collapse button inside the terminal */}
-            <button
-              onClick={(e) => { e.stopPropagation(); handleShellToggle(e); }}
-              style={shellFooterStyles.collapseBtn}
-              title="Collapse terminal"
-            >
-              <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
-                <path d="M2 6l3-3 3 3" stroke="#666" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" />
-              </svg>
-            </button>
             <Terminal
               cwd={podCwd}
               ptyId={shellPtyId}
@@ -822,21 +836,5 @@ const shellFooterStyles: Record<string, React.CSSProperties> = {
     color: "#666",
     letterSpacing: "0.03em",
     textTransform: "uppercase" as const,
-  },
-  collapseBtn: {
-    position: "absolute",
-    top: 4,
-    right: 6,
-    zIndex: 5,
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    width: 20,
-    height: 20,
-    background: "rgba(255, 255, 255, 0.06)",
-    border: "none",
-    borderRadius: 4,
-    cursor: "pointer",
-    padding: 0,
   },
 };
