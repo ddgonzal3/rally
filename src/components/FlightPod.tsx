@@ -125,12 +125,14 @@ interface FlightPodProps {
   podId: string;
   workspaceId: string;
   zoom: number;
+  isSelected?: boolean;
 }
 
 export const FlightPod = React.memo(function FlightPod({
   podId,
   workspaceId,
   zoom,
+  isSelected,
 }: FlightPodProps) {
   const updateFlightPod = useWorkspaceStore((s) => s.updateFlightPod);
   const removeFlightPod = useWorkspaceStore((s) => s.removeFlightPod);
@@ -378,9 +380,9 @@ export const FlightPod = React.memo(function FlightPod({
         display: "flex",
         flexDirection: "column",
         background: "rgba(20, 20, 20, 0.85)",
-        border: "1px solid rgba(255, 255, 255, 0.08)",
+        border: isSelected ? "1px solid rgba(100, 160, 255, 0.5)" : "1px solid rgba(255, 255, 255, 0.08)",
         borderRadius: 10,
-        boxShadow: "0 2px 12px rgba(0, 0, 0, 0.2)",
+        boxShadow: isSelected ? "0 0 0 2px rgba(100, 160, 255, 0.3), 0 2px 12px rgba(0, 0, 0, 0.2)" : "0 2px 12px rgba(0, 0, 0, 0.2)",
         overflow: "hidden",
         userSelect: "none",
       }}
