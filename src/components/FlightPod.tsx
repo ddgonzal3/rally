@@ -165,6 +165,7 @@ export const FlightPod = React.memo(function FlightPod({
   const podRef = useRef<HTMLDivElement>(null);
   const dragState = useRef<{ startX: number; startY: number; origX: number; origY: number } | null>(null);
   const resizeState = useRef<{ startX: number; startY: number; origW: number; origH: number } | null>(null);
+  const suppressClickRef = useRef(false);
 
   // Track whether user has clicked "Start" for Claude pods (when no ptyId on restore)
   const [claudeLaunched, setClaudeLaunched] = useState(!!podPtyId);
@@ -207,6 +208,7 @@ export const FlightPod = React.memo(function FlightPod({
 
     const onMouseMove = (me: MouseEvent) => {
       if (!dragState.current) return;
+      suppressClickRef.current = true; // Suppress click after drag
       const dx = (me.clientX - dragState.current.startX) / zoom;
       const dy = (me.clientY - dragState.current.startY) / zoom;
       const rawX = dragState.current.origX + dx;
@@ -232,6 +234,8 @@ export const FlightPod = React.memo(function FlightPod({
       });
       window.removeEventListener("mousemove", onMouseMove);
       window.removeEventListener("mouseup", onMouseUp);
+      // Reset suppressClick after the click event fires
+      setTimeout(() => { suppressClickRef.current = false; }, 0);
     };
 
     window.addEventListener("mousemove", onMouseMove);
@@ -325,6 +329,8 @@ export const FlightPod = React.memo(function FlightPod({
   const setFlightViewport = useWorkspaceStore((s) => s.setFlightViewport);
 
   const handleFocusClick = useCallback((e: React.MouseEvent) => {
+    // Don't fire after a drag
+    if (suppressClickRef.current) return;
     // Don't steal focus if clicking inside the shell panel
     if ((e.target as HTMLElement).closest("[data-shell-panel]")) return;
 

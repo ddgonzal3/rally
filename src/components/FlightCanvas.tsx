@@ -259,8 +259,10 @@ const WorkspaceFlightView = React.memo(function WorkspaceFlightView({
       let current = { ...start };
 
       const onMove = (me: MouseEvent) => {
-        const mcx = (me.clientX - rect.left) / parentZoom;
-        const mcy = (me.clientY - rect.top) / parentZoom;
+        const freshRect = el.getBoundingClientRect();
+        const freshParentZoom = freshRect.width / el.offsetWidth;
+        const mcx = (me.clientX - freshRect.left) / freshParentZoom;
+        const mcy = (me.clientY - freshRect.top) / freshParentZoom;
         current = toCanvas(mcx, mcy);
         marqueeActive = true;
 
