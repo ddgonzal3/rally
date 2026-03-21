@@ -7,6 +7,7 @@ import { FileExplorer } from "./components/FileExplorer";
 import { GlobalConfigExplorer } from "./components/SettingsPanel";
 import { ScriptEditor } from "./components/ScriptEditor";
 import { PaneLayout } from "./components/PaneLayout";
+import { FlightCanvas } from "./components/FlightCanvas";
 import { useWorkspaceStore } from "./stores/workspaceStore";
 import { api, openUrl } from "./lib/tauri";
 import { showContextMenu } from "./lib/contextMenu";
@@ -2073,7 +2074,7 @@ export function App() {
                 overflow: "hidden",
               }}
             >
-              <PaneLayout />
+              <FlightCanvas />
               <BuildStatusDrawer />
             </div>
             <BuildStatusBar />
