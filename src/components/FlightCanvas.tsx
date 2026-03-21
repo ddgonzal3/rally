@@ -41,58 +41,84 @@ const WorkspaceFlightView = React.memo(function WorkspaceFlightView({
   useEffect(() => {
     const el = containerRef.current;
     if (!el) return;
-    const handler = (e: WheelEvent) => {
+    // Wheel handler — ONLY for zoom (Option+scroll or pinch)
+    // Regular scroll always goes to terminals, never pans
+    const wheelHandler = (e: WheelEvent) => {
+      // Only intercept Option+scroll or pinch (ctrlKey)
+      if (!e.altKey && !e.ctrlKey) return;
+
+      e.preventDefault();
       const store = useWorkspaceStore.getState();
       const vp = store.flightLayouts[workspaceId]?.viewport;
       if (!vp) return;
 
-      const isInsidePod = !!(e.target as HTMLElement).closest("[data-flight-pod]");
-      const isZoom = e.ctrlKey || e.altKey; // Pinch gesture OR Option+scroll
-      const isPan = !isInsidePod; // Scroll on empty canvas
+      const zoomFactor = 1 - e.deltaY * (e.ctrlKey ? 0.01 : 0.003);
+      const newZoom = Math.max(FLIGHT_ZOOM_MIN, Math.min(FLIGHT_ZOOM_MAX, vp.zoom * zoomFactor));
+      const rect = el.getBoundingClientRect();
+      const parentZoom = rect.width / el.offsetWidth;
+      const cx = (e.clientX - rect.left) / parentZoom;
+      const cy = (e.clientY - rect.top) / parentZoom;
 
-      // If scrolling inside a pod without modifiers, let the terminal handle it
-      if (isInsidePod && !e.altKey && !e.ctrlKey) return;
-
-      e.preventDefault();
-
-      if (isZoom) {
-        const zoomFactor = 1 - e.deltaY * (e.ctrlKey ? 0.01 : 0.003);
-        const newZoom = Math.max(FLIGHT_ZOOM_MIN, Math.min(FLIGHT_ZOOM_MAX, vp.zoom * zoomFactor));
-        const rect = el.getBoundingClientRect();
-        const parentZoom = rect.width / el.offsetWidth;
-        const cx = (e.clientX - rect.left) / parentZoom;
-        const cy = (e.clientY - rect.top) / parentZoom;
-
-        let pointX: number, pointY: number;
-        if (vp.zoom >= 1.0) {
-          pointX = cx / vp.zoom - vp.panX;
-          pointY = cy / vp.zoom - vp.panY;
-        } else {
-          pointX = (cx - vp.panX) / vp.zoom;
-          pointY = (cy - vp.panY) / vp.zoom;
-        }
-
-        let newPanX: number, newPanY: number;
-        if (newZoom >= 1.0) {
-          newPanX = cx / newZoom - pointX;
-          newPanY = cy / newZoom - pointY;
-        } else {
-          newPanX = cx - pointX * newZoom;
-          newPanY = cy - pointY * newZoom;
-        }
-
-        store.setFlightViewport(workspaceId, {
-          panX: newPanX, panY: newPanY, zoom: newZoom,
-        });
-      } else if (isPan) {
-        store.setFlightViewport(workspaceId, {
-          panX: vp.panX - e.deltaX,
-          panY: vp.panY - e.deltaY,
-        });
+      let pointX: number, pointY: number;
+      if (vp.zoom >= 1.0) {
+        pointX = cx / vp.zoom - vp.panX;
+        pointY = cy / vp.zoom - vp.panY;
+      } else {
+        pointX = (cx - vp.panX) / vp.zoom;
+        pointY = (cy - vp.panY) / vp.zoom;
       }
+
+      let newPanX: number, newPanY: number;
+      if (newZoom >= 1.0) {
+        newPanX = cx / newZoom - pointX;
+        newPanY = cy / newZoom - pointY;
+      } else {
+        newPanX = cx - pointX * newZoom;
+        newPanY = cy - pointY * newZoom;
+      }
+
+      store.setFlightViewport(workspaceId, {
+        panX: newPanX, panY: newPanY, zoom: newZoom,
+      });
     };
-    el.addEventListener("wheel", handler, { passive: false });
-    return () => el.removeEventListener("wheel", handler);
+    el.addEventListener("wheel", wheelHandler, { passive: false });
+
+    // Cmd+drag to pan the canvas
+    const mouseDownHandler = (e: MouseEvent) => {
+      if (!e.metaKey || e.button !== 0) return;
+      e.preventDefault();
+      const startX = e.clientX;
+      const startY = e.clientY;
+      const store = useWorkspaceStore.getState();
+      const vp = store.flightLayouts[workspaceId]?.viewport;
+      if (!vp) return;
+      const startPanX = vp.panX;
+      const startPanY = vp.panY;
+
+      el.style.cursor = "grabbing";
+
+      const onMove = (me: MouseEvent) => {
+        const dx = me.clientX - startX;
+        const dy = me.clientY - startY;
+        useWorkspaceStore.getState().setFlightViewport(workspaceId, {
+          panX: startPanX + dx,
+          panY: startPanY + dy,
+        });
+      };
+      const onUp = () => {
+        el.style.cursor = "";
+        window.removeEventListener("mousemove", onMove);
+        window.removeEventListener("mouseup", onUp);
+      };
+      window.addEventListener("mousemove", onMove);
+      window.addEventListener("mouseup", onUp);
+    };
+    el.addEventListener("mousedown", mouseDownHandler);
+
+    return () => {
+      el.removeEventListener("wheel", wheelHandler);
+      el.removeEventListener("mousedown", mouseDownHandler);
+    };
   }, [workspaceId, setFlightViewport]);
 
   // Right-click on empty canvas → context menu to add pods at click position
