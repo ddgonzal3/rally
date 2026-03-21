@@ -82,7 +82,7 @@ export function snapToNeighbors(
   return { x, y, width, height };
 }
 
-const MIN_POD_GAP = 4; // Minimum pixels between pods — prevents overlap
+const MIN_POD_GAP = 8; // Minimum pixels between pods — prevents overlap
 
 /** Push a pod out of any overlapping neighbors. Returns adjusted x/y. */
 export function preventOverlap(
@@ -373,7 +373,7 @@ export const FlightPod = React.memo(function FlightPod({
         background: "rgba(20, 20, 20, 0.85)",
         border: "1px solid rgba(255, 255, 255, 0.08)",
         borderRadius: 10,
-        boxShadow: "0 8px 32px rgba(0, 0, 0, 0.4)",
+        boxShadow: "0 2px 12px rgba(0, 0, 0, 0.2)",
         overflow: "hidden",
         userSelect: "none",
       }}
