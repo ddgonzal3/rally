@@ -393,9 +393,12 @@ export const FlightPod = React.memo(function FlightPod({
           e.stopPropagation();
           const store = useWorkspaceStore.getState();
           const GAP = 8;
-          const splitPod = (dir: "right" | "left" | "below" | "above") => {
-            const w = podType === "claude" ? FLIGHT_DEFAULT_CLAUDE_WIDTH : FLIGHT_DEFAULT_TERMINAL_WIDTH;
-            const h = podType === "claude" ? FLIGHT_DEFAULT_CLAUDE_HEIGHT : FLIGHT_DEFAULT_TERMINAL_HEIGHT;
+          const layout = store.flightLayouts[workspaceId];
+          if (!layout) return;
+
+          const insertPod = (dir: "right" | "left" | "below" | "above") => {
+            const w = FLIGHT_DEFAULT_CLAUDE_WIDTH;
+            const h = FLIGHT_DEFAULT_CLAUDE_HEIGHT;
             let nx: number, ny: number, nw: number, nh: number;
             switch (dir) {
               case "right": nx = podX + podWidth + GAP; ny = podY; nw = w; nh = podHeight; break;
@@ -403,13 +406,29 @@ export const FlightPod = React.memo(function FlightPod({
               case "below": nx = podX; ny = podY + podHeight + GAP; nw = podWidth; nh = h; break;
               case "above": nx = podX; ny = podY - h - GAP; nw = podWidth; nh = h; break;
             }
+
+            // Push existing pods out of the way
+            const pushAmount = dir === "right" || dir === "left" ? nw + GAP : nh + GAP;
+            for (const p of layout.pods) {
+              if (p.id === podId) continue;
+              if (dir === "right" && p.x >= nx - GAP && p.y < podY + podHeight && p.y + p.height > podY) {
+                store.updateFlightPod(workspaceId, p.id, { x: p.x + pushAmount } as any);
+              } else if (dir === "left" && p.x + p.width <= podX + GAP && p.y < podY + podHeight && p.y + p.height > podY) {
+                store.updateFlightPod(workspaceId, p.id, { x: p.x - pushAmount } as any);
+              } else if (dir === "below" && p.y >= ny - GAP && p.x < podX + podWidth && p.x + p.width > podX) {
+                store.updateFlightPod(workspaceId, p.id, { y: p.y + pushAmount } as any);
+              } else if (dir === "above" && p.y + p.height <= podY + GAP && p.x < podX + podWidth && p.x + p.width > podX) {
+                store.updateFlightPod(workspaceId, p.id, { y: p.y - pushAmount } as any);
+              }
+            }
+
             store.addFlightPodAt(workspaceId, "claude", nx, ny, nw, nh, podCwd);
           };
           showContextMenu([
-            { label: "Split Right", action: () => splitPod("right") },
-            { label: "Split Left", action: () => splitPod("left") },
-            { label: "Split Above", action: () => splitPod("above") },
-            { label: "Split Below", action: () => splitPod("below") },
+            { label: "New Right", action: () => insertPod("right") },
+            { label: "New Left", action: () => insertPod("left") },
+            { label: "New Above", action: () => insertPod("above") },
+            { label: "New Below", action: () => insertPod("below") },
           ]);
         }}
         style={headerStyles.header}
