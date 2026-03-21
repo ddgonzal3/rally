@@ -45,7 +45,7 @@ const WorkspaceFlightView = React.memo(function WorkspaceFlightView({
       const vp = store.flightLayouts[workspaceId]?.viewport;
       if (!vp) return;
       if (e.altKey) {
-        const zoomFactor = 1 - e.deltaY * 0.002;
+        const zoomFactor = 1 + e.deltaY * 0.002;
         const newZoom = Math.max(FLIGHT_ZOOM_MIN, Math.min(FLIGHT_ZOOM_MAX, vp.zoom * zoomFactor));
         const rect = el.getBoundingClientRect();
         const cursorX = e.clientX - rect.left;
