@@ -27,6 +27,16 @@ import type {
   ShellPanel,
   ThemeName,
   DetectedPort,
+  FlightPod,
+  FlightLayout,
+  FlightViewport,
+} from "../lib/types";
+import {
+  FLIGHT_DEFAULT_CLAUDE_WIDTH,
+  FLIGHT_DEFAULT_CLAUDE_HEIGHT,
+  FLIGHT_DEFAULT_TERMINAL_WIDTH,
+  FLIGHT_DEFAULT_TERMINAL_HEIGHT,
+  FLIGHT_DEFAULT_SHELL_HEIGHT,
 } from "../lib/types";
 import { detectPorts } from "../lib/portDetection";
 import {
@@ -143,6 +153,7 @@ type PersistedWorkspaceState = {
   unifiedGitPanelPath: string | null;
   unifiedGitPanelTab: "changes" | "pr";
   workspaceModes: Record<string, WorkspaceMode>;
+  flightLayouts: Record<string, FlightLayout>;
 };
 
 const workspacePersistStorage = (() => {
@@ -159,6 +170,7 @@ const workspacePersistStorage = (() => {
     unifiedGitPanelPath: string | null;
     unifiedGitPanelTab: string;
     workspaceModes: PersistedWorkspaceState["workspaceModes"];
+    flightLayouts: PersistedWorkspaceState["flightLayouts"];
     version: number;
   };
   let lastRefs: PersistRefs | null = null;
@@ -185,6 +197,7 @@ const workspacePersistStorage = (() => {
       unifiedGitPanelPath: state.unifiedGitPanelPath,
       unifiedGitPanelTab: state.unifiedGitPanelTab,
       workspaceModes: state.workspaceModes,
+      flightLayouts: state.flightLayouts,
       version,
     };
   }
@@ -205,7 +218,8 @@ const workspacePersistStorage = (() => {
       a.unifiedGitPanelOpen === b.unifiedGitPanelOpen &&
       a.unifiedGitPanelPath === b.unifiedGitPanelPath &&
       a.unifiedGitPanelTab === b.unifiedGitPanelTab &&
-      a.workspaceModes === b.workspaceModes;
+      a.workspaceModes === b.workspaceModes &&
+      a.flightLayouts === b.flightLayouts;
   }
 
   function flushPending() {
@@ -326,6 +340,10 @@ interface WorkspaceState {
   /** Current UI theme */
   theme: ThemeName;
   setTheme: (theme: ThemeName) => void;
+
+  // Flight Mode state
+  flightLayouts: Record<string, FlightLayout>;
+  flightNextZIndex: Record<string, number>;
 
   // Dirty pane tracking
   markPaneDirty: (paneId: string) => void;
@@ -496,6 +514,15 @@ interface WorkspaceState {
     filePaths: string[],
     position: "top" | "bottom" | "left" | "right" | "center"
   ) => void;
+
+  // Flight Mode actions
+  getOrCreateFlightLayout: (workspaceId: string) => FlightLayout;
+  addFlightPod: (workspaceId: string, type: "claude" | "terminal") => void;
+  removeFlightPod: (workspaceId: string, podId: string) => void;
+  updateFlightPod: (workspaceId: string, podId: string, updates: Partial<FlightPod>) => void;
+  setFlightViewport: (workspaceId: string, viewport: Partial<FlightViewport>) => void;
+  bringPodToFront: (workspaceId: string, podId: string) => void;
+  togglePodShell: (workspaceId: string, podId: string) => void;
 }
 
 function sanitizePane(raw: unknown): Pane | null {
@@ -777,6 +804,8 @@ export const useWorkspaceStore = create<WorkspaceState>()(
   productSessions: {},
   shellPanels: {},
   rallyConfigs: {},
+  flightLayouts: {},
+  flightNextZIndex: {},
   statusBarDrawer: null,
   detectedPorts: {},
   addDetectedPort: (workspaceId, port) => {
@@ -3159,6 +3188,111 @@ export const useWorkspaceStore = create<WorkspaceState>()(
       },
     }));
   },
+
+  // --- Flight Mode actions ---
+
+  getOrCreateFlightLayout: (workspaceId: string): FlightLayout => {
+    const existing = get().flightLayouts[workspaceId];
+    if (existing) return existing;
+    const ws = get().workspaces.find((w) => w.id === workspaceId);
+    const idx = get().activePathIndex[workspaceId] ?? 0;
+    const cwd = ws?.paths[idx] ?? ws?.paths[0] ?? "";
+    const podId = crypto.randomUUID();
+    const layout: FlightLayout = {
+      pods: [{
+        id: podId, type: "claude",
+        x: 100, y: 100,
+        width: FLIGHT_DEFAULT_CLAUDE_WIDTH, height: FLIGHT_DEFAULT_CLAUDE_HEIGHT,
+        cwd, title: cwd.split("/").pop() || "Claude Code",
+        zIndex: 1, shellExpanded: false, shellHeight: FLIGHT_DEFAULT_SHELL_HEIGHT,
+      }],
+      viewport: { panX: 0, panY: 0, zoom: 1.0 },
+    };
+    set((s) => ({
+      flightLayouts: { ...s.flightLayouts, [workspaceId]: layout },
+      flightNextZIndex: { ...s.flightNextZIndex, [workspaceId]: 2 },
+    }));
+    return layout;
+  },
+
+  addFlightPod: (workspaceId: string, type: "claude" | "terminal") => {
+    const layout = get().getOrCreateFlightLayout(workspaceId);
+    const nextZ = (get().flightNextZIndex[workspaceId] ?? 1) + 1;
+    const ws = get().workspaces.find((w) => w.id === workspaceId);
+    const idx = get().activePathIndex[workspaceId] ?? 0;
+    const cwd = ws?.paths[idx] ?? ws?.paths[0] ?? "";
+    const vp = layout.viewport;
+    const offsetIndex = layout.pods.length;
+    const staggerX = (offsetIndex % 5) * 40;
+    const staggerY = (offsetIndex % 5) * 40;
+    const isClaudeType = type === "claude";
+    const width = isClaudeType ? FLIGHT_DEFAULT_CLAUDE_WIDTH : FLIGHT_DEFAULT_TERMINAL_WIDTH;
+    const height = isClaudeType ? FLIGHT_DEFAULT_CLAUDE_HEIGHT : FLIGHT_DEFAULT_TERMINAL_HEIGHT;
+    const pod: FlightPod = isClaudeType ? {
+      id: crypto.randomUUID(), type: "claude",
+      x: -vp.panX / vp.zoom + 100 + staggerX, y: -vp.panY / vp.zoom + 100 + staggerY,
+      width, height, cwd, title: cwd.split("/").pop() || "Claude Code",
+      zIndex: nextZ, shellExpanded: false, shellHeight: FLIGHT_DEFAULT_SHELL_HEIGHT,
+    } : {
+      id: crypto.randomUUID(), type: "terminal",
+      x: -vp.panX / vp.zoom + 100 + staggerX, y: -vp.panY / vp.zoom + 100 + staggerY,
+      width, height, cwd, title: cwd.split("/").pop() || "Terminal", zIndex: nextZ,
+    };
+    set((s) => ({
+      flightLayouts: { ...s.flightLayouts, [workspaceId]: { ...layout, pods: [...layout.pods, pod] } },
+      flightNextZIndex: { ...s.flightNextZIndex, [workspaceId]: nextZ },
+    }));
+  },
+
+  removeFlightPod: (workspaceId: string, podId: string) => {
+    const layout = get().flightLayouts[workspaceId];
+    if (!layout) return;
+    const pod = layout.pods.find((p) => p.id === podId);
+    if (pod?.ptyId) api.killPty(pod.ptyId).catch(() => {});
+    if (pod?.type === "claude" && pod.shellPtyId) api.killPty(pod.shellPtyId).catch(() => {});
+    set((s) => ({
+      flightLayouts: { ...s.flightLayouts, [workspaceId]: { ...layout, pods: layout.pods.filter((p) => p.id !== podId) } },
+    }));
+  },
+
+  updateFlightPod: (workspaceId: string, podId: string, updates: Partial<FlightPod>) => {
+    const layout = get().flightLayouts[workspaceId];
+    if (!layout) return;
+    set((s) => ({
+      flightLayouts: { ...s.flightLayouts, [workspaceId]: { ...layout, pods: layout.pods.map((p) => p.id === podId ? { ...p, ...updates } as FlightPod : p) } },
+    }));
+  },
+
+  setFlightViewport: (workspaceId: string, viewport: Partial<FlightViewport>) => {
+    set((s) => {
+      const layout = s.flightLayouts[workspaceId];
+      if (!layout) return {};
+      return {
+        flightLayouts: { ...s.flightLayouts, [workspaceId]: { ...layout, viewport: { ...layout.viewport, ...viewport } } },
+      };
+    });
+  },
+
+  bringPodToFront: (workspaceId: string, podId: string) => {
+    const layout = get().flightLayouts[workspaceId];
+    if (!layout) return;
+    const nextZ = (get().flightNextZIndex[workspaceId] ?? 1) + 1;
+    set((s) => ({
+      flightLayouts: { ...s.flightLayouts, [workspaceId]: { ...layout, pods: layout.pods.map((p) => p.id === podId ? { ...p, zIndex: nextZ } : p) } },
+      flightNextZIndex: { ...s.flightNextZIndex, [workspaceId]: nextZ },
+    }));
+  },
+
+  togglePodShell: (workspaceId: string, podId: string) => {
+    const layout = get().flightLayouts[workspaceId];
+    if (!layout) return;
+    set((s) => ({
+      flightLayouts: { ...s.flightLayouts, [workspaceId]: { ...layout, pods: layout.pods.map((p) => {
+        if (p.id !== podId || p.type !== "claude") return p;
+        return { ...p, shellExpanded: !p.shellExpanded };
+      }) } },
+    }));
+  },
     }),
     {
       name: WINDOW_PERSIST_KEY,
@@ -3175,6 +3309,7 @@ export const useWorkspaceStore = create<WorkspaceState>()(
         unifiedGitPanelPath: state.unifiedGitPanelPath,
         unifiedGitPanelTab: state.unifiedGitPanelTab,
         workspaceModes: state.workspaceModes,
+        flightLayouts: state.flightLayouts,
       }),
       merge: (persisted, current) => {
         const p = persisted as Partial<WorkspaceState> | undefined;
@@ -3191,6 +3326,7 @@ export const useWorkspaceStore = create<WorkspaceState>()(
           unifiedGitPanelPath: p?.unifiedGitPanelPath ?? null,
           unifiedGitPanelTab: (p?.unifiedGitPanelTab === "pr" ? "pr" : "changes") as "changes" | "pr",
           workspaceModes: (p?.workspaceModes && typeof p.workspaceModes === "object") ? p.workspaceModes as Record<string, WorkspaceMode> : {},
+          flightLayouts: (p?.flightLayouts && typeof p.flightLayouts === "object") ? p.flightLayouts as Record<string, FlightLayout> : {},
         };
       },
     }
