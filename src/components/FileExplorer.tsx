@@ -11,7 +11,7 @@ import { ChevronIcon, FileIcon } from "./FileIcons";
 import { ScrollArea } from "./ScrollArea";
 import { addToast, useToastStore } from "./ToastContainer";
 import { parseUnifiedDiff, type DiffFile } from "../lib/diffParser";
-import type { GitStatus, PrStatus, ChangesSummary, LayoutPreset } from "../lib/types";
+import type { GitStatus, PrStatus, ChangesSummary, FlightLayoutPreset } from "../lib/types";
 
 const FILE_DRAG_THRESHOLD = 8;
 const FILE_DRAG_MIN_HOLD_MS = 120;
@@ -2371,7 +2371,7 @@ function PrFilesPanel({
 
 // --- Layout Presets Dropdown ---
 
-const EMPTY_PRESETS: LayoutPreset[] = [];
+const EMPTY_PRESETS: FlightLayoutPreset[] = [];
 
 function LayoutPresetsDropdown({ workspaceId }: { workspaceId: string }) {
   const [open, setOpen] = useState(false);
@@ -2381,15 +2381,13 @@ function LayoutPresetsDropdown({ workspaceId }: { workspaceId: string }) {
   const inputRef = useRef<HTMLInputElement>(null);
 
   const presets = useWorkspaceStore((s) => {
-    const arr = s.layoutPresets?.[workspaceId];
+    const arr = s.flightLayoutPresets?.[workspaceId];
     return Array.isArray(arr) ? arr : EMPTY_PRESETS;
   });
 
-  const activePresetId = useWorkspaceStore((s) => s.activePresetId[workspaceId]);
+  const activePresetId = useWorkspaceStore((s) => s.activeFlightPresetId[workspaceId]);
   const activePreset = presets.find((p) => p.id === activePresetId);
 
-  const [confirmingPresetId, setConfirmingPresetId] = useState<string | null>(null);
-  const [terminalsToKill, setTerminalsToKill] = useState(0);
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState("");
   const renameRef = useRef<HTMLInputElement>(null);
@@ -2402,7 +2400,6 @@ function LayoutPresetsDropdown({ workspaceId }: { workspaceId: string }) {
     setOpen(false);
     setSaving(false);
     setName("");
-    setConfirmingPresetId(null);
     setRenamingId(null);
   }, []);
 
@@ -2441,53 +2438,25 @@ function LayoutPresetsDropdown({ workspaceId }: { workspaceId: string }) {
   const doSaveNew = () => {
     const trimmed = name.trim();
     if (!trimmed) return;
-    useWorkspaceStore.getState().saveLayoutPreset(workspaceId, trimmed);
+    useWorkspaceStore.getState().saveFlightLayoutPreset(workspaceId, trimmed);
     setSaving(false);
     setName("");
   };
 
   const doSaveCurrent = () => {
     if (!activePresetId) return;
-    useWorkspaceStore.getState().updateLayoutPreset(workspaceId, activePresetId);
+    useWorkspaceStore.getState().updateFlightLayoutPreset(workspaceId, activePresetId);
     close();
   };
 
   const doRestore = (presetId: string) => {
-    const state = useWorkspaceStore.getState();
-    const currentLayout = state.layouts[workspaceId];
-    const allPresets = state.layoutPresets[workspaceId] ?? [];
-    const preset = allPresets.find((p) => p.id === presetId);
-
-    if (preset && currentLayout) {
-      // Count total panes in current layout vs preset layout
-      let currentPaneCount = 0;
-      for (const group of Object.values(currentLayout.groups)) {
-        currentPaneCount += group.panes.length;
-      }
-      let presetPaneCount = 0;
-      for (const group of Object.values(preset.layout.groups)) {
-        presetPaneCount += group.panes.length;
-      }
-      if (currentPaneCount > presetPaneCount) {
-        setConfirmingPresetId(presetId);
-        setTerminalsToKill(currentPaneCount - presetPaneCount);
-        return;
-      }
-    }
-
-    state.restoreLayoutPreset(workspaceId, presetId);
-    close();
-  };
-
-  const doConfirmRestore = () => {
-    if (!confirmingPresetId) return;
-    useWorkspaceStore.getState().restoreLayoutPreset(workspaceId, confirmingPresetId);
+    useWorkspaceStore.getState().restoreFlightLayoutPreset(workspaceId, presetId);
     close();
   };
 
   const doDelete = (e: React.MouseEvent, presetId: string) => {
     e.stopPropagation();
-    useWorkspaceStore.getState().deleteLayoutPreset(workspaceId, presetId);
+    useWorkspaceStore.getState().deleteFlightLayoutPreset(workspaceId, presetId);
   };
 
   const startRename = (e: React.MouseEvent, preset: { id: string; name: string }) => {
@@ -2498,7 +2467,7 @@ function LayoutPresetsDropdown({ workspaceId }: { workspaceId: string }) {
 
   const commitRename = () => {
     if (renamingId && renameValue.trim()) {
-      useWorkspaceStore.getState().renameLayoutPreset(workspaceId, renamingId, renameValue);
+      useWorkspaceStore.getState().renameFlightLayoutPreset(workspaceId, renamingId, renameValue);
     }
     setRenamingId(null);
   };
@@ -2530,7 +2499,7 @@ function LayoutPresetsDropdown({ workspaceId }: { workspaceId: string }) {
         const ids = presets.map((p) => p.id);
         const [moved] = ids.splice(idx, 1);
         ids.splice(lastOver, 0, moved);
-        useWorkspaceStore.getState().reorderLayoutPresets(workspaceId, ids);
+        useWorkspaceStore.getState().reorderFlightLayoutPresets(workspaceId, ids);
       }
       setDragIdx(null);
       setOverIdx(null);
@@ -2571,29 +2540,7 @@ function LayoutPresetsDropdown({ workspaceId }: { workspaceId: string }) {
         zIndex: 10000, boxShadow: "0 8px 24px var(--shadow)", userSelect: "none",
       }}
     >
-      {confirmingPresetId ? (
-        <div style={{ display: "flex", alignItems: "center", gap: 6, padding: "0 10px", height: 28, margin: "0 4px" }}>
-          <span style={{ fontSize: 13, fontWeight: 600, color: "var(--text-primary)", whiteSpace: "nowrap", flex: 1 }}>
-            Close {terminalsToKill} pane{terminalsToKill > 1 ? "s" : ""}?
-          </span>
-          <button
-            onClick={() => setConfirmingPresetId(null)}
-            style={{
-              background: "rgba(255,255,255,0.08)", border: "0.5px solid var(--border-subtle)",
-              color: "var(--text-primary)", fontSize: 12, fontWeight: 600, cursor: "pointer",
-              padding: "3px 12px", borderRadius: 6, letterSpacing: "-0.01em",
-            }}
-          >No</button>
-          <button
-            onClick={doConfirmRestore}
-            style={{
-              background: "var(--text-primary)", border: "none",
-              color: "var(--bg-app)", fontSize: 12, fontWeight: 600, cursor: "pointer",
-              padding: "3px 12px", borderRadius: 6, letterSpacing: "-0.01em",
-            }}
-          >Yes</button>
-        </div>
-      ) : <>
+      <>
       {/* Saved layouts — grab handle to reorder, click to restore, pen to rename, X to delete */}
       {presets.map((p, i) => {
         const isActive = p.id === activePresetId;
@@ -2736,7 +2683,7 @@ function LayoutPresetsDropdown({ workspaceId }: { workspaceId: string }) {
           <span style={{ fontSize: 13, fontWeight: 600, color: "var(--text-primary)" }}>Update &lsquo;{activePreset.name}&rsquo;</span>
         </div>
       )}
-      </>}
+      </>
     </div>,
     document.body,
   ) : null;

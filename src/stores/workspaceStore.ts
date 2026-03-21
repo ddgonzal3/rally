@@ -30,6 +30,7 @@ import type {
   FlightPod,
   FlightLayout,
   FlightViewport,
+  FlightLayoutPreset,
 } from "../lib/types";
 import {
   FLIGHT_DEFAULT_CLAUDE_WIDTH,
@@ -154,6 +155,8 @@ type PersistedWorkspaceState = {
   unifiedGitPanelTab: "changes" | "pr";
   workspaceModes: Record<string, WorkspaceMode>;
   flightLayouts: Record<string, FlightLayout>;
+  flightLayoutPresets: Record<string, FlightLayoutPreset[]>;
+  activeFlightPresetId: Record<string, string>;
 };
 
 const workspacePersistStorage = (() => {
@@ -171,6 +174,8 @@ const workspacePersistStorage = (() => {
     unifiedGitPanelTab: string;
     workspaceModes: PersistedWorkspaceState["workspaceModes"];
     flightLayouts: PersistedWorkspaceState["flightLayouts"];
+    flightLayoutPresets: PersistedWorkspaceState["flightLayoutPresets"];
+    activeFlightPresetId: PersistedWorkspaceState["activeFlightPresetId"];
     version: number;
   };
   let lastRefs: PersistRefs | null = null;
@@ -198,6 +203,8 @@ const workspacePersistStorage = (() => {
       unifiedGitPanelTab: state.unifiedGitPanelTab,
       workspaceModes: state.workspaceModes,
       flightLayouts: state.flightLayouts,
+      flightLayoutPresets: state.flightLayoutPresets,
+      activeFlightPresetId: state.activeFlightPresetId,
       version,
     };
   }
@@ -219,7 +226,9 @@ const workspacePersistStorage = (() => {
       a.unifiedGitPanelPath === b.unifiedGitPanelPath &&
       a.unifiedGitPanelTab === b.unifiedGitPanelTab &&
       a.workspaceModes === b.workspaceModes &&
-      a.flightLayouts === b.flightLayouts;
+      a.flightLayouts === b.flightLayouts &&
+      a.flightLayoutPresets === b.flightLayoutPresets &&
+      a.activeFlightPresetId === b.activeFlightPresetId;
   }
 
   function flushPending() {
@@ -344,6 +353,10 @@ interface WorkspaceState {
   // Flight Mode state
   flightLayouts: Record<string, FlightLayout>;
   flightNextZIndex: Record<string, number>;
+  /** Saved flight layout presets per workspace */
+  flightLayoutPresets: Record<string, FlightLayoutPreset[]>;
+  /** Currently active flight preset per workspace (set on restore, cleared on delete) */
+  activeFlightPresetId: Record<string, string>;
 
   // Dirty pane tracking
   markPaneDirty: (paneId: string) => void;
@@ -523,6 +536,18 @@ interface WorkspaceState {
   setFlightViewport: (workspaceId: string, viewport: Partial<FlightViewport>) => void;
   bringPodToFront: (workspaceId: string, podId: string) => void;
   togglePodShell: (workspaceId: string, podId: string) => void;
+  /** Save current flight layout as a named preset */
+  saveFlightLayoutPreset: (workspaceId: string, name: string) => void;
+  /** Restore a saved flight layout preset (kills existing PTYs, respawned on mount) */
+  restoreFlightLayoutPreset: (workspaceId: string, presetId: string) => void;
+  /** Overwrite an existing flight preset with the current layout */
+  updateFlightLayoutPreset: (workspaceId: string, presetId: string) => void;
+  /** Delete a saved flight layout preset */
+  deleteFlightLayoutPreset: (workspaceId: string, presetId: string) => void;
+  /** Rename a saved flight layout preset */
+  renameFlightLayoutPreset: (workspaceId: string, presetId: string, newName: string) => void;
+  /** Reorder flight layout presets */
+  reorderFlightLayoutPresets: (workspaceId: string, presetIds: string[]) => void;
 }
 
 function sanitizePane(raw: unknown): Pane | null {
@@ -806,6 +831,8 @@ export const useWorkspaceStore = create<WorkspaceState>()(
   rallyConfigs: {},
   flightLayouts: {},
   flightNextZIndex: {},
+  flightLayoutPresets: {},
+  activeFlightPresetId: {},
   statusBarDrawer: null,
   detectedPorts: {},
   addDetectedPort: (workspaceId, port) => {
@@ -3293,6 +3320,143 @@ export const useWorkspaceStore = create<WorkspaceState>()(
       }) } },
     }));
   },
+
+  saveFlightLayoutPreset: (workspaceId, name) => {
+    const layout = get().flightLayouts[workspaceId];
+    if (!layout) return;
+    // Deep-clone and strip ptyId/shellPtyId — PTYs can't be restored
+    const snapshot: FlightLayout = {
+      viewport: { ...layout.viewport },
+      pods: layout.pods.map((pod) => {
+        const { ptyId: _ptyId, ...rest } = pod as FlightPod & { ptyId?: string; shellPtyId?: string };
+        if (rest.type === "claude") {
+          const { shellPtyId: _shellPtyId, ...claudeRest } = rest as typeof rest & { shellPtyId?: string };
+          return claudeRest as FlightPod;
+        }
+        return rest as FlightPod;
+      }),
+    };
+    const preset: FlightLayoutPreset = {
+      id: crypto.randomUUID(),
+      name,
+      layout: snapshot,
+    };
+    set((s) => ({
+      flightLayoutPresets: {
+        ...s.flightLayoutPresets,
+        [workspaceId]: [...(s.flightLayoutPresets[workspaceId] ?? []), preset],
+      },
+      activeFlightPresetId: { ...s.activeFlightPresetId, [workspaceId]: preset.id },
+    }));
+  },
+
+  updateFlightLayoutPreset: (workspaceId, presetId) => {
+    const presets = get().flightLayoutPresets[workspaceId] ?? [];
+    const existing = presets.find((p) => p.id === presetId);
+    if (!existing) return;
+    const layout = get().flightLayouts[workspaceId];
+    if (!layout) return;
+    // Same snapshot logic as saveFlightLayoutPreset
+    const snapshot: FlightLayout = {
+      viewport: { ...layout.viewport },
+      pods: layout.pods.map((pod) => {
+        const { ptyId: _ptyId, ...rest } = pod as FlightPod & { ptyId?: string; shellPtyId?: string };
+        if (rest.type === "claude") {
+          const { shellPtyId: _shellPtyId, ...claudeRest } = rest as typeof rest & { shellPtyId?: string };
+          return claudeRest as FlightPod;
+        }
+        return rest as FlightPod;
+      }),
+    };
+    const updated: FlightLayoutPreset = { ...existing, layout: snapshot };
+    set((s) => ({
+      flightLayoutPresets: {
+        ...s.flightLayoutPresets,
+        [workspaceId]: (s.flightLayoutPresets[workspaceId] ?? []).map((p) =>
+          p.id === presetId ? updated : p
+        ),
+      },
+    }));
+  },
+
+  restoreFlightLayoutPreset: (workspaceId, presetId) => {
+    const presets = get().flightLayoutPresets[workspaceId] ?? [];
+    const preset = presets.find((p) => p.id === presetId);
+    if (!preset) return;
+
+    // Kill all PTYs in the current flight layout — Terminal components will
+    // respawn them on mount with fresh IDs.
+    const currentLayout = get().flightLayouts[workspaceId];
+    if (currentLayout) {
+      requestAnimationFrame(() => {
+        for (const pod of currentLayout.pods) {
+          if (pod.ptyId) api.killPty(pod.ptyId).catch(() => {});
+          if (pod.type === "claude" && pod.shellPtyId) api.killPty(pod.shellPtyId).catch(() => {});
+        }
+      });
+    }
+
+    // Deep-clone the preset layout and generate fresh pod IDs so React
+    // unmounts old terminals and mounts new ones cleanly.
+    const cloned: FlightLayout = JSON.parse(JSON.stringify(preset.layout));
+    const restoredPods: FlightPod[] = cloned.pods.map((pod) => ({
+      ...pod,
+      id: crypto.randomUUID(),
+      ptyId: undefined,
+      ...(pod.type === "claude" ? { shellPtyId: undefined } : {}),
+    }));
+
+    set((s) => ({
+      flightLayouts: {
+        ...s.flightLayouts,
+        [workspaceId]: { ...cloned, pods: restoredPods },
+      },
+      activeFlightPresetId: { ...s.activeFlightPresetId, [workspaceId]: presetId },
+    }));
+  },
+
+  deleteFlightLayoutPreset: (workspaceId, presetId) => {
+    set((s) => {
+      const update: Partial<WorkspaceState> = {
+        flightLayoutPresets: {
+          ...s.flightLayoutPresets,
+          [workspaceId]: (s.flightLayoutPresets[workspaceId] ?? []).filter(
+            (p) => p.id !== presetId,
+          ),
+        },
+      };
+      // Clear active preset if the deleted one was active
+      if (s.activeFlightPresetId[workspaceId] === presetId) {
+        const { [workspaceId]: _, ...rest } = s.activeFlightPresetId;
+        update.activeFlightPresetId = rest;
+      }
+      return update;
+    });
+  },
+
+  renameFlightLayoutPreset: (workspaceId, presetId, newName) => {
+    const trimmed = newName.trim();
+    if (!trimmed) return;
+    set((s) => ({
+      flightLayoutPresets: {
+        ...s.flightLayoutPresets,
+        [workspaceId]: (s.flightLayoutPresets[workspaceId] ?? []).map((p) =>
+          p.id === presetId ? { ...p, name: trimmed } : p
+        ),
+      },
+    }));
+  },
+
+  reorderFlightLayoutPresets: (workspaceId, presetIds) => {
+    set((s) => {
+      const existing = s.flightLayoutPresets[workspaceId] ?? [];
+      const byId = new Map(existing.map((p) => [p.id, p]));
+      const reordered = presetIds.map((id) => byId.get(id)).filter(Boolean) as typeof existing;
+      return {
+        flightLayoutPresets: { ...s.flightLayoutPresets, [workspaceId]: reordered },
+      };
+    });
+  },
     }),
     {
       name: WINDOW_PERSIST_KEY,
@@ -3310,6 +3474,8 @@ export const useWorkspaceStore = create<WorkspaceState>()(
         unifiedGitPanelTab: state.unifiedGitPanelTab,
         workspaceModes: state.workspaceModes,
         flightLayouts: state.flightLayouts,
+        flightLayoutPresets: state.flightLayoutPresets,
+        activeFlightPresetId: state.activeFlightPresetId,
       }),
       merge: (persisted, current) => {
         const p = persisted as Partial<WorkspaceState> | undefined;
@@ -3327,6 +3493,8 @@ export const useWorkspaceStore = create<WorkspaceState>()(
           unifiedGitPanelTab: (p?.unifiedGitPanelTab === "pr" ? "pr" : "changes") as "changes" | "pr",
           workspaceModes: (p?.workspaceModes && typeof p.workspaceModes === "object") ? p.workspaceModes as Record<string, WorkspaceMode> : {},
           flightLayouts: (p?.flightLayouts && typeof p.flightLayouts === "object") ? p.flightLayouts as Record<string, FlightLayout> : {},
+          flightLayoutPresets: (p?.flightLayoutPresets && typeof p.flightLayoutPresets === "object") ? p.flightLayoutPresets as Record<string, FlightLayoutPreset[]> : {},
+          activeFlightPresetId: (p?.activeFlightPresetId && typeof p.activeFlightPresetId === "object") ? p.activeFlightPresetId as Record<string, string> : {},
         };
       },
     }

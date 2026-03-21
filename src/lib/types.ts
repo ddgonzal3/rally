@@ -595,6 +595,12 @@ export interface FlightLayout {
   viewport: FlightViewport;
 }
 
+export interface FlightLayoutPreset {
+  id: string;
+  name: string;
+  layout: FlightLayout;
+}
+
 // Flight Mode constants
 export const FLIGHT_DEFAULT_CLAUDE_WIDTH = 700;
 export const FLIGHT_DEFAULT_CLAUDE_HEIGHT = 500;
