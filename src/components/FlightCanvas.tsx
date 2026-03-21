@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useMemo, useCallback } from "react";
 import { useWorkspaceStore } from "../stores/workspaceStore";
-import { FlightPod } from "./FlightPod";
+import { FlightPod, snapToNeighbors, preventOverlap } from "./FlightPod";
 import { FlightHUD } from "./FlightHUD";
 import { FLIGHT_ZOOM_MIN, FLIGHT_ZOOM_MAX, FLIGHT_DEFAULT_CLAUDE_WIDTH, FLIGHT_DEFAULT_CLAUDE_HEIGHT, FLIGHT_DEFAULT_TERMINAL_WIDTH, FLIGHT_DEFAULT_TERMINAL_HEIGHT } from "../lib/types";
 import { showContextMenu } from "../lib/contextMenu";
@@ -147,9 +147,20 @@ const WorkspaceFlightView = React.memo(function WorkspaceFlightView({
         if (dx !== 0 || dy !== 0) {
           const pod = s.flightLayouts[workspaceId]?.pods.find((p) => p.id === dragPodId);
           if (pod) {
+            const rawX = pod.x + dx;
+            const rawY = pod.y + dy;
+            const others = (s.flightLayouts[workspaceId]?.pods ?? [])
+              .filter((p) => p.id !== dragPodId)
+              .map((p) => ({ x: p.x, y: p.y, width: p.width, height: p.height }));
+            const snapped = snapToNeighbors(
+              { x: rawX, y: rawY, width: pod.width, height: pod.height },
+              others,
+              "drag",
+            );
+            const final = preventOverlap(snapped, others);
             s.updateFlightPod(workspaceId, dragPodId, {
-              x: pod.x + dx,
-              y: pod.y + dy,
+              x: final.x,
+              y: final.y,
             } as any);
           }
         }

@@ -18,7 +18,7 @@ import {
 
 const SNAP_THRESHOLD = 12; // pixels in canvas space
 
-interface SnapEdges {
+export interface SnapEdges {
   x: number;
   y: number;
   width: number;
@@ -26,7 +26,7 @@ interface SnapEdges {
 }
 
 /** Snap a pod's edges to nearby pod edges. Returns adjusted x/y (and optionally w/h for resize). */
-function snapToNeighbors(
+export function snapToNeighbors(
   moving: SnapEdges,
   others: SnapEdges[],
   mode: "drag" | "resize",
@@ -77,6 +77,39 @@ function snapToNeighbors(
     }
 
     if (snappedX && snappedY) break;
+  }
+
+  return { x, y, width, height };
+}
+
+const MIN_POD_GAP = 4; // Minimum pixels between pods — prevents overlap
+
+/** Push a pod out of any overlapping neighbors. Returns adjusted x/y. */
+export function preventOverlap(
+  moving: SnapEdges,
+  others: SnapEdges[],
+): SnapEdges {
+  let { x, y } = moving;
+  const { width, height } = moving;
+
+  for (const o of others) {
+    // Check if they overlap (with MIN_POD_GAP margin)
+    const overlapX = x < o.x + o.width + MIN_POD_GAP && x + width + MIN_POD_GAP > o.x;
+    const overlapY = y < o.y + o.height + MIN_POD_GAP && y + height + MIN_POD_GAP > o.y;
+
+    if (overlapX && overlapY) {
+      // Find the smallest push to resolve the overlap
+      const pushRight = (o.x + o.width + MIN_POD_GAP) - x;
+      const pushLeft = x + width + MIN_POD_GAP - o.x;
+      const pushDown = (o.y + o.height + MIN_POD_GAP) - y;
+      const pushUp = y + height + MIN_POD_GAP - o.y;
+
+      const minPush = Math.min(pushRight, pushLeft, pushDown, pushUp);
+      if (minPush === pushRight) x = o.x + o.width + MIN_POD_GAP;
+      else if (minPush === pushLeft) x = o.x - width - MIN_POD_GAP;
+      else if (minPush === pushDown) y = o.y + o.height + MIN_POD_GAP;
+      else y = o.y - height - MIN_POD_GAP;
+    }
   }
 
   return { x, y, width, height };
@@ -175,10 +208,11 @@ export const FlightPod = React.memo(function FlightPod({
       const pods = store.flightLayouts[workspaceId]?.pods ?? [];
       const others = pods.filter((p) => p.id !== podId).map((p) => ({ x: p.x, y: p.y, width: p.width, height: p.height }));
       const snapped = snapToNeighbors({ x: rawX, y: rawY, width: podWidth, height: podHeight }, others, "drag");
+      const final = preventOverlap(snapped, others);
 
       updateFlightPod(workspaceId, podId, {
-        x: snapped.x,
-        y: snapped.y,
+        x: final.x,
+        y: final.y,
       } as Partial<FlightPodType>);
     };
 
