@@ -149,7 +149,7 @@ const canvasStyles: Record<string, React.CSSProperties> = {
     flex: 1,
     position: "relative",
     overflow: "hidden",
-    background: "transparent",
+    background: "rgba(20, 20, 20, 0.55)",
     cursor: "default",
   },
   viewport: {
