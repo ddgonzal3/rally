@@ -602,14 +602,17 @@ export interface FlightLayoutPreset {
 }
 
 // Flight Mode constants
-export const FLIGHT_DEFAULT_CLAUDE_WIDTH = 700;
-export const FLIGHT_DEFAULT_CLAUDE_HEIGHT = 650;
+// Pod dimensions use golden ratio proportions:
+// - Claude pod: 750×900 (body split at φ — Claude 61.8%, shell 38.2%)
+// - Shell height: (900 - 32 header - 24 footer) × 0.382 ≈ 322
+export const FLIGHT_DEFAULT_CLAUDE_WIDTH = 750;
+export const FLIGHT_DEFAULT_CLAUDE_HEIGHT = 900;
 export const FLIGHT_DEFAULT_TERMINAL_WIDTH = 500;
 export const FLIGHT_DEFAULT_TERMINAL_HEIGHT = 300;
 export const FLIGHT_MIN_CLAUDE_WIDTH = 400;
 export const FLIGHT_MIN_CLAUDE_HEIGHT = 250;
 export const FLIGHT_MIN_TERMINAL_WIDTH = 300;
 export const FLIGHT_MIN_TERMINAL_HEIGHT = 150;
-export const FLIGHT_DEFAULT_SHELL_HEIGHT = 200;
+export const FLIGHT_DEFAULT_SHELL_HEIGHT = 322;
 export const FLIGHT_ZOOM_MIN = 0.3;
 export const FLIGHT_ZOOM_MAX = 2.0;

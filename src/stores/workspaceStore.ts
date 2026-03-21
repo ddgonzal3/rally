@@ -989,7 +989,7 @@ export const useWorkspaceStore = create<WorkspaceState>()(
               width: FLIGHT_DEFAULT_CLAUDE_WIDTH, height: FLIGHT_DEFAULT_CLAUDE_HEIGHT,
               cwd: pane.cwd ?? "", title: pane.title,
               zIndex: (get().flightNextZIndex[workspaceId] ?? 1) + offset + 1,
-              shellExpanded: false, shellHeight: FLIGHT_DEFAULT_SHELL_HEIGHT,
+              shellExpanded: true, shellHeight: FLIGHT_DEFAULT_SHELL_HEIGHT,
               ptyId: pane.ptyId,
             } : {
               id: crypto.randomUUID(), type: "terminal",
@@ -3329,7 +3329,7 @@ export const useWorkspaceStore = create<WorkspaceState>()(
         x: 100, y: 100,
         width: FLIGHT_DEFAULT_CLAUDE_WIDTH, height: FLIGHT_DEFAULT_CLAUDE_HEIGHT,
         cwd, title: cwd.split("/").pop() || "Claude Code",
-        zIndex: 1, shellExpanded: false, shellHeight: FLIGHT_DEFAULT_SHELL_HEIGHT,
+        zIndex: 1, shellExpanded: true, shellHeight: FLIGHT_DEFAULT_SHELL_HEIGHT,
       }],
       viewport: { panX: 0, panY: 0, zoom: 1.0 },
     };
@@ -3357,7 +3357,7 @@ export const useWorkspaceStore = create<WorkspaceState>()(
       id: crypto.randomUUID(), type: "claude",
       x: -vp.panX / vp.zoom + 100 + staggerX, y: -vp.panY / vp.zoom + 100 + staggerY,
       width, height, cwd, title: cwd.split("/").pop() || "Claude Code",
-      zIndex: nextZ, shellExpanded: false, shellHeight: FLIGHT_DEFAULT_SHELL_HEIGHT,
+      zIndex: nextZ, shellExpanded: true, shellHeight: FLIGHT_DEFAULT_SHELL_HEIGHT,
     } : {
       id: crypto.randomUUID(), type: "terminal",
       x: -vp.panX / vp.zoom + 100 + staggerX, y: -vp.panY / vp.zoom + 100 + staggerY,
@@ -3376,7 +3376,7 @@ export const useWorkspaceStore = create<WorkspaceState>()(
       id: crypto.randomUUID(), type: "claude",
       x, y, width, height, cwd,
       title: cwd.split("/").pop() || "Claude Code",
-      zIndex: nextZ, shellExpanded: false, shellHeight: FLIGHT_DEFAULT_SHELL_HEIGHT,
+      zIndex: nextZ, shellExpanded: true, shellHeight: FLIGHT_DEFAULT_SHELL_HEIGHT,
     } : {
       id: crypto.randomUUID(), type: "terminal",
       x, y, width, height, cwd,
