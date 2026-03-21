@@ -1306,11 +1306,27 @@ export function App() {
         if (mode === "flight") {
           const flightLayout = s.flightLayouts[wsId];
           if (!flightLayout) return;
-          // Find the pod with the highest zIndex (focused pod)
-          const focusedPod = flightLayout.pods
-            .filter((p) => p.type === "claude")
-            .sort((a, b) => b.zIndex - a.zIndex)[0];
-          if (!focusedPod) return;
+          const claudePods = flightLayout.pods.filter((p) => p.type === "claude");
+          if (claudePods.length === 0) return;
+
+          // Find which pod contains the currently focused element (activeElement)
+          let focusedPod = claudePods[0];
+          const activeEl = document.activeElement;
+          if (activeEl) {
+            const podEl = activeEl.closest("[data-flight-pod]");
+            if (podEl) {
+              const podId = podEl.getAttribute("data-flight-pod");
+              const match = claudePods.find((p) => p.id === podId);
+              if (match) focusedPod = match;
+            }
+          }
+          // Fallback: highest zIndex among Claude pods with an active ptyId
+          if (!activeEl?.closest("[data-flight-pod]")) {
+            const activePods = claudePods.filter((p) => p.ptyId);
+            const byZ = (activePods.length > 0 ? activePods : claudePods)
+              .sort((a, b) => b.zIndex - a.zIndex);
+            focusedPod = byZ[0];
+          }
 
           if (!focusedPod.shellExpanded) {
             // Collapsed → expand to default height
