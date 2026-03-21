@@ -21,7 +21,7 @@ const WorkspaceFlightView = React.memo(function WorkspaceFlightView({
   const [selectedPods, setSelectedPods] = useState<Set<string>>(new Set());
   const selectedPodsRef = useRef(selectedPods);
   selectedPodsRef.current = selectedPods;
-  const [marquee, setMarquee] = useState<{ x1: number; y1: number; x2: number; y2: number } | null>(null);
+  const [marquee, setMarquee] = useState<{ sx1: number; sy1: number; sx2: number; sy2: number } | null>(null);
 
   // Stable selectors — primitives only, no new objects
   const panX = useWorkspaceStore((s) => s.flightLayouts[workspaceId]?.viewport?.panX ?? 0);
@@ -240,40 +240,47 @@ const WorkspaceFlightView = React.memo(function WorkspaceFlightView({
       if (e.button !== 0 || e.shiftKey || e.altKey || e.metaKey || e.ctrlKey) return;
       if ((e.target as HTMLElement).closest("[data-flight-pod]")) return;
 
-      const rect = el.getBoundingClientRect();
-      const parentZoom = rect.width / el.offsetWidth;
-      const startCx = (e.clientX - rect.left) / parentZoom;
-      const startCy = (e.clientY - rect.top) / parentZoom;
+      // Screen coords for the visual rectangle (rendered via portal)
+      const startSX = e.clientX;
+      const startSY = e.clientY;
 
-      // Convert to canvas coords for intersection testing
       const store = useWorkspaceStore.getState();
       const vp = store.flightLayouts[workspaceId]?.viewport;
       if (!vp) return;
-      const toCanvas = (cx: number, cy: number) => {
+
+      // Convert screen point to canvas coords for intersection testing
+      const screenToCanvas = (sx: number, sy: number) => {
+        const r = el.getBoundingClientRect();
+        const pz = r.width / el.offsetWidth;
+        const cx = (sx - r.left) / pz;
+        const cy = (sy - r.top) / pz;
         if (vp.zoom >= 1.0) return { x: cx / vp.zoom - vp.panX, y: cy / vp.zoom - vp.panY };
         return { x: (cx - vp.panX) / vp.zoom, y: (cy - vp.panY) / vp.zoom };
       };
 
       let marqueeActive = false;
-      const start = toCanvas(startCx, startCy);
-      let current = { ...start };
+      // Disable text selection during marquee
+      document.body.style.userSelect = "none";
+      document.body.style.webkitUserSelect = "none";
 
       const onMove = (me: MouseEvent) => {
-        const freshRect = el.getBoundingClientRect();
-        const freshParentZoom = freshRect.width / el.offsetWidth;
-        const mcx = (me.clientX - freshRect.left) / freshParentZoom;
-        const mcy = (me.clientY - freshRect.top) / freshParentZoom;
-        current = toCanvas(mcx, mcy);
         marqueeActive = true;
+        // Screen coords for the visual rectangle
+        setMarquee({
+          sx1: Math.min(startSX, me.clientX),
+          sy1: Math.min(startSY, me.clientY),
+          sx2: Math.max(startSX, me.clientX),
+          sy2: Math.max(startSY, me.clientY),
+        });
 
-        const mx1 = Math.min(start.x, current.x);
-        const my1 = Math.min(start.y, current.y);
-        const mx2 = Math.max(start.x, current.x);
-        const my2 = Math.max(start.y, current.y);
+        // Canvas coords for intersection testing
+        const s = screenToCanvas(startSX, startSY);
+        const c = screenToCanvas(me.clientX, me.clientY);
+        const mx1 = Math.min(s.x, c.x);
+        const my1 = Math.min(s.y, c.y);
+        const mx2 = Math.max(s.x, c.x);
+        const my2 = Math.max(s.y, c.y);
 
-        setMarquee({ x1: mx1, y1: my1, x2: mx2, y2: my2 });
-
-        // Select pods that intersect the marquee
         const pods = useWorkspaceStore.getState().flightLayouts[workspaceId]?.pods ?? [];
         const selected = new Set<string>();
         for (const p of pods) {
@@ -286,8 +293,9 @@ const WorkspaceFlightView = React.memo(function WorkspaceFlightView({
 
       const onUp = () => {
         setMarquee(null);
+        document.body.style.userSelect = "";
+        document.body.style.webkitUserSelect = "";
         if (!marqueeActive) {
-          // Simple click on canvas — deselect
           setSelectedPods(new Set());
         }
         window.removeEventListener("mousemove", onMove);
@@ -442,23 +450,25 @@ const WorkspaceFlightView = React.memo(function WorkspaceFlightView({
         {podIdList.map((podId) => (
           <FlightPod key={podId} podId={podId} workspaceId={workspaceId} zoom={zoom} isSelected={selectedPods.has(podId)} />
         ))}
-        {/* Marquee selection rectangle */}
-        {marquee && (
-          <div style={{
-            position: "absolute",
-            left: marquee.x1,
-            top: marquee.y1,
-            width: marquee.x2 - marquee.x1,
-            height: marquee.y2 - marquee.y1,
-            border: "1px solid rgba(100, 160, 255, 0.6)",
-            background: "rgba(100, 160, 255, 0.1)",
-            borderRadius: 2,
-            pointerEvents: "none",
-            zIndex: 99998,
-          }} />
-        )}
       </div>
       {isActive && <FlightHUD workspaceId={workspaceId} zoom={zoom} />}
+
+      {/* Marquee selection rectangle — portal to avoid CSS zoom offset */}
+      {marquee && ReactDOM.createPortal(
+        <div style={{
+          position: "fixed",
+          left: marquee.sx1,
+          top: marquee.sy1,
+          width: marquee.sx2 - marquee.sx1,
+          height: marquee.sy2 - marquee.sy1,
+          border: "1px solid rgba(100, 160, 255, 0.6)",
+          background: "rgba(100, 160, 255, 0.1)",
+          borderRadius: 2,
+          pointerEvents: "none",
+          zIndex: 99998,
+        }} />,
+        document.body,
+      )}
 
       {/* Frosted glass context menu — rendered as portal to avoid CSS zoom offset */}
       {contextMenu && ReactDOM.createPortal(
