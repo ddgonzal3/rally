@@ -326,7 +326,6 @@ export const FlightPod = React.memo(function FlightPod({
     <div
       ref={podRef}
       data-flight-pod={podId}
-      onMouseDown={handlePodMouseDown}
       onClick={handleFocusClick}
       style={{
         position: "absolute",
