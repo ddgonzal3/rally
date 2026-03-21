@@ -83,41 +83,51 @@ const WorkspaceFlightView = React.memo(function WorkspaceFlightView({
     };
     el.addEventListener("wheel", wheelHandler, { passive: false });
 
-    // Cmd+drag to pan the canvas
-    const mouseDownHandler = (e: MouseEvent) => {
-      if (!e.metaKey || e.button !== 0) return;
-      e.preventDefault();
-      const startX = e.clientX;
-      const startY = e.clientY;
-      const store = useWorkspaceStore.getState();
-      const vp = store.flightLayouts[workspaceId]?.viewport;
-      if (!vp) return;
-      const startPanX = vp.panX;
-      const startPanY = vp.panY;
+    // Shift+mousemove to pan — no click needed, just hold Shift and move
+    let lastX = 0;
+    let lastY = 0;
+    let isPanning = false;
 
-      el.style.cursor = "grabbing";
-
-      const onMove = (me: MouseEvent) => {
-        const dx = me.clientX - startX;
-        const dy = me.clientY - startY;
-        useWorkspaceStore.getState().setFlightViewport(workspaceId, {
-          panX: startPanX + dx,
-          panY: startPanY + dy,
-        });
-      };
-      const onUp = () => {
+    const moveHandler = (e: MouseEvent) => {
+      if (e.shiftKey) {
+        if (!isPanning) {
+          // Start panning
+          isPanning = true;
+          lastX = e.clientX;
+          lastY = e.clientY;
+          el.style.cursor = "grabbing";
+          return;
+        }
+        const dx = e.clientX - lastX;
+        const dy = e.clientY - lastY;
+        lastX = e.clientX;
+        lastY = e.clientY;
+        if (dx !== 0 || dy !== 0) {
+          useWorkspaceStore.getState().setFlightViewport(workspaceId, {
+            panX: (useWorkspaceStore.getState().flightLayouts[workspaceId]?.viewport.panX ?? 0) + dx,
+            panY: (useWorkspaceStore.getState().flightLayouts[workspaceId]?.viewport.panY ?? 0) + dy,
+          });
+        }
+      } else if (isPanning) {
+        isPanning = false;
         el.style.cursor = "";
-        window.removeEventListener("mousemove", onMove);
-        window.removeEventListener("mouseup", onUp);
-      };
-      window.addEventListener("mousemove", onMove);
-      window.addEventListener("mouseup", onUp);
+      }
     };
-    el.addEventListener("mousedown", mouseDownHandler);
+
+    const keyUpHandler = (e: KeyboardEvent) => {
+      if (e.key === "Shift" && isPanning) {
+        isPanning = false;
+        el.style.cursor = "";
+      }
+    };
+
+    el.addEventListener("mousemove", moveHandler);
+    window.addEventListener("keyup", keyUpHandler);
 
     return () => {
       el.removeEventListener("wheel", wheelHandler);
-      el.removeEventListener("mousedown", mouseDownHandler);
+      el.removeEventListener("mousemove", moveHandler);
+      window.removeEventListener("keyup", keyUpHandler);
     };
   }, [workspaceId, setFlightViewport]);
 
