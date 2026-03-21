@@ -48,19 +48,44 @@ const WorkspaceFlightView = React.memo(function WorkspaceFlightView({
       if (e.altKey || e.ctrlKey) {
         const zoomFactor = 1 - e.deltaY * (e.ctrlKey ? 0.01 : 0.002);
         const newZoom = Math.max(FLIGHT_ZOOM_MIN, Math.min(FLIGHT_ZOOM_MAX, vp.zoom * zoomFactor));
-        // Viewport uses: transform: translate3d(panX, panY, 0) + CSS zoom.
-        // With CSS zoom on same element as translate, the visual position of
-        // a canvas point P in the container is: (panX + P.x) * zoom.
-        // To keep the point under cursor fixed when zoom changes:
-        //   panX' = panX + cursorInContainer * (1/newZoom - 1/oldZoom)
+        // Hybrid zoom: CSS zoom >= 1.0, transform scale < 1.0
+        // Both use translate3d for pan. The mapping from canvas point P to
+        // screen position differs:
+        //   CSS zoom:       screen = (pan + P) * zoom   (zoom multiplies everything)
+        //   transform scale: screen = pan + P * zoom     (zoom only scales content)
+        // To keep cursor-point fixed, compute the canvas point under cursor,
+        // then solve for new pan.
         const rect = el.getBoundingClientRect();
         const parentZoom = rect.width / el.offsetWidth;
-        const cursorInContainerX = (e.clientX - rect.left) / parentZoom;
-        const cursorInContainerY = (e.clientY - rect.top) / parentZoom;
+        const cx = (e.clientX - rect.left) / parentZoom;
+        const cy = (e.clientY - rect.top) / parentZoom;
+
+        // Canvas point under cursor with OLD zoom:
+        let pointX: number, pointY: number;
+        if (vp.zoom >= 1.0) {
+          // CSS zoom: screen = (pan + P) * zoom → P = screen/zoom - pan
+          pointX = cx / vp.zoom - vp.panX;
+          pointY = cy / vp.zoom - vp.panY;
+        } else {
+          // transform scale: screen = pan + P * zoom → P = (screen - pan) / zoom
+          pointX = (cx - vp.panX) / vp.zoom;
+          pointY = (cy - vp.panY) / vp.zoom;
+        }
+
+        // New pan so same point stays at same screen position with NEW zoom:
+        let newPanX: number, newPanY: number;
+        if (newZoom >= 1.0) {
+          // CSS zoom: cx = (pan + P) * zoom → pan = cx/zoom - P
+          newPanX = cx / newZoom - pointX;
+          newPanY = cy / newZoom - pointY;
+        } else {
+          // transform scale: cx = pan + P * zoom → pan = cx - P * zoom
+          newPanX = cx - pointX * newZoom;
+          newPanY = cy - pointY * newZoom;
+        }
+
         store.setFlightViewport(workspaceId, {
-          panX: vp.panX + cursorInContainerX * (1 / newZoom - 1 / vp.zoom),
-          panY: vp.panY + cursorInContainerY * (1 / newZoom - 1 / vp.zoom),
-          zoom: newZoom,
+          panX: newPanX, panY: newPanY, zoom: newZoom,
         });
       } else {
         store.setFlightViewport(workspaceId, {
@@ -81,8 +106,13 @@ const WorkspaceFlightView = React.memo(function WorkspaceFlightView({
       <div
         style={{
           ...canvasStyles.viewport,
-          transform: `translate3d(${panX}px, ${panY}px, 0)`,
-          zoom: zoom,
+          // CSS zoom > 1.0: re-rasterizes at higher res → crisp upscale
+          // transform scale < 1.0: pixel-perfect downscale → crisp shrink
+          // Hybrid gives sharp text at ALL zoom levels
+          ...(zoom >= 1.0
+            ? { transform: `translate3d(${panX}px, ${panY}px, 0)`, zoom: zoom }
+            : { transform: `translate3d(${panX}px, ${panY}px, 0) scale(${zoom})`, transformOrigin: "0 0" }
+          ),
         }}
       >
         {podIdList.map((podId) => (
