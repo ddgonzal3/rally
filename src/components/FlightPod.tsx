@@ -1,4 +1,4 @@
-import React, { useRef, useCallback, useMemo, useState } from "react";
+import React, { useRef, useCallback, useMemo, useState, useEffect } from "react";
 import { useWorkspaceStore } from "../stores/workspaceStore";
 import { Terminal } from "./Terminal";
 import { ClaudeTerminalWrapper } from "./ClaudeTerminalWrapper";
@@ -395,19 +395,28 @@ export const FlightPod = React.memo(function FlightPod({
       >
         {isClaudePod && !claudeLaunched && !podPtyId ? (
           /* Claude launcher — shown when pod is restored without a ptyId */
-          <div style={launcherStyles.container}>
-            <div
-              className="launch-btn"
-              style={launcherStyles.main}
-              onClick={() => setClaudeLaunched(true)}
-            >
-              <svg width="40" height="40" viewBox="-2 -1 28 26" style={{ flexShrink: 0 }}>
-                <path d={CLAUDE_PATH} fill="#D97757" fillRule="nonzero" data-keep-color="" />
-              </svg>
-              <span style={launcherStyles.name}>Claude Code</span>
-              <span style={launcherStyles.path}>{cwdBasename}</span>
-            </div>
-          </div>
+          <FlightLauncher
+            cwd={podCwd}
+            cwdBasename={cwdBasename}
+            workspaceId={workspaceId}
+            onLaunch={() => setClaudeLaunched(true)}
+            onLaunchClaude={(cwd) => {
+              if (cwd && cwd !== podCwd) {
+                updateFlightPod(workspaceId, podId, { cwd, title: cwd.split("/").pop() || "Claude Code" } as Partial<FlightPodType>);
+              }
+              setClaudeLaunched(true);
+            }}
+            onLaunchTerminal={(cwd) => {
+              // Spawn a new terminal pod next to this one
+              const store = useWorkspaceStore.getState();
+              store.addFlightPodAt(
+                workspaceId, "terminal",
+                podX + podWidth + 8, podY,
+                FLIGHT_DEFAULT_TERMINAL_WIDTH, podHeight,
+                cwd || podCwd,
+              );
+            }}
+          />
         ) : isClaudePod ? (
           <ClaudeTerminalWrapper
             cwd={podCwd}
@@ -516,6 +525,91 @@ const edgeBtnStyle: React.CSSProperties = {
   padding: 0,
   color: "#666",
 };
+
+/** Launcher shown inside Claude pods that haven't started yet */
+function FlightLauncher({ cwd, cwdBasename, workspaceId, onLaunch, onLaunchClaude, onLaunchTerminal }: {
+  cwd: string;
+  cwdBasename: string;
+  workspaceId: string;
+  onLaunch: () => void;
+  onLaunchClaude: (cwd: string) => void;
+  onLaunchTerminal: (cwd: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+  const ws = useWorkspaceStore((s) => s.workspaces.find((w) => w.id === workspaceId));
+  const paths = ws?.paths ?? [cwd];
+
+  useEffect(() => {
+    if (!open) return;
+    function handleClick(e: MouseEvent) {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
+        setOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, [open]);
+
+  const folderName = (p: string) => p.split("/").pop() || p;
+  const shortenPath = (p: string) => p.replace(/^\/Users\/[^/]+/, "~");
+
+  return (
+    <div style={launcherStyles.container}>
+      <div className="launch-btn" style={launcherStyles.main} onClick={onLaunch}>
+        <svg width="40" height="40" viewBox="-2 -1 28 26" style={{ flexShrink: 0 }}>
+          <path d={CLAUDE_PATH} fill="#D97757" fillRule="nonzero" data-keep-color="" />
+        </svg>
+        <span style={launcherStyles.name}>Claude Code</span>
+        <span style={launcherStyles.path}>{cwdBasename}</span>
+      </div>
+      <div ref={dropdownRef} style={launcherStyles.dropdownWrapper}>
+        <span
+          style={launcherStyles.trigger}
+          onClick={(e) => { e.stopPropagation(); setOpen((v) => !v); }}
+        >
+          or open ▾
+        </span>
+        {open && (
+          <div style={launcherStyles.menu}>
+            <div style={launcherStyles.menuSection}>Claude Code</div>
+            {paths.map((p) => (
+              <div
+                key={`claude-${p}`}
+                className="sidebar-btn"
+                style={launcherStyles.menuItem}
+                onClick={() => { setOpen(false); onLaunchClaude(p); }}
+              >
+                <svg width="11" height="11" viewBox="-2 -1 28 26" fill="none" style={{ flexShrink: 0 }}>
+                  <path d={CLAUDE_PATH} fill="#D97757" fillRule="nonzero" data-keep-color="" />
+                </svg>
+                <span style={launcherStyles.menuItemText}>{folderName(p)}</span>
+                {paths.length > 1 && <span style={launcherStyles.menuItemPath}>{shortenPath(p)}</span>}
+              </div>
+            ))}
+            <div style={launcherStyles.menuDivider} />
+            <div style={launcherStyles.menuSection}>Terminal</div>
+            {paths.map((p) => (
+              <div
+                key={`term-${p}`}
+                className="sidebar-btn"
+                style={launcherStyles.menuItem}
+                onClick={() => { setOpen(false); onLaunchTerminal(p); }}
+              >
+                <svg width="12" height="12" viewBox="0 0 16 16" fill="none" style={{ flexShrink: 0 }}>
+                  <path d="M4 5l3 3-3 3" stroke="var(--status-green)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                  <line x1="9" y1="11" x2="13" y2="11" stroke="var(--status-green)" strokeWidth="1.5" strokeLinecap="round" />
+                </svg>
+                <span style={launcherStyles.menuItemText}>{folderName(p)}</span>
+                {paths.length > 1 && <span style={launcherStyles.menuItemPath}>{shortenPath(p)}</span>}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
 
 const EdgeSpawnButtons = React.memo(function EdgeSpawnButtons({
   podX,
@@ -817,6 +911,69 @@ const launcherStyles: Record<string, React.CSSProperties> = {
     color: "var(--text-secondary)",
     fontWeight: 600,
     letterSpacing: "0.02em",
+  },
+  dropdownWrapper: {
+    position: "relative" as const,
+    marginTop: 2,
+    textAlign: "center" as const,
+  },
+  trigger: {
+    fontSize: 13,
+    fontWeight: 600,
+    color: "var(--text-dim)",
+    cursor: "pointer",
+    letterSpacing: "0.02em",
+  },
+  menu: {
+    position: "absolute" as const,
+    bottom: "calc(100% + 4px)",
+    left: "50%",
+    transform: "translateX(-50%)",
+    background: "rgba(36, 36, 36, 0.78)",
+    backdropFilter: "blur(20px) saturate(180%)",
+    WebkitBackdropFilter: "blur(20px) saturate(180%)",
+    border: "1px solid rgba(255, 255, 255, 0.12)",
+    borderRadius: 6,
+    padding: "4px 0",
+    minWidth: 180,
+    zIndex: 20,
+    boxShadow: "0 4px 16px rgba(0, 0, 0, 0.4)",
+  },
+  menuSection: {
+    padding: "5px 12px 3px",
+    fontSize: 10,
+    fontWeight: 600,
+    color: "var(--text-primary)",
+    textTransform: "uppercase" as const,
+    letterSpacing: "0.04em",
+  },
+  menuDivider: {
+    height: 1,
+    background: "rgba(255, 255, 255, 0.08)",
+    margin: "4px 0",
+  },
+  menuItem: {
+    display: "flex",
+    alignItems: "center",
+    gap: 8,
+    padding: "5px 12px",
+    fontSize: 12,
+    color: "var(--text-primary)",
+    cursor: "pointer",
+    whiteSpace: "nowrap" as const,
+    background: "none",
+    border: "none",
+    width: "100%",
+    textAlign: "left" as const,
+  },
+  menuItemText: {
+    fontWeight: 500,
+  },
+  menuItemPath: {
+    fontSize: 11,
+    color: "var(--text-dim)",
+    marginLeft: "auto",
+    paddingLeft: 8,
   },
 };
 

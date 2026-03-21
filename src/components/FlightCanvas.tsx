@@ -1,8 +1,10 @@
-import React, { useEffect, useRef, useMemo } from "react";
+import React, { useEffect, useRef, useMemo, useCallback } from "react";
 import { useWorkspaceStore } from "../stores/workspaceStore";
 import { FlightPod } from "./FlightPod";
 import { FlightHUD } from "./FlightHUD";
-import { FLIGHT_ZOOM_MIN, FLIGHT_ZOOM_MAX } from "../lib/types";
+import { FLIGHT_ZOOM_MIN, FLIGHT_ZOOM_MAX, FLIGHT_DEFAULT_CLAUDE_WIDTH, FLIGHT_DEFAULT_CLAUDE_HEIGHT, FLIGHT_DEFAULT_TERMINAL_WIDTH, FLIGHT_DEFAULT_TERMINAL_HEIGHT } from "../lib/types";
+import { showContextMenu } from "../lib/contextMenu";
+import { CLAUDE_PATH } from "./FileIcons";
 
 /** Renders a single workspace's flight canvas. Hidden via display:none when inactive. */
 const WorkspaceFlightView = React.memo(function WorkspaceFlightView({
@@ -98,10 +100,64 @@ const WorkspaceFlightView = React.memo(function WorkspaceFlightView({
     return () => el.removeEventListener("wheel", handler);
   }, [workspaceId, setFlightViewport]);
 
+  // Right-click on empty canvas → context menu to add pods at click position
+  const handleCanvasContextMenu = useCallback((e: React.MouseEvent) => {
+    // Only handle clicks on the canvas itself, not on pods
+    if ((e.target as HTMLElement).closest("[data-flight-pod]")) return;
+    e.preventDefault();
+
+    const store = useWorkspaceStore.getState();
+    const ws = store.workspaces.find((w) => w.id === workspaceId);
+    const paths = ws?.paths ?? [];
+    if (paths.length === 0) return;
+
+    const vp = store.flightLayouts[workspaceId]?.viewport;
+    if (!vp) return;
+
+    // Convert screen click position to canvas coordinates
+    const rect = containerRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    const parentZoom = rect.width / (containerRef.current?.offsetWidth ?? rect.width);
+    const cx = (e.clientX - rect.left) / parentZoom;
+    const cy = (e.clientY - rect.top) / parentZoom;
+
+    let canvasX: number, canvasY: number;
+    if (vp.zoom >= 1.0) {
+      canvasX = cx / vp.zoom - vp.panX;
+      canvasY = cy / vp.zoom - vp.panY;
+    } else {
+      canvasX = (cx - vp.panX) / vp.zoom;
+      canvasY = (cy - vp.panY) / vp.zoom;
+    }
+
+    const folderName = (p: string) => p.split("/").pop() || p;
+    const items: Parameters<typeof showContextMenu>[0] = [];
+
+    // Claude Code section
+    items.push({ label: "Claude Code", action: () => {}, disabled: true });
+    for (const p of paths) {
+      items.push({
+        label: `  ${folderName(p)}`,
+        action: () => store.addFlightPodAt(workspaceId, "claude", canvasX, canvasY, FLIGHT_DEFAULT_CLAUDE_WIDTH, FLIGHT_DEFAULT_CLAUDE_HEIGHT, p),
+      });
+    }
+    items.push("separator");
+    // Terminal section
+    items.push({ label: "Terminal", action: () => {}, disabled: true });
+    for (const p of paths) {
+      items.push({
+        label: `  ${folderName(p)}`,
+        action: () => store.addFlightPodAt(workspaceId, "terminal", canvasX, canvasY, FLIGHT_DEFAULT_TERMINAL_WIDTH, FLIGHT_DEFAULT_TERMINAL_HEIGHT, p),
+      });
+    }
+    showContextMenu(items);
+  }, [workspaceId]);
+
   return (
     <div
       ref={containerRef}
       style={{ ...canvasStyles.canvas, display: isActive ? "flex" : "none" }}
+      onContextMenu={handleCanvasContextMenu}
     >
       <div
         style={{
