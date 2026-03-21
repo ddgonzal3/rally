@@ -1,9 +1,8 @@
-import React, { useEffect, useRef, useMemo, useCallback } from "react";
+import React, { useEffect, useRef, useMemo, useCallback, useState } from "react";
 import { useWorkspaceStore } from "../stores/workspaceStore";
 import { FlightPod, snapToNeighbors, preventOverlap } from "./FlightPod";
 import { FlightHUD } from "./FlightHUD";
 import { FLIGHT_ZOOM_MIN, FLIGHT_ZOOM_MAX, FLIGHT_DEFAULT_CLAUDE_WIDTH, FLIGHT_DEFAULT_CLAUDE_HEIGHT, FLIGHT_DEFAULT_TERMINAL_WIDTH, FLIGHT_DEFAULT_TERMINAL_HEIGHT } from "../lib/types";
-import { showContextMenu } from "../lib/contextMenu";
 import { CLAUDE_PATH } from "./FileIcons";
 
 /** Renders a single workspace's flight canvas. Hidden via display:none when inactive. */
@@ -238,21 +237,18 @@ const WorkspaceFlightView = React.memo(function WorkspaceFlightView({
     };
   }, [workspaceId, setFlightViewport]);
 
-  // Right-click on empty canvas → context menu to add pods at click position
+  // Right-click on empty canvas → frosted glass popup to add pods
+  const [contextMenu, setContextMenu] = useState<{ screenX: number; screenY: number; canvasX: number; canvasY: number } | null>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+
   const handleCanvasContextMenu = useCallback((e: React.MouseEvent) => {
-    // Only handle clicks on the canvas itself, not on pods
     if ((e.target as HTMLElement).closest("[data-flight-pod]")) return;
     e.preventDefault();
 
     const store = useWorkspaceStore.getState();
-    const ws = store.workspaces.find((w) => w.id === workspaceId);
-    const paths = ws?.paths ?? [];
-    if (paths.length === 0) return;
-
     const vp = store.flightLayouts[workspaceId]?.viewport;
     if (!vp) return;
 
-    // Convert screen click position to canvas coordinates
     const rect = containerRef.current?.getBoundingClientRect();
     if (!rect) return;
     const parentZoom = rect.width / (containerRef.current?.offsetWidth ?? rect.width);
@@ -268,28 +264,26 @@ const WorkspaceFlightView = React.memo(function WorkspaceFlightView({
       canvasY = (cy - vp.panY) / vp.zoom;
     }
 
-    const folderName = (p: string) => p.split("/").pop() || p;
-    const items: Parameters<typeof showContextMenu>[0] = [];
-
-    // Claude Code section
-    items.push({ label: "Claude Code", action: () => {}, disabled: true });
-    for (const p of paths) {
-      items.push({
-        label: `  ${folderName(p)}`,
-        action: () => store.addFlightPodAt(workspaceId, "claude", canvasX, canvasY, FLIGHT_DEFAULT_CLAUDE_WIDTH, FLIGHT_DEFAULT_CLAUDE_HEIGHT, p),
-      });
-    }
-    items.push("separator");
-    // Terminal section
-    items.push({ label: "Terminal", action: () => {}, disabled: true });
-    for (const p of paths) {
-      items.push({
-        label: `  ${folderName(p)}`,
-        action: () => store.addFlightPodAt(workspaceId, "terminal", canvasX, canvasY, FLIGHT_DEFAULT_TERMINAL_WIDTH, FLIGHT_DEFAULT_TERMINAL_HEIGHT, p),
-      });
-    }
-    showContextMenu(items);
+    setContextMenu({ screenX: e.clientX, screenY: e.clientY, canvasX, canvasY });
   }, [workspaceId]);
+
+  // Close popup when clicking outside
+  useEffect(() => {
+    if (!contextMenu) return;
+    const handler = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setContextMenu(null);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [contextMenu]);
+
+  const ws = useWorkspaceStore((s) => s.workspaces.find((w) => w.id === workspaceId));
+  const paths = ws?.paths ?? [];
+  const folderName = (p: string) => p.split("/").pop() || p;
+  const shortenPath = (p: string) => p.replace(/^\/Users\/[^/]+/, "~");
+  const addFlightPodAt = useWorkspaceStore((s) => s.addFlightPodAt);
 
   return (
     <div
@@ -314,6 +308,67 @@ const WorkspaceFlightView = React.memo(function WorkspaceFlightView({
         ))}
       </div>
       {isActive && <FlightHUD workspaceId={workspaceId} zoom={zoom} />}
+
+      {/* Frosted glass context menu */}
+      {contextMenu && (
+        <div
+          ref={menuRef}
+          style={{
+            position: "fixed",
+            left: contextMenu.screenX,
+            top: contextMenu.screenY,
+            background: "rgba(36, 36, 36, 0.78)",
+            backdropFilter: "blur(20px) saturate(180%)",
+            WebkitBackdropFilter: "blur(20px) saturate(180%)",
+            border: "1px solid rgba(255, 255, 255, 0.12)",
+            borderRadius: 6,
+            padding: "4px 0",
+            minWidth: 180,
+            zIndex: 99999,
+            boxShadow: "0 4px 16px rgba(0, 0, 0, 0.4)",
+            userSelect: "none",
+          }}
+        >
+          <div style={menuStyles.section}>Claude Code</div>
+          {paths.map((p) => (
+            <div
+              key={`claude-${p}`}
+              className="sidebar-btn"
+              style={menuStyles.item}
+              onClick={() => {
+                addFlightPodAt(workspaceId, "claude", contextMenu.canvasX, contextMenu.canvasY, FLIGHT_DEFAULT_CLAUDE_WIDTH, FLIGHT_DEFAULT_CLAUDE_HEIGHT, p);
+                setContextMenu(null);
+              }}
+            >
+              <svg width="11" height="11" viewBox="-2 -1 28 26" fill="none" style={{ flexShrink: 0 }}>
+                <path d={CLAUDE_PATH} fill="#D97757" fillRule="nonzero" />
+              </svg>
+              <span style={menuStyles.itemText}>{folderName(p)}</span>
+              {paths.length > 1 && <span style={menuStyles.itemPath}>{shortenPath(p)}</span>}
+            </div>
+          ))}
+          <div style={menuStyles.divider} />
+          <div style={menuStyles.section}>Terminal</div>
+          {paths.map((p) => (
+            <div
+              key={`term-${p}`}
+              className="sidebar-btn"
+              style={menuStyles.item}
+              onClick={() => {
+                addFlightPodAt(workspaceId, "terminal", contextMenu.canvasX, contextMenu.canvasY, FLIGHT_DEFAULT_TERMINAL_WIDTH, FLIGHT_DEFAULT_TERMINAL_HEIGHT, p);
+                setContextMenu(null);
+              }}
+            >
+              <svg width="12" height="12" viewBox="0 0 16 16" fill="none" style={{ flexShrink: 0 }}>
+                <path d="M4 5l3 3-3 3" stroke="var(--status-green)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                <line x1="9" y1="11" x2="13" y2="11" stroke="var(--status-green)" strokeWidth="1.5" strokeLinecap="round" />
+              </svg>
+              <span style={menuStyles.itemText}>{folderName(p)}</span>
+              {paths.length > 1 && <span style={menuStyles.itemPath}>{shortenPath(p)}</span>}
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 });
@@ -400,5 +455,44 @@ const canvasStyles: Record<string, React.CSSProperties> = {
     color: "var(--text-dim)",
     fontSize: 14,
     lineHeight: 1.6,
+  },
+};
+
+const menuStyles: Record<string, React.CSSProperties> = {
+  section: {
+    padding: "5px 12px 3px",
+    fontSize: 10,
+    fontWeight: 600,
+    color: "var(--text-primary)",
+    textTransform: "uppercase" as const,
+    letterSpacing: "0.04em",
+  },
+  divider: {
+    height: 1,
+    background: "rgba(255, 255, 255, 0.08)",
+    margin: "4px 0",
+  },
+  item: {
+    display: "flex",
+    alignItems: "center",
+    gap: 8,
+    padding: "5px 12px",
+    fontSize: 12,
+    color: "var(--text-primary)",
+    cursor: "pointer",
+    whiteSpace: "nowrap" as const,
+    background: "none",
+    border: "none",
+    width: "100%",
+    textAlign: "left" as const,
+  },
+  itemText: {
+    fontWeight: 500,
+  },
+  itemPath: {
+    fontSize: 11,
+    color: "var(--text-dim)",
+    marginLeft: "auto",
+    paddingLeft: 8,
   },
 };
