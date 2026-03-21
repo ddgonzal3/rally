@@ -254,17 +254,18 @@ export const FlightPod = React.memo(function FlightPod({
 
   const setFlightViewport = useWorkspaceStore((s) => s.setFlightViewport);
 
-  const handleFocusClick = useCallback(() => {
+  const handleFocusClick = useCallback((e: React.MouseEvent) => {
+    // Don't steal focus if clicking inside the shell panel
+    if ((e.target as HTMLElement).closest("[data-shell-panel]")) return;
+
     // When zoomed out past threshold, click zooms to fit this pod in the viewport
     if (zoom < ZOOM_TO_FIT_THRESHOLD) {
-      // Calculate zoom to fit pod with some padding (80% of viewport)
       const container = podRef.current?.closest("[style*='overflow: hidden']") as HTMLElement | null;
       if (container) {
         const rect = container.getBoundingClientRect();
         const viewW = rect.width * 0.8;
         const viewH = rect.height * 0.8;
         const fitZoom = Math.min(viewW / podWidth, viewH / podHeight, 1.0);
-        // Center the pod in the viewport
         const centerX = rect.width / 2;
         const centerY = rect.height / 2;
         const panX = centerX - (podX + podWidth / 2) * fitZoom;
@@ -273,17 +274,20 @@ export const FlightPod = React.memo(function FlightPod({
       }
       return;
     }
+    // Focus the MAIN terminal (first one, not shell)
     if (!podRef.current) return;
-    const textarea = podRef.current.querySelector("textarea.xterm-helper-textarea") as HTMLTextAreaElement | null;
-    if (textarea) textarea.focus();
+    const mainTerminal = podRef.current.querySelector("[data-main-terminal] textarea.xterm-helper-textarea") as HTMLTextAreaElement | null;
+    if (mainTerminal) mainTerminal.focus();
   }, [zoom, podX, podY, podWidth, podHeight, workspaceId, setFlightViewport]);
 
   if (!podType) return null;
 
   const isClaudePod = podType === "claude";
+  const HEADER_H = 32;
+  const FOOTER_H = isClaudePod ? 24 : 0;
   const terminalBodyHeight = isClaudePod && shellExpanded
-    ? podHeight - 32 - shellHeight
-    : podHeight - 32;
+    ? podHeight - HEADER_H - FOOTER_H - shellHeight
+    : podHeight - HEADER_H - FOOTER_H;
 
   return (
     <>
@@ -329,27 +333,8 @@ export const FlightPod = React.memo(function FlightPod({
           <span style={headerStyles.title}>{podTitle || cwdBasename}</span>
         </div>
 
-        {/* Right: shell toggle (claude only) + close */}
+        {/* Right: close */}
         <div style={headerStyles.right}>
-          {isClaudePod && (
-            <button
-              style={headerStyles.btn}
-              onMouseDown={(e) => e.stopPropagation()}
-              onClick={handleShellToggle}
-              title={shellExpanded ? "Hide shell" : "Show shell"}
-            >
-              <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
-                <polyline
-                  points={shellExpanded ? "2,4 5,7 8,4" : "2,8 5,5 8,8"}
-                  stroke="#999"
-                  strokeWidth="1.2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                />
-                <line x1="2" y1="10" x2="10" y2="10" stroke="#999" strokeWidth="1.2" strokeLinecap="round" />
-              </svg>
-            </button>
-          )}
           <button
             style={headerStyles.btn}
             onMouseDown={(e) => e.stopPropagation()}
@@ -366,6 +351,7 @@ export const FlightPod = React.memo(function FlightPod({
 
       {/* Main terminal body */}
       <div
+        data-main-terminal=""
         style={{
           flex: shellExpanded ? "none" : 1,
           height: shellExpanded ? terminalBodyHeight : undefined,
@@ -409,26 +395,60 @@ export const FlightPod = React.memo(function FlightPod({
         )}
       </div>
 
-      {/* Shell panel (Claude pods only) — always mounted, toggled with display */}
+      {/* Shell footer + expandable panel (Claude pods only) */}
       {isClaudePod && (
-        <div
-          style={{
-            display: shellExpanded ? "flex" : "none",
-            flexDirection: "column",
-            height: shellHeight,
-            minHeight: 0,
-            background: "var(--terminal-bg)",
-            borderTop: "1px solid rgba(255, 255, 255, 0.06)",
-            overflow: "hidden",
-          }}
-        >
-          <Terminal
-            cwd={podCwd}
-            ptyId={shellPtyId}
-            workspaceId={workspaceId}
-            onPtySpawned={handleShellPtySpawned}
-          />
-        </div>
+        <>
+          {/* Footer bar — always visible, click to toggle shell */}
+          <div
+            onClick={(e) => { e.stopPropagation(); handleShellToggle(e); }}
+            style={shellFooterStyles.bar}
+          >
+            <div style={shellFooterStyles.left}>
+              <svg width="12" height="12" viewBox="0 0 16 16" fill="none" style={{ flexShrink: 0 }}>
+                <path d="M4 5l3 3-3 3" stroke="var(--status-green)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                <line x1="9" y1="11" x2="13" y2="11" stroke="var(--status-green)" strokeWidth="1.5" strokeLinecap="round" />
+              </svg>
+              <span style={shellFooterStyles.label}>Terminal</span>
+            </div>
+            <svg
+              width="10" height="10" viewBox="0 0 10 10" fill="none"
+              style={{ flexShrink: 0, transform: shellExpanded ? "rotate(180deg)" : "none", transition: "transform 150ms ease" }}
+            >
+              <path d="M2 4l3 3 3-3" stroke="#666" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          </div>
+
+          {/* Expandable shell terminal */}
+          <div
+            data-shell-panel=""
+            style={{
+              display: shellExpanded ? "flex" : "none",
+              flexDirection: "column",
+              height: shellHeight,
+              minHeight: 0,
+              background: "var(--terminal-bg)",
+              overflow: "hidden",
+              position: "relative",
+            }}
+          >
+            {/* Collapse button inside the terminal */}
+            <button
+              onClick={(e) => { e.stopPropagation(); handleShellToggle(e); }}
+              style={shellFooterStyles.collapseBtn}
+              title="Collapse terminal"
+            >
+              <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
+                <path d="M2 6l3-3 3 3" stroke="#666" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+            </button>
+            <Terminal
+              cwd={podCwd}
+              ptyId={shellPtyId}
+              workspaceId={workspaceId}
+              onPtySpawned={handleShellPtySpawned}
+            />
+          </div>
+        </>
       )}
 
       {/* Resize grip — bottom-right corner */}
@@ -775,5 +795,48 @@ const launcherStyles: Record<string, React.CSSProperties> = {
     color: "var(--text-secondary)",
     fontWeight: 600,
     letterSpacing: "0.02em",
+  },
+};
+
+const shellFooterStyles: Record<string, React.CSSProperties> = {
+  bar: {
+    height: 24,
+    minHeight: 24,
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    padding: "0 8px",
+    borderTop: "1px solid rgba(255, 255, 255, 0.06)",
+    cursor: "pointer",
+    userSelect: "none",
+    flexShrink: 0,
+  },
+  left: {
+    display: "flex",
+    alignItems: "center",
+    gap: 5,
+  },
+  label: {
+    fontSize: 10,
+    fontWeight: 600,
+    color: "#666",
+    letterSpacing: "0.03em",
+    textTransform: "uppercase" as const,
+  },
+  collapseBtn: {
+    position: "absolute",
+    top: 4,
+    right: 6,
+    zIndex: 5,
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    width: 20,
+    height: 20,
+    background: "rgba(255, 255, 255, 0.06)",
+    border: "none",
+    borderRadius: 4,
+    cursor: "pointer",
+    padding: 0,
   },
 };
