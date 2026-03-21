@@ -47,7 +47,7 @@ const WorkspaceFlightView = React.memo(function WorkspaceFlightView({
     // - Scroll inside pod (no pan mode) = terminal scrolls normally
     let panModeActive = false;
     let panModeTimer: ReturnType<typeof setTimeout> | null = null;
-    const PAN_MODE_TIMEOUT = 1500; // ms of no scrolling before pan mode ends
+    const PAN_MODE_TIMEOUT = 750; // ms of no scrolling before pan mode ends
 
     const wheelHandler = (e: WheelEvent) => {
       const isInsidePod = !!(e.target as HTMLElement).closest("[data-flight-pod]");
@@ -93,6 +93,7 @@ const WorkspaceFlightView = React.memo(function WorkspaceFlightView({
       // Scroll on empty canvas = activate pan mode
       if (!isInsidePod) {
         panModeActive = true;
+        el.classList.add("flight-panning");
       }
 
       // If pan mode is active, pan (even over pods)
@@ -111,6 +112,7 @@ const WorkspaceFlightView = React.memo(function WorkspaceFlightView({
         panModeTimer = setTimeout(() => {
           panModeActive = false;
           panModeTimer = null;
+          el.classList.remove("flight-panning");
         }, PAN_MODE_TIMEOUT);
         return;
       }
@@ -136,6 +138,7 @@ const WorkspaceFlightView = React.memo(function WorkspaceFlightView({
           lastX = e.clientX;
           lastY = e.clientY;
           el.style.cursor = "grabbing";
+          el.classList.add("flight-panning");
           return;
         }
         const dx = e.clientX - lastX;
@@ -154,6 +157,7 @@ const WorkspaceFlightView = React.memo(function WorkspaceFlightView({
       if (isPanning && !e.shiftKey) {
         isPanning = false;
         el.style.cursor = "";
+        el.classList.remove("flight-panning");
       }
 
       // Option+move = drag pod under cursor
@@ -213,6 +217,7 @@ const WorkspaceFlightView = React.memo(function WorkspaceFlightView({
       if (e.key === "Shift" && isPanning) {
         isPanning = false;
         el.style.cursor = "";
+        el.classList.remove("flight-panning");
       }
       if (e.key === "Alt" && isDraggingPod) {
         isDraggingPod = false;
