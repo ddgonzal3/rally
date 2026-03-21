@@ -99,8 +99,9 @@ const WorkspaceFlightView = React.memo(function WorkspaceFlightView({
         return;
       }
 
-      // If canvas is focused (last click was on empty canvas), scroll pans
-      if (canvasFocused) {
+      // Pan if: canvas was last clicked, OR cursor is currently over empty canvas
+      const cursorOverPod = !!(e.target as HTMLElement).closest("[data-flight-pod]");
+      if (canvasFocused || !cursorOverPod) {
         e.preventDefault();
         const store = useWorkspaceStore.getState();
         const vp = store.flightLayouts[workspaceId]?.viewport;
@@ -113,7 +114,7 @@ const WorkspaceFlightView = React.memo(function WorkspaceFlightView({
         return;
       }
 
-      // Otherwise: terminal is focused → let terminal scroll normally
+      // Otherwise: cursor is over a pod and terminal is focused → let terminal scroll
     };
     el.addEventListener("wheel", wheelHandler, { passive: false });
 
