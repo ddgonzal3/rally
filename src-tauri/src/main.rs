@@ -436,7 +436,7 @@ fn main() {
                 )
                 .separator()
                 .item(
-                    &MenuItemBuilder::with_id("view-toggle-mode", "Toggle Dev/Product Mode")
+                    &MenuItemBuilder::with_id("view-toggle-mode", "Cycle View Mode (Flight/Dev/Product)")
                         .accelerator("CmdOrCtrl+Shift+M")
                         .build(app)?,
                 )

@@ -466,12 +466,14 @@ export function App() {
   });
   const activeWorkspaceId = useWorkspaceStore((s) => s.activeWorkspaceId);
   const workspaceMode = useWorkspaceStore((s) => {
-    if (!s.activeWorkspaceId) return "dev";
-    return s.workspaceModes[s.activeWorkspaceId] ?? "dev";
+    if (!s.activeWorkspaceId) return "flight";
+    return s.workspaceModes[s.activeWorkspaceId] ?? "flight";
   });
   const setWorkspaceMode = useWorkspaceStore((s) => s.setWorkspaceMode);
   const loadRallyConfig = useWorkspaceStore((s) => s.loadRallyConfig);
   const isProductMode = workspaceMode === "product";
+  const isFlightMode = workspaceMode === "flight";
+  const isDevMode = workspaceMode === "dev";
   const activeRootPath = useWorkspaceStore((s) => {
     return s.activeWorkspaceId
       ? (s.getActivePath(s.activeWorkspaceId) ?? "")
@@ -989,8 +991,9 @@ export function App() {
       const s = useWorkspaceStore.getState();
       const wsId = s.activeWorkspaceId;
       if (!wsId) return;
-      const current = s.workspaceModes[wsId] ?? "dev";
-      s.setWorkspaceMode(wsId, current === "product" ? "dev" : "product");
+      const current = s.workspaceModes[wsId] ?? "flight";
+      const next = current === "flight" ? "dev" : current === "dev" ? "product" : "flight";
+      s.setWorkspaceMode(wsId, next);
     })
       .then((fn) => {
         if (cancelled) fn();
@@ -2055,6 +2058,7 @@ export function App() {
               position: "relative",
             }}
           >
+            {/* Product Mode */}
             {activeWorkspaceId && activeRootPath && (
               <div
                 style={{
@@ -2071,9 +2075,10 @@ export function App() {
                 />
               </div>
             )}
+            {/* Flight Mode */}
             <div
               style={{
-                display: isProductMode ? "none" : "flex",
+                display: isFlightMode ? "flex" : "none",
                 flex: 1,
                 flexDirection: "column" as const,
                 minWidth: 0,
@@ -2083,6 +2088,21 @@ export function App() {
               }}
             >
               <FlightCanvas />
+              <BuildStatusDrawer />
+            </div>
+            {/* Classic Dev Mode */}
+            <div
+              style={{
+                display: isDevMode ? "flex" : "none",
+                flex: 1,
+                flexDirection: "column" as const,
+                minWidth: 0,
+                minHeight: 0,
+                position: "relative" as const,
+                overflow: "hidden",
+              }}
+            >
+              <PaneLayout />
               <BuildStatusDrawer />
             </div>
             <BuildStatusBar />

@@ -185,7 +185,7 @@ export interface WorkspaceReadiness {
 
 // --- Workspace Mode Types ---
 
-export type WorkspaceMode = "product" | "dev";
+export type WorkspaceMode = "flight" | "dev" | "product";
 
 export type ThemeName = 'dark' | 'dimmed' | 'light';
 
