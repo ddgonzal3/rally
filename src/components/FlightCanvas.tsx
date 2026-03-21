@@ -287,6 +287,53 @@ const WorkspaceFlightView = React.memo(function WorkspaceFlightView({
   const shortenPath = (p: string) => p.replace(/^\/Users\/[^/]+/, "~");
   const addFlightPodAt = useWorkspaceStore((s) => s.addFlightPodAt);
 
+  /** Find the best snap position for a new pod near canvasX/canvasY */
+  const computeSnapPlacement = useCallback((
+    canvasX: number, canvasY: number,
+    defaultW: number, defaultH: number,
+  ) => {
+    const store = useWorkspaceStore.getState();
+    const pods = store.flightLayouts[workspaceId]?.pods ?? [];
+    if (pods.length === 0) return { x: canvasX, y: canvasY, w: defaultW, h: defaultH };
+
+    const GAP = 8; // MIN_POD_GAP
+    // Find the nearest pod edge to the click point
+    let bestDist = Infinity;
+    let bestPlacement = { x: canvasX, y: canvasY, w: defaultW, h: defaultH };
+
+    for (const pod of pods) {
+      const podRight = pod.x + pod.width;
+      const podBottom = pod.y + pod.height;
+
+      // Right edge of pod
+      const distRight = Math.abs(canvasX - podRight);
+      if (distRight < bestDist && canvasX >= podRight) {
+        bestDist = distRight;
+        bestPlacement = { x: podRight + GAP, y: pod.y, w: defaultW, h: pod.height };
+      }
+      // Left edge of pod
+      const distLeft = Math.abs(canvasX - pod.x);
+      if (distLeft < bestDist && canvasX <= pod.x) {
+        bestDist = distLeft;
+        bestPlacement = { x: pod.x - defaultW - GAP, y: pod.y, w: defaultW, h: pod.height };
+      }
+      // Bottom edge of pod
+      const distBottom = Math.abs(canvasY - podBottom);
+      if (distBottom < bestDist && canvasY >= podBottom) {
+        bestDist = distBottom;
+        bestPlacement = { x: pod.x, y: podBottom + GAP, w: pod.width, h: defaultH };
+      }
+      // Top edge of pod
+      const distTop = Math.abs(canvasY - pod.y);
+      if (distTop < bestDist && canvasY <= pod.y) {
+        bestDist = distTop;
+        bestPlacement = { x: pod.x, y: pod.y - defaultH - GAP, w: pod.width, h: defaultH };
+      }
+    }
+
+    return bestPlacement;
+  }, [workspaceId]);
+
   return (
     <div
       ref={containerRef}
@@ -338,7 +385,8 @@ const WorkspaceFlightView = React.memo(function WorkspaceFlightView({
               className="sidebar-btn"
               style={menuStyles.item}
               onClick={() => {
-                addFlightPodAt(workspaceId, "claude", contextMenu.canvasX, contextMenu.canvasY, FLIGHT_DEFAULT_CLAUDE_WIDTH, FLIGHT_DEFAULT_CLAUDE_HEIGHT, p);
+                const p2 = computeSnapPlacement(contextMenu.canvasX, contextMenu.canvasY, FLIGHT_DEFAULT_CLAUDE_WIDTH, FLIGHT_DEFAULT_CLAUDE_HEIGHT);
+                addFlightPodAt(workspaceId, "claude", p2.x, p2.y, p2.w, p2.h, p);
                 setContextMenu(null);
               }}
             >
@@ -357,7 +405,8 @@ const WorkspaceFlightView = React.memo(function WorkspaceFlightView({
               className="sidebar-btn"
               style={menuStyles.item}
               onClick={() => {
-                addFlightPodAt(workspaceId, "terminal", contextMenu.canvasX, contextMenu.canvasY, FLIGHT_DEFAULT_TERMINAL_WIDTH, FLIGHT_DEFAULT_TERMINAL_HEIGHT, p);
+                const p2 = computeSnapPlacement(contextMenu.canvasX, contextMenu.canvasY, FLIGHT_DEFAULT_TERMINAL_WIDTH, FLIGHT_DEFAULT_TERMINAL_HEIGHT);
+                addFlightPodAt(workspaceId, "terminal", p2.x, p2.y, p2.w, p2.h, p);
                 setContextMenu(null);
               }}
             >

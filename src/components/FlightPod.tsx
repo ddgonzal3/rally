@@ -387,6 +387,47 @@ export const FlightPod = React.memo(function FlightPod({
       {/* Header */}
       <div
         onMouseDown={handleHeaderMouseDown}
+        onContextMenu={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          const store = useWorkspaceStore.getState();
+          const GAP = 8;
+          const splitPod = (dir: "right" | "left" | "below" | "above") => {
+            const w = podType === "claude" ? FLIGHT_DEFAULT_CLAUDE_WIDTH : FLIGHT_DEFAULT_TERMINAL_WIDTH;
+            const h = podType === "claude" ? FLIGHT_DEFAULT_CLAUDE_HEIGHT : FLIGHT_DEFAULT_TERMINAL_HEIGHT;
+            let nx: number, ny: number, nw: number, nh: number;
+            switch (dir) {
+              case "right": nx = podX + podWidth + GAP; ny = podY; nw = w; nh = podHeight; break;
+              case "left": nx = podX - w - GAP; ny = podY; nw = w; nh = podHeight; break;
+              case "below": nx = podX; ny = podY + podHeight + GAP; nw = podWidth; nh = h; break;
+              case "above": nx = podX; ny = podY - h - GAP; nw = podWidth; nh = h; break;
+            }
+            store.addFlightPodAt(workspaceId, "claude", nx, ny, nw, nh, podCwd);
+          };
+          const splitTerminal = (dir: "right" | "left" | "below" | "above") => {
+            const w = FLIGHT_DEFAULT_TERMINAL_WIDTH;
+            const h = FLIGHT_DEFAULT_TERMINAL_HEIGHT;
+            let nx: number, ny: number, nw: number, nh: number;
+            switch (dir) {
+              case "right": nx = podX + podWidth + GAP; ny = podY; nw = w; nh = podHeight; break;
+              case "left": nx = podX - w - GAP; ny = podY; nw = w; nh = podHeight; break;
+              case "below": nx = podX; ny = podY + podHeight + GAP; nw = podWidth; nh = h; break;
+              case "above": nx = podX; ny = podY - h - GAP; nw = podWidth; nh = h; break;
+            }
+            store.addFlightPodAt(workspaceId, "terminal", nx, ny, nw, nh, podCwd);
+          };
+          showContextMenu([
+            { label: "Split Claude Right", action: () => splitPod("right") },
+            { label: "Split Claude Left", action: () => splitPod("left") },
+            { label: "Split Claude Above", action: () => splitPod("above") },
+            { label: "Split Claude Below", action: () => splitPod("below") },
+            "separator",
+            { label: "Split Terminal Right", action: () => splitTerminal("right") },
+            { label: "Split Terminal Left", action: () => splitTerminal("left") },
+            { label: "Split Terminal Above", action: () => splitTerminal("above") },
+            { label: "Split Terminal Below", action: () => splitTerminal("below") },
+          ]);
+        }}
         style={headerStyles.header}
       >
         {/* Left: icon + title */}
