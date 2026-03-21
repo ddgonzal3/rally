@@ -1,4 +1,4 @@
-import React, { useRef, useCallback, useMemo } from "react";
+import React, { useRef, useCallback, useMemo, useState } from "react";
 import { useWorkspaceStore } from "../stores/workspaceStore";
 import { Terminal } from "./Terminal";
 import { ClaudeTerminalWrapper } from "./ClaudeTerminalWrapper";
@@ -123,6 +123,9 @@ export const FlightPod = React.memo(function FlightPod({
   const podRef = useRef<HTMLDivElement>(null);
   const dragState = useRef<{ startX: number; startY: number; origX: number; origY: number } | null>(null);
   const resizeState = useRef<{ startX: number; startY: number; origW: number; origH: number } | null>(null);
+
+  // Track whether user has clicked "Start" for Claude pods (when no ptyId on restore)
+  const [claudeLaunched, setClaudeLaunched] = useState(!!podPtyId);
 
   // Derive basename for display
   const cwdBasename = useMemo(() => {
@@ -372,7 +375,22 @@ export const FlightPod = React.memo(function FlightPod({
           overflow: "hidden",
         }}
       >
-        {isClaudePod ? (
+        {isClaudePod && !claudeLaunched && !podPtyId ? (
+          /* Claude launcher — shown when pod is restored without a ptyId */
+          <div style={launcherStyles.container}>
+            <div
+              className="launch-btn"
+              style={launcherStyles.main}
+              onClick={() => setClaudeLaunched(true)}
+            >
+              <svg width="40" height="40" viewBox="-2 -1 28 26" style={{ flexShrink: 0 }}>
+                <path d={CLAUDE_PATH} fill="#D97757" fillRule="nonzero" />
+              </svg>
+              <span style={launcherStyles.name}>Claude Code</span>
+              <span style={launcherStyles.path}>{cwdBasename}</span>
+            </div>
+          </div>
+        ) : isClaudePod ? (
           <ClaudeTerminalWrapper
             cwd={podCwd}
             command="claude"
@@ -690,4 +708,40 @@ const resizeGripStyle: React.CSSProperties = {
   justifyContent: "flex-end",
   padding: 2,
   zIndex: 10,
+};
+
+const launcherStyles: Record<string, React.CSSProperties> = {
+  container: {
+    flex: 1,
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "center",
+    justifyContent: "center",
+    minHeight: 0,
+    minWidth: 0,
+    userSelect: "none",
+    background: "var(--terminal-bg)",
+  },
+  main: {
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "center",
+    gap: 8,
+    cursor: "pointer",
+    padding: 16,
+  },
+  name: {
+    fontSize: 18,
+    fontFamily: "Georgia, 'Times New Roman', serif",
+    fontWeight: 400,
+    color: "var(--text-primary)",
+    letterSpacing: "0.01em",
+    lineHeight: 1,
+  },
+  path: {
+    fontSize: 12,
+    color: "var(--text-secondary)",
+    fontWeight: 600,
+    letterSpacing: "0.02em",
+  },
 };

@@ -3512,7 +3512,25 @@ export const useWorkspaceStore = create<WorkspaceState>()(
           unifiedGitPanelPath: p?.unifiedGitPanelPath ?? null,
           unifiedGitPanelTab: (p?.unifiedGitPanelTab === "pr" ? "pr" : "changes") as "changes" | "pr",
           workspaceModes: (p?.workspaceModes && typeof p.workspaceModes === "object") ? p.workspaceModes as Record<string, WorkspaceMode> : {},
-          flightLayouts: (p?.flightLayouts && typeof p.flightLayouts === "object") ? p.flightLayouts as Record<string, FlightLayout> : {},
+          flightLayouts: (() => {
+            const raw = (p?.flightLayouts && typeof p.flightLayouts === "object") ? p.flightLayouts as Record<string, FlightLayout> : {};
+            // Strip stale ptyId/shellPtyId — PTYs from previous sessions are dead
+            const cleaned: Record<string, FlightLayout> = {};
+            for (const [wsId, layout] of Object.entries(raw)) {
+              cleaned[wsId] = {
+                ...layout,
+                pods: layout.pods.map((pod) => {
+                  const { ptyId: _, ...rest } = pod;
+                  if (rest.type === "claude") {
+                    const { shellPtyId: _2, ...claudeRest } = rest;
+                    return claudeRest as typeof pod;
+                  }
+                  return rest as typeof pod;
+                }),
+              };
+            }
+            return cleaned;
+          })(),
           flightLayoutPresets: (p?.flightLayoutPresets && typeof p.flightLayoutPresets === "object") ? p.flightLayoutPresets as Record<string, FlightLayoutPreset[]> : {},
           activeFlightPresetId: (p?.activeFlightPresetId && typeof p.activeFlightPresetId === "object") ? p.activeFlightPresetId as Record<string, string> : {},
         };
