@@ -553,3 +553,57 @@ export function createDefaultLayout(): WorkspaceLayout {
     },
   };
 }
+
+// --- Flight Mode Types ---
+
+/** Base spatial properties shared by all pods */
+export interface FlightPodBase {
+  id: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  cwd: string;
+  title: string;
+  ptyId?: string;
+  zIndex: number;
+}
+
+/** Claude Code pod — has an optional attached shell */
+export interface FlightClaudePod extends FlightPodBase {
+  type: "claude";
+  shellExpanded: boolean;
+  shellHeight: number;
+  shellPtyId?: string;
+}
+
+/** Standalone terminal pod */
+export interface FlightTerminalPod extends FlightPodBase {
+  type: "terminal";
+}
+
+export type FlightPod = FlightClaudePod | FlightTerminalPod;
+
+export interface FlightViewport {
+  panX: number;
+  panY: number;
+  zoom: number;
+}
+
+export interface FlightLayout {
+  pods: FlightPod[];
+  viewport: FlightViewport;
+}
+
+// Flight Mode constants
+export const FLIGHT_DEFAULT_CLAUDE_WIDTH = 700;
+export const FLIGHT_DEFAULT_CLAUDE_HEIGHT = 500;
+export const FLIGHT_DEFAULT_TERMINAL_WIDTH = 500;
+export const FLIGHT_DEFAULT_TERMINAL_HEIGHT = 300;
+export const FLIGHT_MIN_CLAUDE_WIDTH = 400;
+export const FLIGHT_MIN_CLAUDE_HEIGHT = 250;
+export const FLIGHT_MIN_TERMINAL_WIDTH = 300;
+export const FLIGHT_MIN_TERMINAL_HEIGHT = 150;
+export const FLIGHT_DEFAULT_SHELL_HEIGHT = 200;
+export const FLIGHT_ZOOM_MIN = 0.3;
+export const FLIGHT_ZOOM_MAX = 2.0;
