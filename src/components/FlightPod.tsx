@@ -46,32 +46,38 @@ export function snapToNeighbors(
     const oTop = o.y;
     const oBottom = o.y + o.height;
 
+    const gap = MIN_POD_GAP;
+
     if (!snappedX) {
       if (mode === "drag") {
-        // Left edge → other left or right edge
-        if (Math.abs(left - oLeft) < SNAP_THRESHOLD) { x = oLeft; snappedX = true; }
-        else if (Math.abs(left - oRight) < SNAP_THRESHOLD) { x = oRight; snappedX = true; }
-        // Right edge → other left or right edge
-        else if (Math.abs(right - oLeft) < SNAP_THRESHOLD) { x = oLeft - width; snappedX = true; }
+        // Snap with gap: right edge → other left edge (with gap between)
+        if (Math.abs(right + gap - oLeft) < SNAP_THRESHOLD) { x = oLeft - width - gap; snappedX = true; }
+        // Left edge → other right edge (with gap between)
+        else if (Math.abs(left - gap - oRight) < SNAP_THRESHOLD) { x = oRight + gap; snappedX = true; }
+        // Align left edges
+        else if (Math.abs(left - oLeft) < SNAP_THRESHOLD) { x = oLeft; snappedX = true; }
+        // Align right edges
         else if (Math.abs(right - oRight) < SNAP_THRESHOLD) { x = oRight - width; snappedX = true; }
       } else {
-        // Resize: right edge snaps
-        if (Math.abs(right - oLeft) < SNAP_THRESHOLD) { width = oLeft - x; snappedX = true; }
+        // Resize: right edge snaps to other left edge (with gap)
+        if (Math.abs(right + gap - oLeft) < SNAP_THRESHOLD) { width = oLeft - gap - x; snappedX = true; }
         else if (Math.abs(right - oRight) < SNAP_THRESHOLD) { width = oRight - x; snappedX = true; }
       }
     }
 
     if (!snappedY) {
       if (mode === "drag") {
-        // Top edge → other top or bottom edge
-        if (Math.abs(top - oTop) < SNAP_THRESHOLD) { y = oTop; snappedY = true; }
-        else if (Math.abs(top - oBottom) < SNAP_THRESHOLD) { y = oBottom; snappedY = true; }
-        // Bottom edge → other top or bottom edge
-        else if (Math.abs(bottom - oTop) < SNAP_THRESHOLD) { y = oTop - height; snappedY = true; }
+        // Snap with gap: bottom edge → other top edge (with gap between)
+        if (Math.abs(bottom + gap - oTop) < SNAP_THRESHOLD) { y = oTop - height - gap; snappedY = true; }
+        // Top edge → other bottom edge (with gap between)
+        else if (Math.abs(top - gap - oBottom) < SNAP_THRESHOLD) { y = oBottom + gap; snappedY = true; }
+        // Align top edges
+        else if (Math.abs(top - oTop) < SNAP_THRESHOLD) { y = oTop; snappedY = true; }
+        // Align bottom edges
         else if (Math.abs(bottom - oBottom) < SNAP_THRESHOLD) { y = oBottom - height; snappedY = true; }
       } else {
-        // Resize: bottom edge snaps
-        if (Math.abs(bottom - oTop) < SNAP_THRESHOLD) { height = oTop - y; snappedY = true; }
+        // Resize: bottom edge snaps to other top edge (with gap)
+        if (Math.abs(bottom + gap - oTop) < SNAP_THRESHOLD) { height = oTop - gap - y; snappedY = true; }
         else if (Math.abs(bottom - oBottom) < SNAP_THRESHOLD) { height = oBottom - y; snappedY = true; }
       }
     }
