@@ -139,7 +139,7 @@
       .inline-edit-input ::selection { background: rgba(0, 122, 204, 0.4) !important; }
       .launch-btn { cursor: pointer !important; }
       .launch-btn:hover span { color: var(--text-primary) !important; }
-      .launch-btn:hover svg path { fill: var(--text-secondary) !important; }
+      .launch-btn:hover svg path:not([data-keep-color]) { fill: var(--text-secondary) !important; }
       .sidebar-item { cursor: pointer; }
       .sidebar-item:not(.sidebar-item-active):hover { background: var(--bg-hover) !important; }
       .sidebar-btn:hover { background: var(--bg-hover) !important; }

@@ -3,6 +3,7 @@ import { useWorkspaceStore } from "../stores/workspaceStore";
 import { Terminal } from "./Terminal";
 import { ClaudeTerminalWrapper } from "./ClaudeTerminalWrapper";
 import { CLAUDE_PATH } from "./FileIcons";
+import { showContextMenu } from "../lib/contextMenu";
 import type { FlightPod as FlightPodType } from "../lib/types";
 import {
   FLIGHT_MIN_CLAUDE_WIDTH,
@@ -384,7 +385,7 @@ export const FlightPod = React.memo(function FlightPod({
               onClick={() => setClaudeLaunched(true)}
             >
               <svg width="40" height="40" viewBox="-2 -1 28 26" style={{ flexShrink: 0 }}>
-                <path d={CLAUDE_PATH} fill="#D97757" fillRule="nonzero" />
+                <path d={CLAUDE_PATH} fill="#D97757" fillRule="nonzero" data-keep-color="" />
               </svg>
               <span style={launcherStyles.name}>Claude Code</span>
               <span style={launcherStyles.path}>{cwdBasename}</span>
@@ -524,7 +525,7 @@ const EdgeSpawnButtons = React.memo(function EdgeSpawnButtons({
     return blocked.join(",");
   });
 
-  const spawn = useCallback(
+  const computePosition = useCallback(
     (type: "claude" | "terminal", edge: "top" | "right" | "bottom" | "left") => {
       const defaultW = type === "claude" ? FLIGHT_DEFAULT_CLAUDE_WIDTH : FLIGHT_DEFAULT_TERMINAL_WIDTH;
       const defaultH = type === "claude" ? FLIGHT_DEFAULT_CLAUDE_HEIGHT : FLIGHT_DEFAULT_TERMINAL_HEIGHT;
@@ -539,9 +540,37 @@ const EdgeSpawnButtons = React.memo(function EdgeSpawnButtons({
         case "top":
           x = podX; y = podY - defaultH - SPAWN_GAP; w = podWidth; h = defaultH; break;
       }
+      return { x, y, w, h };
+    },
+    [podX, podY, podWidth, podHeight],
+  );
+
+  const spawn = useCallback(
+    (type: "claude" | "terminal", edge: "top" | "right" | "bottom" | "left") => {
+      const { x, y, w, h } = computePosition(type, edge);
       addFlightPodAt(workspaceId, type, x, y, w, h, podCwd);
     },
-    [addFlightPodAt, podX, podY, podWidth, podHeight, podCwd, workspaceId],
+    [addFlightPodAt, computePosition, podCwd, workspaceId],
+  );
+
+  const spawnWithPicker = useCallback(
+    (type: "claude" | "terminal", edge: "top" | "right" | "bottom" | "left") => {
+      const store = useWorkspaceStore.getState();
+      const ws = store.workspaces.find((w) => w.id === workspaceId);
+      const paths = ws?.paths ?? [];
+      if (paths.length <= 1) {
+        spawn(type, edge);
+        return;
+      }
+      const { x, y, w, h } = computePosition(type, edge);
+      showContextMenu(
+        paths.map((p) => ({
+          label: p.split("/").pop() || p,
+          action: () => addFlightPodAt(workspaceId, type, x, y, w, h, p),
+        })),
+      );
+    },
+    [addFlightPodAt, computePosition, spawn, workspaceId],
   );
 
   const edges: Array<{
@@ -621,7 +650,8 @@ const EdgeSpawnButtons = React.memo(function EdgeSpawnButtons({
             <button
               className="flight-edge-btn"
               onClick={(e) => { e.stopPropagation(); spawn("claude", edge); }}
-              title="Add Claude pod"
+              onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); spawnWithPicker("claude", edge); }}
+              title="Add Claude pod (right-click for repo picker)"
               style={edgeBtnStyle}
             >
               <svg width="14" height="14" viewBox="-2 -1 28 26" fill="none">
@@ -631,7 +661,8 @@ const EdgeSpawnButtons = React.memo(function EdgeSpawnButtons({
             <button
               className="flight-edge-btn"
               onClick={(e) => { e.stopPropagation(); spawn("terminal", edge); }}
-              title="Add Terminal pod"
+              onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); spawnWithPicker("terminal", edge); }}
+              title="Add Terminal pod (right-click for repo picker)"
               style={edgeBtnStyle}
             >
               <svg width="16" height="16" viewBox="0 0 12 12" fill="none">
@@ -717,6 +748,7 @@ const launcherStyles: Record<string, React.CSSProperties> = {
     flexDirection: "column",
     alignItems: "center",
     justifyContent: "center",
+    paddingBottom: "21%",
     minHeight: 0,
     minWidth: 0,
     userSelect: "none",
