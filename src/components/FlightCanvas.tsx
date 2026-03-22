@@ -249,7 +249,6 @@ const WorkspaceFlightView = React.memo(function WorkspaceFlightView({
     // Delete/Backspace removes selected pods
     const deleteHandler = (e: KeyboardEvent) => {
       if (e.key !== "Delete" && e.key !== "Backspace") return;
-      // Don't delete if typing in a terminal
       if ((e.target as HTMLElement).closest("textarea, input")) return;
       const sel = selectedPodsRef.current;
       if (sel.size === 0) return;
@@ -262,13 +261,160 @@ const WorkspaceFlightView = React.memo(function WorkspaceFlightView({
     };
     document.addEventListener("keydown", deleteHandler);
 
+    // --- Navigate to a pod: animate viewport to show it ---
+    const navigateToPod = (podId: string) => {
+      const store = useWorkspaceStore.getState();
+      const pod = store.flightLayouts[workspaceId]?.pods.find((p) => p.id === podId);
+      if (!pod) return;
+      const rect = el.getBoundingClientRect();
+      const parentZoom = rect.width / el.offsetWidth;
+      const containerW = rect.width / parentZoom;
+      const containerH = rect.height / parentZoom;
+      // Fit pod with 2% padding
+      const fitZoom = Math.min(containerW * 0.95 / pod.width, containerH * 0.95 / pod.height, 1.0);
+      const padX = containerW * 0.02;
+      const padY = containerH * 0.02;
+      let panX: number, panY: number;
+      if (fitZoom >= 1.0) {
+        panX = padX / fitZoom - pod.x;
+        panY = padY / fitZoom - pod.y;
+      } else {
+        panX = padX - pod.x * fitZoom;
+        panY = padY - pod.y * fitZoom;
+      }
+      store.setFlightViewport(workspaceId, { panX, panY, zoom: fitZoom });
+      store.bringPodToFront(workspaceId, podId);
+    };
+
+    // --- Find spatial neighbor pod ---
+    const findNeighborPod = (dir: "left" | "right" | "up" | "down"): string | null => {
+      const store = useWorkspaceStore.getState();
+      const pods = store.flightLayouts[workspaceId]?.pods ?? [];
+      if (pods.length < 2) return null;
+      // Find the focused pod (highest zIndex)
+      const focused = [...pods].sort((a, b) => b.zIndex - a.zIndex)[0];
+      if (!focused) return null;
+      const fcx = focused.x + focused.width / 2;
+      const fcy = focused.y + focused.height / 2;
+
+      let best: string | null = null;
+      let bestDist = Infinity;
+
+      for (const p of pods) {
+        if (p.id === focused.id) continue;
+        const pcx = p.x + p.width / 2;
+        const pcy = p.y + p.height / 2;
+        let primary: number, orthogonal: number;
+        switch (dir) {
+          case "right": primary = pcx - fcx; orthogonal = Math.abs(pcy - fcy); break;
+          case "left":  primary = fcx - pcx; orthogonal = Math.abs(pcy - fcy); break;
+          case "down":  primary = pcy - fcy; orthogonal = Math.abs(pcx - fcx); break;
+          case "up":    primary = fcy - pcy; orthogonal = Math.abs(pcx - fcx); break;
+        }
+        if (primary <= 0) continue; // Not in the requested direction
+        const dist = primary + orthogonal * 0.5; // Favor primary direction
+        if (dist < bestDist) {
+          bestDist = dist;
+          best = p.id;
+        }
+      }
+      return best;
+    };
+
+    // --- Cmd+Arrow navigation + Cmd+0 zoom-to-fit-all ---
+    const navHandler = (e: KeyboardEvent) => {
+      // Cmd+Arrow: navigate to neighbor pod
+      if (e.metaKey && !e.shiftKey && !e.altKey && !e.ctrlKey) {
+        const dirMap: Record<string, "left" | "right" | "up" | "down"> = {
+          ArrowLeft: "left", ArrowRight: "right", ArrowUp: "up", ArrowDown: "down",
+        };
+        const dir = dirMap[e.key];
+        if (dir) {
+          e.preventDefault();
+          const target = findNeighborPod(dir);
+          if (target) navigateToPod(target);
+          return;
+        }
+      }
+
+      // Cmd+0: zoom to fit ALL pods
+      if (e.metaKey && e.key === "0" && !e.shiftKey) {
+        e.preventDefault();
+        const store = useWorkspaceStore.getState();
+        const pods = store.flightLayouts[workspaceId]?.pods ?? [];
+        if (pods.length === 0) return;
+        // Compute bounding box of all pods
+        let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+        for (const p of pods) {
+          minX = Math.min(minX, p.x);
+          minY = Math.min(minY, p.y);
+          maxX = Math.max(maxX, p.x + p.width);
+          maxY = Math.max(maxY, p.y + p.height);
+        }
+        const totalW = maxX - minX;
+        const totalH = maxY - minY;
+        const rect = el.getBoundingClientRect();
+        const parentZoom = rect.width / el.offsetWidth;
+        const containerW = rect.width / parentZoom;
+        const containerH = rect.height / parentZoom;
+        const fitZoom = Math.min(containerW * 0.9 / totalW, containerH * 0.9 / totalH, 1.0);
+        const padX = (containerW - totalW * fitZoom) / 2;
+        const padY = (containerH - totalH * fitZoom) / 2;
+        let panX: number, panY: number;
+        if (fitZoom >= 1.0) {
+          panX = padX / fitZoom - minX;
+          panY = padY / fitZoom - minY;
+        } else {
+          panX = padX - minX * fitZoom;
+          panY = padY - minY * fitZoom;
+        }
+        store.setFlightViewport(workspaceId, { panX, panY, zoom: fitZoom });
+        return;
+      }
+    };
+    document.addEventListener("keydown", navHandler);
+
+    // --- Horizontal scroll detection: activate pan mode ---
+    let hScrollTimer: ReturnType<typeof setTimeout> | null = null;
+    let hScrollActive = false;
+    const hScrollHandler = (e: WheelEvent) => {
+      // Only detect on pods (canvas already pans on scroll)
+      if (!((e.target as HTMLElement).closest("[data-flight-pod]"))) return;
+      if (e.altKey || e.ctrlKey) return;
+      // Detect clearly horizontal scroll
+      if (Math.abs(e.deltaX) > Math.abs(e.deltaY) * 2 && Math.abs(e.deltaX) > 5) {
+        hScrollActive = true;
+      }
+      if (hScrollActive) {
+        e.preventDefault();
+        const store = useWorkspaceStore.getState();
+        const vp = store.flightLayouts[workspaceId]?.viewport;
+        if (vp) {
+          store.setFlightViewport(workspaceId, {
+            panX: vp.panX - e.deltaX,
+            panY: vp.panY - e.deltaY,
+          });
+        }
+        if (hScrollTimer) clearTimeout(hScrollTimer);
+        hScrollTimer = setTimeout(() => {
+          hScrollActive = false;
+          hScrollTimer = null;
+        }, 500);
+      }
+    };
+    // Add as separate handler, runs before the main one (both non-passive)
+    el.addEventListener("wheel", hScrollHandler, { passive: false });
+
     return () => {
       el.removeEventListener("wheel", wheelHandler);
+      el.removeEventListener("wheel", hScrollHandler);
       el.removeEventListener("mousedown", clickTracker, true);
       el.removeEventListener("mousemove", moveHandler);
       el.removeEventListener("mousedown", marqueeDownHandler);
       window.removeEventListener("keyup", keyUpHandler);
       document.removeEventListener("keydown", deleteHandler);
+      document.removeEventListener("keydown", navHandler);
+      if (hScrollTimer) clearTimeout(hScrollTimer);
     };
   }, [workspaceId, setFlightViewport]);
 
