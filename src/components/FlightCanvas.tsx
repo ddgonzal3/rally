@@ -379,19 +379,39 @@ const WorkspaceFlightView = React.memo(function WorkspaceFlightView({
     };
     document.addEventListener("keydown", navHandler);
 
-    // --- Horizontal scroll detection: activate pan mode ---
+    // --- Horizontal scroll detection ---
+    // Free mode: horizontal scroll pans freely
+    // Snap mode: horizontal scroll jumps to next/prev pod immediately
     let hScrollTimer: ReturnType<typeof setTimeout> | null = null;
     let hScrollActive = false;
+    let snapCooldown = false; // Prevent multiple snaps per gesture
     const hScrollHandler = (e: WheelEvent) => {
-      // Only detect on pods (canvas already pans on scroll)
       if (!((e.target as HTMLElement).closest("[data-flight-pod]"))) return;
       if (e.altKey || e.ctrlKey) return;
       // Detect clearly horizontal scroll
       if (Math.abs(e.deltaX) > Math.abs(e.deltaY) * 2 && Math.abs(e.deltaX) > 5) {
         hScrollActive = true;
       }
-      if (hScrollActive) {
-        e.preventDefault();
+      if (!hScrollActive) return;
+      e.preventDefault();
+
+      if (snapModeRef.current) {
+        // Snap mode: immediately jump to next/prev pod, once per gesture
+        if (!snapCooldown) {
+          snapCooldown = true;
+          const dir = e.deltaX > 0 ? "right" : "left";
+          const target = findNeighborPod(dir);
+          if (target) navigateToRef.current?.(target);
+        }
+        // Reset cooldown after gesture ends
+        if (hScrollTimer) clearTimeout(hScrollTimer);
+        hScrollTimer = setTimeout(() => {
+          hScrollActive = false;
+          snapCooldown = false;
+          hScrollTimer = null;
+        }, 400);
+      } else {
+        // Free mode: pan freely
         const store = useWorkspaceStore.getState();
         const vp = store.flightLayouts[workspaceId]?.viewport;
         if (vp) {
@@ -404,34 +424,9 @@ const WorkspaceFlightView = React.memo(function WorkspaceFlightView({
         hScrollTimer = setTimeout(() => {
           hScrollActive = false;
           hScrollTimer = null;
-          // Snap mode: after scroll ends, snap to nearest pod
-          if (snapModeRef.current) {
-            const s = useWorkspaceStore.getState();
-            const pods = s.flightLayouts[workspaceId]?.pods ?? [];
-            const vp2 = s.flightLayouts[workspaceId]?.viewport;
-            if (pods.length > 0 && vp2) {
-              const rect = el.getBoundingClientRect();
-              const pz = rect.width / el.offsetWidth;
-              const cw = rect.width / pz;
-              const ch = rect.height / pz;
-              // Find which pod's center is closest to viewport center
-              const vcx = vp2.zoom >= 1.0 ? (cw / 2) / vp2.zoom - vp2.panX : (cw / 2 - vp2.panX) / vp2.zoom;
-              const vcy = vp2.zoom >= 1.0 ? (ch / 2) / vp2.zoom - vp2.panY : (ch / 2 - vp2.panY) / vp2.zoom;
-              let closest = pods[0];
-              let closestDist = Infinity;
-              for (const p of pods) {
-                const dx = (p.x + p.width / 2) - vcx;
-                const dy = (p.y + p.height / 2) - vcy;
-                const d = dx * dx + dy * dy;
-                if (d < closestDist) { closestDist = d; closest = p; }
-              }
-              navigateToRef.current?.(closest.id);
-            }
-          }
-        }, 400);
+        }, 500);
       }
     };
-    // Add as separate handler, runs before the main one (both non-passive)
     el.addEventListener("wheel", hScrollHandler, { passive: false });
 
     return () => {
