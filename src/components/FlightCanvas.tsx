@@ -277,17 +277,24 @@ const WorkspaceFlightView = React.memo(function WorkspaceFlightView({
       const containerH = rect.height / parentZoom;
 
       if (focusModeRef.current) {
-        // Focus mode: resize the pod to fill the viewport, zoom stays at 1.0
-        const HUD_HEIGHT = 50; // Space for HUD bar at bottom
-        const PEEK_WIDTH = 40; // Show sliver of next pod
-        const focusW = containerW - PEEK_WIDTH;
-        const focusH = containerH - HUD_HEIGHT;
-        store.updateFlightPod(workspaceId, podId, {
-          width: Math.max(focusW, 400),
-          height: Math.max(focusH, 300),
-        } as any);
-        // Pan so the pod is at top-left with no padding, zoom at 1.0
-        store.setFlightViewport(workspaceId, { panX: -pod.x, panY: -pod.y, zoom: 1.0 });
+        // Focus mode: resize ALL pods to fill the viewport, zoom stays at 1.0
+        const HUD_HEIGHT = 50;
+        const PEEK_WIDTH = 40;
+        const focusW = Math.max(containerW - PEEK_WIDTH, 400);
+        const focusH = Math.max(containerH - HUD_HEIGHT, 300);
+        const allPods = store.flightLayouts[workspaceId]?.pods ?? [];
+        for (const p of allPods) {
+          if (p.width !== focusW || p.height !== focusH) {
+            store.updateFlightPod(workspaceId, p.id, {
+              width: focusW, height: focusH,
+            } as any);
+          }
+        }
+        // Re-read pod position after resize (it may have changed)
+        const updatedPod = store.flightLayouts[workspaceId]?.pods.find((p) => p.id === podId);
+        const px = updatedPod?.x ?? pod.x;
+        const py = updatedPod?.y ?? pod.y;
+        store.setFlightViewport(workspaceId, { panX: -px, panY: -py, zoom: 1.0 });
       } else {
         // Free mode: fit pod in viewport with minimal padding
         const fitZoom = Math.min(containerW * 0.99 / pod.width, containerH * 0.99 / pod.height, 1.0);
