@@ -21,6 +21,10 @@ const WorkspaceFlightView = React.memo(function WorkspaceFlightView({
   const [selectedPods, setSelectedPods] = useState<Set<string>>(new Set());
   const selectedPodsRef = useRef(selectedPods);
   selectedPodsRef.current = selectedPods;
+  const [snapMode, setSnapMode] = useState(false);
+  const snapModeRef = useRef(snapMode);
+  snapModeRef.current = snapMode;
+  const navigateToRef = useRef<((podId: string) => void) | null>(null);
   const [marquee, setMarquee] = useState<{ sx1: number; sy1: number; sx2: number; sy2: number } | null>(null);
 
   // Stable selectors — primitives only, no new objects
@@ -113,8 +117,8 @@ const WorkspaceFlightView = React.memo(function WorkspaceFlightView({
         const vp = store.flightLayouts[workspaceId]?.viewport;
         if (vp) {
           store.setFlightViewport(workspaceId, {
-            panX: vp.panX - e.deltaX,
-            panY: vp.panY - e.deltaY,
+            panX: vp.panX - e.deltaX * 2,
+            panY: vp.panY - e.deltaY * 2,
           });
         }
         return;
@@ -285,6 +289,7 @@ const WorkspaceFlightView = React.memo(function WorkspaceFlightView({
       store.setFlightViewport(workspaceId, { panX, panY, zoom: fitZoom });
       store.bringPodToFront(workspaceId, podId);
     };
+    navigateToRef.current = navigateToPod;
 
     // --- Find spatial neighbor pod ---
     const findNeighborPod = (dir: "left" | "right" | "up" | "down"): string | null => {
@@ -391,15 +396,39 @@ const WorkspaceFlightView = React.memo(function WorkspaceFlightView({
         const vp = store.flightLayouts[workspaceId]?.viewport;
         if (vp) {
           store.setFlightViewport(workspaceId, {
-            panX: vp.panX - e.deltaX,
-            panY: vp.panY - e.deltaY,
+            panX: vp.panX - e.deltaX * 2,
+            panY: vp.panY - e.deltaY * 2,
           });
         }
         if (hScrollTimer) clearTimeout(hScrollTimer);
         hScrollTimer = setTimeout(() => {
           hScrollActive = false;
           hScrollTimer = null;
-        }, 500);
+          // Snap mode: after scroll ends, snap to nearest pod
+          if (snapModeRef.current) {
+            const s = useWorkspaceStore.getState();
+            const pods = s.flightLayouts[workspaceId]?.pods ?? [];
+            const vp2 = s.flightLayouts[workspaceId]?.viewport;
+            if (pods.length > 0 && vp2) {
+              const rect = el.getBoundingClientRect();
+              const pz = rect.width / el.offsetWidth;
+              const cw = rect.width / pz;
+              const ch = rect.height / pz;
+              // Find which pod's center is closest to viewport center
+              const vcx = vp2.zoom >= 1.0 ? (cw / 2) / vp2.zoom - vp2.panX : (cw / 2 - vp2.panX) / vp2.zoom;
+              const vcy = vp2.zoom >= 1.0 ? (ch / 2) / vp2.zoom - vp2.panY : (ch / 2 - vp2.panY) / vp2.zoom;
+              let closest = pods[0];
+              let closestDist = Infinity;
+              for (const p of pods) {
+                const dx = (p.x + p.width / 2) - vcx;
+                const dy = (p.y + p.height / 2) - vcy;
+                const d = dx * dx + dy * dy;
+                if (d < closestDist) { closestDist = d; closest = p; }
+              }
+              navigateToRef.current?.(closest.id);
+            }
+          }
+        }, 400);
       }
     };
     // Add as separate handler, runs before the main one (both non-passive)
@@ -544,7 +573,7 @@ const WorkspaceFlightView = React.memo(function WorkspaceFlightView({
           <FlightPod key={podId} podId={podId} workspaceId={workspaceId} zoom={zoom} isSelected={selectedPods.has(podId)} />
         ))}
       </div>
-      {isActive && <FlightHUD workspaceId={workspaceId} zoom={zoom} />}
+      {isActive && <FlightHUD workspaceId={workspaceId} zoom={zoom} snapMode={snapMode} onToggleSnap={() => setSnapMode((s) => !s)} />}
 
       {/* Marquee selection rectangle — portal to avoid CSS zoom offset */}
       {marquee && ReactDOM.createPortal(
