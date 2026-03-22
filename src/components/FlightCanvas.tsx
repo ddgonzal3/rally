@@ -73,7 +73,9 @@ const WorkspaceFlightView = React.memo(function WorkspaceFlightView({
         const vp = store.flightLayouts[workspaceId]?.viewport;
         if (!vp) return;
 
-        const zoomFactor = 1 - e.deltaY * (e.ctrlKey ? 0.01 : 0.003);
+        // Use whichever scroll axis has the larger delta
+        const delta = Math.abs(e.deltaY) >= Math.abs(e.deltaX) ? e.deltaY : e.deltaX;
+        const zoomFactor = 1 - delta * (e.ctrlKey ? 0.01 : 0.003);
         const newZoom = Math.max(FLIGHT_ZOOM_MIN, Math.min(FLIGHT_ZOOM_MAX, vp.zoom * zoomFactor));
         const rect = el.getBoundingClientRect();
         const parentZoom = rect.width / el.offsetWidth;
