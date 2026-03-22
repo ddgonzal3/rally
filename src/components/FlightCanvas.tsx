@@ -355,8 +355,47 @@ const WorkspaceFlightView = React.memo(function WorkspaceFlightView({
       return best;
     };
 
-    // --- Cmd+Arrow navigation + Cmd+0 zoom-to-fit-all ---
+    // --- Cmd+Arrow navigation + Cmd+0 zoom-to-fit-all + Option+F focus toggle ---
     const navHandler = (e: KeyboardEvent) => {
+      // Option+F: toggle Focus Mode on the most centered pod
+      if (e.altKey && e.key.toLowerCase() === "f" && !e.metaKey && !e.ctrlKey) {
+        // Don't trigger when typing in a terminal
+        if ((e.target as HTMLElement).closest("textarea, input")) return;
+        e.preventDefault();
+        const next = !focusModeRef.current;
+        setFocusMode(next);
+        if (next) {
+          // Find the pod closest to viewport center
+          const s = useWorkspaceStore.getState();
+          const pods = s.flightLayouts[workspaceId]?.pods ?? [];
+          const vp = s.flightLayouts[workspaceId]?.viewport;
+          if (pods.length > 0 && vp) {
+            const rect = el.getBoundingClientRect();
+            const pz = rect.width / el.offsetWidth;
+            const cw = rect.width / pz;
+            const ch = rect.height / pz;
+            // Viewport center in canvas coords
+            let vcx: number, vcy: number;
+            if (vp.zoom >= 1.0) {
+              vcx = (cw / 2) / vp.zoom - vp.panX;
+              vcy = (ch / 2) / vp.zoom - vp.panY;
+            } else {
+              vcx = (cw / 2 - vp.panX) / vp.zoom;
+              vcy = (ch / 2 - vp.panY) / vp.zoom;
+            }
+            let closest = pods[0];
+            let closestDist = Infinity;
+            for (const p of pods) {
+              const dx = (p.x + p.width / 2) - vcx;
+              const dy = (p.y + p.height / 2) - vcy;
+              const d = dx * dx + dy * dy;
+              if (d < closestDist) { closestDist = d; closest = p; }
+            }
+            setTimeout(() => navigateToRef.current?.(closest.id), 0);
+          }
+        }
+        return;
+      }
       // Cmd+Arrow: navigate to neighbor pod
       if (e.metaKey && !e.shiftKey && !e.altKey && !e.ctrlKey) {
         const dirMap: Record<string, "left" | "right" | "up" | "down"> = {
