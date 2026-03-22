@@ -413,19 +413,25 @@ const WorkspaceFlightView = React.memo(function WorkspaceFlightView({
       if (e.altKey || e.ctrlKey) return;
 
       if (focusModeRef.current) {
-        // Focus mode: accumulate deltaX, navigate when threshold crossed
+        // Focus mode: eat ALL horizontal scroll events (including inertia).
+        // Only navigate once per gesture.
         e.preventDefault();
-        if (focusNavCooldown) return;
-        // Need a clear horizontal intent
+        e.stopPropagation();
+        if (focusNavCooldown) {
+          // Eat inertia events — reset the cooldown timer so inertia extends it
+          if (focusNavTimer) clearTimeout(focusNavTimer);
+          focusNavTimer = setTimeout(() => { focusNavCooldown = false; }, 600);
+          return;
+        }
         if (Math.abs(e.deltaX) < 3) return;
         focusNavCooldown = true;
         const dir: "left" | "right" = e.deltaX > 0 ? "right" : "left";
         const target = findNeighborPod(dir);
         if (target) navigateToRef.current?.(target);
-        // Short cooldown — allow next swipe after 400ms
+        // Long cooldown to eat all inertia events
         focusNavTimer = setTimeout(() => {
           focusNavCooldown = false;
-        }, 400);
+        }, 600);
       } else {
         // Free mode: horizontal scroll pans
         if (Math.abs(e.deltaX) > Math.abs(e.deltaY) * 2 && Math.abs(e.deltaX) > 5) {
