@@ -339,13 +339,28 @@ export const FlightPod = React.memo(function FlightPod({
       const container = podRef.current?.closest("[style*='overflow: hidden']") as HTMLElement | null;
       if (container) {
         const rect = container.getBoundingClientRect();
-        const viewW = rect.width * 0.8;
-        const viewH = rect.height * 0.8;
+        // Account for CSS zoom on ancestors — rect is in viewport pixels
+        const parentZoom = rect.width / container.offsetWidth;
+        const containerW = rect.width / parentZoom;
+        const containerH = rect.height / parentZoom;
+        const viewW = containerW * 0.9;
+        const viewH = containerH * 0.9;
         const fitZoom = Math.min(viewW / podWidth, viewH / podHeight, 1.0);
-        const centerX = rect.width / 2;
-        const centerY = rect.height / 2;
-        const panX = centerX - (podX + podWidth / 2) * fitZoom;
-        const panY = centerY - (podY + podHeight / 2) * fitZoom;
+        // Center the pod. Pan formula depends on zoom mode:
+        // zoom >= 1: screen = (pan + P) * zoom → pan = screen/zoom - P
+        // zoom < 1: screen = pan + P * zoom → pan = screen - P * zoom
+        const centerX = containerW / 2;
+        const centerY = containerH / 2;
+        const podCenterX = podX + podWidth / 2;
+        const podCenterY = podY + podHeight / 2;
+        let panX: number, panY: number;
+        if (fitZoom >= 1.0) {
+          panX = centerX / fitZoom - podCenterX;
+          panY = centerY / fitZoom - podCenterY;
+        } else {
+          panX = centerX - podCenterX * fitZoom;
+          panY = centerY - podCenterY * fitZoom;
+        }
         setFlightViewport(workspaceId, { panX, panY, zoom: fitZoom });
       }
       return;
