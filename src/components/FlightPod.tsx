@@ -343,27 +343,19 @@ export const FlightPod = React.memo(function FlightPod({
         const parentZoom = rect.width / container.offsetWidth;
         const containerW = rect.width / parentZoom;
         const containerH = rect.height / parentZoom;
-        const viewW = containerW * 0.9;
-        const viewH = containerH * 0.9;
-        const fitZoom = Math.min(viewW / podWidth, viewH / podHeight, 1.0);
-        // Center the pod. Pan formula depends on zoom mode:
-        // zoom >= 1: screen = (pan + P) * zoom → pan = screen/zoom - P
-        // zoom < 1: screen = pan + P * zoom → pan = screen - P * zoom
-        // 5% padding on left (matching the 0.9 top/bottom padding)
-        const padX = containerW * 0.05;
-        // targetX = screen position where pod's left edge should go
-        // For centering formula, express as where podCenterX maps to:
-        const targetX = padX + (podWidth * fitZoom) / 2;
-        const centerY = containerH / 2;
-        const podCenterX = podX + podWidth / 2;
-        const podCenterY = podY + podHeight / 2;
+        const fitZoom = Math.min(containerW * 0.95 / podWidth, containerH * 0.95 / podHeight, 1.0);
+        // Position pod with small padding from top-left
+        const padX = containerW * 0.02;
+        const padY = containerH * 0.02;
         let panX: number, panY: number;
         if (fitZoom >= 1.0) {
-          panX = targetX / fitZoom - podCenterX;
-          panY = centerY / fitZoom - podCenterY;
+          // CSS zoom: screen = (pan + P) * zoom → pan = screen/zoom - P
+          panX = padX / fitZoom - podX;
+          panY = padY / fitZoom - podY;
         } else {
-          panX = targetX - podCenterX * fitZoom;
-          panY = centerY - podCenterY * fitZoom;
+          // transform scale: screen = pan + P * zoom → pan = screen - P * zoom
+          panX = padX - podX * fitZoom;
+          panY = padY - podY * fitZoom;
         }
         setFlightViewport(workspaceId, { panX, panY, zoom: fitZoom });
       }
