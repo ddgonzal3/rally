@@ -242,40 +242,44 @@ export const FlightPod = React.memo(function FlightPod({
     window.addEventListener("mouseup", onMouseUp);
   }, [bringPodToFront, podId, podX, podY, podWidth, podHeight, updateFlightPod, workspaceId, zoom]);
 
-  const handleResizeMouseDown = useCallback((e: React.MouseEvent) => {
+  // Generic edge/corner resize handler
+  type ResizeEdge = "right" | "bottom" | "left" | "top" | "bottom-right" | "bottom-left" | "top-right" | "top-left";
+  const handleEdgeResize = useCallback((e: React.MouseEvent, edge: ResizeEdge) => {
     e.preventDefault();
     e.stopPropagation();
 
     const startX = e.clientX;
     const startY = e.clientY;
+    const origX = podX;
+    const origY = podY;
     const origW = podWidth;
     const origH = podHeight;
-    resizeState.current = { startX, startY, origW, origH };
 
     const minW = podType === "claude" ? FLIGHT_MIN_CLAUDE_WIDTH : FLIGHT_MIN_TERMINAL_WIDTH;
     const minH = podType === "claude" ? FLIGHT_MIN_CLAUDE_HEIGHT : FLIGHT_MIN_TERMINAL_HEIGHT;
 
-    const onMouseMove = (me: MouseEvent) => {
-      if (!resizeState.current) return;
-      const dx = (me.clientX - resizeState.current.startX) / zoom;
-      const dy = (me.clientY - resizeState.current.startY) / zoom;
-      const rawW = Math.max(minW, resizeState.current.origW + dx);
-      const rawH = Math.max(minH, resizeState.current.origH + dy);
+    const resizesRight = edge.includes("right");
+    const resizesBottom = edge.includes("bottom");
+    const resizesLeft = edge === "left" || edge === "bottom-left" || edge === "top-left";
+    const resizesTop = edge === "top" || edge === "top-right" || edge === "top-left";
 
-      // Get other pods for snapping
-      const store = useWorkspaceStore.getState();
-      const pods = store.flightLayouts[workspaceId]?.pods ?? [];
-      const others = pods.filter((p) => p.id !== podId).map((p) => ({ x: p.x, y: p.y, width: p.width, height: p.height }));
-      const snapped = snapToNeighbors({ x: podX, y: podY, width: rawW, height: rawH }, others, "resize");
+    const onMouseMove = (me: MouseEvent) => {
+      const dx = (me.clientX - startX) / zoom;
+      const dy = (me.clientY - startY) / zoom;
+
+      let newX = origX, newY = origY, newW = origW, newH = origH;
+
+      if (resizesRight) newW = Math.max(minW, origW + dx);
+      if (resizesBottom) newH = Math.max(minH, origH + dy);
+      if (resizesLeft) { newW = Math.max(minW, origW - dx); newX = origX + origW - newW; }
+      if (resizesTop) { newH = Math.max(minH, origH - dy); newY = origY + origH - newH; }
 
       updateFlightPod(workspaceId, podId, {
-        width: Math.max(minW, snapped.width),
-        height: Math.max(minH, snapped.height),
+        x: newX, y: newY, width: newW, height: newH,
       } as Partial<FlightPodType>);
     };
 
     const onMouseUp = () => {
-      resizeState.current = null;
       window.removeEventListener("mousemove", onMouseMove);
       window.removeEventListener("mouseup", onMouseUp);
     };
@@ -585,17 +589,23 @@ export const FlightPod = React.memo(function FlightPod({
         </>
       )}
 
-      {/* Resize grip — bottom-right corner */}
-      <div
-        onMouseDown={handleResizeMouseDown}
-        style={resizeGripStyle}
-        title="Resize"
-      >
-        <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
-          <line x1="3" y1="9" x2="9" y2="3" stroke="rgba(255,255,255,0.2)" strokeWidth="1" strokeLinecap="round" />
-          <line x1="6" y1="9" x2="9" y2="6" stroke="rgba(255,255,255,0.2)" strokeWidth="1" strokeLinecap="round" />
-        </svg>
-      </div>
+      {/* Invisible resize edges and corners */}
+      {([
+        { edge: "top" as ResizeEdge, style: { top: -3, left: 6, right: 6, height: 6, cursor: "ns-resize" } },
+        { edge: "bottom" as ResizeEdge, style: { bottom: -3, left: 6, right: 6, height: 6, cursor: "ns-resize" } },
+        { edge: "left" as ResizeEdge, style: { left: -3, top: 6, bottom: 6, width: 6, cursor: "ew-resize" } },
+        { edge: "right" as ResizeEdge, style: { right: -3, top: 6, bottom: 6, width: 6, cursor: "ew-resize" } },
+        { edge: "top-left" as ResizeEdge, style: { top: -3, left: -3, width: 10, height: 10, cursor: "nwse-resize" } },
+        { edge: "top-right" as ResizeEdge, style: { top: -3, right: -3, width: 10, height: 10, cursor: "nesw-resize" } },
+        { edge: "bottom-left" as ResizeEdge, style: { bottom: -3, left: -3, width: 10, height: 10, cursor: "nesw-resize" } },
+        { edge: "bottom-right" as ResizeEdge, style: { bottom: -3, right: -3, width: 10, height: 10, cursor: "nwse-resize" } },
+      ] as const).map(({ edge, style }) => (
+        <div
+          key={edge}
+          onMouseDown={(e) => handleEdgeResize(e, edge)}
+          style={{ position: "absolute", zIndex: 10, ...style }}
+        />
+      ))}
     </div>
 
     {/* Edge spawn buttons disabled — use right-click on canvas instead
@@ -969,19 +979,6 @@ const headerStyles: Record<string, React.CSSProperties> = {
   },
 };
 
-const resizeGripStyle: React.CSSProperties = {
-  position: "absolute",
-  bottom: 0,
-  right: 0,
-  width: 16,
-  height: 16,
-  cursor: "nwse-resize",
-  display: "flex",
-  alignItems: "flex-end",
-  justifyContent: "flex-end",
-  padding: 2,
-  zIndex: 10,
-};
 
 const launcherStyles: Record<string, React.CSSProperties> = {
   container: {
