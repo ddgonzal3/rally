@@ -4,11 +4,11 @@ import { useWorkspaceStore } from "../stores/workspaceStore";
 interface FlightHUDProps {
   workspaceId: string;
   zoom: number;
-  snapMode: boolean;
-  onToggleSnap: () => void;
+  focusMode: boolean;
+  onToggleFocus: () => void;
 }
 
-export function FlightHUD({ workspaceId, zoom, snapMode, onToggleSnap }: FlightHUDProps) {
+export function FlightHUD({ workspaceId, zoom, focusMode, onToggleFocus }: FlightHUDProps) {
   const addFlightPod = useWorkspaceStore((s) => s.addFlightPod);
   const setFlightViewport = useWorkspaceStore((s) => s.setFlightViewport);
 
@@ -36,17 +36,15 @@ export function FlightHUD({ workspaceId, zoom, snapMode, onToggleSnap }: FlightH
       </button>
       <div style={styles.divider} />
       <button
-        style={{ ...styles.btn, color: snapMode ? "var(--text-primary)" : "#666" }}
-        onClick={onToggleSnap}
-        title={snapMode ? "Snap mode ON — scroll snaps to pods" : "Snap mode OFF — free scroll"}
+        style={{ ...styles.btn, color: focusMode ? "var(--text-primary)" : "#666" }}
+        onClick={onToggleFocus}
+        title={focusMode ? "Focus mode ON — swipe to switch pods" : "Focus mode OFF — free canvas"}
       >
         <svg width="12" height="12" viewBox="0 0 12 12" fill="none" style={styles.icon}>
-          <rect x="1" y="1" width="4" height="4" rx="0.5" stroke="currentColor" strokeWidth="1.2" />
-          <rect x="7" y="1" width="4" height="4" rx="0.5" stroke="currentColor" strokeWidth="1.2" />
-          <rect x="1" y="7" width="4" height="4" rx="0.5" stroke="currentColor" strokeWidth="1.2" />
-          <rect x="7" y="7" width="4" height="4" rx="0.5" stroke="currentColor" strokeWidth="1.2" />
+          <rect x="2" y="2" width="8" height="8" rx="1" stroke="currentColor" strokeWidth="1.2" />
+          <circle cx="6" cy="6" r="1.5" fill="currentColor" />
         </svg>
-        <span style={styles.btnLabel}>Snap</span>
+        <span style={styles.btnLabel}>Focus</span>
       </button>
       <div style={styles.divider} />
       <button

@@ -21,9 +21,9 @@ const WorkspaceFlightView = React.memo(function WorkspaceFlightView({
   const [selectedPods, setSelectedPods] = useState<Set<string>>(new Set());
   const selectedPodsRef = useRef(selectedPods);
   selectedPodsRef.current = selectedPods;
-  const [snapMode, setSnapMode] = useState(false);
-  const snapModeRef = useRef(snapMode);
-  snapModeRef.current = snapMode;
+  const [focusMode, setFocusMode] = useState(false);
+  const focusModeRef = useRef(focusMode);
+  focusModeRef.current = focusMode;
   const navigateToRef = useRef<((podId: string) => void) | null>(null);
   const [marquee, setMarquee] = useState<{ sx1: number; sy1: number; sx2: number; sy2: number } | null>(null);
 
@@ -69,8 +69,9 @@ const WorkspaceFlightView = React.memo(function WorkspaceFlightView({
     el.addEventListener("mousedown", clickTracker, true); // capture phase
 
     const wheelHandler = (e: WheelEvent) => {
-      // Option+scroll or pinch = zoom (always, regardless of focus)
+      // Option+scroll or pinch = zoom — exits focus mode
       if (e.altKey || e.ctrlKey) {
+        if (focusModeRef.current) setFocusMode(false);
         e.preventDefault();
         const store = useWorkspaceStore.getState();
         const vp = store.flightLayouts[workspaceId]?.viewport;
@@ -274,19 +275,34 @@ const WorkspaceFlightView = React.memo(function WorkspaceFlightView({
       const parentZoom = rect.width / el.offsetWidth;
       const containerW = rect.width / parentZoom;
       const containerH = rect.height / parentZoom;
-      // Fit pod to fill viewport with minimal padding
-      const fitZoom = Math.min(containerW * 0.99 / pod.width, containerH * 0.99 / pod.height, 1.0);
-      const padX = containerW * 0.005;
-      const padY = containerH * 0.005;
-      let panX: number, panY: number;
-      if (fitZoom >= 1.0) {
-        panX = padX / fitZoom - pod.x;
-        panY = padY / fitZoom - pod.y;
+
+      if (focusModeRef.current) {
+        // Focus mode: resize the pod to fill the viewport, zoom stays at 1.0
+        const HUD_HEIGHT = 50; // Space for HUD bar at bottom
+        const PEEK_WIDTH = 40; // Show sliver of next pod
+        const focusW = containerW - PEEK_WIDTH;
+        const focusH = containerH - HUD_HEIGHT;
+        store.updateFlightPod(workspaceId, podId, {
+          width: Math.max(focusW, 400),
+          height: Math.max(focusH, 300),
+        } as any);
+        // Pan so the pod is at top-left with no padding, zoom at 1.0
+        store.setFlightViewport(workspaceId, { panX: -pod.x, panY: -pod.y, zoom: 1.0 });
       } else {
-        panX = padX - pod.x * fitZoom;
-        panY = padY - pod.y * fitZoom;
+        // Free mode: fit pod in viewport with minimal padding
+        const fitZoom = Math.min(containerW * 0.99 / pod.width, containerH * 0.99 / pod.height, 1.0);
+        const padX = containerW * 0.005;
+        const padY = containerH * 0.005;
+        let panX: number, panY: number;
+        if (fitZoom >= 1.0) {
+          panX = padX / fitZoom - pod.x;
+          panY = padY / fitZoom - pod.y;
+        } else {
+          panX = padX - pod.x * fitZoom;
+          panY = padY - pod.y * fitZoom;
+        }
+        store.setFlightViewport(workspaceId, { panX, panY, zoom: fitZoom });
       }
-      store.setFlightViewport(workspaceId, { panX, panY, zoom: fitZoom });
       store.bringPodToFront(workspaceId, podId);
     };
     navigateToRef.current = navigateToPod;
@@ -396,7 +412,7 @@ const WorkspaceFlightView = React.memo(function WorkspaceFlightView({
       if (!hScrollActive) return;
       e.preventDefault();
 
-      if (snapModeRef.current) {
+      if (focusModeRef.current) {
         const dir: "left" | "right" = e.deltaX > 0 ? "right" : "left";
         // Allow snap if: first snap, OR direction changed
         if (!snapCooldown || dir !== lastSnapDir) {
@@ -571,7 +587,20 @@ const WorkspaceFlightView = React.memo(function WorkspaceFlightView({
           <FlightPod key={podId} podId={podId} workspaceId={workspaceId} zoom={zoom} isSelected={selectedPods.has(podId)} />
         ))}
       </div>
-      {isActive && <FlightHUD workspaceId={workspaceId} zoom={zoom} snapMode={snapMode} onToggleSnap={() => setSnapMode((s) => !s)} />}
+      {isActive && <FlightHUD workspaceId={workspaceId} zoom={zoom} focusMode={focusMode} onToggleFocus={() => {
+        const next = !focusMode;
+        setFocusMode(next);
+        if (next) {
+          // Enter focus mode: navigate to the highest-zIndex pod
+          const s = useWorkspaceStore.getState();
+          const pods = s.flightLayouts[workspaceId]?.pods ?? [];
+          if (pods.length > 0) {
+            const top = [...pods].sort((a, b) => b.zIndex - a.zIndex)[0];
+            // Need to wait one tick for focusModeRef to update
+            setTimeout(() => navigateToRef.current?.(top.id), 0);
+          }
+        }
+      }} />}
 
       {/* Marquee selection rectangle — portal to avoid CSS zoom offset */}
       {marquee && ReactDOM.createPortal(
