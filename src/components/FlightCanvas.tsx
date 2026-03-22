@@ -357,10 +357,8 @@ const WorkspaceFlightView = React.memo(function WorkspaceFlightView({
 
     // --- Cmd+Arrow navigation + Cmd+0 zoom-to-fit-all + Option+F focus toggle ---
     const navHandler = (e: KeyboardEvent) => {
-      // Option+F: toggle Focus Mode on the most centered pod
-      if (e.altKey && e.key.toLowerCase() === "f" && !e.metaKey && !e.ctrlKey) {
-        // Don't trigger when typing in a terminal
-        if ((e.target as HTMLElement).closest("textarea, input")) return;
+      // Cmd+F: toggle Focus Mode on the most centered pod (flight mode only)
+      if (e.metaKey && e.key.toLowerCase() === "f" && !e.altKey && !e.ctrlKey && !e.shiftKey) {
         e.preventDefault();
         const next = !focusModeRef.current;
         setFocusMode(next);
@@ -445,7 +443,7 @@ const WorkspaceFlightView = React.memo(function WorkspaceFlightView({
         return;
       }
     };
-    document.addEventListener("keydown", navHandler);
+    document.addEventListener("keydown", navHandler, true); // capture phase
 
     // --- Focus Mode scroll: any scroll on a pod navigates to next/prev ---
     // Free mode: horizontal scroll pans freely
@@ -518,7 +516,7 @@ const WorkspaceFlightView = React.memo(function WorkspaceFlightView({
       el.removeEventListener("mousedown", marqueeDownHandler);
       window.removeEventListener("keyup", keyUpHandler);
       document.removeEventListener("keydown", deleteHandler);
-      document.removeEventListener("keydown", navHandler);
+      document.removeEventListener("keydown", navHandler, true);
       if (focusNavTimer) clearTimeout(focusNavTimer);
       if (freeScrollTimer) clearTimeout(freeScrollTimer);
     };
