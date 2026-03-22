@@ -434,6 +434,7 @@ const WorkspaceFlightView = React.memo(function WorkspaceFlightView({
       ref={containerRef}
       style={{ ...canvasStyles.canvas, display: isActive ? "flex" : "none" }}
       onContextMenu={handleCanvasContextMenu}
+      onDoubleClick={handleCanvasContextMenu}
     >
       <div
         style={{
