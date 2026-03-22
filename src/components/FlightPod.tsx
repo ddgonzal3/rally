@@ -402,6 +402,7 @@ export const FlightPod = React.memo(function FlightPod({
         boxShadow: isSelected ? "0 0 0 2px rgba(100, 160, 255, 0.3), 0 2px 12px rgba(0, 0, 0, 0.2)" : "0 2px 12px rgba(0, 0, 0, 0.2)",
         overflow: "hidden",
         userSelect: "none",
+        cursor: zoom < ZOOM_TO_FIT_THRESHOLD ? "zoom-in" : undefined,
       }}
     >
       {/* Header */}
