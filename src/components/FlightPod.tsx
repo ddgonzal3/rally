@@ -336,7 +336,7 @@ export const FlightPod = React.memo(function FlightPod({
 
     // When zoomed out past threshold, click zooms to fit this pod in the viewport
     if (zoom < ZOOM_TO_FIT_THRESHOLD) {
-      const container = podRef.current?.closest("[style*='overflow: hidden']") as HTMLElement | null;
+      const container = podRef.current?.closest("[data-flight-canvas]") as HTMLElement | null;
       if (container) {
         const rect = container.getBoundingClientRect();
         // Account for CSS zoom on ancestors — rect is in viewport pixels
