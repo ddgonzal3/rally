@@ -69,6 +69,11 @@ const WorkspaceFlightView = React.memo(function WorkspaceFlightView({
     el.addEventListener("mousedown", clickTracker, true); // capture phase
 
     const wheelHandler = (e: WheelEvent) => {
+      // In Focus Mode, block ALL non-zoom scroll events (handled by focusScrollHandler)
+      if (focusModeRef.current && !e.altKey && !e.ctrlKey) {
+        e.preventDefault();
+        return;
+      }
       // Option+scroll or pinch = zoom — exits focus mode
       if (e.altKey || e.ctrlKey) {
         if (focusModeRef.current) setFocusMode(false);
@@ -409,10 +414,11 @@ const WorkspaceFlightView = React.memo(function WorkspaceFlightView({
     let freeScrollTimer: ReturnType<typeof setTimeout> | null = null;
     let freeScrollActive = false;
     const focusScrollHandler = (e: WheelEvent) => {
-      if (!((e.target as HTMLElement).closest("[data-flight-pod]"))) return;
       if (e.altKey || e.ctrlKey) return;
 
       if (focusModeRef.current) {
+        // Handle everywhere — not just on pods — to catch inertia events
+        const onPod = !!(e.target as HTMLElement).closest("[data-flight-pod]");
         // Focus mode: eat ALL horizontal scroll events (including inertia).
         // Only navigate once per gesture.
         e.preventDefault();
@@ -433,7 +439,8 @@ const WorkspaceFlightView = React.memo(function WorkspaceFlightView({
           focusNavCooldown = false;
         }, 600);
       } else {
-        // Free mode: horizontal scroll pans
+        // Free mode: horizontal scroll pans (only on pods)
+        if (!((e.target as HTMLElement).closest("[data-flight-pod]"))) return;
         if (Math.abs(e.deltaX) > Math.abs(e.deltaY) * 2 && Math.abs(e.deltaX) > 5) {
           freeScrollActive = true;
         }
