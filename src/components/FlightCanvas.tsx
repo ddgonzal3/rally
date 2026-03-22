@@ -402,69 +402,66 @@ const WorkspaceFlightView = React.memo(function WorkspaceFlightView({
     };
     document.addEventListener("keydown", navHandler);
 
-    // --- Horizontal scroll detection ---
+    // --- Focus Mode scroll: any scroll on a pod navigates to next/prev ---
     // Free mode: horizontal scroll pans freely
-    // Snap mode: horizontal scroll jumps to next/prev pod immediately
-    let hScrollTimer: ReturnType<typeof setTimeout> | null = null;
-    let hScrollActive = false;
-    let snapCooldown = false;
-    let lastSnapDir: "left" | "right" | null = null;
-    const hScrollHandler = (e: WheelEvent) => {
+    let focusNavCooldown = false;
+    let focusNavTimer: ReturnType<typeof setTimeout> | null = null;
+    let freeScrollTimer: ReturnType<typeof setTimeout> | null = null;
+    let freeScrollActive = false;
+    const focusScrollHandler = (e: WheelEvent) => {
       if (!((e.target as HTMLElement).closest("[data-flight-pod]"))) return;
       if (e.altKey || e.ctrlKey) return;
-      // Detect clearly horizontal scroll
-      if (Math.abs(e.deltaX) > Math.abs(e.deltaY) * 2 && Math.abs(e.deltaX) > 5) {
-        hScrollActive = true;
-      }
-      if (!hScrollActive) return;
-      e.preventDefault();
 
       if (focusModeRef.current) {
+        // Focus mode: accumulate deltaX, navigate when threshold crossed
+        e.preventDefault();
+        if (focusNavCooldown) return;
+        // Need a clear horizontal intent
+        if (Math.abs(e.deltaX) < 3) return;
+        focusNavCooldown = true;
         const dir: "left" | "right" = e.deltaX > 0 ? "right" : "left";
-        // Allow snap if: first snap, OR direction changed
-        if (!snapCooldown || dir !== lastSnapDir) {
-          snapCooldown = true;
-          lastSnapDir = dir;
-          const target = findNeighborPod(dir);
-          if (target) navigateToRef.current?.(target);
-        }
-        // Reset after gesture ends
-        if (hScrollTimer) clearTimeout(hScrollTimer);
-        hScrollTimer = setTimeout(() => {
-          hScrollActive = false;
-          snapCooldown = false;
-          lastSnapDir = null;
-          hScrollTimer = null;
-        }, 300);
+        const target = findNeighborPod(dir);
+        if (target) navigateToRef.current?.(target);
+        // Short cooldown — allow next swipe after 400ms
+        focusNavTimer = setTimeout(() => {
+          focusNavCooldown = false;
+        }, 400);
       } else {
-        // Free mode: pan freely
-        const store = useWorkspaceStore.getState();
-        const vp = store.flightLayouts[workspaceId]?.viewport;
-        if (vp) {
-          store.setFlightViewport(workspaceId, {
-            panX: vp.panX - e.deltaX * 2,
-            panY: vp.panY - e.deltaY * 2,
-          });
+        // Free mode: horizontal scroll pans
+        if (Math.abs(e.deltaX) > Math.abs(e.deltaY) * 2 && Math.abs(e.deltaX) > 5) {
+          freeScrollActive = true;
         }
-        if (hScrollTimer) clearTimeout(hScrollTimer);
-        hScrollTimer = setTimeout(() => {
-          hScrollActive = false;
-          hScrollTimer = null;
-        }, 500);
+        if (freeScrollActive) {
+          e.preventDefault();
+          const store = useWorkspaceStore.getState();
+          const vp = store.flightLayouts[workspaceId]?.viewport;
+          if (vp) {
+            store.setFlightViewport(workspaceId, {
+              panX: vp.panX - e.deltaX * 2,
+              panY: vp.panY - e.deltaY * 2,
+            });
+          }
+          if (freeScrollTimer) clearTimeout(freeScrollTimer);
+          freeScrollTimer = setTimeout(() => {
+            freeScrollActive = false;
+            freeScrollTimer = null;
+          }, 500);
+        }
       }
     };
-    el.addEventListener("wheel", hScrollHandler, { passive: false });
+    el.addEventListener("wheel", focusScrollHandler, { passive: false });
 
     return () => {
       el.removeEventListener("wheel", wheelHandler);
-      el.removeEventListener("wheel", hScrollHandler);
+      el.removeEventListener("wheel", focusScrollHandler);
       el.removeEventListener("mousedown", clickTracker, true);
       el.removeEventListener("mousemove", moveHandler);
       el.removeEventListener("mousedown", marqueeDownHandler);
       window.removeEventListener("keyup", keyUpHandler);
       document.removeEventListener("keydown", deleteHandler);
       document.removeEventListener("keydown", navHandler);
-      if (hScrollTimer) clearTimeout(hScrollTimer);
+      if (focusNavTimer) clearTimeout(focusNavTimer);
+      if (freeScrollTimer) clearTimeout(freeScrollTimer);
     };
   }, [workspaceId, setFlightViewport]);
 
