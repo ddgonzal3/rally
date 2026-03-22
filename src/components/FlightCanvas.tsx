@@ -133,7 +133,6 @@ const WorkspaceFlightView = React.memo(function WorkspaceFlightView({
     const moveHandler = (e: MouseEvent) => {
       // Shift+move = pan
       if (e.shiftKey && !e.altKey) {
-        if (isDraggingPod) { isDraggingPod = false; dragPodId = null; }
         if (!isPanning) {
           isPanning = true;
           lastX = e.clientX;
