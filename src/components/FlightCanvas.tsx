@@ -299,7 +299,8 @@ const WorkspaceFlightView = React.memo(function WorkspaceFlightView({
         const updatedPod = store.flightLayouts[workspaceId]?.pods.find((p) => p.id === podId);
         const px = updatedPod?.x ?? pod.x;
         const py = updatedPod?.y ?? pod.y;
-        store.setFlightViewport(workspaceId, { panX: -px, panY: -py, zoom: 1.0 });
+        const PAD = 8;
+        store.setFlightViewport(workspaceId, { panX: -px + PAD, panY: -py + PAD, zoom: 1.0 });
       } else {
         // Free mode: fit pod in viewport with minimal padding
         const fitZoom = Math.min(containerW * 0.99 / pod.width, containerH * 0.99 / pod.height, 1.0);
