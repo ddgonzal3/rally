@@ -349,16 +349,20 @@ export const FlightPod = React.memo(function FlightPod({
         // Center the pod. Pan formula depends on zoom mode:
         // zoom >= 1: screen = (pan + P) * zoom → pan = screen/zoom - P
         // zoom < 1: screen = pan + P * zoom → pan = screen - P * zoom
-        const centerX = containerW / 2;
+        // 5% padding on left (matching the 0.9 top/bottom padding)
+        const padX = containerW * 0.05;
+        // targetX = screen position where pod's left edge should go
+        // For centering formula, express as where podCenterX maps to:
+        const targetX = padX + (podWidth * fitZoom) / 2;
         const centerY = containerH / 2;
         const podCenterX = podX + podWidth / 2;
         const podCenterY = podY + podHeight / 2;
         let panX: number, panY: number;
         if (fitZoom >= 1.0) {
-          panX = centerX / fitZoom - podCenterX;
+          panX = targetX / fitZoom - podCenterX;
           panY = centerY / fitZoom - podCenterY;
         } else {
-          panX = centerX - podCenterX * fitZoom;
+          panX = targetX - podCenterX * fitZoom;
           panY = centerY - podCenterY * fitZoom;
         }
         setFlightViewport(workspaceId, { panX, panY, zoom: fitZoom });
