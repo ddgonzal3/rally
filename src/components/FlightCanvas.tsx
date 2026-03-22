@@ -274,10 +274,10 @@ const WorkspaceFlightView = React.memo(function WorkspaceFlightView({
       const parentZoom = rect.width / el.offsetWidth;
       const containerW = rect.width / parentZoom;
       const containerH = rect.height / parentZoom;
-      // Fit pod with 2% padding
-      const fitZoom = Math.min(containerW * 0.95 / pod.width, containerH * 0.95 / pod.height, 1.0);
-      const padX = containerW * 0.02;
-      const padY = containerH * 0.02;
+      // Fit pod to fill viewport with minimal padding
+      const fitZoom = Math.min(containerW * 0.99 / pod.width, containerH * 0.99 / pod.height, 1.0);
+      const padX = containerW * 0.005;
+      const padY = containerH * 0.005;
       let panX: number, panY: number;
       if (fitZoom >= 1.0) {
         panX = padX / fitZoom - pod.x;
@@ -384,7 +384,8 @@ const WorkspaceFlightView = React.memo(function WorkspaceFlightView({
     // Snap mode: horizontal scroll jumps to next/prev pod immediately
     let hScrollTimer: ReturnType<typeof setTimeout> | null = null;
     let hScrollActive = false;
-    let snapCooldown = false; // Prevent multiple snaps per gesture
+    let snapCooldown = false;
+    let lastSnapDir: "left" | "right" | null = null;
     const hScrollHandler = (e: WheelEvent) => {
       if (!((e.target as HTMLElement).closest("[data-flight-pod]"))) return;
       if (e.altKey || e.ctrlKey) return;
@@ -396,20 +397,22 @@ const WorkspaceFlightView = React.memo(function WorkspaceFlightView({
       e.preventDefault();
 
       if (snapModeRef.current) {
-        // Snap mode: immediately jump to next/prev pod, once per gesture
-        if (!snapCooldown) {
+        const dir: "left" | "right" = e.deltaX > 0 ? "right" : "left";
+        // Allow snap if: first snap, OR direction changed
+        if (!snapCooldown || dir !== lastSnapDir) {
           snapCooldown = true;
-          const dir = e.deltaX > 0 ? "right" : "left";
+          lastSnapDir = dir;
           const target = findNeighborPod(dir);
           if (target) navigateToRef.current?.(target);
         }
-        // Reset cooldown after gesture ends
+        // Reset after gesture ends
         if (hScrollTimer) clearTimeout(hScrollTimer);
         hScrollTimer = setTimeout(() => {
           hScrollActive = false;
           snapCooldown = false;
+          lastSnapDir = null;
           hScrollTimer = null;
-        }, 400);
+        }, 300);
       } else {
         // Free mode: pan freely
         const store = useWorkspaceStore.getState();
