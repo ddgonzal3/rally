@@ -426,7 +426,13 @@ const WorkspaceFlightView = React.memo(function WorkspaceFlightView({
       }
     }
 
-    return bestPlacement;
+    // Ensure the placement doesn't overlap any existing pod
+    const others = pods.map((p) => ({ x: p.x, y: p.y, width: p.width, height: p.height }));
+    const adjusted = preventOverlap(
+      { x: bestPlacement.x, y: bestPlacement.y, width: bestPlacement.w, height: bestPlacement.h },
+      others,
+    );
+    return { x: adjusted.x, y: adjusted.y, w: bestPlacement.w, h: bestPlacement.h };
   }, [workspaceId]);
 
   return (
