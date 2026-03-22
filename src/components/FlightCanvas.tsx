@@ -410,6 +410,7 @@ const WorkspaceFlightView = React.memo(function WorkspaceFlightView({
     // --- Focus Mode scroll: any scroll on a pod navigates to next/prev ---
     // Free mode: horizontal scroll pans freely
     let focusNavCooldown = false;
+    let focusNavDir: "left" | "right" | null = null;
     let focusNavTimer: ReturnType<typeof setTimeout> | null = null;
     let freeScrollTimer: ReturnType<typeof setTimeout> | null = null;
     let freeScrollActive = false;
@@ -417,26 +418,31 @@ const WorkspaceFlightView = React.memo(function WorkspaceFlightView({
       if (e.altKey || e.ctrlKey) return;
 
       if (focusModeRef.current) {
-        // Handle everywhere — not just on pods — to catch inertia events
-        const onPod = !!(e.target as HTMLElement).closest("[data-flight-pod]");
-        // Focus mode: eat ALL horizontal scroll events (including inertia).
-        // Only navigate once per gesture.
         e.preventDefault();
         e.stopPropagation();
-        if (focusNavCooldown) {
-          // Eat inertia events — reset the cooldown timer so inertia extends it
-          if (focusNavTimer) clearTimeout(focusNavTimer);
-          focusNavTimer = setTimeout(() => { focusNavCooldown = false; }, 600);
-          return;
-        }
         if (Math.abs(e.deltaX) < 3) return;
-        focusNavCooldown = true;
         const dir: "left" | "right" = e.deltaX > 0 ? "right" : "left";
+
+        if (focusNavCooldown) {
+          // If direction changed, allow immediate navigation
+          if (dir !== focusNavDir) {
+            focusNavCooldown = false;
+          } else {
+            // Same direction inertia — eat it, extend cooldown
+            if (focusNavTimer) clearTimeout(focusNavTimer);
+            focusNavTimer = setTimeout(() => { focusNavCooldown = false; focusNavDir = null; }, 600);
+            return;
+          }
+        }
+
+        focusNavCooldown = true;
+        focusNavDir = dir;
         const target = findNeighborPod(dir);
         if (target) navigateToRef.current?.(target);
-        // Long cooldown to eat all inertia events
+        if (focusNavTimer) clearTimeout(focusNavTimer);
         focusNavTimer = setTimeout(() => {
           focusNavCooldown = false;
+          focusNavDir = null;
         }, 600);
       } else {
         // Free mode: horizontal scroll pans (only on pods)
