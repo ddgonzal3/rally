@@ -67,7 +67,6 @@ const WorkspaceFlightView = React.memo(function WorkspaceFlightView({
     const wheelHandler = (e: WheelEvent) => {
       // Option+scroll or pinch = zoom (always, regardless of focus)
       if (e.altKey || e.ctrlKey) {
-        if (e.altKey) zoomActiveWithOption = true;
         e.preventDefault();
         const store = useWorkspaceStore.getState();
         const vp = store.flightLayouts[workspaceId]?.viewport;
@@ -130,9 +129,6 @@ const WorkspaceFlightView = React.memo(function WorkspaceFlightView({
     let lastX = 0;
     let lastY = 0;
     let isPanning = false;
-    let isDraggingPod = false;
-    let dragPodId: string | null = null;
-    let zoomActiveWithOption = false; // Set when Option+scroll zooms — blocks pod drag until Option released
 
     const moveHandler = (e: MouseEvent) => {
       // Shift+move = pan
@@ -165,57 +161,7 @@ const WorkspaceFlightView = React.memo(function WorkspaceFlightView({
         el.classList.remove("flight-panning");
       }
 
-      // Option+move = drag pod under cursor (but NOT if we just zoomed with Option)
-      if (e.altKey && !e.shiftKey && !zoomActiveWithOption) {
-        if (!isDraggingPod) {
-          // Find which pod the cursor is over
-          const podEl = (e.target as HTMLElement).closest("[data-flight-pod]");
-          if (!podEl) return;
-          dragPodId = podEl.getAttribute("data-flight-pod");
-          if (!dragPodId) return;
-          isDraggingPod = true;
-          lastX = e.clientX;
-          lastY = e.clientY;
-          el.style.cursor = "move";
-          // Bring to front
-          useWorkspaceStore.getState().bringPodToFront(workspaceId, dragPodId);
-          return;
-        }
-        if (!dragPodId) return;
-        const s = useWorkspaceStore.getState();
-        const vp = s.flightLayouts[workspaceId]?.viewport;
-        const z = vp?.zoom ?? 1;
-        const dx = (e.clientX - lastX) / z;
-        const dy = (e.clientY - lastY) / z;
-        lastX = e.clientX;
-        lastY = e.clientY;
-        if (dx !== 0 || dy !== 0) {
-          const pod = s.flightLayouts[workspaceId]?.pods.find((p) => p.id === dragPodId);
-          if (pod) {
-            const rawX = pod.x + dx;
-            const rawY = pod.y + dy;
-            const others = (s.flightLayouts[workspaceId]?.pods ?? [])
-              .filter((p) => p.id !== dragPodId)
-              .map((p) => ({ x: p.x, y: p.y, width: p.width, height: p.height }));
-            const snapped = snapToNeighbors(
-              { x: rawX, y: rawY, width: pod.width, height: pod.height },
-              others,
-              "drag",
-            );
-            const final = preventOverlap(snapped, others);
-            s.updateFlightPod(workspaceId, dragPodId, {
-              x: final.x,
-              y: final.y,
-            } as any);
-          }
-        }
-        return;
-      }
-      if (isDraggingPod && !e.altKey) {
-        isDraggingPod = false;
-        dragPodId = null;
-        el.style.cursor = "";
-      }
+      // (Option+move pod drag removed — drag via header only)
     };
 
     const keyUpHandler = (e: KeyboardEvent) => {
@@ -223,14 +169,6 @@ const WorkspaceFlightView = React.memo(function WorkspaceFlightView({
         isPanning = false;
         el.style.cursor = "";
         el.classList.remove("flight-panning");
-      }
-      if (e.key === "Alt") {
-        zoomActiveWithOption = false; // Reset zoom lock when Option released
-        if (isDraggingPod) {
-          isDraggingPod = false;
-          dragPodId = null;
-          el.style.cursor = "";
-        }
       }
     };
 
