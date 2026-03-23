@@ -89,11 +89,15 @@ export function snapToNeighbors(
 }
 
 const MIN_POD_GAP = 8; // Minimum pixels between pods — prevents overlap
+const OVERLAP_OVERRIDE_DEPTH = 30; // How far past snap the user must drag to allow overlap
 
-/** Push a pod out of any overlapping neighbors. Returns adjusted x/y. */
+/** Push a pod out of any overlapping neighbors. Returns adjusted x/y.
+ *  If rawPos is provided, overlap prevention is skipped when the user
+ *  has dragged far enough past the snap boundary (intentional overlap). */
 export function preventOverlap(
   moving: SnapEdges,
   others: SnapEdges[],
+  rawPos?: { x: number; y: number },
 ): SnapEdges {
   let { x, y } = moving;
   const { width, height } = moving;
@@ -104,7 +108,30 @@ export function preventOverlap(
     const overlapY = y < o.y + o.height + MIN_POD_GAP && y + height + MIN_POD_GAP > o.y;
 
     if (overlapX && overlapY) {
-      // Find the smallest push to resolve the overlap
+      // If we have the raw cursor position, check if the user is pushing
+      // deep enough into the overlap to signal they want stacking
+      if (rawPos) {
+        const rawOverlapX = rawPos.x < o.x + o.width + MIN_POD_GAP && rawPos.x + width + MIN_POD_GAP > o.x;
+        const rawOverlapY = rawPos.y < o.y + o.height + MIN_POD_GAP && rawPos.y + height + MIN_POD_GAP > o.y;
+
+        if (rawOverlapX && rawOverlapY) {
+          // Measure how deep the raw position is into the overlap zone
+          const depthRight = (o.x + o.width + MIN_POD_GAP) - rawPos.x;
+          const depthLeft = rawPos.x + width + MIN_POD_GAP - o.x;
+          const depthDown = (o.y + o.height + MIN_POD_GAP) - rawPos.y;
+          const depthUp = rawPos.y + height + MIN_POD_GAP - o.y;
+          const minDepth = Math.min(depthRight, depthLeft, depthDown, depthUp);
+
+          // User has pushed well past the snap — let them overlap
+          if (minDepth > OVERLAP_OVERRIDE_DEPTH) {
+            x = rawPos.x;
+            y = rawPos.y;
+            continue;
+          }
+        }
+      }
+
+      // Normal push-out behavior
       const pushRight = (o.x + o.width + MIN_POD_GAP) - x;
       const pushLeft = x + width + MIN_POD_GAP - o.x;
       const pushDown = (o.y + o.height + MIN_POD_GAP) - y;
@@ -219,7 +246,7 @@ export const FlightPod = React.memo(function FlightPod({
       const pods = store.flightLayouts[workspaceId]?.pods ?? [];
       const others = pods.filter((p) => p.id !== podId).map((p) => ({ x: p.x, y: p.y, width: p.width, height: p.height }));
       const snapped = snapToNeighbors({ x: rawX, y: rawY, width: podWidth, height: podHeight }, others, "drag");
-      const final = preventOverlap(snapped, others);
+      const final = preventOverlap(snapped, others, { x: rawX, y: rawY });
 
       updateFlightPod(workspaceId, podId, {
         x: final.x,

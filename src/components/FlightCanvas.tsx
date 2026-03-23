@@ -664,6 +664,22 @@ const WorkspaceFlightView = React.memo(function WorkspaceFlightView({
       onContextMenu={handleCanvasContextMenu}
       onDoubleClick={handleCanvasContextMenu}
     >
+      <style>{`
+        [data-flight-canvas]::after {
+          content: "";
+          position: absolute;
+          inset: 0;
+          z-index: 0;
+          background-image:
+            radial-gradient(circle, rgba(255,255,255,0.18) 1.2px, transparent 1.2px),
+            radial-gradient(circle, rgba(255,255,255,0.12) 1px, transparent 1px),
+            radial-gradient(circle, rgba(255,255,255,0.07) 0.8px, transparent 0.8px),
+            radial-gradient(circle, rgba(255,255,255,0.05) 0.6px, transparent 0.6px);
+          background-size: 96px 96px, 96px 96px, 24px 24px, 24px 24px;
+          background-position: 0 0, 48px 48px, 0 0, 12px 12px;
+          pointer-events: none;
+        }
+      `}</style>
       <div
         style={{
           ...canvasStyles.viewport,
@@ -851,6 +867,7 @@ const canvasStyles: Record<string, React.CSSProperties> = {
     top: 0,
     left: 0,
     willChange: "transform",
+    zIndex: 1,
   },
   empty: {
     flex: 1,
