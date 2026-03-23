@@ -305,8 +305,9 @@ const WorkspaceFlightView = React.memo(function WorkspaceFlightView({
         const HUD_HEIGHT = 35;
         const PEEK_WIDTH = 20;
         const GAP = 8;
-        const focusW = Math.max(containerW - PEEK_WIDTH, 400);
-        const focusH = Math.max(containerH - HUD_HEIGHT, 300);
+        const PAD = 4;
+        const focusW = Math.max(containerW - PEEK_WIDTH - PAD, 400);
+        const focusH = Math.max(containerH - HUD_HEIGHT - PAD, 300);
         const allPods = [...(store.flightLayouts[workspaceId]?.pods ?? [])];
 
         // Sort pods by their current position (left-to-right, top-to-bottom)
@@ -331,7 +332,6 @@ const WorkspaceFlightView = React.memo(function WorkspaceFlightView({
         // Find the target pod's new position
         const targetIndex = allPods.findIndex((p) => p.id === podId);
         const px = targetIndex >= 0 ? targetIndex * (focusW + GAP) : 0;
-        const PAD = 4;
         store.setFlightViewport(workspaceId, { panX: -px + PAD, panY: PAD, zoom: 1.0 });
       } else {
         // Free mode: fit pod in viewport with minimal padding
