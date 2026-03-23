@@ -1,5 +1,11 @@
 import React from "react";
 import { useWorkspaceStore } from "../stores/workspaceStore";
+import {
+  FLIGHT_DEFAULT_CLAUDE_WIDTH,
+  FLIGHT_DEFAULT_CLAUDE_HEIGHT,
+  FLIGHT_DEFAULT_TERMINAL_WIDTH,
+  FLIGHT_DEFAULT_TERMINAL_HEIGHT,
+} from "../lib/types";
 
 interface FlightHUDProps {
   workspaceId: string;
@@ -12,9 +18,22 @@ export function FlightHUD({ workspaceId, zoom, focusMode, onToggleFocus }: Fligh
   const addFlightPod = useWorkspaceStore((s) => s.addFlightPod);
   const setFlightViewport = useWorkspaceStore((s) => s.setFlightViewport);
 
+  const updateFlightPod = useWorkspaceStore((s) => s.updateFlightPod);
+  const pods = useWorkspaceStore((s) => s.flightLayouts[workspaceId]?.pods);
+
   const handleAddClaude = () => addFlightPod(workspaceId, "claude");
   const handleAddTerminal = () => addFlightPod(workspaceId, "terminal");
   const handleResetZoom = () => setFlightViewport(workspaceId, { zoom: 1.0 });
+  const handleResetSizes = () => {
+    if (!pods) return;
+    for (const pod of pods) {
+      const isClaudeType = pod.type === "claude";
+      updateFlightPod(workspaceId, pod.id, {
+        width: isClaudeType ? FLIGHT_DEFAULT_CLAUDE_WIDTH : FLIGHT_DEFAULT_TERMINAL_WIDTH,
+        height: isClaudeType ? FLIGHT_DEFAULT_CLAUDE_HEIGHT : FLIGHT_DEFAULT_TERMINAL_HEIGHT,
+      } as any);
+    }
+  };
 
   const zoomPct = Math.round(zoom * 100);
 
@@ -33,6 +52,20 @@ export function FlightHUD({ workspaceId, zoom, focusMode, onToggleFocus }: Fligh
           <line x1="1" y1="5" x2="9" y2="5" stroke="#999" strokeWidth="1.5" strokeLinecap="round" />
         </svg>
         <span style={styles.btnLabel}>Terminal</span>
+      </button>
+      <div style={styles.divider} />
+      <button
+        style={styles.btn}
+        onClick={handleResetSizes}
+        title="Reset all pods to default size"
+      >
+        <svg width="12" height="12" viewBox="0 0 12 12" fill="none" style={styles.icon}>
+          <rect x="1" y="1" width="4" height="4" rx="0.5" stroke="#999" strokeWidth="1" />
+          <rect x="7" y="1" width="4" height="4" rx="0.5" stroke="#999" strokeWidth="1" />
+          <rect x="1" y="7" width="4" height="4" rx="0.5" stroke="#999" strokeWidth="1" />
+          <rect x="7" y="7" width="4" height="4" rx="0.5" stroke="#999" strokeWidth="1" />
+        </svg>
+        <span style={styles.btnLabel}>Reset</span>
       </button>
       <div style={styles.divider} />
       <button

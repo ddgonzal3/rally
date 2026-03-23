@@ -301,13 +301,13 @@ const WorkspaceFlightView = React.memo(function WorkspaceFlightView({
       const containerH = rect.height / parentZoom;
 
       if (focusModeRef.current) {
-        // Focus mode: resize ALL pods and re-layout their positions
+        // Focus mode: fit height to viewport, cap widths so ≥2 pods visible
         const HUD_HEIGHT = 35;
-        const PEEK_WIDTH = 20;
         const GAP = 8;
-        const PAD = 4;
-        const focusW = Math.max(containerW - PEEK_WIDTH - PAD, 400);
-        const focusH = Math.max(containerH - HUD_HEIGHT - PAD, 300);
+        const PAD = 12;
+        const focusH = Math.max(containerH - HUD_HEIGHT - PAD * 2, 300);
+        // Max width per pod: half the viewport minus gap/padding, so 2 always fit
+        const maxPodW = Math.floor((containerW - GAP - PAD * 2) / 2);
         const allPods = [...(store.flightLayouts[workspaceId]?.pods ?? [])];
 
         // Sort pods by their current position (left-to-right, top-to-bottom)
@@ -319,20 +319,31 @@ const WorkspaceFlightView = React.memo(function WorkspaceFlightView({
           return a.x - b.x;
         });
 
-        // Re-position in a horizontal row with gaps
+        // Re-position in a horizontal row — cap width, set height
+        const podWidths: number[] = [];
+        let cursorX = 0;
         for (let i = 0; i < allPods.length; i++) {
           const p = allPods[i];
-          const newX = i * (focusW + GAP);
-          const newY = 0;
+          const w = Math.min(p.width, maxPodW);
+          podWidths.push(w);
           store.updateFlightPod(workspaceId, p.id, {
-            x: newX, y: newY, width: focusW, height: focusH,
+            x: cursorX, y: 0, width: w, height: focusH,
           } as any);
+          cursorX += w + GAP;
         }
 
-        // Find the target pod's new position
-        const targetIndex = allPods.findIndex((p) => p.id === podId);
-        const px = targetIndex >= 0 ? targetIndex * (focusW + GAP) : 0;
-        store.setFlightViewport(workspaceId, { panX: -px + PAD, panY: PAD, zoom: 1.0 });
+        // If only 2 pods, show both — pan to origin
+        // Otherwise, pan to the target pod
+        if (allPods.length <= 2) {
+          store.setFlightViewport(workspaceId, { panX: PAD, panY: PAD, zoom: 1.0 });
+        } else {
+          const targetIndex = allPods.findIndex((p) => p.id === podId);
+          let px = 0;
+          for (let i = 0; i < targetIndex; i++) {
+            px += podWidths[i] + GAP;
+          }
+          store.setFlightViewport(workspaceId, { panX: -px + PAD, panY: PAD, zoom: 1.0 });
+        }
       } else {
         // Free mode: fit pod in viewport with minimal padding
         const fitZoom = Math.min(containerW * 0.99 / pod.width, containerH * 0.99 / pod.height, 1.0);
@@ -613,37 +624,36 @@ const WorkspaceFlightView = React.memo(function WorkspaceFlightView({
     if (pods.length === 0) return { x: canvasX, y: canvasY, w: defaultW, h: defaultH };
 
     const GAP = 8; // MIN_POD_GAP
-    // Find the nearest pod edge to the click point
+    // Find the nearest pod edge to the click point using 2D distance
     let bestDist = Infinity;
     let bestPlacement = { x: canvasX, y: canvasY, w: defaultW, h: defaultH };
 
     for (const pod of pods) {
       const podRight = pod.x + pod.width;
       const podBottom = pod.y + pod.height;
+      // Clamp click to pod's range on the perpendicular axis for 2D distance
+      const clampedX = Math.max(pod.x, Math.min(canvasX, podRight));
+      const clampedY = Math.max(pod.y, Math.min(canvasY, podBottom));
 
       // Right edge of pod
-      const distRight = Math.abs(canvasX - podRight);
-      if (distRight < bestDist && canvasX >= podRight) {
-        bestDist = distRight;
-        bestPlacement = { x: podRight + GAP, y: pod.y, w: defaultW, h: pod.height };
+      if (canvasX >= podRight) {
+        const dist = Math.hypot(canvasX - podRight, canvasY - clampedY);
+        if (dist < bestDist) { bestDist = dist; bestPlacement = { x: podRight + GAP, y: pod.y, w: defaultW, h: pod.height }; }
       }
       // Left edge of pod
-      const distLeft = Math.abs(canvasX - pod.x);
-      if (distLeft < bestDist && canvasX <= pod.x) {
-        bestDist = distLeft;
-        bestPlacement = { x: pod.x - defaultW - GAP, y: pod.y, w: defaultW, h: pod.height };
+      if (canvasX <= pod.x) {
+        const dist = Math.hypot(canvasX - pod.x, canvasY - clampedY);
+        if (dist < bestDist) { bestDist = dist; bestPlacement = { x: pod.x - defaultW - GAP, y: pod.y, w: defaultW, h: pod.height }; }
       }
       // Bottom edge of pod
-      const distBottom = Math.abs(canvasY - podBottom);
-      if (distBottom < bestDist && canvasY >= podBottom) {
-        bestDist = distBottom;
-        bestPlacement = { x: pod.x, y: podBottom + GAP, w: pod.width, h: defaultH };
+      if (canvasY >= podBottom) {
+        const dist = Math.hypot(canvasX - clampedX, canvasY - podBottom);
+        if (dist < bestDist) { bestDist = dist; bestPlacement = { x: pod.x, y: podBottom + GAP, w: pod.width, h: defaultH }; }
       }
       // Top edge of pod
-      const distTop = Math.abs(canvasY - pod.y);
-      if (distTop < bestDist && canvasY <= pod.y) {
-        bestDist = distTop;
-        bestPlacement = { x: pod.x, y: pod.y - defaultH - GAP, w: pod.width, h: defaultH };
+      if (canvasY <= pod.y) {
+        const dist = Math.hypot(canvasX - clampedX, canvasY - pod.y);
+        if (dist < bestDist) { bestDist = dist; bestPlacement = { x: pod.x, y: pod.y - defaultH - GAP, w: pod.width, h: defaultH }; }
       }
     }
 

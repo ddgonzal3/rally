@@ -392,10 +392,9 @@ export const FlightPod = React.memo(function FlightPod({
       }
       return;
     }
-    // If showing the launcher, start Claude on click
+    // If showing the launcher, only start Claude when clicking the launch button itself
     if (podType === "claude" && !claudeLaunched && !podPtyId) {
-      setClaudeLaunched(true);
-      return;
+      return; // Don't auto-start — let FlightLauncher's onClick handle it
     }
     // Focus the MAIN terminal (first one, not shell)
     if (!podRef.current) return;
