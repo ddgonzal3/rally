@@ -671,7 +671,7 @@ const WorkspaceFlightView = React.memo(function WorkspaceFlightView({
           // transform scale < 1.0: pixel-perfect downscale → crisp shrink
           // Hybrid gives sharp text at ALL zoom levels
           ...(zoom === 1.0
-            ? { transform: `translate3d(${panX}px, ${panY}px, 0)` }
+            ? { left: panX, top: panY }
             : zoom > 1.0
               ? { transform: `translate3d(${panX}px, ${panY}px, 0)`, zoom: zoom }
               : { transform: `translate3d(${panX}px, ${panY}px, 0) scale(${zoom})`, transformOrigin: "0 0" }
