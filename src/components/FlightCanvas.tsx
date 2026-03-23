@@ -46,6 +46,25 @@ const WorkspaceFlightView = React.memo(function WorkspaceFlightView({
     getOrCreateFlightLayout(workspaceId);
   }, [workspaceId, getOrCreateFlightLayout]);
 
+  // Re-fit pods on window resize (e.g., snap to half screen)
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const observer = new ResizeObserver(() => {
+      // In Focus Mode, resize the focused pod to fill the new viewport
+      if (focusModeRef.current && navigateToRef.current) {
+        const s = useWorkspaceStore.getState();
+        const pods = s.flightLayouts[workspaceId]?.pods ?? [];
+        if (pods.length > 0) {
+          const top = [...pods].sort((a, b) => b.zIndex - a.zIndex)[0];
+          navigateToRef.current(top.id);
+        }
+      }
+    });
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [workspaceId]);
+
   // Native wheel listener — MUST be non-passive to call preventDefault()
   useEffect(() => {
     const el = containerRef.current;
@@ -283,8 +302,8 @@ const WorkspaceFlightView = React.memo(function WorkspaceFlightView({
 
       if (focusModeRef.current) {
         // Focus mode: resize ALL pods to fill the viewport, zoom stays at 1.0
-        const HUD_HEIGHT = 50;
-        const PEEK_WIDTH = 40;
+        const HUD_HEIGHT = 35;
+        const PEEK_WIDTH = 20;
         const focusW = Math.max(containerW - PEEK_WIDTH, 400);
         const focusH = Math.max(containerH - HUD_HEIGHT, 300);
         const allPods = store.flightLayouts[workspaceId]?.pods ?? [];
@@ -299,7 +318,7 @@ const WorkspaceFlightView = React.memo(function WorkspaceFlightView({
         const updatedPod = store.flightLayouts[workspaceId]?.pods.find((p) => p.id === podId);
         const px = updatedPod?.x ?? pod.x;
         const py = updatedPod?.y ?? pod.y;
-        const PAD = 8;
+        const PAD = 4;
         store.setFlightViewport(workspaceId, { panX: -px + PAD, panY: -py + PAD, zoom: 1.0 });
       } else {
         // Free mode: fit pod in viewport with minimal padding
