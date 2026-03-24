@@ -313,7 +313,7 @@ const WorkspaceFlightView = React.memo(function WorkspaceFlightView({
 
     const moveHandler = (e: MouseEvent) => {
       // Shift+move = pan
-      if (e.shiftKey && !e.altKey) {
+      if (e.ctrlKey && !e.altKey) {
         if (!isPanning) {
           isPanning = true;
           lastX = e.clientX;
@@ -335,7 +335,7 @@ const WorkspaceFlightView = React.memo(function WorkspaceFlightView({
         }
         return;
       }
-      if (isPanning && !e.shiftKey) {
+      if (isPanning && !e.ctrlKey) {
         isPanning = false;
         el.style.cursor = "";
         el.classList.remove("flight-panning");
@@ -345,7 +345,7 @@ const WorkspaceFlightView = React.memo(function WorkspaceFlightView({
     };
 
     const keyUpHandler = (e: KeyboardEvent) => {
-      if (e.key === "Shift" && isPanning) {
+      if (e.key === "Control" && isPanning) {
         isPanning = false;
         el.style.cursor = "";
         el.classList.remove("flight-panning");
