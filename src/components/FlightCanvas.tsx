@@ -25,6 +25,13 @@ const WorkspaceFlightView = React.memo(function WorkspaceFlightView({
   const focusModeRef = useRef(focusMode);
   focusModeRef.current = focusMode;
   const navigateToRef = useRef<((podId: string) => void) | null>(null);
+  const focusScrollRef = useRef<HTMLDivElement>(null);
+  const [focusColumns, setFocusColumns] = useState(2);
+  const focusColumnsRef = useRef(focusColumns);
+  focusColumnsRef.current = focusColumns;
+  const [focusRows, setFocusRows] = useState(1);
+  const focusRowsRef = useRef(focusRows);
+  focusRowsRef.current = focusRows;
   const [marquee, setMarquee] = useState<{ sx1: number; sy1: number; sx2: number; sy2: number } | null>(null);
 
   // Stable selectors — primitives only, no new objects
@@ -42,28 +49,57 @@ const WorkspaceFlightView = React.memo(function WorkspaceFlightView({
     [podIds]
   );
 
+  // Focus mode: sorted pod order and computed width per snap item
+  const focusPodOrder = useMemo(() => {
+    if (!focusMode) return podIdList;
+    const store = useWorkspaceStore.getState();
+    const pods = store.flightLayouts[workspaceId]?.pods ?? [];
+    // Sort by x then y to get stable left-to-right order
+    return [...pods]
+      .sort((a, b) => {
+        const rowA = Math.round(a.y / 100);
+        const rowB = Math.round(b.y / 100);
+        if (rowA !== rowB) return rowA - rowB;
+        return a.x - b.x;
+      })
+      .map((p) => p.id);
+  }, [focusMode, podIdList, workspaceId]);
+
+  // Width of each snap item: divide container by focusColumns
+  const [containerSize, setContainerSize] = useState({ w: 0, h: 0 });
+  useEffect(() => {
+    if (!containerRef.current) return;
+    const measure = () => setContainerSize({
+      w: containerRef.current?.clientWidth ?? 0,
+      h: containerRef.current?.clientHeight ?? 0,
+    });
+    measure();
+    const obs = new ResizeObserver(measure);
+    obs.observe(containerRef.current);
+    return () => obs.disconnect();
+  }, []);
+
+  // Cap columns to number of pods
+  const effectiveColumns = Math.min(focusColumns, podIdList.length || 1);
+
+  const focusPodWidth = useMemo(() => {
+    if (!focusMode || containerSize.w === 0) return undefined;
+    const GAP = 8;
+    const PAD = 12;
+    return Math.floor((containerSize.w - PAD * 2 - GAP * (effectiveColumns - 1)) / effectiveColumns);
+  }, [focusMode, effectiveColumns, containerSize.w]);
+
+  const focusPodHeight = useMemo(() => {
+    if (!focusMode || containerSize.h === 0) return undefined;
+    const GAP = 8;
+    const PAD = 12;
+    const HUD_HEIGHT = 35;
+    return Math.floor((containerSize.h - HUD_HEIGHT - PAD * 2 - GAP * (focusRows - 1)) / focusRows);
+  }, [focusMode, focusRows, containerSize.h]);
+
   useEffect(() => {
     getOrCreateFlightLayout(workspaceId);
   }, [workspaceId, getOrCreateFlightLayout]);
-
-  // Re-fit pods on window resize (e.g., snap to half screen)
-  useEffect(() => {
-    const el = containerRef.current;
-    if (!el) return;
-    const observer = new ResizeObserver(() => {
-      // In Focus Mode, resize the focused pod to fill the new viewport
-      if (focusModeRef.current && navigateToRef.current) {
-        const s = useWorkspaceStore.getState();
-        const pods = s.flightLayouts[workspaceId]?.pods ?? [];
-        if (pods.length > 0) {
-          const top = [...pods].sort((a, b) => b.zIndex - a.zIndex)[0];
-          navigateToRef.current(top.id);
-        }
-      }
-    });
-    observer.observe(el);
-    return () => observer.disconnect();
-  }, [workspaceId]);
 
   // Listen for zoom-click on pods to enter focus mode
   useEffect(() => {
@@ -100,25 +136,33 @@ const WorkspaceFlightView = React.memo(function WorkspaceFlightView({
     };
     el.addEventListener("mousedown", clickTracker, true); // capture phase
 
-    let lastFocusNavTime = 0;
+    let focusLocked = false;
+    let focusPrevAbsDelta = 0;
+
     const wheelHandler = (e: WheelEvent) => {
-      // In Focus Mode: horizontal scroll navigates pods
+      // Focus mode: intercept scroll, navigate pods via viewport panning
       if (focusModeRef.current && !e.altKey && !e.ctrlKey) {
         e.preventDefault();
         e.stopImmediatePropagation();
 
-        if (Math.abs(e.deltaX) < 1) return;
-        if (Math.abs(e.deltaX) < Math.abs(e.deltaY)) return;
+        const absDelta = Math.abs(e.deltaX);
+        if (absDelta < 1) return;
+        if (absDelta < Math.abs(e.deltaY)) return;
 
-        // Simple fixed cooldown — ignore events within 400ms of last nav
-        const now = performance.now();
-        if (now - lastFocusNavTime < 400) return;
+        if (focusLocked) {
+          const isRampUp = absDelta > focusPrevAbsDelta && absDelta > 1;
+          focusPrevAbsDelta = absDelta;
+          if (!isRampUp) return;
+          focusLocked = false;
+        }
+
+        focusPrevAbsDelta = absDelta;
 
         const dir: "left" | "right" = e.deltaX > 0 ? "right" : "left";
         const target = findNeighborPod(dir);
         if (target) {
+          focusLocked = true;
           navigateToRef.current?.(target);
-          lastFocusNavTime = now;
         }
         return;
       }
@@ -180,7 +224,7 @@ const WorkspaceFlightView = React.memo(function WorkspaceFlightView({
 
       // Otherwise: cursor is over a pod and terminal is focused → let terminal scroll
     };
-    el.addEventListener("wheel", wheelHandler, { passive: false });
+    el.addEventListener("wheel", wheelHandler, { passive: false, capture: true });
 
     // Modifier+mousemove gestures:
     // Shift+move = pan canvas, Option+move = drag pod under cursor
@@ -330,49 +374,38 @@ const WorkspaceFlightView = React.memo(function WorkspaceFlightView({
       const containerH = rect.height / parentZoom;
 
       if (focusModeRef.current) {
-        // Focus mode: fit height to viewport, cap widths so ≥2 pods visible
+        // Focus mode: lay out pods in a grid via the store, then pan viewport
         const HUD_HEIGHT = 35;
         const GAP = 8;
         const PAD = 12;
-        const focusH = Math.max(containerH - HUD_HEIGHT - PAD * 2, 300);
-        // Max width per pod: half the viewport minus gap/padding, so 2 always fit
-        const maxPodW = Math.floor((containerW - GAP - PAD * 2) / 2);
+        const allPodsCount = (store.flightLayouts[workspaceId]?.pods ?? []).length;
+        const cols = Math.min(focusColumnsRef.current, allPodsCount || 1);
+        const rows = focusRowsRef.current;
+        const podW = Math.floor((containerW - PAD * 2 - GAP * (cols - 1)) / cols);
+        const podH = Math.floor((containerH - HUD_HEIGHT - PAD * 2 - GAP * (rows - 1)) / rows);
         const allPods = [...(store.flightLayouts[workspaceId]?.pods ?? [])];
 
-        // Sort pods by their current position (left-to-right, top-to-bottom)
-        // to preserve spatial ordering when re-laying out
+        // Sort by position to get stable left-to-right order
         allPods.sort((a, b) => {
-          const rowA = Math.round(a.y / 100); // Group into rough rows
+          const rowA = Math.round(a.y / 100);
           const rowB = Math.round(b.y / 100);
           if (rowA !== rowB) return rowA - rowB;
           return a.x - b.x;
         });
 
-        // Re-position in a horizontal row — cap width, set height
-        const podWidths: number[] = [];
-        let cursorX = 0;
+        // Lay out in a grid: columns then rows
         for (let i = 0; i < allPods.length; i++) {
-          const p = allPods[i];
-          const w = Math.min(p.width, maxPodW);
-          podWidths.push(w);
-          store.updateFlightPod(workspaceId, p.id, {
-            x: cursorX, y: 0, width: w, height: focusH,
+          const col = i % cols;
+          const row = Math.floor(i / cols) % rows;
+          const x = PAD + col * (podW + GAP);
+          const y = PAD + row * (podH + GAP);
+          store.updateFlightPod(workspaceId, allPods[i].id, {
+            x, y, width: podW, height: podH,
           } as any);
-          cursorX += w + GAP;
         }
 
-        // If only 2 pods, show both — pan to origin
-        // Otherwise, pan to the target pod
-        if (allPods.length <= 2) {
-          store.setFlightViewport(workspaceId, { panX: PAD, panY: PAD, zoom: 1.0 });
-        } else {
-          const targetIndex = allPods.findIndex((p) => p.id === podId);
-          let px = 0;
-          for (let i = 0; i < targetIndex; i++) {
-            px += podWidths[i] + GAP;
-          }
-          store.setFlightViewport(workspaceId, { panX: -px + PAD, panY: PAD, zoom: 1.0 });
-        }
+        // Pan to show the first pod (page 0)
+        store.setFlightViewport(workspaceId, { panX: 0, panY: 0, zoom: 1.0 });
       } else {
         // Free mode: fit pod in viewport with minimal padding
         const fitZoom = Math.min(containerW * 0.99 / pod.width, containerH * 0.99 / pod.height, 1.0);
@@ -514,6 +547,42 @@ const WorkspaceFlightView = React.memo(function WorkspaceFlightView({
         store.setFlightViewport(workspaceId, { panX, panY, zoom: fitZoom });
         return;
       }
+
+      // Cmd+number: set columns, Cmd+Shift+number: set rows (focus mode)
+      if (focusModeRef.current && e.metaKey && !e.altKey && !e.ctrlKey) {
+        const numMap: Record<string, number> = { "1": 1, "2": 2, "3": 3, "4": 4, "5": 5, "6": 6, "7": 7, "8": 8, "9": 9 };
+        // Shift+number produces special chars, so check both key and code
+        const digit = numMap[e.key] ?? numMap[e.code?.replace("Digit", "")];
+        if (digit) {
+          e.preventDefault();
+          if (e.shiftKey) {
+            // Cmd+Shift+N: set rows
+            setFocusRows(digit);
+          } else {
+            // Cmd+N: set columns (capped to pod count in render)
+            const scroller = el.querySelector("[data-focus-scroller]") as HTMLElement | null;
+            const items = scroller?.querySelectorAll("[data-focus-snap-item]");
+            let leftmostIndex = 0;
+            if (scroller && items && items.length > 0) {
+              const scrollLeft = scroller.scrollLeft;
+              let best = Infinity;
+              items.forEach((item, i) => {
+                const dist = Math.abs((item as HTMLElement).offsetLeft - 4 - scrollLeft);
+                if (dist < best) { best = dist; leftmostIndex = i; }
+              });
+            }
+            setFocusColumns(digit);
+            requestAnimationFrame(() => {
+              if (!scroller) return;
+              const newItems = scroller.querySelectorAll("[data-focus-snap-item]");
+              if (newItems[leftmostIndex]) {
+                scroller.scrollLeft = (newItems[leftmostIndex] as HTMLElement).offsetLeft - 4;
+              }
+            });
+          }
+          return;
+        }
+      }
     };
     document.addEventListener("keydown", navHandler, true); // capture phase
 
@@ -550,7 +619,7 @@ const WorkspaceFlightView = React.memo(function WorkspaceFlightView({
     el.addEventListener("wheel", focusScrollHandler, { passive: false });
 
     return () => {
-      el.removeEventListener("wheel", wheelHandler);
+      el.removeEventListener("wheel", wheelHandler, { capture: true });
       el.removeEventListener("wheel", focusScrollHandler);
       el.removeEventListener("mousedown", clickTracker, true);
       el.removeEventListener("mousemove", moveHandler);
@@ -561,49 +630,6 @@ const WorkspaceFlightView = React.memo(function WorkspaceFlightView({
       if (freeScrollTimer) clearTimeout(freeScrollTimer);
     };
   }, [workspaceId, setFlightViewport]);
-
-  // Right-click on empty canvas → frosted glass popup to add pods
-  const [contextMenu, setContextMenu] = useState<{ screenX: number; screenY: number; canvasX: number; canvasY: number } | null>(null);
-  const menuRef = useRef<HTMLDivElement>(null);
-
-  const handleCanvasContextMenu = useCallback((e: React.MouseEvent) => {
-    if ((e.target as HTMLElement).closest("[data-flight-pod]")) return;
-    e.preventDefault();
-
-    const store = useWorkspaceStore.getState();
-    const vp = store.flightLayouts[workspaceId]?.viewport;
-    if (!vp) return;
-
-    const rect = containerRef.current?.getBoundingClientRect();
-    if (!rect) return;
-    const parentZoom = rect.width / (containerRef.current?.offsetWidth ?? rect.width);
-    const cx = (e.clientX - rect.left) / parentZoom;
-    const cy = (e.clientY - rect.top) / parentZoom;
-
-    let canvasX: number, canvasY: number;
-    if (vp.zoom >= 1.0) {
-      canvasX = cx / vp.zoom - vp.panX;
-      canvasY = cy / vp.zoom - vp.panY;
-    } else {
-      canvasX = (cx - vp.panX) / vp.zoom;
-      canvasY = (cy - vp.panY) / vp.zoom;
-    }
-
-    // Store raw clientX/clientY for popup positioning
-    setContextMenu({ screenX: e.clientX, screenY: e.clientY, canvasX, canvasY });
-  }, [workspaceId]);
-
-  // Close popup when clicking outside
-  useEffect(() => {
-    if (!contextMenu) return;
-    const handler = (e: MouseEvent) => {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
-        setContextMenu(null);
-      }
-    };
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
-  }, [contextMenu]);
 
   const ws = useWorkspaceStore((s) => s.workspaces.find((w) => w.id === workspaceId));
   const paths = ws?.paths ?? [];
@@ -620,41 +646,34 @@ const WorkspaceFlightView = React.memo(function WorkspaceFlightView({
     const pods = store.flightLayouts[workspaceId]?.pods ?? [];
     if (pods.length === 0) return { x: canvasX, y: canvasY, w: defaultW, h: defaultH };
 
-    const GAP = 8; // MIN_POD_GAP
-    // Find the nearest pod edge to the click point using 2D distance
+    const GAP = 8;
     let bestDist = Infinity;
     let bestPlacement = { x: canvasX, y: canvasY, w: defaultW, h: defaultH };
 
     for (const pod of pods) {
       const podRight = pod.x + pod.width;
       const podBottom = pod.y + pod.height;
-      // Clamp click to pod's range on the perpendicular axis for 2D distance
       const clampedX = Math.max(pod.x, Math.min(canvasX, podRight));
       const clampedY = Math.max(pod.y, Math.min(canvasY, podBottom));
 
-      // Right edge of pod
       if (canvasX >= podRight) {
         const dist = Math.hypot(canvasX - podRight, canvasY - clampedY);
         if (dist < bestDist) { bestDist = dist; bestPlacement = { x: podRight + GAP, y: pod.y, w: defaultW, h: pod.height }; }
       }
-      // Left edge of pod
       if (canvasX <= pod.x) {
         const dist = Math.hypot(canvasX - pod.x, canvasY - clampedY);
         if (dist < bestDist) { bestDist = dist; bestPlacement = { x: pod.x - defaultW - GAP, y: pod.y, w: defaultW, h: pod.height }; }
       }
-      // Bottom edge of pod
       if (canvasY >= podBottom) {
         const dist = Math.hypot(canvasX - clampedX, canvasY - podBottom);
         if (dist < bestDist) { bestDist = dist; bestPlacement = { x: pod.x, y: podBottom + GAP, w: pod.width, h: defaultH }; }
       }
-      // Top edge of pod
       if (canvasY <= pod.y) {
         const dist = Math.hypot(canvasX - clampedX, canvasY - pod.y);
         if (dist < bestDist) { bestDist = dist; bestPlacement = { x: pod.x, y: pod.y - defaultH - GAP, w: pod.width, h: defaultH }; }
       }
     }
 
-    // Ensure the placement doesn't overlap any existing pod
     const others = pods.map((p) => ({ x: p.x, y: p.y, width: p.width, height: p.height }));
     const adjusted = preventOverlap(
       { x: bestPlacement.x, y: bestPlacement.y, width: bestPlacement.w, height: bestPlacement.h },
@@ -663,13 +682,107 @@ const WorkspaceFlightView = React.memo(function WorkspaceFlightView({
     return { x: adjusted.x, y: adjusted.y, w: bestPlacement.w, h: bestPlacement.h };
   }, [workspaceId]);
 
+  // Right-click on empty canvas → frosted glass popup to add pods
+  const [contextMenu, setContextMenu] = useState<{ screenX: number; screenY: number; canvasX: number; canvasY: number } | null>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  const mouseDownPosRef = useRef<{ x: number; y: number } | null>(null);
+  const handleCanvasMouseDown = useCallback((e: React.MouseEvent) => {
+    mouseDownPosRef.current = { x: e.clientX, y: e.clientY };
+  }, []);
+  const handleCanvasClick = useCallback((e: React.MouseEvent) => {
+    if (e.metaKey || e.ctrlKey || e.altKey || e.shiftKey) return;
+    // Ignore if mouse moved (was a drag)
+    if (mouseDownPosRef.current) {
+      const dx = e.clientX - mouseDownPosRef.current.x;
+      const dy = e.clientY - mouseDownPosRef.current.y;
+      if (dx * dx + dy * dy > 25) return; // >5px movement = drag
+    }
+    if ((e.target as HTMLElement).closest("[data-flight-pod]")) return;
+    if ((e.target as HTMLElement).closest("[data-focus-snap-item]")) return;
+    if ((e.target as HTMLElement).closest("[data-focus-scroller]")) return;
+    e.preventDefault();
+
+    // Single click: directly add a Claude pod for the workspace's first path
+    const store = useWorkspaceStore.getState();
+    const ws = store.workspaces.find((w) => w.id === workspaceId);
+    const cwd = ws?.paths?.[0];
+    if (!cwd) return;
+
+    const vp = store.flightLayouts[workspaceId]?.viewport;
+    if (!vp) return;
+    const rect = containerRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    const parentZoom = rect.width / (containerRef.current?.offsetWidth ?? rect.width);
+    const cx = (e.clientX - rect.left) / parentZoom;
+    const cy = (e.clientY - rect.top) / parentZoom;
+    let canvasX: number, canvasY: number;
+    if (vp.zoom >= 1.0) {
+      canvasX = cx / vp.zoom - vp.panX;
+      canvasY = cy / vp.zoom - vp.panY;
+    } else {
+      canvasX = (cx - vp.panX) / vp.zoom;
+      canvasY = (cy - vp.panY) / vp.zoom;
+    }
+
+    const p = computeSnapPlacement(canvasX, canvasY, FLIGHT_DEFAULT_CLAUDE_WIDTH, FLIGHT_DEFAULT_CLAUDE_HEIGHT);
+    store.addFlightPodAt(workspaceId, "claude", p.x, p.y, p.w, p.h, cwd);
+  }, [workspaceId, computeSnapPlacement]);
+
+  const handleCanvasRightClick = useCallback((e: React.MouseEvent) => {
+    if ((e.target as HTMLElement).closest("[data-flight-pod]")) return;
+    if ((e.target as HTMLElement).closest("[data-focus-snap-item]")) return;
+    if ((e.target as HTMLElement).closest("[data-focus-scroller]")) return;
+    e.preventDefault();
+
+    // Right click: directly add a terminal pod for the workspace's first path
+    const store = useWorkspaceStore.getState();
+    const ws = store.workspaces.find((w) => w.id === workspaceId);
+    const cwd = ws?.paths?.[0];
+    if (!cwd) return;
+
+    const vp = store.flightLayouts[workspaceId]?.viewport;
+    if (!vp) return;
+    const rect = containerRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    const parentZoom = rect.width / (containerRef.current?.offsetWidth ?? rect.width);
+    const cx = (e.clientX - rect.left) / parentZoom;
+    const cy = (e.clientY - rect.top) / parentZoom;
+    let canvasX: number, canvasY: number;
+    if (vp.zoom >= 1.0) {
+      canvasX = cx / vp.zoom - vp.panX;
+      canvasY = cy / vp.zoom - vp.panY;
+    } else {
+      canvasX = (cx - vp.panX) / vp.zoom;
+      canvasY = (cy - vp.panY) / vp.zoom;
+    }
+
+    const p = computeSnapPlacement(canvasX, canvasY, FLIGHT_DEFAULT_TERMINAL_WIDTH, FLIGHT_DEFAULT_TERMINAL_HEIGHT);
+    store.addFlightPodAt(workspaceId, "terminal", p.x, p.y, p.w, p.h, cwd);
+  }, [workspaceId, computeSnapPlacement]);
+
+  // Close popup when clicking outside
+  useEffect(() => {
+    if (!contextMenu) return;
+    const handler = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setContextMenu(null);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [contextMenu]);
+
+
+
   return (
     <div
       ref={containerRef}
       data-flight-canvas=""
       style={{ ...canvasStyles.canvas, display: isActive ? "flex" : "none" }}
-      onContextMenu={handleCanvasContextMenu}
-      onDoubleClick={handleCanvasContextMenu}
+      onMouseDown={handleCanvasMouseDown}
+      onContextMenu={handleCanvasRightClick}
+      onDoubleClick={handleCanvasClick}
     >
       <style>{`
         [data-flight-canvas]::after {
@@ -686,16 +799,15 @@ const WorkspaceFlightView = React.memo(function WorkspaceFlightView({
           background-position: 0 0, 48px 48px, 0 0, 12px 12px;
           pointer-events: none;
         }
+        /* Hide scrollbar on focus mode scroller */
+        [data-flight-canvas] > div::-webkit-scrollbar { display: none; }
       `}</style>
 
+      {/* Single viewport for both modes — never change container CSS to avoid breaking xterm canvases */}
       <div
         style={{
           ...canvasStyles.viewport,
-          // Smooth pan animation in focus mode
-          transition: focusMode ? "left 0.3s ease, top 0.3s ease, transform 0.3s ease" : "none",
-          // CSS zoom > 1.0: re-rasterizes at higher res → crisp upscale
-          // transform scale < 1.0: pixel-perfect downscale → crisp shrink
-          // Hybrid gives sharp text at ALL zoom levels
+          transition: focusMode ? "left 0.15s ease-out, top 0.15s ease-out" : "none",
           ...(zoom === 1.0
             ? { left: panX, top: panY }
             : zoom > 1.0
