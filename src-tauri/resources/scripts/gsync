@@ -18,6 +18,8 @@ git fetch || { echo "Failed to fetch"; exit 1; }
 git checkout "$main_branch" || { echo "Failed to checkout $main_branch"; exit 1; }
 git pull || { echo "Failed to pull $main_branch"; exit 1; }
 
+# Remove stale index.lock — Nx daemon file watchers can race with checkout
+rm -f .git/index.lock
 git checkout "$branch" || { echo "Failed to checkout $branch"; exit 1; }
 
 # Detect whether branch work is already in main (post-merge) or has real unmerged changes.
