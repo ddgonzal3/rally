@@ -546,6 +546,10 @@ interface WorkspaceState {
   splitFlightPod: (workspaceId: string, podId: string, direction: "horizontal" | "vertical", paneType: "claude" | "terminal", cwd: string) => void;
   removeFlightSplitPane: (workspaceId: string, podId: string, paneId: string) => void;
   setFlightSplitPanePtyId: (workspaceId: string, podId: string, paneId: string, ptyId: string) => void;
+  addFlightShellTab: (workspaceId: string, podId: string, cwd: string) => void;
+  removeFlightShellTab: (workspaceId: string, podId: string, tabId: string) => void;
+  setActiveFlightShellTab: (workspaceId: string, podId: string, tabId: string) => void;
+  setFlightShellTabPtyId: (workspaceId: string, podId: string, tabId: string, ptyId: string) => void;
   /** Save current flight layout as a named preset */
   saveFlightLayoutPreset: (workspaceId: string, name: string) => void;
   /** Restore a saved flight layout preset (kills existing PTYs, respawned on mount) */
@@ -3329,22 +3333,39 @@ export const useWorkspaceStore = create<WorkspaceState>()(
     const existing = get().flightLayouts[workspaceId];
     if (existing) return existing;
     const ws = get().workspaces.find((w) => w.id === workspaceId);
-    const idx = get().activePathIndex[workspaceId] ?? 0;
-    const cwd = ws?.paths[idx] ?? ws?.paths[0] ?? "";
-    const podId = crypto.randomUUID();
-    const layout: FlightLayout = {
-      pods: [{
-        id: podId, type: "claude",
+    const paths = ws?.paths ?? [];
+    // Create one Claude pod per repo path in the workspace
+    const pods: FlightPod[] = paths.map((cwd, i) => ({
+      id: crypto.randomUUID(),
+      type: "claude" as const,
+      x: 100 + i * (FLIGHT_DEFAULT_CLAUDE_WIDTH + 8),
+      y: 100,
+      width: FLIGHT_DEFAULT_CLAUDE_WIDTH,
+      height: FLIGHT_DEFAULT_CLAUDE_HEIGHT,
+      cwd,
+      title: cwd.split("/").pop() || "Claude Code",
+      zIndex: i + 1,
+      shellExpanded: true,
+      shellHeight: FLIGHT_DEFAULT_SHELL_HEIGHT,
+    }));
+    if (pods.length === 0) {
+      // Fallback: at least one pod
+      pods.push({
+        id: crypto.randomUUID(),
+        type: "claude",
         x: 100, y: 100,
         width: FLIGHT_DEFAULT_CLAUDE_WIDTH, height: FLIGHT_DEFAULT_CLAUDE_HEIGHT,
-        cwd, title: cwd.split("/").pop() || "Claude Code",
+        cwd: "", title: "Claude Code",
         zIndex: 1, shellExpanded: true, shellHeight: FLIGHT_DEFAULT_SHELL_HEIGHT,
-      }],
+      });
+    }
+    const layout: FlightLayout = {
+      pods,
       viewport: { panX: 0, panY: 0, zoom: 1.0 },
     };
     set((s) => ({
       flightLayouts: { ...s.flightLayouts, [workspaceId]: layout },
-      flightNextZIndex: { ...s.flightNextZIndex, [workspaceId]: 2 },
+      flightNextZIndex: { ...s.flightNextZIndex, [workspaceId]: pods.length + 1 },
     }));
     return layout;
   },
@@ -3474,7 +3495,7 @@ export const useWorkspaceStore = create<WorkspaceState>()(
         const newTab: FlightTab = {
           id: crypto.randomUUID(),
           type: tabType,
-          title: tabType === "claude" ? "Claude Code" : (cwd.split("/").pop() || "Terminal"),
+          title: cwd.split("/").pop() || (tabType === "claude" ? "Claude Code" : "Terminal"),
           cwd,
         };
         return { ...pod, tabs: [...(pod.tabs ?? []), newTab], activeTabId: newTab.id } as FlightPod;
@@ -3590,6 +3611,89 @@ export const useWorkspaceStore = create<WorkspaceState>()(
       flightLayouts: { ...s.flightLayouts, [workspaceId]: { ...layout, pods: layout.pods.map((p) => {
         if (p.id !== podId) return p;
         return { ...p, splitPanes: (p.splitPanes ?? []).map((sp) => sp.id === paneId ? { ...sp, ptyId } : sp) } as FlightPod;
+      }) } },
+    }));
+  },
+
+  addFlightShellTab: (workspaceId: string, podId: string, cwd: string) => {
+    const layout = get().flightLayouts[workspaceId];
+    if (!layout) return;
+    set((s) => ({
+      flightLayouts: { ...s.flightLayouts, [workspaceId]: { ...layout, pods: layout.pods.map((p) => {
+        if (p.id !== podId) return p;
+        let shellTabs = p.shellTabs;
+        if (!shellTabs || shellTabs.length === 0) {
+          // Migrate existing shell into first tab
+          const firstTab: FlightTab = {
+            id: crypto.randomUUID(),
+            type: "terminal",
+            title: cwd.split("/").pop() || "Terminal",
+            cwd: p.cwd,
+            ptyId: p.type === "claude" ? (p as any).shellPtyId : undefined,
+          };
+          shellTabs = [firstTab];
+        }
+        const newTab: FlightTab = {
+          id: crypto.randomUUID(),
+          type: "terminal",
+          title: cwd.split("/").pop() || "Terminal",
+          cwd,
+        };
+        return { ...p, shellTabs: [...shellTabs, newTab], activeShellTabId: newTab.id } as FlightPod;
+      }) } },
+    }));
+  },
+
+  removeFlightShellTab: (workspaceId: string, podId: string, tabId: string) => {
+    const layout = get().flightLayouts[workspaceId];
+    if (!layout) return;
+    const pod = layout.pods.find((p) => p.id === podId);
+    if (!pod?.shellTabs) return;
+    const tab = pod.shellTabs.find((t) => t.id === tabId);
+    if (tab?.ptyId) api.killPty(tab.ptyId).catch(() => {});
+    const remaining = pod.shellTabs.filter((t) => t.id !== tabId);
+    if (remaining.length === 0) {
+      // Collapse back — clear shellTabs, collapse shell
+      set((s) => ({
+        flightLayouts: { ...s.flightLayouts, [workspaceId]: { ...layout, pods: layout.pods.map((p) => {
+          if (p.id !== podId) return p;
+          return { ...p, shellTabs: undefined, activeShellTabId: undefined, shellPtyId: undefined, shellExpanded: false } as FlightPod;
+        }) } },
+      }));
+    } else {
+      let newActiveId = pod.activeShellTabId;
+      if (pod.activeShellTabId === tabId) {
+        const oldIdx = pod.shellTabs.findIndex((t) => t.id === tabId);
+        const newIdx = Math.min(oldIdx, remaining.length - 1);
+        newActiveId = remaining[newIdx].id;
+      }
+      set((s) => ({
+        flightLayouts: { ...s.flightLayouts, [workspaceId]: { ...layout, pods: layout.pods.map((p) => {
+          if (p.id !== podId) return p;
+          return { ...p, shellTabs: remaining, activeShellTabId: newActiveId } as FlightPod;
+        }) } },
+      }));
+    }
+  },
+
+  setActiveFlightShellTab: (workspaceId: string, podId: string, tabId: string) => {
+    const layout = get().flightLayouts[workspaceId];
+    if (!layout) return;
+    set((s) => ({
+      flightLayouts: { ...s.flightLayouts, [workspaceId]: { ...layout, pods: layout.pods.map((p) => {
+        if (p.id !== podId) return p;
+        return { ...p, activeShellTabId: tabId } as FlightPod;
+      }) } },
+    }));
+  },
+
+  setFlightShellTabPtyId: (workspaceId: string, podId: string, tabId: string, ptyId: string) => {
+    const layout = get().flightLayouts[workspaceId];
+    if (!layout) return;
+    set((s) => ({
+      flightLayouts: { ...s.flightLayouts, [workspaceId]: { ...layout, pods: layout.pods.map((p) => {
+        if (p.id !== podId) return p;
+        return { ...p, shellTabs: (p.shellTabs ?? []).map((t) => t.id === tabId ? { ...t, ptyId } : t) } as FlightPod;
       }) } },
     }));
   },

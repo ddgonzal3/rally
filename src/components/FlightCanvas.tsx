@@ -38,6 +38,9 @@ const WorkspaceFlightView = React.memo(function WorkspaceFlightView({
   const [focusVisibleCount, setFocusVisibleCount] = useState<number | null>(null);
   const focusVisibleCountRef = useRef(focusVisibleCount);
   focusVisibleCountRef.current = focusVisibleCount;
+  const [gridWrapped, setGridWrapped] = useState(false);
+  const gridWrappedRef = useRef(gridWrapped);
+  gridWrappedRef.current = gridWrapped;
   const [marquee, setMarquee] = useState<{ sx1: number; sy1: number; sx2: number; sy2: number } | null>(null);
 
   // Stable selectors — primitives only, no new objects
@@ -391,53 +394,91 @@ const WorkspaceFlightView = React.memo(function WorkspaceFlightView({
       const containerH = rect.height / parentZoom;
 
       if (focusModeRef.current) {
-        // Focus mode: lay out pods in a grid via the store, then pan viewport
+        // Focus mode: lay out pods in repo columns
+        // Each column = one repo (ordered by workspace.paths)
+        // Within a column, multiple pods for the same repo stack vertically
         const HUD_HEIGHT = 35;
         const GAP = 8;
         const PAD = 12;
-        // Use store order (creation order) — stable across repeated relayouts
-        const allPods = [...(store.flightLayouts[workspaceId]?.pods ?? [])];
 
-        // Determine how many pods to show: focusVisibleCount or all
-        const visibleCount = focusVisibleCountRef.current
-          ? Math.min(focusVisibleCountRef.current, allPods.length)
-          : allPods.length;
-        const visiblePods = allPods.slice(0, visibleCount);
-        const hiddenPods = allPods.slice(visibleCount);
+        const allPods = store.flightLayouts[workspaceId]?.pods ?? [];
+        const ws = store.workspaces.find((w) => w.id === workspaceId);
+        const repoPaths = ws?.paths ?? [];
 
-        // Auto-pick grid dimensions based on container aspect ratio
+        // Group pods by their CWD, ordered by workspace.paths
+        // Pods whose CWD doesn't match any repo path go at the end
+        const repoColumns: { repoPath: string; pods: typeof allPods }[] = [];
+        const usedPodIds = new Set<string>();
+
+        for (const repoPath of repoPaths) {
+          const repoPods = allPods.filter((p) => p.cwd === repoPath && !usedPodIds.has(p.id));
+          if (repoPods.length > 0) {
+            repoColumns.push({ repoPath, pods: repoPods });
+            repoPods.forEach((p) => usedPodIds.add(p.id));
+          }
+        }
+        // Orphan pods (CWD doesn't match any workspace path)
+        const orphans = allPods.filter((p) => !usedPodIds.has(p.id));
+        if (orphans.length > 0) {
+          repoColumns.push({ repoPath: "__orphans__", pods: orphans });
+        }
+
+        // Determine how many columns to show: focusVisibleCount or all
+        const totalColumns = repoColumns.length;
+        const visibleColCount = focusVisibleCountRef.current
+          ? Math.min(focusVisibleCountRef.current, totalColumns)
+          : totalColumns;
+        const visibleColumns = repoColumns.slice(0, visibleColCount);
+        const hiddenColumns = repoColumns.slice(visibleColCount);
+
+        // Lay out columns — single row or wrapped into grid (Cmd+G toggle)
         const availW = containerW - PAD * 2;
         const availH = containerH - HUD_HEIGHT - PAD * 2;
-        let bestCols = 1;
-        let bestScore = -Infinity;
-        for (let c = 1; c <= visibleCount; c++) {
-          const r = Math.ceil(visibleCount / c);
-          const cellW = (availW - GAP * (c - 1)) / c;
-          const cellH = (availH - GAP * (r - 1)) / r;
-          if (cellW < 200 || cellH < 150) continue;
-          const score = Math.min(cellW, cellH);
-          if (score > bestScore) { bestScore = score; bestCols = c; }
-        }
-        const cols = bestCols;
-        const rows = Math.ceil(visibleCount / cols);
-        const podW = Math.floor((containerW - PAD * 2 - GAP * (cols - 1)) / cols);
-        const podH = Math.floor((containerH - HUD_HEIGHT - PAD * 2 - GAP * (rows - 1)) / rows);
 
-        // Lay out visible pods in the grid
-        for (let i = 0; i < visiblePods.length; i++) {
-          const col = i % cols;
-          const row = Math.floor(i / cols);
-          const x = PAD + col * (podW + GAP);
-          const y = PAD + row * (podH + GAP);
-          store.updateFlightPod(workspaceId, visiblePods[i].id, {
-            x, y, width: podW, height: podH,
-          } as any);
+        let gridCols: number;
+        let gridRows: number;
+        if (gridWrappedRef.current && visibleColCount > 2) {
+          gridCols = Math.ceil(visibleColCount / 2);
+          gridRows = 2;
+        } else {
+          gridCols = visibleColCount;
+          gridRows = 1;
         }
-        // Move hidden pods off-screen
-        for (const hp of hiddenPods) {
-          store.updateFlightPod(workspaceId, hp.id, {
-            x: -10000, y: -10000,
-          } as any);
+        const colW = Math.floor((availW - GAP * (gridCols - 1)) / Math.max(gridCols, 1));
+        const gridRowH = Math.floor((availH - GAP * (gridRows - 1)) / Math.max(gridRows, 1));
+
+        // Lay out visible columns in the grid
+        for (let colIdx = 0; colIdx < visibleColumns.length; colIdx++) {
+          const column = visibleColumns[colIdx];
+          const gridCol = colIdx % gridCols;
+          const gridRow = Math.floor(colIdx / gridCols);
+          const colX = PAD + gridCol * (colW + GAP);
+          const colY = gridRow * (gridRowH + GAP);
+          const colH = gridRowH;
+          const podCount = column.pods.length;
+          const podH = Math.floor((colH - GAP * (podCount - 1)) / Math.max(podCount, 1));
+
+          for (let rowIdx = 0; rowIdx < column.pods.length; rowIdx++) {
+            const y = PAD + colY + rowIdx * (podH + GAP);
+            store.updateFlightPod(workspaceId, column.pods[rowIdx].id, {
+              x: colX, y, width: colW, height: podH,
+            } as any);
+          }
+        }
+
+        // Place hidden columns after the visible grid — visible when zoomed out
+        const hiddenStartX = PAD + gridCols * (colW + GAP) + GAP * 2;
+        for (let hIdx = 0; hIdx < hiddenColumns.length; hIdx++) {
+          const col = hiddenColumns[hIdx];
+          const hColX = hiddenStartX + hIdx * (colW + GAP);
+          const hPodCount = col.pods.length;
+          const hPodH = Math.floor((gridRowH - GAP * (hPodCount - 1)) / Math.max(hPodCount, 1));
+          for (let rowIdx = 0; rowIdx < col.pods.length; rowIdx++) {
+            const y = PAD + rowIdx * (hPodH + GAP);
+            store.updateFlightPod(workspaceId, col.pods[rowIdx].id, {
+              x: hColX, y, width: colW, height: hPodH,
+            } as any);
+          }
         }
 
         // Pan to show the first pod (page 0)
@@ -566,6 +607,22 @@ const WorkspaceFlightView = React.memo(function WorkspaceFlightView({
       }
 
 
+      // Cmd+G: toggle grid wrap (single row ↔ balanced grid)
+      if (e.metaKey && e.key.toLowerCase() === "g" && !e.altKey && !e.ctrlKey && !e.shiftKey) {
+        e.preventDefault();
+        if (!focusModeRef.current) {
+          setFocusMode(true);
+          focusModeRef.current = true;
+        }
+        setGridWrapped((v) => !v);
+        gridWrappedRef.current = !gridWrappedRef.current;
+        setTimeout(() => {
+          const pods = useWorkspaceStore.getState().flightLayouts[workspaceId]?.pods ?? [];
+          if (pods.length > 0) navigateToRef.current?.(pods[0].id);
+        }, 0);
+        return;
+      }
+
       // Cmd+number: show N pods in focus mode, Cmd+0: show all
       if (e.metaKey && !e.altKey && !e.ctrlKey && !e.shiftKey) {
         const numMap: Record<string, number> = { "1": 1, "2": 2, "3": 3, "4": 4, "5": 5, "6": 6, "7": 7, "8": 8, "9": 9 };
@@ -579,6 +636,16 @@ const WorkspaceFlightView = React.memo(function WorkspaceFlightView({
           }
           setFocusVisibleCount(digit);
           focusVisibleCountRef.current = digit;
+          // Auto-create pods for repos that don't have one yet
+          const store2 = useWorkspaceStore.getState();
+          const ws2 = store2.workspaces.find((w) => w.id === workspaceId);
+          const repoPaths = ws2?.paths ?? [];
+          const existingPods = store2.flightLayouts[workspaceId]?.pods ?? [];
+          const existingCwds = new Set(existingPods.map((p) => p.cwd));
+          const neededPaths = repoPaths.slice(0, digit).filter((p) => !existingCwds.has(p));
+          for (const path of neededPaths) {
+            store2.addFlightPodAt(workspaceId, "claude", 0, 0, 900, 800, path);
+          }
           // Trigger relayout
           setTimeout(() => {
             const pods = useWorkspaceStore.getState().flightLayouts[workspaceId]?.pods ?? [];

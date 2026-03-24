@@ -590,6 +590,9 @@ export interface FlightPodBase {
   /** Split panes inside the terminal body. If set, main body is divided. */
   splitPanes?: FlightSplitPane[];
   splitDirection?: "horizontal" | "vertical";
+  /** Tabs for the shell panel (bottom terminal area). */
+  shellTabs?: FlightTab[];
+  activeShellTabId?: string;
 }
 
 /** Claude Code pod — has an optional attached shell */

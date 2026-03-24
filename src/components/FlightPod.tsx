@@ -5,6 +5,7 @@ import { ClaudeTerminalWrapper } from "./ClaudeTerminalWrapper";
 import { CLAUDE_PATH } from "./FileIcons";
 import { showContextMenu } from "../lib/contextMenu";
 import { FlightPodFooter } from "./FlightPodFooter";
+import { useDragState, startFlightTabDrag } from "../lib/dragContext";
 import type { FlightPod as FlightPodType } from "../lib/types";
 import {
   FLIGHT_MIN_CLAUDE_WIDTH,
@@ -200,6 +201,17 @@ export const FlightPod = React.memo(function FlightPod({
   const activeTabId = useWorkspaceStore((s) => s.flightLayouts[workspaceId]?.pods.find((p) => p.id === podId)?.activeTabId);
   const splitPanes = useWorkspaceStore((s) => s.flightLayouts[workspaceId]?.pods.find((p) => p.id === podId)?.splitPanes);
   const splitDirection = useWorkspaceStore((s) => s.flightLayouts[workspaceId]?.pods.find((p) => p.id === podId)?.splitDirection);
+  const shellTabs = useWorkspaceStore((s) => s.flightLayouts[workspaceId]?.pods.find((p) => p.id === podId)?.shellTabs);
+  const activeShellTabId = useWorkspaceStore((s) => s.flightLayouts[workspaceId]?.pods.find((p) => p.id === podId)?.activeShellTabId);
+  const addFlightShellTab = useWorkspaceStore((s) => s.addFlightShellTab);
+  const removeFlightShellTab = useWorkspaceStore((s) => s.removeFlightShellTab);
+  const setActiveFlightShellTab = useWorkspaceStore((s) => s.setActiveFlightShellTab);
+  const setFlightShellTabPtyId = useWorkspaceStore((s) => s.setFlightShellTabPtyId);
+
+  const activeShellTab = useMemo(() => {
+    if (!shellTabs || shellTabs.length === 0) return null;
+    return shellTabs.find((t) => t.id === activeShellTabId) ?? shellTabs[0];
+  }, [shellTabs, activeShellTabId]);
 
   // Derive active tab (if tabs exist)
   const activeTab = useMemo(() => {
@@ -440,7 +452,7 @@ export const FlightPod = React.memo(function FlightPod({
 
   const isClaudePod = podType === "claude";
   const HEADER_H = 29;
-  const SHELL_FOOTER_H = isClaudePod ? 24 : 0;
+  const SHELL_FOOTER_H = isClaudePod ? 29 : 0;
   const SCRIPT_FOOTER_H = isClaudePod && hasScriptFooter ? 28 : 0;
   const FOOTER_H = SHELL_FOOTER_H + SCRIPT_FOOTER_H;
   const terminalBodyHeight = isClaudePod && shellExpanded
@@ -603,6 +615,33 @@ export const FlightPod = React.memo(function FlightPod({
           </button>
         </div>
 
+        {/* Right actions: split right, split down */}
+        <div style={tabBarStyles.actions}>
+          <button
+            className="tab-action"
+            style={tabBarStyles.actionBtn}
+            onMouseDown={(e) => e.stopPropagation()}
+            onClick={handleSplitRight}
+            title="Split right"
+          >
+            <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+              <rect x="1" y="1" width="12" height="12" rx="2" stroke="currentColor" strokeWidth="1.2" />
+              <line x1="7" y1="1" x2="7" y2="13" stroke="currentColor" strokeWidth="1.2" />
+            </svg>
+          </button>
+          <button
+            className="tab-action"
+            style={tabBarStyles.actionBtn}
+            onMouseDown={(e) => e.stopPropagation()}
+            onClick={handleSplitDown}
+            title="Split down"
+          >
+            <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+              <rect x="1" y="1" width="12" height="12" rx="2" stroke="currentColor" strokeWidth="1.2" />
+              <line x1="1" y1="7" x2="13" y2="7" stroke="currentColor" strokeWidth="1.2" />
+            </svg>
+          </button>
+        </div>
       </div>
 
       {/* Main terminal body */}
@@ -730,27 +769,107 @@ export const FlightPod = React.memo(function FlightPod({
         )}
       </div>
 
-      {/* Shell footer + expandable panel (Claude pods only) */}
+      {/* Shell tab bar + expandable panel (Claude pods only) */}
       {isClaudePod && (
         <>
-          {/* Footer bar — click to toggle, top edge drag to resize when expanded */}
+          {/* Shell tab bar — matches Claude tab bar style */}
           <div
-            onClick={(e) => { if (!shellResizeRef.current) { e.stopPropagation(); handleShellToggle(e); } }}
-            style={{ ...shellFooterStyles.bar, cursor: "pointer", position: "relative" as const }}
+            style={{ ...tabBarStyles.bar, borderTop: "1px solid rgba(255, 255, 255, 0.06)", position: "relative" as const }}
           >
-            {/* Thin resize handle at top edge of footer (only when expanded) */}
+            {/* Resize handle at top edge (only when expanded) */}
             {shellExpanded && (
               <div
                 onMouseDown={handleShellResizeStart}
                 style={{ position: "absolute", top: -2, left: 0, right: 0, height: 6, cursor: "ns-resize", zIndex: 2 }}
               />
             )}
-            <div style={shellFooterStyles.left}>
-              <svg width="12" height="12" viewBox="0 0 16 16" fill="none" style={{ flexShrink: 0 }}>
-                <path d="M4 5l3 3-3 3" stroke="var(--status-green)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-                <line x1="9" y1="11" x2="13" y2="11" stroke="var(--status-green)" strokeWidth="1.5" strokeLinecap="round" />
-              </svg>
-              <span style={shellFooterStyles.label}>{cwdBasename}</span>
+            <div style={tabBarStyles.tabs}>
+              {shellTabs && shellTabs.length > 0 ? (
+                shellTabs.map((tab) => {
+                  const isActive = tab.id === (activeShellTabId ?? shellTabs[0]?.id);
+                  return (
+                    <div
+                      key={tab.id}
+                      className={`pane-tab${isActive ? " pane-tab-active" : ""}`}
+                      onMouseDown={(e) => {
+                        if (e.button !== 0) return;
+                        e.stopPropagation();
+                        setActiveFlightShellTab(workspaceId, podId, tab.id);
+                        if (!shellExpanded) handleShellToggle(e as any);
+                      }}
+                      style={{ ...tabBarStyles.tab, ...(isActive ? tabBarStyles.tabActive : tabBarStyles.tabInactive) }}
+                    >
+                      <svg width="12" height="12" viewBox="0 0 12 12" fill="none" style={{ flexShrink: 0 }}>
+                        <polyline points="2,4 5,6 2,8" stroke="#999" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" />
+                        <line x1="6" y1="8" x2="10" y2="8" stroke="#999" strokeWidth="1.2" strokeLinecap="round" />
+                      </svg>
+                      <span style={tabBarStyles.tabLabel}>{tab.title}</span>
+                      <button
+                        className={`tab-close${isActive ? " tab-close-active" : ""}`}
+                        style={tabBarStyles.tabClose}
+                        data-close=""
+                        onMouseDown={(e) => e.stopPropagation()}
+                        onClick={(e) => { e.stopPropagation(); removeFlightShellTab(workspaceId, podId, tab.id); }}
+                      >
+                        <svg width="11" height="11" viewBox="0 0 14 14" fill="none">
+                          <line x1="3" y1="3" x2="11" y2="11" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+                          <line x1="11" y1="3" x2="3" y2="11" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+                        </svg>
+                      </button>
+                    </div>
+                  );
+                })
+              ) : (
+                /* Legacy single shell tab */
+                <div
+                  className="pane-tab pane-tab-active"
+                  onMouseDown={(e) => { e.stopPropagation(); if (!shellExpanded) handleShellToggle(e as any); }}
+                  style={{ ...tabBarStyles.tab, ...tabBarStyles.tabActive }}
+                >
+                  <svg width="12" height="12" viewBox="0 0 12 12" fill="none" style={{ flexShrink: 0 }}>
+                    <polyline points="2,4 5,6 2,8" stroke="#999" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" />
+                    <line x1="6" y1="8" x2="10" y2="8" stroke="#999" strokeWidth="1.2" strokeLinecap="round" />
+                  </svg>
+                  <span style={tabBarStyles.tabLabel}>{cwdBasename}</span>
+                </div>
+              )}
+              <button
+                className="tab-action new-tab-btn"
+                style={tabBarStyles.newTabBtn}
+                onMouseDown={(e) => e.stopPropagation()}
+                onClick={(e) => { e.stopPropagation(); addFlightShellTab(workspaceId, podId, podCwd); if (!shellExpanded) handleShellToggle(e as any); }}
+                title="New terminal tab"
+              >
+                <svg width="12" height="12" viewBox="0 0 14 14" fill="none">
+                  <path d="M7 1v12M1 7h12" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+                </svg>
+              </button>
+            </div>
+            <div style={tabBarStyles.actions}>
+              <button
+                className="tab-action"
+                style={tabBarStyles.actionBtn}
+                onMouseDown={(e) => e.stopPropagation()}
+                onClick={(e) => { e.stopPropagation(); splitFlightPod(workspaceId, podId, "horizontal", "terminal", podCwd); }}
+                title="Split right"
+              >
+                <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+                  <rect x="1" y="1" width="12" height="12" rx="2" stroke="currentColor" strokeWidth="1.2" />
+                  <line x1="7" y1="1" x2="7" y2="13" stroke="currentColor" strokeWidth="1.2" />
+                </svg>
+              </button>
+              <button
+                className="tab-action"
+                style={tabBarStyles.actionBtn}
+                onMouseDown={(e) => e.stopPropagation()}
+                onClick={(e) => { e.stopPropagation(); splitFlightPod(workspaceId, podId, "vertical", "terminal", podCwd); }}
+                title="Split down"
+              >
+                <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+                  <rect x="1" y="1" width="12" height="12" rx="2" stroke="currentColor" strokeWidth="1.2" />
+                  <line x1="1" y1="7" x2="13" y2="7" stroke="currentColor" strokeWidth="1.2" />
+                </svg>
+              </button>
             </div>
           </div>
 
@@ -766,12 +885,22 @@ export const FlightPod = React.memo(function FlightPod({
               overflow: "hidden",
             }}
           >
-            <Terminal
-              cwd={podCwd}
-              ptyId={shellPtyId}
-              workspaceId={workspaceId}
-              onPtySpawned={handleShellPtySpawned}
-            />
+            {activeShellTab ? (
+              <Terminal
+                key={activeShellTab.id}
+                cwd={activeShellTab.cwd}
+                ptyId={activeShellTab.ptyId}
+                workspaceId={workspaceId}
+                onPtySpawned={(ptyId) => setFlightShellTabPtyId(workspaceId, podId, activeShellTab.id, ptyId)}
+              />
+            ) : (
+              <Terminal
+                cwd={podCwd}
+                ptyId={shellPtyId}
+                workspaceId={workspaceId}
+                onPtySpawned={handleShellPtySpawned}
+              />
+            )}
           </div>
         </>
       )}

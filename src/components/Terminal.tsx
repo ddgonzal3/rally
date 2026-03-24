@@ -565,6 +565,10 @@ export function Terminal({ cwd, command, initialInput, ptyId: existingPtyId, loc
       if (ev.key >= "0" && ev.key <= "9") {
         return false;
       }
+      // Let Cmd+G bubble for grid wrap toggle
+      if (ev.key.toLowerCase() === "g") {
+        return false;
+      }
       return true;
     });
 
