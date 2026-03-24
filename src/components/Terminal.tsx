@@ -849,8 +849,12 @@ export function Terminal({ cwd, command, initialInput, ptyId: existingPtyId, loc
 
     // xterm fit runs normally during drag (content must render in real-time).
     // The expensive PTY resize IPC is already skipped in term.onResize during drag.
+    let wasHidden = el.clientWidth < 100 || el.clientHeight < 50;
     const observer = new ResizeObserver(() => {
-      if (el.clientWidth < 100 || el.clientHeight < 50) return;
+      if (el.clientWidth < 100 || el.clientHeight < 50) { wasHidden = true; return; }
+
+      const justBecameVisible = wasHidden;
+      wasHidden = false;
 
       if (rafId !== null) cancelAnimationFrame(rafId);
       rafId = requestAnimationFrame(() => {
@@ -865,6 +869,8 @@ export function Terminal({ cwd, command, initialInput, ptyId: existingPtyId, loc
           initFn();
         } else {
           lockCols ? fitRowsOnly() : safeFit(term, fitAddon, uiZoomRef.current);
+          // After being hidden (display:none), xterm's canvas is stale — force repaint
+          if (justBecameVisible) term.refresh(0, term.rows - 1);
         }
       });
     });
