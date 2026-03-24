@@ -615,6 +615,7 @@ const WorkspaceFlightView = React.memo(function WorkspaceFlightView({
         e.preventDefault();
         const next = !focusModeRef.current;
         setFocusMode(next);
+        focusModeRef.current = next;
         if (next) {
           // Find the pod closest to viewport center
           const s = useWorkspaceStore.getState();
