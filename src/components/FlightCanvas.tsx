@@ -656,6 +656,44 @@ const WorkspaceFlightView = React.memo(function WorkspaceFlightView({
         }
       }
 
+      // Shift+Arrow: navigate one column left/right in focus mode
+      if (e.shiftKey && !e.metaKey && !e.altKey && !e.ctrlKey &&
+          (e.key === "ArrowLeft" || e.key === "ArrowRight") &&
+          focusModeRef.current) {
+        e.preventDefault();
+        const store = useWorkspaceStore.getState();
+        const pods = store.flightLayouts[workspaceId]?.pods ?? [];
+        if (pods.length < 2) return;
+
+        // Group pods into columns by x position, sorted left-to-right
+        const colMap = new Map<number, typeof pods>();
+        for (const p of pods) {
+          const key = Math.round(p.x);
+          if (!colMap.has(key)) colMap.set(key, []);
+          colMap.get(key)!.push(p);
+        }
+        const columns = [...colMap.entries()].sort((a, b) => a[0] - b[0]);
+
+        let currentColIdx = 0;
+        if (focusScrollCurrentPodId) {
+          currentColIdx = columns.findIndex(([, colPods]) =>
+            colPods.some(p => p.id === focusScrollCurrentPodId)
+          );
+          if (currentColIdx < 0) currentColIdx = 0;
+        }
+
+        const nextColIdx = e.key === "ArrowRight"
+          ? Math.min(currentColIdx + 1, columns.length - 1)
+          : Math.max(currentColIdx - 1, 0);
+
+        if (nextColIdx !== currentColIdx) {
+          const targetPod = columns[nextColIdx][1][0];
+          focusScrollCurrentPodId = targetPod.id;
+          navigateToPod(targetPod.id);
+        }
+        return;
+      }
+
       // Cmd+0: show all pods in focus mode (reset visible count)
       if (e.metaKey && e.key === "0" && !e.shiftKey) {
         e.preventDefault();
@@ -704,8 +742,6 @@ const WorkspaceFlightView = React.memo(function WorkspaceFlightView({
           }
           setFocusVisibleCount(digit);
           focusVisibleCountRef.current = digit;
-          setFocusStartColumn(0);
-          focusStartColumnRef.current = 0;
           // Auto-create pods for repos that don't have one yet
           const store2 = useWorkspaceStore.getState();
           const ws2 = store2.workspaces.find((w) => w.id === workspaceId);
@@ -716,10 +752,41 @@ const WorkspaceFlightView = React.memo(function WorkspaceFlightView({
           for (const path of neededPaths) {
             store2.addFlightPodAt(workspaceId, "claude", 0, 0, 900, 800, path);
           }
-          // Trigger relayout
+          // Navigate to the currently active pod (or first pod if none tracked)
+          // and set focusStartColumn so the active pod's column is leftmost
           setTimeout(() => {
-            const pods = useWorkspaceStore.getState().flightLayouts[workspaceId]?.pods ?? [];
-            if (pods.length > 0) navigateToRef.current?.(pods[0].id);
+            const store3 = useWorkspaceStore.getState();
+            const pods = store3.flightLayouts[workspaceId]?.pods ?? [];
+            if (pods.length === 0) return;
+
+            // Determine which pod to focus — use current tracked pod if valid
+            const activePod = focusScrollCurrentPodId
+              ? pods.find(p => p.id === focusScrollCurrentPodId)
+              : null;
+            const targetPodId = activePod ? activePod.id : pods[0].id;
+
+            // Find the target pod's column index to set as start column
+            const ws3 = store3.workspaces.find((w) => w.id === workspaceId);
+            const rp = ws3?.paths ?? [];
+            const allPods = pods;
+            const usedIds = new Set<string>();
+            const cols: string[][] = [];
+            for (const repoPath of rp) {
+              const rPods = allPods.filter((p) => p.cwd === repoPath && !usedIds.has(p.id));
+              if (rPods.length > 0) {
+                cols.push(rPods.map(p => p.id));
+                rPods.forEach(p => usedIds.add(p.id));
+              }
+            }
+            const orphans = allPods.filter(p => !usedIds.has(p.id));
+            if (orphans.length > 0) cols.push(orphans.map(p => p.id));
+
+            const colIdx = cols.findIndex(col => col.includes(targetPodId));
+            const startCol = Math.max(colIdx, 0);
+            setFocusStartColumn(startCol);
+            focusStartColumnRef.current = startCol;
+
+            navigateToRef.current?.(targetPodId);
           }, 0);
           return;
         }
