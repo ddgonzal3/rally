@@ -133,12 +133,17 @@ function PodScriptDot({
     prevCompletionCountRef.current = buildCompletionCount;
   }, [buildCompletionCount, isWatcher]);
 
-  // Auto-dismiss "built at" after 120s
+  // Auto-dismiss "built at" after 120s — also reset non-watcher scripts to idle
   useEffect(() => {
     if (!builtAt) return;
-    const timer = setTimeout(() => setBuiltAt(null), 120000);
+    const timer = setTimeout(() => {
+      setBuiltAt(null);
+      if (!isWatcher && !isRunning) {
+        clearScript(repoPath, scriptName);
+      }
+    }, 120000);
     return () => clearTimeout(timer);
-  }, [builtAt]);
+  }, [builtAt, isWatcher, isRunning, clearScript, repoPath, scriptName]);
 
   // Dot style
   const dotStyle: React.CSSProperties = {
