@@ -7,12 +7,15 @@ import { FileExplorer } from "./components/FileExplorer";
 import { GlobalConfigExplorer } from "./components/SettingsPanel";
 import { ScriptEditor } from "./components/ScriptEditor";
 import { PaneLayout } from "./components/PaneLayout";
+import { FlightCanvas } from "./components/FlightCanvas";
+import { lastFocusedFlightPodId } from "./components/FlightPod";
 import { useWorkspaceStore } from "./stores/workspaceStore";
 import { api, openUrl } from "./lib/tauri";
 import { showContextMenu } from "./lib/contextMenu";
 import { AddWorkspaceModal } from "./components/AddWorkspaceModal";
 import {
   DEFAULT_BOTTOM_RATIO,
+  FLIGHT_DEFAULT_SHELL_HEIGHT,
   findFirstGroupInSubtree,
   findNeighborGroup,
   replaceNode,
@@ -465,12 +468,14 @@ export function App() {
   });
   const activeWorkspaceId = useWorkspaceStore((s) => s.activeWorkspaceId);
   const workspaceMode = useWorkspaceStore((s) => {
-    if (!s.activeWorkspaceId) return "dev";
-    return s.workspaceModes[s.activeWorkspaceId] ?? "dev";
+    if (!s.activeWorkspaceId) return "flight";
+    return s.workspaceModes[s.activeWorkspaceId] ?? "flight";
   });
   const setWorkspaceMode = useWorkspaceStore((s) => s.setWorkspaceMode);
   const loadRallyConfig = useWorkspaceStore((s) => s.loadRallyConfig);
   const isProductMode = workspaceMode === "product";
+  const isFlightMode = workspaceMode === "flight";
+  const isDevMode = workspaceMode === "dev";
   const activeRootPath = useWorkspaceStore((s) => {
     return s.activeWorkspaceId
       ? (s.getActivePath(s.activeWorkspaceId) ?? "")
@@ -863,7 +868,6 @@ export function App() {
     let unlistenNewClaude: UnlistenFn | null = null;
     let unlistenNewWindow: UnlistenFn | null = null;
     let unlistenOpenCurrentInNewWindow: UnlistenFn | null = null;
-    let unlistenToggleMode: UnlistenFn | null = null;
     let unlistenWorkspacesUpdated: UnlistenFn | null = null;
 
     listen("rally-menu-new-file", () => {
@@ -984,20 +988,28 @@ export function App() {
         ),
       );
 
-    listen("rally-menu-toggle-mode", () => {
+    let unlistenFlightMode: UnlistenFn | undefined;
+    let unlistenDevMode: UnlistenFn | undefined;
+    listen("rally-menu-flight-mode", () => {
       const s = useWorkspaceStore.getState();
       const wsId = s.activeWorkspaceId;
-      if (!wsId) return;
-      const current = s.workspaceModes[wsId] ?? "dev";
-      s.setWorkspaceMode(wsId, current === "product" ? "dev" : "product");
+      if (wsId) s.setWorkspaceMode(wsId, "flight");
     })
       .then((fn) => {
         if (cancelled) fn();
-        else unlistenToggleMode = fn;
+        else unlistenFlightMode = fn;
       })
-      .catch((e) =>
-        console.error("Failed to listen for toggle-mode menu event:", e),
-      );
+      .catch(() => {});
+    listen("rally-menu-dev-mode", () => {
+      const s = useWorkspaceStore.getState();
+      const wsId = s.activeWorkspaceId;
+      if (wsId) s.setWorkspaceMode(wsId, "dev");
+    })
+      .then((fn) => {
+        if (cancelled) fn();
+        else unlistenDevMode = fn;
+      })
+      .catch(() => {});
 
     listen("rally-workspaces-updated", () => {
       void loadWorkspaces({ keepNullActive: forceNoWorkspaceSelection });
@@ -1018,7 +1030,8 @@ export function App() {
       unlistenNewClaude?.();
       unlistenNewWindow?.();
       unlistenOpenCurrentInNewWindow?.();
-      unlistenToggleMode?.();
+      unlistenFlightMode?.();
+      unlistenDevMode?.();
       unlistenWorkspacesUpdated?.();
     };
   }, [loadWorkspaces, forceNoWorkspaceSelection]);
@@ -1288,8 +1301,49 @@ export function App() {
         const wsId = s.activeWorkspaceId;
         if (!wsId) return;
 
+        const mode = s.workspaceModes[wsId] ?? "flight";
+
+        // In Flight Mode: toggle shell on the focused pod
+        if (mode === "flight") {
+          const flightLayout = s.flightLayouts[wsId];
+          if (!flightLayout) return;
+          const claudePods = flightLayout.pods.filter((p) => p.type === "claude");
+          if (claudePods.length === 0) return;
+
+          // Find the pod the user last interacted with
+          let focusedPod = claudePods[0];
+          // 1st: check lastFocusedFlightPodId (set on mousedown inside any pod)
+          if (lastFocusedFlightPodId) {
+            const match = claudePods.find((p) => p.id === lastFocusedFlightPodId);
+            if (match) focusedPod = match;
+          }
+          // 2nd: check activeElement (covers keyboard focus in xterm)
+          if (!lastFocusedFlightPodId || !claudePods.find((p) => p.id === lastFocusedFlightPodId)) {
+            const activeEl = document.activeElement;
+            if (activeEl) {
+              const podEl = activeEl.closest("[data-flight-pod]");
+              if (podEl) {
+                const podId = podEl.getAttribute("data-flight-pod");
+                const match = claudePods.find((p) => p.id === podId);
+                if (match) focusedPod = match;
+              }
+            }
+          }
+
+          if (!focusedPod.shellExpanded) {
+            // Collapsed → expand to default height
+            s.togglePodShell(wsId, focusedPod.id);
+          } else if (focusedPod.shellHeight > FLIGHT_DEFAULT_SHELL_HEIGHT + 10) {
+            // Bigger than default → snap to default
+            s.updateFlightPod(wsId, focusedPod.id, { shellHeight: FLIGHT_DEFAULT_SHELL_HEIGHT } as any);
+          } else {
+            // At default → collapse
+            s.togglePodShell(wsId, focusedPod.id);
+          }
+          return;
+        }
+
         // In product mode, toggle the shell panel
-        const mode = s.workspaceModes[wsId];
         if (mode === "product") {
           const rootPath = s.getActivePath(wsId);
           if (rootPath) {
@@ -1465,6 +1519,42 @@ export function App() {
           setExplorerView("search");
           if (fileExplorerCollapsed) {
             setFileExplorerCollapsed(false);
+          }
+        }
+      }
+      // Cmd+Shift+C: add Claude tab to focused pod (flight mode)
+      if (
+        (e.metaKey || e.ctrlKey) &&
+        e.shiftKey &&
+        e.key.toLowerCase() === "c"
+      ) {
+        const s = useWorkspaceStore.getState();
+        const wsId = s.activeWorkspaceId;
+        if (!wsId) return;
+        const mode = s.workspaceModes[wsId] ?? "flight";
+        if (mode === "flight") {
+          e.preventDefault();
+          const layout = s.flightLayouts[wsId];
+          if (!layout) return;
+          const pods = layout.pods;
+          if (pods.length === 0) return;
+          // Find focused pod via last interaction tracking
+          let focusedPod = pods[0];
+          if (lastFocusedFlightPodId) {
+            const match = pods.find((p) => p.id === lastFocusedFlightPodId);
+            if (match) focusedPod = match;
+          }
+          // Add a claude pane to the focused pod's layout
+          const podLayoutId = `flight:${focusedPod.id}`;
+          const podLayout = s.getOrCreatePodLayout(podLayoutId, focusedPod.cwd, "claude");
+          const firstGroupId = Object.keys(podLayout.groups)[0];
+          if (firstGroupId) {
+            s.addPaneToGroup(podLayoutId, firstGroupId, {
+              id: crypto.randomUUID(),
+              type: "claude-launcher",
+              title: "Claude Code",
+              cwd: focusedPod.cwd,
+            });
           }
         }
       }
@@ -1991,6 +2081,7 @@ export function App() {
                     width: fileExplorerWidth,
                     minWidth: fileExplorerWidth,
                     flexShrink: 0,
+                    background: "var(--bg-app)",
                   }}
                 >
                   {explorerView === "workspaces" && (
@@ -2046,25 +2137,25 @@ export function App() {
               position: "relative",
             }}
           >
-            {activeWorkspaceId && activeRootPath && (
-              <div
-                style={{
-                  display: isProductMode ? "flex" : "none",
-                  flex: 1,
-                  flexDirection: "column" as const,
-                  minWidth: 0,
-                  minHeight: 0,
-                }}
-              >
-                <ProductChatPanel
-                  rootPath={activeRootPath}
-                  workspaceId={activeWorkspaceId}
-                />
-              </div>
-            )}
+            {/* Flight Mode */}
             <div
               style={{
-                display: isProductMode ? "none" : "flex",
+                display: isFlightMode ? "flex" : "none",
+                flex: 1,
+                flexDirection: "column" as const,
+                minWidth: 0,
+                minHeight: 0,
+                position: "relative" as const,
+                overflow: "hidden",
+              }}
+            >
+              <FlightCanvas />
+              <BuildStatusDrawer />
+            </div>
+            {/* Classic Dev Mode */}
+            <div
+              style={{
+                display: isDevMode ? "flex" : "none",
                 flex: 1,
                 flexDirection: "column" as const,
                 minWidth: 0,
@@ -2076,7 +2167,7 @@ export function App() {
               <PaneLayout />
               <BuildStatusDrawer />
             </div>
-            <BuildStatusBar />
+            {!isFlightMode && <BuildStatusBar />}
           </div>
         </div>
         <UnifiedGitPanel />
@@ -2162,111 +2253,33 @@ function ThemeIcon({ t, size = 18 }: { t: ThemeName; size?: number }) {
 function ThemeCycleButton() {
   const theme = useWorkspaceStore((s) => s.theme);
   const setTheme = useWorkspaceStore((s) => s.setTheme);
-  const [open, setOpen] = React.useState(false);
-  const ref = React.useRef<HTMLDivElement>(null);
-  // Fixed order: light (top), dimmed (middle), dark (bottom)
-  const ordered: ThemeName[] = ["light", "dimmed", "dark"];
 
-  React.useEffect(() => {
-    if (!open) return;
-    const handler = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node))
-        setOpen(false);
-    };
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
-  }, [open]);
-
-  const btnStyle: React.CSSProperties = {
-    background: "none",
-    border: "none",
-    cursor: "pointer",
-    width: 32,
-    height: 32,
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    borderRadius: 4,
-    color: "var(--text-secondary)",
-    padding: 0,
+  const toggle = () => {
+    setTheme(theme === "dark" ? "dimmed" : "dark");
   };
 
-  // Split into: items above the current theme, and items below
-  const currentIdx = ordered.indexOf(theme);
-  const above = ordered.slice(0, currentIdx);
-  const below = ordered.slice(currentIdx + 1);
-
   return (
-    <div
-      ref={ref}
-      style={{
-        display: "flex",
-        flexDirection: "column",
-        alignItems: "center",
-        marginBottom: 4,
-      }}
-    >
-      <div
-        style={{
-          display: "flex",
-          flexDirection: "column",
-          alignItems: "center",
-          overflow: "hidden",
-          maxHeight: open ? above.length * 32 : 0,
-          transition: "max-height 0.2s ease",
-        }}
-      >
-        {above.map((t) => (
-          <button
-            key={t}
-            className="activity-btn"
-            style={btnStyle}
-            onClick={() => {
-              setTheme(t);
-              setOpen(false);
-            }}
-            title={t.charAt(0).toUpperCase() + t.slice(1)}
-          >
-            <ThemeIcon t={t} />
-          </button>
-        ))}
-      </div>
+    <div style={{ display: "flex", flexDirection: "column", alignItems: "center", marginBottom: 4 }}>
       <button
         className="activity-btn"
         style={{
-          ...btnStyle,
-          ...(open ? { color: "var(--text-primary)" } : {}),
+          background: "none",
+          border: "none",
+          cursor: "pointer",
+          width: 32,
+          height: 32,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          borderRadius: 4,
+          color: "var(--text-secondary)",
+          padding: 0,
         }}
-        onClick={() => setOpen(!open)}
-        title="Theme"
+        onClick={toggle}
+        title={theme === "dark" ? "Switch to Dimmed" : "Switch to Dark"}
       >
         <ThemeIcon t={theme} />
       </button>
-      <div
-        style={{
-          display: "flex",
-          flexDirection: "column",
-          alignItems: "center",
-          overflow: "hidden",
-          maxHeight: open ? below.length * 32 : 0,
-          transition: "max-height 0.2s ease",
-        }}
-      >
-        {below.map((t) => (
-          <button
-            key={t}
-            className="activity-btn"
-            style={btnStyle}
-            onClick={() => {
-              setTheme(t);
-              setOpen(false);
-            }}
-            title={t.charAt(0).toUpperCase() + t.slice(1)}
-          >
-            <ThemeIcon t={t} />
-          </button>
-        ))}
-      </div>
     </div>
   );
 }
@@ -2278,7 +2291,7 @@ const styles: Record<string, React.CSSProperties> = {
     height: "100vh",
     width: "100vw",
     overflow: "hidden",
-    background: "var(--bg-app)",
+    background: "transparent",
   },
   titlebar: {
     height: 34,
@@ -2290,6 +2303,7 @@ const styles: Record<string, React.CSSProperties> = {
     userSelect: "none",
     position: "relative",
     paddingLeft: 70,
+    background: "var(--bg-app)",
   },
   titlebarLeft: {
     position: "absolute",

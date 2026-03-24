@@ -185,7 +185,7 @@ export interface WorkspaceReadiness {
 
 // --- Workspace Mode Types ---
 
-export type WorkspaceMode = "product" | "dev";
+export type WorkspaceMode = "flight" | "dev" | "product";
 
 export type ThemeName = 'dark' | 'dimmed' | 'light';
 
@@ -553,3 +553,76 @@ export function createDefaultLayout(): WorkspaceLayout {
     },
   };
 }
+
+// --- Flight Mode Types ---
+
+/** A single tab inside a flight pod's shell panel */
+export interface FlightTab {
+  id: string;
+  type: "claude" | "terminal";
+  title: string;
+  cwd: string;
+  ptyId?: string;
+}
+
+/** Base spatial properties shared by all pods */
+export interface FlightPodBase {
+  id: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  cwd: string;
+  title: string;
+  ptyId?: string;
+  zIndex: number;
+  /** Tabs for the shell panel (bottom terminal area). */
+  shellTabs?: FlightTab[];
+  activeShellTabId?: string;
+}
+
+/** Claude Code pod — has an optional attached shell */
+export interface FlightClaudePod extends FlightPodBase {
+  type: "claude";
+  shellExpanded: boolean;
+  shellHeight: number;
+  shellPtyId?: string;
+}
+
+/** Standalone terminal pod */
+export interface FlightTerminalPod extends FlightPodBase {
+  type: "terminal";
+}
+
+export type FlightPod = FlightClaudePod | FlightTerminalPod;
+
+export interface FlightViewport {
+  panX: number;
+  panY: number;
+  zoom: number;
+}
+
+export interface FlightLayout {
+  pods: FlightPod[];
+  viewport: FlightViewport;
+}
+
+export interface FlightLayoutPreset {
+  id: string;
+  name: string;
+  layout: FlightLayout;
+}
+
+// Flight Mode constants
+// Default pod size fills most of the viewport — Focus Mode clamps to exact fit
+export const FLIGHT_DEFAULT_CLAUDE_WIDTH = 900;
+export const FLIGHT_DEFAULT_CLAUDE_HEIGHT = 800;
+export const FLIGHT_DEFAULT_TERMINAL_WIDTH = 500;
+export const FLIGHT_DEFAULT_TERMINAL_HEIGHT = 300;
+export const FLIGHT_MIN_CLAUDE_WIDTH = 400;
+export const FLIGHT_MIN_CLAUDE_HEIGHT = 250;
+export const FLIGHT_MIN_TERMINAL_WIDTH = 300;
+export const FLIGHT_MIN_TERMINAL_HEIGHT = 150;
+export const FLIGHT_DEFAULT_SHELL_HEIGHT = 181;
+export const FLIGHT_ZOOM_MIN = 0.3;
+export const FLIGHT_ZOOM_MAX = 2.0;

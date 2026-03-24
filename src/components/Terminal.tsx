@@ -557,6 +557,18 @@ export function Terminal({ cwd, command, initialInput, ptyId: existingPtyId, loc
       if (ev.shiftKey && (ev.code === "BracketLeft" || ev.code === "BracketRight")) {
         return false;
       }
+      // Let Cmd+Shift+C bubble for new Claude tab in flight mode
+      if (ev.shiftKey && ev.key.toLowerCase() === "c") {
+        return false;
+      }
+      // Let Cmd+0-9 bubble for flight mode focus visible count
+      if (ev.key >= "0" && ev.key <= "9") {
+        return false;
+      }
+      // Let Cmd+G bubble for grid wrap toggle
+      if (ev.key.toLowerCase() === "g") {
+        return false;
+      }
       return true;
     });
 

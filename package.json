@@ -10,7 +10,9 @@
     "tauri": "cargo tauri",
     "app": "tsc && vite build && cargo tauri build --bundles app",
     "app:run": "tsc && vite build && cargo tauri build --bundles app && open src-tauri/target/release/bundle/macos/Rally.app",
-    "app:dmg": "tsc && vite build && cargo tauri build --bundles app,dmg"
+    "app:dmg": "tsc && vite build && cargo tauri build --bundles app,dmg",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "devDependencies": {
     "@types/react": "^19.2.14",
@@ -18,7 +20,8 @@
     "@vitejs/plugin-react": "^5.1.4",
     "tsx": "^4.21.0",
     "typescript": "^5.9.3",
-    "vite": "^7.3.1"
+    "vite": "^7.3.1",
+    "vitest": "^4.1.1"
   },
   "dependencies": {
     "@monaco-editor/react": "^4.7.0",

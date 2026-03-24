@@ -216,6 +216,10 @@ impl PtyManager {
         };
         cmd.env("TERM_PROGRAM", term_program);
         cmd.env_remove("TERM_PROGRAM_VERSION");
+        // Disable macOS shell session save/restore — prevents the
+        // "Restored session: ..." message on every new terminal.
+        cmd.env("SHELL_SESSION_DID_INIT", "1");
+        cmd.env_remove("TERM_SESSION_ID");
         // Suppress zsh's PROMPT_EOL_MARK — the reverse-video `%` character it
         // outputs at startup to indicate no trailing newline. In an embedded
         // terminal this just leaves a white-background box artifact at (0,0).

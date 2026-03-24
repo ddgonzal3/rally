@@ -296,8 +296,11 @@ fn main() {
                     "file-open-current-workspace-new-window" => {
                         emit_to_focused_window(app, "rally-menu-open-current-workspace-new-window");
                     }
-                    "view-toggle-mode" => {
-                        emit_to_focused_window(app, "rally-menu-toggle-mode");
+                    "view-flight-mode" => {
+                        emit_to_focused_window(app, "rally-menu-flight-mode");
+                    }
+                    "view-dev-mode" => {
+                        emit_to_focused_window(app, "rally-menu-dev-mode");
                     }
                     "view-zoom-in" => {
                         emit_to_focused_window(app, "rally-zoom-in");
@@ -436,8 +439,13 @@ fn main() {
                 )
                 .separator()
                 .item(
-                    &MenuItemBuilder::with_id("view-toggle-mode", "Toggle Dev/Product Mode")
-                        .accelerator("CmdOrCtrl+Shift+M")
+                    &MenuItemBuilder::with_id("view-flight-mode", "Flight Mode")
+                        .accelerator("CmdOrCtrl+Shift+F")
+                        .build(app)?,
+                )
+                .item(
+                    &MenuItemBuilder::with_id("view-dev-mode", "Dev Mode")
+                        .accelerator("CmdOrCtrl+Shift+D")
                         .build(app)?,
                 )
                 .separator()
@@ -456,6 +464,73 @@ fn main() {
             app.set_menu(menu)?;
 
             let win = app.get_webview_window("main").unwrap();
+
+            // --- Native macOS frosted glass via raw Objective-C ---
+            // Tauri's built-in vibrancy doesn't properly make WKWebView transparent.
+            // We directly access the NSWindow and WKWebView to:
+            // 1. Make the window non-opaque with clear background
+            // 2. Disable WKWebView's opaque background drawing
+            // 3. Add an NSVisualEffectView behind the webview for frosted blur
+            {
+                use objc2::runtime::AnyObject;
+                use objc2::{msg_send, MainThreadMarker};
+                use objc2_app_kit::{
+                    NSColor, NSVisualEffectBlendingMode, NSVisualEffectMaterial,
+                    NSVisualEffectState, NSVisualEffectView, NSWindow,
+                    NSAutoresizingMaskOptions, NSWindowOrderingMode,
+                };
+                use objc2_foundation::NSString;
+
+                // We're in the setup callback which runs on the main thread
+                let mtm = MainThreadMarker::new().unwrap();
+
+                let ns_win_ptr = win.ns_window().unwrap() as *mut AnyObject;
+                let ns_window: &NSWindow = unsafe { &*(ns_win_ptr as *const NSWindow) };
+
+                unsafe {
+                    // Make the window transparent
+                    ns_window.setOpaque(false);
+                    let clear = NSColor::clearColor();
+                    ns_window.setBackgroundColor(Some(&clear));
+
+                    // Get the content view and make the WKWebView non-opaque
+                    if let Some(content_view) = ns_window.contentView() {
+                        let subviews = content_view.subviews();
+                        for i in 0..subviews.len() {
+                            let subview = &*subviews.objectAtIndex(i);
+                            // Set drawsBackground = false via KVC on WKWebView
+                            let key = NSString::from_str("drawsBackground");
+                            // Create NSNumber(false) via msg_send
+                            let cls = objc2::runtime::AnyClass::get(c"NSNumber").unwrap();
+                            let no_val: *mut AnyObject = msg_send![cls, numberWithBool: false];
+                            let _: () = msg_send![subview, setValue: no_val, forKey: &*key];
+                        }
+
+                        // Add NSVisualEffectView behind everything for frosted glass
+                        let effect_view = NSVisualEffectView::new(mtm);
+                        effect_view.setMaterial(NSVisualEffectMaterial::UnderWindowBackground);
+                        effect_view.setBlendingMode(NSVisualEffectBlendingMode::BehindWindow);
+                        effect_view.setState(NSVisualEffectState::Active);
+                        effect_view.setAutoresizingMask(
+                            NSAutoresizingMaskOptions::ViewWidthSizable
+                                | NSAutoresizingMaskOptions::ViewHeightSizable,
+                        );
+                        effect_view.setFrame(content_view.frame());
+
+                        // Insert the effect view at the back (behind webview)
+                        let first_subview = if subviews.len() > 0 {
+                            Some(&*subviews.objectAtIndex(0))
+                        } else {
+                            None
+                        };
+                        content_view.addSubview_positioned_relativeTo(
+                            &effect_view,
+                            NSWindowOrderingMode::Below,
+                            first_subview,
+                        );
+                    }
+                }
+            }
             // Only position on largest monitor's left half on first launch.
             // On subsequent launches, tauri_plugin_window_state restores the
             // saved position/size before setup runs — we must not override it.

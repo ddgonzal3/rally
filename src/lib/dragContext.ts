@@ -24,6 +24,8 @@ export interface DragState {
   prevMouseY: number;
   mouseX: number;
   mouseY: number;
+  flightPodId: string | null;
+  flightTabIndex: number | null;
 }
 
 const IDLE_STATE: DragState = {
@@ -36,6 +38,8 @@ const IDLE_STATE: DragState = {
   prevMouseY: 0,
   mouseX: 0,
   mouseY: 0,
+  flightPodId: null,
+  flightTabIndex: null,
 };
 
 let state: DragState = IDLE_STATE;
@@ -78,6 +82,56 @@ export function startDrag(groupId: string, paneId: string, x: number, y: number)
     prevMouseY: y,
     mouseX: x,
     mouseY: y,
+    flightPodId: null,
+    flightTabIndex: null,
+  };
+
+  const onMouseMove = (e: MouseEvent) => {
+    state = {
+      ...state,
+      prevMouseX: state.mouseX,
+      prevMouseY: state.mouseY,
+      mouseX: e.clientX,
+      mouseY: e.clientY,
+    };
+    notify();
+  };
+
+  const onMouseUp = () => {
+    document.removeEventListener("mousemove", onMouseMove);
+    document.removeEventListener("mouseup", onMouseUp);
+    document.body.style.cursor = "";
+    document.body.style.userSelect = "";
+    // Notify with isDragging still true so drop targets can act
+    notify();
+    // Then end the drag
+    setTimeout(() => {
+      state = IDLE_STATE;
+      notify();
+    }, 0);
+  };
+
+  document.addEventListener("mousemove", onMouseMove);
+  document.addEventListener("mouseup", onMouseUp);
+  document.body.style.cursor = "grabbing";
+  document.body.style.userSelect = "none";
+  notify();
+}
+
+/** Start dragging a flight pod tab between pods. */
+export function startFlightTabDrag(podId: string, tabIndex: number, x: number, y: number) {
+  state = {
+    isDragging: true,
+    type: "pane",
+    groupId: null,
+    paneId: null,
+    filePaths: [],
+    prevMouseX: x,
+    prevMouseY: y,
+    mouseX: x,
+    mouseY: y,
+    flightPodId: podId,
+    flightTabIndex: tabIndex,
   };
 
   const onMouseMove = (e: MouseEvent) => {
@@ -124,6 +178,8 @@ export function startFileDrag(filePaths: string[], x: number, y: number) {
     prevMouseY: y,
     mouseX: x,
     mouseY: y,
+    flightPodId: null,
+    flightTabIndex: null,
   };
 
   const onMouseMove = (e: MouseEvent) => {
@@ -173,6 +229,8 @@ export function startExternalFileDrag(filePaths: string[], x: number, y: number)
     prevMouseY: y,
     mouseX: x,
     mouseY: y,
+    flightPodId: null,
+    flightTabIndex: null,
   };
   notify();
 }
