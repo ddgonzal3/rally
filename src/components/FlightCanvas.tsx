@@ -154,13 +154,18 @@ const WorkspaceFlightView = React.memo(function WorkspaceFlightView({
     // - Clicked on empty canvas → scroll pans
     // - Clicked inside a terminal → scroll goes to terminal
     let canvasFocused = true; // Start with canvas focused (no terminal active)
+    // Track current pod for focus mode column nav (scroll, Shift+Arrow, Cmd+N, clicks)
+    let focusScrollCurrentPodId: string | null = null;
 
-    // Track clicks to determine scroll target
+    // Track clicks to determine scroll target + active pod for column nav
     const clickTracker = (e: MouseEvent) => {
-      const insidePod = !!(e.target as HTMLElement).closest("[data-flight-pod]");
-      if (insidePod) {
+      const podEl = (e.target as HTMLElement).closest("[data-flight-pod]");
+      if (podEl) {
         canvasFocused = false;
         el.classList.remove("flight-panning");
+        // Track clicked pod as the active pod for Cmd+N / Shift+Arrow nav
+        const podId = podEl.getAttribute("data-flight-pod");
+        if (podId) focusScrollCurrentPodId = podId;
       } else {
         canvasFocused = true;
         el.classList.add("flight-panning");
@@ -175,8 +180,6 @@ const WorkspaceFlightView = React.memo(function WorkspaceFlightView({
     let navTime = 0;
     let navFiredInGesture = false;
     let lastDelta = 0;
-    // Track current pod for focus mode scroll (zIndex-based detection is unreliable)
-    let focusScrollCurrentPodId: string | null = null;
 
     const wheelHandler = (e: WheelEvent) => {
       // Focus mode: intercept horizontal scroll only, navigate one pod at a time
@@ -441,6 +444,8 @@ const WorkspaceFlightView = React.memo(function WorkspaceFlightView({
 
     // --- Navigate to a pod: animate viewport to show it ---
     const navigateToPod = (podId: string) => {
+      // Track active pod for column-based navigation (scroll, Shift+Arrow, Cmd+N)
+      focusScrollCurrentPodId = podId;
       const store = useWorkspaceStore.getState();
       const pod = store.flightLayouts[workspaceId]?.pods.find((p) => p.id === podId);
       if (!pod) return;
