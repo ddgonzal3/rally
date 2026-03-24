@@ -96,28 +96,87 @@ function PodScriptDot({
     buildStatus = "idle";
   }
 
-  // Dot color
-  let dotColor = "var(--text-dim)";
-  let dotOpacity = 0.6;
-  if (buildStatus === "building") {
-    dotColor = "var(--status-amber)";
-    dotOpacity = 1;
+  // "built at" / "ran at" timestamp — matches dev mode BuildStatusBar
+  const [builtAt, setBuiltAt] = useState<string | null>(null);
+  const [flashing, setFlashing] = useState(false);
+  const prevStatusRef = useRef<WatcherBuildStatus>("idle");
+  const buildCompletionCount = run?.buildCompletionCount ?? 0;
+  const prevCompletionCountRef = useRef(buildCompletionCount);
+
+  // Flash detection: building -> success triggers a 3s flash
+  useEffect(() => {
+    if (buildStatus === "success" && prevStatusRef.current === "building") {
+      setFlashing(true);
+      const timer = setTimeout(() => setFlashing(false), 3000);
+      const now = new Date();
+      const timeStr = now.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }).toLowerCase();
+      setBuiltAt(timeStr);
+      prevStatusRef.current = buildStatus;
+      return () => clearTimeout(timer);
+    }
+    if (buildStatus !== "success") setFlashing(false);
+    if (buildStatus === "error") setBuiltAt(null);
+    prevStatusRef.current = buildStatus;
+  }, [buildStatus, isWatcher]);
+
+  // Detect rebuild completions via buildCompletionCount
+  useEffect(() => {
+    if (buildCompletionCount > prevCompletionCountRef.current && isWatcher) {
+      const now = new Date();
+      const timeStr = now.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }).toLowerCase();
+      setBuiltAt(timeStr);
+      if (!flashing) {
+        setFlashing(true);
+        setTimeout(() => setFlashing(false), 3000);
+      }
+    }
+    prevCompletionCountRef.current = buildCompletionCount;
+  }, [buildCompletionCount, isWatcher]);
+
+  // Auto-dismiss "built at" after 120s
+  useEffect(() => {
+    if (!builtAt) return;
+    const timer = setTimeout(() => setBuiltAt(null), 120000);
+    return () => clearTimeout(timer);
+  }, [builtAt]);
+
+  // Dot style
+  const dotStyle: React.CSSProperties = {
+    width: 7,
+    height: 7,
+    borderRadius: "50%",
+    flexShrink: 0,
+  };
+
+  if (flashing) {
+    dotStyle.background = "var(--status-green)";
+    dotStyle.animation = isWatcher
+      ? "success-flash-watcher 3s ease-out forwards"
+      : "success-flash 3s ease-out forwards";
+  } else if (buildStatus === "building") {
+    dotStyle.background = "var(--status-amber)";
   } else if (buildStatus === "error") {
-    dotColor = "var(--status-red)";
-    dotOpacity = 1;
+    dotStyle.background = "var(--status-red)";
+    dotStyle.opacity = 1;
   } else if (isRunning && isWatcher) {
-    dotColor = "var(--status-green)";
-    dotOpacity = 0.7;
+    dotStyle.background = "var(--status-green)";
+    dotStyle.opacity = 0.7;
   } else if (buildStatus === "success") {
-    dotColor = "var(--status-green)";
-    dotOpacity = 0.7;
+    dotStyle.background = "var(--status-green)";
+    dotStyle.opacity = 0.7;
+  } else {
+    dotStyle.background = "var(--text-dim)";
+    dotStyle.opacity = 0.6;
   }
 
   const restart = () => {
     if (isRunning) stopScript(repoPath, scriptName);
     clearScript(repoPath, scriptName);
     clearWatcherStatusCache(key);
+    setFlashing(false);
+    setBuiltAt(null);
     setHasLeftSinceStart(false);
+    prevStatusRef.current = "idle";
     setTimeout(() => {
       runScript(repoPath, scriptName, command);
       setTimeout(() => openStatusBarDrawer(repoPath, scriptName), 50);
@@ -128,7 +187,10 @@ function PodScriptDot({
     if (isRunning) stopScript(repoPath, scriptName);
     clearScript(repoPath, scriptName);
     clearWatcherStatusCache(key);
+    setFlashing(false);
+    setBuiltAt(null);
     setHasLeftSinceStart(false);
+    prevStatusRef.current = "idle";
     if (isDrawerOpen) {
       useWorkspaceStore.getState().closeStatusBarDrawer();
     }
@@ -201,14 +263,7 @@ function PodScriptDot({
             openStatusBarDrawer(repoPath, scriptName, true);
           }
         }}
-        style={{
-          width: 7,
-          height: 7,
-          borderRadius: "50%",
-          background: dotColor,
-          opacity: dotOpacity,
-          flexShrink: 0,
-        }}
+        style={dotStyle}
       />
       <span
         style={{
@@ -222,6 +277,19 @@ function PodScriptDot({
       >
         {displayName}
       </span>
+
+      {builtAt && (
+        <span
+          style={{
+            fontSize: 11,
+            color: "var(--text-secondary)",
+            whiteSpace: "nowrap",
+            lineHeight: 1,
+          }}
+        >
+          {isWatcher ? "built" : "ran"} {builtAt}
+        </span>
+      )}
 
       {/* Action icons — fade in on hover (matches dev mode BuildStatusBar) */}
       <div
