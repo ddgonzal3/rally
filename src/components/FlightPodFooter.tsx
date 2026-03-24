@@ -13,6 +13,45 @@ import {
   clearWatcherStatusCache,
   type WatcherBuildStatus,
 } from "../lib/watcherStatus";
+import { showContextMenu, type MenuAction } from "../lib/contextMenu";
+
+const podActionButtonStyle: React.CSSProperties = {
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+  width: 16,
+  height: 16,
+  padding: 0,
+  margin: 0,
+  background: "none",
+  border: "none",
+  color: "var(--text-secondary)",
+  cursor: "pointer",
+  borderRadius: 3,
+  flexShrink: 0,
+  lineHeight: 0,
+  appearance: "none",
+  WebkitAppearance: "none",
+};
+
+function StopIcon() {
+  return (
+    <svg width="13" height="13" viewBox="0 0 13 13" fill="none" aria-hidden="true" style={{ display: "block" }}>
+      <rect x="2" y="2" width="9" height="9" rx="1.5" fill="currentColor" />
+    </svg>
+  );
+}
+
+function RestartIcon() {
+  return (
+    <svg width="11" height="11" viewBox="0 0 12 12" fill="none" aria-hidden="true" style={{ display: "block" }}>
+      <path d="M1.5 6a4.5 4.5 0 0 1 8.18-2.6" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
+      <path d="M10.5 6a4.5 4.5 0 0 1-8.18 2.6" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
+      <path d="M10.2 1v2.4H7.8" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M1.8 11v-2.4h2.4" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
 
 /** Compact script dot for the flight pod footer. */
 function PodScriptDot({
@@ -30,6 +69,8 @@ function PodScriptDot({
   const clearScript = useWorkspaceStore((s) => s.clearScript);
   const openStatusBarDrawer = useWorkspaceStore((s) => s.openStatusBarDrawer);
   const statusBarDrawer = useWorkspaceStore((s) => s.statusBarDrawer);
+  const [hovered, setHovered] = useState(false);
+  const [hasLeftSinceStart, setHasLeftSinceStart] = useState(false);
 
   const key = `${repoPath}:${scriptName}`;
   const run = scriptRuns[key];
@@ -76,14 +117,58 @@ function PodScriptDot({
     if (isRunning) stopScript(repoPath, scriptName);
     clearScript(repoPath, scriptName);
     clearWatcherStatusCache(key);
+    setHasLeftSinceStart(false);
     setTimeout(() => {
       runScript(repoPath, scriptName, command);
       setTimeout(() => openStatusBarDrawer(repoPath, scriptName), 50);
     }, 100);
   };
 
+  const kill = () => {
+    if (isRunning) stopScript(repoPath, scriptName);
+    clearScript(repoPath, scriptName);
+    clearWatcherStatusCache(key);
+    setHasLeftSinceStart(false);
+    if (isDrawerOpen) {
+      useWorkspaceStore.getState().closeStatusBarDrawer();
+    }
+  };
+
+  const handleContextMenu = (e: React.MouseEvent) => {
+    e.preventDefault();
+    const items: MenuAction[] = [
+      { label: "Restart", action: restart, accelerator: "Alt+Click" },
+    ];
+    if (isRunning) {
+      items.push({ label: "Stop", action: kill });
+    }
+    const bar = (e.currentTarget as HTMLElement).closest("[data-pod-footer]");
+    const barTop = bar ? bar.getBoundingClientRect().top : e.clientY;
+    showContextMenu(items, { x: e.clientX, y: barTop });
+  };
+
+  const showRunning = isRunning && hovered && hasLeftSinceStart;
+  const showFailed = !isRunning && buildStatus === "error" && hovered;
+  const showActions = showRunning || showFailed;
+
   return (
     <div
+      onMouseEnter={() => {
+        setHovered(true);
+        if (!isRunning) setHasLeftSinceStart(true);
+        if ((isRunning || buildStatus === "error") && isDrawerOpen) {
+          cancelDrawerHoverClose();
+        }
+      }}
+      onMouseLeave={() => {
+        setHovered(false);
+        if (isRunning) setHasLeftSinceStart(true);
+        if (isDrawerOpen && statusBarDrawer?.hoverMode) {
+          startDrawerHoverClose(() => {
+            useWorkspaceStore.getState().closeDrawerIfHover();
+          });
+        }
+      }}
       onMouseDown={(e) => {
         if (e.button !== 0) return;
         e.preventDefault();
@@ -99,18 +184,7 @@ function PodScriptDot({
           runScript(repoPath, scriptName, command);
         }
       }}
-      onMouseEnter={() => {
-        if ((isRunning || buildStatus === "error") && isDrawerOpen) {
-          cancelDrawerHoverClose();
-        }
-      }}
-      onMouseLeave={() => {
-        if (isDrawerOpen && statusBarDrawer?.hoverMode) {
-          startDrawerHoverClose(() => {
-            useWorkspaceStore.getState().closeDrawerIfHover();
-          });
-        }
-      }}
+      onContextMenu={handleContextMenu}
       style={{
         display: "flex",
         alignItems: "center",
@@ -122,6 +196,12 @@ function PodScriptDot({
       }}
     >
       <span
+        onMouseEnter={() => {
+          if (isRunning || buildStatus === "error") {
+            cancelDrawerHoverClose();
+            openStatusBarDrawer(repoPath, scriptName, true);
+          }
+        }}
         style={{
           width: 7,
           height: 7,
@@ -143,6 +223,42 @@ function PodScriptDot({
       >
         {displayName}
       </span>
+
+      {/* Action icons — fade in on hover (matches dev mode BuildStatusBar) */}
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 2,
+          opacity: showActions ? 1 : 0,
+          width: showActions ? (showRunning ? 36 : 18) : 0,
+          overflow: "hidden",
+          transition: "opacity 0.15s ease, width 0.15s ease",
+          pointerEvents: showActions ? "auto" : "none",
+          flexShrink: 0,
+          margin: 0,
+          padding: 0,
+        }}
+      >
+        {showRunning && (
+          <button
+            className="tab-action"
+            onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); kill(); }}
+            title="Stop"
+            style={{ ...podActionButtonStyle, opacity: 0.88 }}
+          >
+            <StopIcon />
+          </button>
+        )}
+        <button
+          className="tab-action"
+          onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); restart(); }}
+          title="Restart"
+          style={podActionButtonStyle}
+        >
+          <RestartIcon />
+        </button>
+      </div>
     </div>
   );
 }
@@ -165,7 +281,7 @@ export function FlightPodFooter({ repoPath, onOpenTerminal }: { repoPath: string
 
   return (
     <div
-      onContextMenu={(e) => e.preventDefault()}
+      data-pod-footer
       style={{
         height: 28,
         display: "flex",
