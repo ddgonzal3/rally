@@ -414,12 +414,17 @@ const WorkspaceFlightView = React.memo(function WorkspaceFlightView({
         const podH = Math.floor((containerH - HUD_HEIGHT - PAD * 2 - GAP * (rows - 1)) / rows);
         const allPods = [...(store.flightLayouts[workspaceId]?.pods ?? [])];
 
-        // Sort by position to get stable left-to-right order
+        // Sort pods by spatial position so the grid preserves where the user
+        // placed them. Use the target row height as the bucket size so pods
+        // on the same visual row stay together.
+        const rowBucket = podH > 0 ? podH * 0.6 : 200;
         allPods.sort((a, b) => {
-          const rowA = Math.round(a.y / 100);
-          const rowB = Math.round(b.y / 100);
+          const centerAY = a.y + a.height / 2;
+          const centerBY = b.y + b.height / 2;
+          const rowA = Math.floor(centerAY / rowBucket);
+          const rowB = Math.floor(centerBY / rowBucket);
           if (rowA !== rowB) return rowA - rowB;
-          return a.x - b.x;
+          return (a.x + a.width / 2) - (b.x + b.width / 2);
         });
 
         // Lay out in a grid: columns then rows

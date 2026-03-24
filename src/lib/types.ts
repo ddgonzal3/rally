@@ -565,6 +565,14 @@ export interface FlightTab {
   ptyId?: string;
 }
 
+/** A split pane inside a flight pod's terminal body */
+export interface FlightSplitPane {
+  id: string;
+  type: "claude" | "terminal";
+  cwd: string;
+  ptyId?: string;
+}
+
 /** Base spatial properties shared by all pods */
 export interface FlightPodBase {
   id: string;
@@ -579,6 +587,9 @@ export interface FlightPodBase {
   /** Multiple tabs per pod. If empty/undefined, legacy single-tab mode. */
   tabs?: FlightTab[];
   activeTabId?: string;
+  /** Split panes inside the terminal body. If set, main body is divided. */
+  splitPanes?: FlightSplitPane[];
+  splitDirection?: "horizontal" | "vertical";
 }
 
 /** Claude Code pod — has an optional attached shell */

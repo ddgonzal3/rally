@@ -29,6 +29,7 @@ import type {
   DetectedPort,
   FlightPod,
   FlightTab,
+  FlightSplitPane,
   FlightLayout,
   FlightViewport,
   FlightLayoutPreset,
@@ -542,6 +543,9 @@ interface WorkspaceState {
   removeFlightPodTab: (workspaceId: string, podId: string, tabId: string) => void;
   setActiveFlightTab: (workspaceId: string, podId: string, tabId: string) => void;
   setFlightTabPtyId: (workspaceId: string, podId: string, tabId: string, ptyId: string) => void;
+  splitFlightPod: (workspaceId: string, podId: string, direction: "horizontal" | "vertical", paneType: "claude" | "terminal", cwd: string) => void;
+  removeFlightSplitPane: (workspaceId: string, podId: string, paneId: string) => void;
+  setFlightSplitPanePtyId: (workspaceId: string, podId: string, paneId: string, ptyId: string) => void;
   /** Save current flight layout as a named preset */
   saveFlightLayoutPreset: (workspaceId: string, name: string) => void;
   /** Restore a saved flight layout preset (kills existing PTYs, respawned on mount) */
@@ -3524,6 +3528,68 @@ export const useWorkspaceStore = create<WorkspaceState>()(
       flightLayouts: { ...s.flightLayouts, [workspaceId]: { ...layout, pods: layout.pods.map((p) => {
         if (p.id !== podId) return p;
         return { ...p, tabs: (p.tabs ?? []).map((t) => t.id === tabId ? { ...t, ptyId } : t) } as FlightPod;
+      }) } },
+    }));
+  },
+
+  splitFlightPod: (workspaceId: string, podId: string, direction: "horizontal" | "vertical", paneType: "claude" | "terminal", cwd: string) => {
+    const layout = get().flightLayouts[workspaceId];
+    if (!layout) return;
+    const pod = layout.pods.find((p) => p.id === podId);
+    if (!pod) return;
+    const newPane: FlightSplitPane = { id: crypto.randomUUID(), type: paneType, cwd };
+
+    let splitPanes = pod.splitPanes;
+    if (!splitPanes || splitPanes.length === 0) {
+      // Migrate existing main terminal into first split pane
+      const firstPane: FlightSplitPane = { id: crypto.randomUUID(), type: pod.type, cwd: pod.cwd, ptyId: pod.ptyId };
+      splitPanes = [firstPane, newPane];
+    } else {
+      splitPanes = [...splitPanes, newPane];
+    }
+
+    set((s) => ({
+      flightLayouts: { ...s.flightLayouts, [workspaceId]: { ...layout, pods: layout.pods.map((p) => {
+        if (p.id !== podId) return p;
+        return { ...p, splitPanes, splitDirection: direction } as FlightPod;
+      }) } },
+    }));
+  },
+
+  removeFlightSplitPane: (workspaceId: string, podId: string, paneId: string) => {
+    const layout = get().flightLayouts[workspaceId];
+    if (!layout) return;
+    const pod = layout.pods.find((p) => p.id === podId);
+    if (!pod?.splitPanes) return;
+    const pane = pod.splitPanes.find((sp) => sp.id === paneId);
+    if (pane?.ptyId) api.killPty(pane.ptyId).catch(() => {});
+    const remaining = pod.splitPanes.filter((sp) => sp.id !== paneId);
+    if (remaining.length <= 1) {
+      // Collapse back to single terminal — take the remaining pane's state
+      const single = remaining[0];
+      set((s) => ({
+        flightLayouts: { ...s.flightLayouts, [workspaceId]: { ...layout, pods: layout.pods.map((p) => {
+          if (p.id !== podId) return p;
+          return { ...p, splitPanes: undefined, splitDirection: undefined, ptyId: single?.ptyId, cwd: single?.cwd ?? p.cwd } as FlightPod;
+        }) } },
+      }));
+    } else {
+      set((s) => ({
+        flightLayouts: { ...s.flightLayouts, [workspaceId]: { ...layout, pods: layout.pods.map((p) => {
+          if (p.id !== podId) return p;
+          return { ...p, splitPanes: remaining } as FlightPod;
+        }) } },
+      }));
+    }
+  },
+
+  setFlightSplitPanePtyId: (workspaceId: string, podId: string, paneId: string, ptyId: string) => {
+    const layout = get().flightLayouts[workspaceId];
+    if (!layout) return;
+    set((s) => ({
+      flightLayouts: { ...s.flightLayouts, [workspaceId]: { ...layout, pods: layout.pods.map((p) => {
+        if (p.id !== podId) return p;
+        return { ...p, splitPanes: (p.splitPanes ?? []).map((sp) => sp.id === paneId ? { ...sp, ptyId } : sp) } as FlightPod;
       }) } },
     }));
   },

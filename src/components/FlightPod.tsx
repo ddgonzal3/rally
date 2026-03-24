@@ -156,6 +156,9 @@ interface FlightPodProps {
   isSelected?: boolean;
 }
 
+/** Tracks the last pod the user clicked/interacted with — used by Ctrl+` etc. */
+export let lastFocusedFlightPodId: string | null = null;
+
 export const FlightPod = React.memo(function FlightPod({
   podId,
   workspaceId,
@@ -195,6 +198,8 @@ export const FlightPod = React.memo(function FlightPod({
   });
   const podTabs = useWorkspaceStore((s) => s.flightLayouts[workspaceId]?.pods.find((p) => p.id === podId)?.tabs);
   const activeTabId = useWorkspaceStore((s) => s.flightLayouts[workspaceId]?.pods.find((p) => p.id === podId)?.activeTabId);
+  const splitPanes = useWorkspaceStore((s) => s.flightLayouts[workspaceId]?.pods.find((p) => p.id === podId)?.splitPanes);
+  const splitDirection = useWorkspaceStore((s) => s.flightLayouts[workspaceId]?.pods.find((p) => p.id === podId)?.splitDirection);
 
   // Derive active tab (if tabs exist)
   const activeTab = useMemo(() => {
@@ -407,10 +412,19 @@ export const FlightPod = React.memo(function FlightPod({
 
   const addFlightPodAt = useWorkspaceStore((s) => s.addFlightPodAt);
 
+  const splitFlightPod = useWorkspaceStore((s) => s.splitFlightPod);
+  const setFlightSplitPanePtyId = useWorkspaceStore((s) => s.setFlightSplitPanePtyId);
+  const removeFlightSplitPane = useWorkspaceStore((s) => s.removeFlightSplitPane);
+
   const handleSplitRight = useCallback((e: React.MouseEvent) => {
     e.stopPropagation();
-    addFlightPodTab(workspaceId, podId, "terminal", podCwd);
-  }, [addFlightPodTab, workspaceId, podId, podCwd]);
+    splitFlightPod(workspaceId, podId, "horizontal", "terminal", podCwd);
+  }, [splitFlightPod, workspaceId, podId, podCwd]);
+
+  const handleSplitDown = useCallback((e: React.MouseEvent) => {
+    e.stopPropagation();
+    splitFlightPod(workspaceId, podId, "vertical", "terminal", podCwd);
+  }, [splitFlightPod, workspaceId, podId, podCwd]);
 
   const handleAddTab = useCallback((e: React.MouseEvent) => {
     e.stopPropagation();
@@ -438,6 +452,7 @@ export const FlightPod = React.memo(function FlightPod({
     <div
       ref={podRef}
       data-flight-pod={podId}
+      onMouseDown={() => { lastFocusedFlightPodId = podId; }}
       onClick={handleFocusClick}
       style={{
         position: "absolute",
@@ -561,6 +576,17 @@ export const FlightPod = React.memo(function FlightPod({
                 </svg>
               )}
               <span style={tabBarStyles.tabLabel}>{podTitle || cwdBasename}</span>
+              <button
+                className="tab-close tab-close-active"
+                style={tabBarStyles.tabClose}
+                onMouseDown={(e) => e.stopPropagation()}
+                onClick={handleClose}
+              >
+                <svg width="11" height="11" viewBox="0 0 14 14" fill="none">
+                  <line x1="3" y1="3" x2="11" y2="11" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+                  <line x1="11" y1="3" x2="3" y2="11" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+                </svg>
+              </button>
             </div>
           )}
           {/* + button */}
@@ -577,33 +603,6 @@ export const FlightPod = React.memo(function FlightPod({
           </button>
         </div>
 
-        {/* Right actions: split-right + close-pod */}
-        <div style={tabBarStyles.actions}>
-          <button
-            className="tab-action"
-            style={tabBarStyles.actionBtn}
-            onMouseDown={(e) => e.stopPropagation()}
-            onClick={handleSplitRight}
-            title="Split right"
-          >
-            <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
-              <rect x="1" y="1" width="12" height="12" rx="2" stroke="currentColor" strokeWidth="1.2" />
-              <line x1="7" y1="1" x2="7" y2="13" stroke="currentColor" strokeWidth="1.2" />
-            </svg>
-          </button>
-          <button
-            className="tab-action"
-            style={tabBarStyles.actionBtn}
-            onMouseDown={(e) => e.stopPropagation()}
-            onClick={handleClose}
-            title="Close pod"
-          >
-            <svg width="11" height="11" viewBox="0 0 14 14" fill="none">
-              <line x1="3" y1="3" x2="11" y2="11" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-              <line x1="11" y1="3" x2="3" y2="11" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-            </svg>
-          </button>
-        </div>
       </div>
 
       {/* Main terminal body */}
@@ -614,12 +613,47 @@ export const FlightPod = React.memo(function FlightPod({
           height: shellExpanded ? terminalBodyHeight : undefined,
           minHeight: 0,
           display: "flex",
-          flexDirection: "column",
+          flexDirection: splitPanes && splitPanes.length > 0
+            ? (splitDirection === "horizontal" ? "row" : "column")
+            : "column",
           background: "var(--terminal-bg)",
           overflow: "hidden",
         }}
       >
-        {activeTab ? (
+        {splitPanes && splitPanes.length > 0 ? (
+          /* Split pane mode — render all panes side by side or stacked */
+          splitPanes.map((sp, idx) => (
+            <React.Fragment key={sp.id}>
+              {idx > 0 && (
+                <div style={{
+                  flexShrink: 0,
+                  background: "var(--border)",
+                  ...(splitDirection === "horizontal" ? { width: 1 } : { height: 1 }),
+                }} />
+              )}
+              <div style={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0, minHeight: 0, overflow: "hidden" }}>
+                {sp.type === "claude" ? (
+                  <ClaudeTerminalWrapper
+                    key={sp.id}
+                    cwd={sp.cwd}
+                    command="claude"
+                    ptyId={sp.ptyId}
+                    workspaceId={workspaceId}
+                    onPtySpawned={(ptyId) => setFlightSplitPanePtyId(workspaceId, podId, sp.id, ptyId)}
+                  />
+                ) : (
+                  <Terminal
+                    key={sp.id}
+                    cwd={sp.cwd}
+                    ptyId={sp.ptyId}
+                    workspaceId={workspaceId}
+                    onPtySpawned={(ptyId) => setFlightSplitPanePtyId(workspaceId, podId, sp.id, ptyId)}
+                  />
+                )}
+              </div>
+            </React.Fragment>
+          ))
+        ) : activeTab ? (
           /* Tabbed mode — render based on active tab */
           activeTab.type === "claude" && !claudeLaunched && !activeTab.ptyId ? (
             <FlightLauncher
@@ -628,9 +662,7 @@ export const FlightPod = React.memo(function FlightPod({
               workspaceId={workspaceId}
               onLaunch={() => setClaudeLaunched(true)}
               onLaunchClaude={(cwd) => {
-                if (cwd && cwd !== activeTab.cwd) {
-                  // Update the tab's cwd (not easily done without a dedicated action, so just launch)
-                }
+                if (cwd && cwd !== activeTab.cwd) {}
                 setClaudeLaunched(true);
               }}
               onLaunchTerminal={(cwd) => {
@@ -1105,9 +1137,9 @@ const tabBarStyles: Record<string, React.CSSProperties> = {
   tab: {
     display: "flex",
     alignItems: "center",
-    gap: 4,
-    padding: "0 2px 0 6px",
-    fontSize: 14,
+    gap: 5,
+    padding: "0 6px 0 8px",
+    fontSize: 13,
     fontWeight: 500,
     cursor: "pointer",
     whiteSpace: "nowrap" as const,
@@ -1192,11 +1224,11 @@ const launcherStyles: Record<string, React.CSSProperties> = {
     flexDirection: "column",
     alignItems: "center",
     justifyContent: "center",
-    paddingBottom: "21%",
     minHeight: 0,
     minWidth: 0,
     userSelect: "none",
     background: "var(--terminal-bg)",
+    overflow: "hidden",
   },
   main: {
     display: "flex",
