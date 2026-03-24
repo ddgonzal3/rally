@@ -993,7 +993,7 @@ const WorkspaceFlightView = React.memo(function WorkspaceFlightView({
       <div
         style={{
           ...canvasStyles.viewport,
-          transition: focusMode && !skipTransitionRef.current ? "left 0.15s ease-out, top 0.15s ease-out" : "none",
+          transition: focusMode && !skipTransitionRef.current ? "left 0.08s ease-out, top 0.08s ease-out" : "none",
           ...(zoom === 1.0
             ? { left: panX, top: panY }
             : zoom > 1.0
