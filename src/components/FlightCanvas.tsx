@@ -168,7 +168,15 @@ const WorkspaceFlightView = React.memo(function WorkspaceFlightView({
     };
     el.addEventListener("mousedown", clickTracker, true); // capture phase
 
-    let focusNavCooldown = 0;
+    // Inertia-proof scroll: navigate once per gesture. After a nav fires,
+    // subsequent events are blocked. A new gesture is recognized when deltaX
+    // decays below a threshold then jumps back up (new flick), or after a
+    // time gap from the nav event (not from the last inertia event).
+    let navTime = 0;
+    let navFiredInGesture = false;
+    let lastDelta = 0;
+    // Track current pod for focus mode scroll (zIndex-based detection is unreliable)
+    let focusScrollCurrentPodId: string | null = null;
 
     const wheelHandler = (e: WheelEvent) => {
       // Focus mode: intercept horizontal scroll only, navigate one pod at a time
@@ -182,16 +190,52 @@ const WorkspaceFlightView = React.memo(function WorkspaceFlightView({
           e.preventDefault();
           e.stopImmediatePropagation();
 
-          const now = performance.now();
-          if (now < focusNavCooldown) return;
-
-          // Natural scroll direction: swipe right (deltaX < 0) = go right
-          const dir: "left" | "right" = e.deltaX < 0 ? "right" : "left";
-          const target = findNeighborPod(dir);
-          if (target) {
-            focusNavCooldown = now + 400;
-            navigateToRef.current?.(target);
+          if (navFiredInGesture) {
+            // Detect new gesture: deltaX decayed then spiked back up
+            // (inertia decays monotonically; a new flick jumps up)
+            if (absDeltaX > lastDelta * 2 && absDeltaX > 8) {
+              navFiredInGesture = false;
+            }
+            lastDelta = Math.min(lastDelta, absDeltaX); // track decay floor
+            if (navFiredInGesture) return;
           }
+
+          // Focus mode: navigate by column order (sorted by x position)
+          const store = useWorkspaceStore.getState();
+          const pods = store.flightLayouts[workspaceId]?.pods ?? [];
+          if (pods.length < 2) return;
+
+          // Group pods into columns by x position, sorted left-to-right
+          const colMap = new Map<number, typeof pods>();
+          for (const p of pods) {
+            const key = Math.round(p.x);
+            if (!colMap.has(key)) colMap.set(key, []);
+            colMap.get(key)!.push(p);
+          }
+          const columns = [...colMap.entries()].sort((a, b) => a[0] - b[0]);
+
+          // Find current column
+          let currentColIdx = 0;
+          if (focusScrollCurrentPodId) {
+            currentColIdx = columns.findIndex(([, colPods]) =>
+              colPods.some(p => p.id === focusScrollCurrentPodId)
+            );
+            if (currentColIdx < 0) currentColIdx = 0;
+          }
+
+          // Swipe right (deltaX < 0) = go LEFT (previous column)
+          // Swipe left (deltaX > 0) = go RIGHT (next column)
+          const nextColIdx = e.deltaX < 0
+            ? Math.max(currentColIdx - 1, 0)
+            : Math.min(currentColIdx + 1, columns.length - 1);
+
+          if (nextColIdx === currentColIdx) return;
+
+          const targetPod = columns[nextColIdx][1][0]; // first pod in target column
+          focusScrollCurrentPodId = targetPod.id;
+          navFiredInGesture = true;
+          lastDelta = absDeltaX; // start tracking decay from this peak
+          navigateToRef.current?.(targetPod.id);
           return;
         }
 
