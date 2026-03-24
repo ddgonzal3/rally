@@ -147,9 +147,8 @@ function PodScriptDot({
     showContextMenu(items, { x: e.clientX, y: barTop });
   };
 
-  const showRunning = isRunning && hovered && hasLeftSinceStart;
-  const showFailed = !isRunning && buildStatus === "error" && hovered;
-  const showActions = showRunning || showFailed;
+  // Only show action icons when the script is actively running
+  const showActions = isRunning && hovered;
 
   return (
     <div
@@ -231,7 +230,7 @@ function PodScriptDot({
           alignItems: "center",
           gap: 2,
           opacity: showActions ? 1 : 0,
-          width: showActions ? (showRunning ? 36 : 18) : 0,
+          width: showActions ? (isRunning ? 36 : 18) : 0,
           overflow: "hidden",
           transition: "opacity 0.15s ease, width 0.15s ease",
           pointerEvents: showActions ? "auto" : "none",
@@ -240,7 +239,7 @@ function PodScriptDot({
           padding: 0,
         }}
       >
-        {showRunning && (
+        {isRunning && (
           <button
             className="tab-action"
             onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); kill(); }}
