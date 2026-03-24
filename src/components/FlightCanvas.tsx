@@ -380,7 +380,8 @@ const WorkspaceFlightView = React.memo(function WorkspaceFlightView({
         const PAD = 12;
         const allPodsCount = (store.flightLayouts[workspaceId]?.pods ?? []).length;
         const cols = Math.min(focusColumnsRef.current, allPodsCount || 1);
-        const rows = focusRowsRef.current;
+        // Auto-expand rows to fit all pods instead of overlapping extras
+        const rows = Math.max(focusRowsRef.current, Math.ceil(allPodsCount / cols));
         const podW = Math.floor((containerW - PAD * 2 - GAP * (cols - 1)) / cols);
         const podH = Math.floor((containerH - HUD_HEIGHT - PAD * 2 - GAP * (rows - 1)) / rows);
         const allPods = [...(store.flightLayouts[workspaceId]?.pods ?? [])];
@@ -396,7 +397,7 @@ const WorkspaceFlightView = React.memo(function WorkspaceFlightView({
         // Lay out in a grid: columns then rows
         for (let i = 0; i < allPods.length; i++) {
           const col = i % cols;
-          const row = Math.floor(i / cols) % rows;
+          const row = Math.floor(i / cols);
           const x = PAD + col * (podW + GAP);
           const y = PAD + row * (podH + GAP);
           store.updateFlightPod(workspaceId, allPods[i].id, {
@@ -690,25 +691,21 @@ const WorkspaceFlightView = React.memo(function WorkspaceFlightView({
   const handleCanvasMouseDown = useCallback((e: React.MouseEvent) => {
     mouseDownPosRef.current = { x: e.clientX, y: e.clientY };
   }, []);
-  const handleCanvasClick = useCallback((e: React.MouseEvent) => {
+  /** Show the frosted glass folder picker menu on double-click or right-click */
+  const openCanvasMenu = useCallback((e: React.MouseEvent) => {
+    if ((e.target as HTMLElement).closest("[data-flight-pod]")) return;
+    if ((e.target as HTMLElement).closest("[data-focus-snap-item]")) return;
+    if ((e.target as HTMLElement).closest("[data-focus-scroller]")) return;
     if (e.metaKey || e.ctrlKey || e.altKey || e.shiftKey) return;
     // Ignore if mouse moved (was a drag)
-    if (mouseDownPosRef.current) {
+    if (e.type === "dblclick" && mouseDownPosRef.current) {
       const dx = e.clientX - mouseDownPosRef.current.x;
       const dy = e.clientY - mouseDownPosRef.current.y;
-      if (dx * dx + dy * dy > 25) return; // >5px movement = drag
+      if (dx * dx + dy * dy > 25) return;
     }
-    if ((e.target as HTMLElement).closest("[data-flight-pod]")) return;
-    if ((e.target as HTMLElement).closest("[data-focus-snap-item]")) return;
-    if ((e.target as HTMLElement).closest("[data-focus-scroller]")) return;
     e.preventDefault();
 
-    // Single click: directly add a Claude pod for the workspace's first path
     const store = useWorkspaceStore.getState();
-    const ws = store.workspaces.find((w) => w.id === workspaceId);
-    const cwd = ws?.paths?.[0];
-    if (!cwd) return;
-
     const vp = store.flightLayouts[workspaceId]?.viewport;
     if (!vp) return;
     const rect = containerRef.current?.getBoundingClientRect();
@@ -724,42 +721,8 @@ const WorkspaceFlightView = React.memo(function WorkspaceFlightView({
       canvasX = (cx - vp.panX) / vp.zoom;
       canvasY = (cy - vp.panY) / vp.zoom;
     }
-
-    const p = computeSnapPlacement(canvasX, canvasY, FLIGHT_DEFAULT_CLAUDE_WIDTH, FLIGHT_DEFAULT_CLAUDE_HEIGHT);
-    store.addFlightPodAt(workspaceId, "claude", p.x, p.y, p.w, p.h, cwd);
-  }, [workspaceId, computeSnapPlacement]);
-
-  const handleCanvasRightClick = useCallback((e: React.MouseEvent) => {
-    if ((e.target as HTMLElement).closest("[data-flight-pod]")) return;
-    if ((e.target as HTMLElement).closest("[data-focus-snap-item]")) return;
-    if ((e.target as HTMLElement).closest("[data-focus-scroller]")) return;
-    e.preventDefault();
-
-    // Right click: directly add a terminal pod for the workspace's first path
-    const store = useWorkspaceStore.getState();
-    const ws = store.workspaces.find((w) => w.id === workspaceId);
-    const cwd = ws?.paths?.[0];
-    if (!cwd) return;
-
-    const vp = store.flightLayouts[workspaceId]?.viewport;
-    if (!vp) return;
-    const rect = containerRef.current?.getBoundingClientRect();
-    if (!rect) return;
-    const parentZoom = rect.width / (containerRef.current?.offsetWidth ?? rect.width);
-    const cx = (e.clientX - rect.left) / parentZoom;
-    const cy = (e.clientY - rect.top) / parentZoom;
-    let canvasX: number, canvasY: number;
-    if (vp.zoom >= 1.0) {
-      canvasX = cx / vp.zoom - vp.panX;
-      canvasY = cy / vp.zoom - vp.panY;
-    } else {
-      canvasX = (cx - vp.panX) / vp.zoom;
-      canvasY = (cy - vp.panY) / vp.zoom;
-    }
-
-    const p = computeSnapPlacement(canvasX, canvasY, FLIGHT_DEFAULT_TERMINAL_WIDTH, FLIGHT_DEFAULT_TERMINAL_HEIGHT);
-    store.addFlightPodAt(workspaceId, "terminal", p.x, p.y, p.w, p.h, cwd);
-  }, [workspaceId, computeSnapPlacement]);
+    setContextMenu({ screenX: e.clientX, screenY: e.clientY, canvasX, canvasY });
+  }, [workspaceId]);
 
   // Close popup when clicking outside
   useEffect(() => {
@@ -781,8 +744,8 @@ const WorkspaceFlightView = React.memo(function WorkspaceFlightView({
       data-flight-canvas=""
       style={{ ...canvasStyles.canvas, display: isActive ? "flex" : "none" }}
       onMouseDown={handleCanvasMouseDown}
-      onContextMenu={handleCanvasRightClick}
-      onDoubleClick={handleCanvasClick}
+      onContextMenu={openCanvasMenu}
+      onDoubleClick={openCanvasMenu}
     >
       <style>{`
         [data-flight-canvas]::after {
@@ -882,6 +845,16 @@ const WorkspaceFlightView = React.memo(function WorkspaceFlightView({
                 const p2 = computeSnapPlacement(contextMenu.canvasX, contextMenu.canvasY, FLIGHT_DEFAULT_CLAUDE_WIDTH, FLIGHT_DEFAULT_CLAUDE_HEIGHT);
                 addFlightPodAt(workspaceId, "claude", p2.x, p2.y, p2.w, p2.h, p);
                 setContextMenu(null);
+                // In focus mode, relayout the grid to fit the new pod
+                if (focusModeRef.current) {
+                  setTimeout(() => {
+                    const pods = useWorkspaceStore.getState().flightLayouts[workspaceId]?.pods ?? [];
+                    if (pods.length > 0) {
+                      const newest = pods[pods.length - 1];
+                      navigateToRef.current?.(newest.id);
+                    }
+                  }, 0);
+                }
               }}
             >
               <svg width="11" height="11" viewBox="-2 -1 28 26" fill="none" style={{ flexShrink: 0 }}>
@@ -902,6 +875,16 @@ const WorkspaceFlightView = React.memo(function WorkspaceFlightView({
                 const p2 = computeSnapPlacement(contextMenu.canvasX, contextMenu.canvasY, FLIGHT_DEFAULT_TERMINAL_WIDTH, FLIGHT_DEFAULT_TERMINAL_HEIGHT);
                 addFlightPodAt(workspaceId, "terminal", p2.x, p2.y, p2.w, p2.h, p);
                 setContextMenu(null);
+                // In focus mode, relayout the grid to fit the new pod
+                if (focusModeRef.current) {
+                  setTimeout(() => {
+                    const pods = useWorkspaceStore.getState().flightLayouts[workspaceId]?.pods ?? [];
+                    if (pods.length > 0) {
+                      const newest = pods[pods.length - 1];
+                      navigateToRef.current?.(newest.id);
+                    }
+                  }, 0);
+                }
               }}
             >
               <svg width="12" height="12" viewBox="0 0 16 16" fill="none" style={{ flexShrink: 0 }}>

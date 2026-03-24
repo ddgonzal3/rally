@@ -4,6 +4,7 @@ import { Terminal } from "./Terminal";
 import { ClaudeTerminalWrapper } from "./ClaudeTerminalWrapper";
 import { CLAUDE_PATH } from "./FileIcons";
 import { showContextMenu } from "../lib/contextMenu";
+import { FlightPodFooter } from "./FlightPodFooter";
 import type { FlightPod as FlightPodType } from "../lib/types";
 import {
   FLIGHT_MIN_CLAUDE_WIDTH,
@@ -380,11 +381,18 @@ export const FlightPod = React.memo(function FlightPod({
     if (mainTerminal) mainTerminal.focus();
   }, [zoom, workspaceId, podId, podType, claudeLaunched, podPtyId]);
 
+  const hasScriptFooter = useWorkspaceStore((s) => {
+    const config = s.rallyConfigs[podCwd];
+    return !!(config?.statusBar && config.statusBar.length > 0);
+  });
+
   if (!podType) return null;
 
   const isClaudePod = podType === "claude";
   const HEADER_H = 32;
-  const FOOTER_H = isClaudePod ? 24 : 0;
+  const SHELL_FOOTER_H = isClaudePod ? 24 : 0;
+  const SCRIPT_FOOTER_H = isClaudePod && hasScriptFooter ? 28 : 0;
+  const FOOTER_H = SHELL_FOOTER_H + SCRIPT_FOOTER_H;
   const terminalBodyHeight = isClaudePod && shellExpanded
     ? podHeight - HEADER_H - FOOTER_H - shellHeight
     : podHeight - HEADER_H - FOOTER_H;
@@ -592,6 +600,9 @@ export const FlightPod = React.memo(function FlightPod({
           </div>
         </>
       )}
+
+      {/* Script footer — shows rally.json statusBar scripts for this pod's repo */}
+      {isClaudePod && <FlightPodFooter repoPath={podCwd} />}
 
       {/* Invisible resize edges and corners */}
       {([

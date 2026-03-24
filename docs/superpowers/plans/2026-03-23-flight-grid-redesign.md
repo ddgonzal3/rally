@@ -1208,7 +1208,187 @@ git commit -m "refactor(flight): remove old flight layout/pod/preset code from s
 
 ---
 
-## Task 10: Integration Test — Build and Run
+## Task 10: Cmd+1-9 Column Focus Shortcuts
+
+**Files:**
+- Modify: `src/stores/workspaceStore.ts` — add `focusedFlightColumn` state and `focusFlightColumn` action
+- Modify: `src/lib/types.ts` — add `focusedColumnIndex` to `FlightGrid`
+- Modify: `src/components/FlightGrid.tsx` — render focused column expanded, others collapsed
+- Modify: `src/App.tsx` — add keydown listener for Cmd+1-9
+- Modify: `src/components/Terminal.tsx` — let Cmd+1-9 bubble up from xterm
+
+Behavior:
+- **Cmd+N** (N = 1-9): If column N exists, focus it (expand to full width, collapse others to just the column header). If column N doesn't exist but repo N does in `workspace.paths`, create a new column with one row. If N > number of repos, no-op.
+- **Cmd+0** or **Escape**: Return to default view (all columns equal width). This is the "go back to default view" the user wants.
+- A focused column shows all its rows at full width. Collapsed columns show only their header (clickable to focus them).
+
+- [ ] **Step 1: Add focusedColumnIndex to FlightGrid type**
+
+```typescript
+export interface FlightGrid {
+  columns: FlightColumn[];
+  /** Index of focused column, or null for default (all visible) */
+  focusedColumnIndex: number | null;
+}
+```
+
+Update `getOrCreateFlightGrid` to initialize `focusedColumnIndex: null`.
+
+- [ ] **Step 2: Add focusFlightColumn store action**
+
+```typescript
+focusFlightColumn: (workspaceId: string, columnIndex: number | null) => void;
+```
+
+Implementation:
+```typescript
+focusFlightColumn: (workspaceId: string, columnIndex: number | null) => {
+  const grid = get().flightGrids[workspaceId];
+  if (!grid) return;
+
+  if (columnIndex === null) {
+    // Return to default view
+    set((s) => ({
+      flightGrids: {
+        ...s.flightGrids,
+        [workspaceId]: { ...grid, focusedColumnIndex: null },
+      },
+    }));
+    return;
+  }
+
+  // If column exists, focus it
+  if (columnIndex < grid.columns.length) {
+    set((s) => ({
+      flightGrids: {
+        ...s.flightGrids,
+        [workspaceId]: { ...grid, focusedColumnIndex: columnIndex },
+      },
+    }));
+    return;
+  }
+
+  // If column doesn't exist but repo does, create column with one row and focus it
+  const ws = get().workspaces.find((w) => w.id === workspaceId);
+  const paths = ws?.paths ?? [];
+  if (columnIndex < paths.length) {
+    const newCol: FlightColumn = {
+      id: crypto.randomUUID(),
+      repoPath: paths[columnIndex],
+      rows: [{ id: crypto.randomUUID() }],
+      activeDrawer: null,
+    };
+    set((s) => ({
+      flightGrids: {
+        ...s.flightGrids,
+        [workspaceId]: {
+          ...grid,
+          columns: [...grid.columns, newCol],
+          focusedColumnIndex: columnIndex,
+        },
+      },
+    }));
+  }
+},
+```
+
+- [ ] **Step 3: Add Cmd+1-9 keydown handler in App.tsx**
+
+In the flight mode keydown effect:
+```typescript
+useEffect(() => {
+  if (!isFlightMode || !activeWorkspaceId) return;
+  const handler = (e: KeyboardEvent) => {
+    if (!e.metaKey) return;
+    const digit = parseInt(e.key, 10);
+    if (digit >= 1 && digit <= 9) {
+      e.preventDefault();
+      focusFlightColumn(activeWorkspaceId, digit - 1);  // 0-indexed
+    } else if (e.key === "0" || e.key === "Escape") {
+      e.preventDefault();
+      focusFlightColumn(activeWorkspaceId, null);  // default view
+    }
+  };
+  document.addEventListener("keydown", handler);
+  return () => document.removeEventListener("keydown", handler);
+}, [isFlightMode, activeWorkspaceId]);
+```
+
+- [ ] **Step 4: Let Cmd+1-9 bubble from xterm**
+
+In `Terminal.tsx`'s `customKeyEventHandler`, add alongside the existing Cmd+W and Cmd+/ bubbling:
+```typescript
+// Let Cmd+1-9 and Cmd+0 bubble for flight grid column focus
+if (ev.key >= "0" && ev.key <= "9") {
+  return false;
+}
+```
+
+- [ ] **Step 5: Update FlightGrid rendering for focused column**
+
+In `FlightGrid.tsx`, when `focusedColumnIndex` is set:
+- The focused column gets `flex: 1` (full width)
+- Other columns render as collapsed headers only (28px wide strip showing repo name vertically, clickable to focus)
+
+```typescript
+const focusedIndex = grid.focusedColumnIndex;
+
+return (
+  <div style={{ flex: 1, display: "flex", minWidth: 0, minHeight: 0, overflow: "hidden" }}>
+    {grid.columns.map((col, i) => {
+      if (focusedIndex !== null && i !== focusedIndex) {
+        // Collapsed column — just a clickable header strip
+        return (
+          <div
+            key={col.id}
+            onClick={() => focusFlightColumn(activeWorkspaceId, i)}
+            style={{
+              width: 28,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              borderRight: "1px solid var(--border)",
+              cursor: "pointer",
+              writingMode: "vertical-rl",
+              textOrientation: "mixed",
+              fontSize: 11,
+              color: "var(--text-dim)",
+              userSelect: "none",
+              flexShrink: 0,
+            }}
+          >
+            {col.repoPath.split("/").pop()}
+          </div>
+        );
+      }
+      return (
+        <FlightColumnView
+          key={col.id}
+          workspaceId={activeWorkspaceId}
+          column={col}
+          isLast={focusedIndex !== null || i === grid.columns.length - 1}
+        />
+      );
+    })}
+  </div>
+);
+```
+
+- [ ] **Step 6: Verify types compile**
+
+Run: `./scripts/check.sh`
+Expected: PASS
+
+- [ ] **Step 7: Commit**
+
+```bash
+git add -A
+git commit -m "feat(flight): add Cmd+1-9 column focus shortcuts with collapsed sidebar columns"
+```
+
+---
+
+## Task 11: Integration Test — Build and Run
 
 - [ ] **Step 1: Full type check**
 
@@ -1236,6 +1416,12 @@ Test checklist:
 - [ ] Drawer shows script output (xterm)
 - [ ] Script status dots are synced across all rows in a column
 - [ ] Switching to dev mode and back preserves grid state
+- [ ] Cmd+1 focuses first column (others collapse to thin strips)
+- [ ] Cmd+2 focuses second column
+- [ ] Cmd+3 on a 2-repo workspace with 3 paths creates column 3 and focuses it
+- [ ] Cmd+0 returns to default view (all columns equal width)
+- [ ] Clicking a collapsed column strip focuses it
+- [ ] Cmd+1-9 works even when an xterm terminal has focus
 
 - [ ] **Step 4: Commit any fixes**
 

@@ -2129,7 +2129,7 @@ export function App() {
               <PaneLayout />
               <BuildStatusDrawer />
             </div>
-            <BuildStatusBar />
+            {!isFlightMode && <BuildStatusBar />}
           </div>
         </div>
         <UnifiedGitPanel />
