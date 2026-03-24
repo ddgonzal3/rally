@@ -392,7 +392,7 @@ export const FlightPod = React.memo(function FlightPod({
   if (!podLayoutRoot) return null;
 
   const isClaudePod = podType === "claude";
-  const SHELL_FOOTER_H = isClaudePod ? 29 : 0;
+  const SHELL_FOOTER_H = isClaudePod && shellExpanded ? 29 : 0;
   const SCRIPT_FOOTER_H = isClaudePod && hasScriptFooter ? 28 : 0;
   const FOOTER_H = SHELL_FOOTER_H + SCRIPT_FOOTER_H;
   const terminalBodyHeight = isClaudePod && shellExpanded
@@ -490,8 +490,8 @@ export const FlightPod = React.memo(function FlightPod({
         />
       </div>
 
-      {/* Shell tab bar + expandable panel (Claude pods only) */}
-      {isClaudePod && (
+      {/* Shell tab bar + expandable panel (Claude pods only, hidden when collapsed) */}
+      {isClaudePod && shellExpanded && (
         <>
           {/* Shell tab bar — matches Claude tab bar style */}
           <div
@@ -618,7 +618,7 @@ export const FlightPod = React.memo(function FlightPod({
       )}
 
       {/* Script footer — shows rally.json statusBar scripts for this pod's repo */}
-      {isClaudePod && <FlightPodFooter repoPath={podCwd} />}
+      {isClaudePod && <FlightPodFooter repoPath={podCwd} onOpenTerminal={!shellExpanded ? () => togglePodShell(workspaceId, podId) : undefined} />}
 
       {/* Invisible resize edges and corners */}
       {([

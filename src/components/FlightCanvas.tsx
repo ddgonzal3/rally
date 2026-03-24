@@ -121,6 +121,9 @@ const WorkspaceFlightView = React.memo(function WorkspaceFlightView({
       if (wsId !== workspaceId) return;
       setFocusMode(true);
       focusModeRef.current = true;
+      // Reset visible count so the clicked pod's column is included
+      setFocusVisibleCount(null);
+      focusVisibleCountRef.current = null;
       setTimeout(() => navigateToRef.current?.(podId), 0);
     };
     window.addEventListener("flight-focus-pod", handler);
