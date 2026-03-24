@@ -35,6 +35,9 @@ const WorkspaceFlightView = React.memo(function WorkspaceFlightView({
   const [autoFocus, setAutoFocus] = useState(true);
   const autoFocusRef = useRef(autoFocus);
   autoFocusRef.current = autoFocus;
+  const [focusVisibleCount, setFocusVisibleCount] = useState<number | null>(null);
+  const focusVisibleCountRef = useRef(focusVisibleCount);
+  focusVisibleCountRef.current = focusVisibleCount;
   const [marquee, setMarquee] = useState<{ sx1: number; sy1: number; sx2: number; sy2: number } | null>(null);
 
   // Stable selectors — primitives only, no new objects
@@ -392,49 +395,48 @@ const WorkspaceFlightView = React.memo(function WorkspaceFlightView({
         const HUD_HEIGHT = 35;
         const GAP = 8;
         const PAD = 12;
-        const allPodsCount = (store.flightLayouts[workspaceId]?.pods ?? []).length;
-        // Auto-pick grid dimensions based on container aspect ratio and pod count.
-        // For wide screens, prefer more columns; for tall screens, prefer more rows.
+        // Use store order (creation order) — stable across repeated relayouts
+        const allPods = [...(store.flightLayouts[workspaceId]?.pods ?? [])];
+
+        // Determine how many pods to show: focusVisibleCount or all
+        const visibleCount = focusVisibleCountRef.current
+          ? Math.min(focusVisibleCountRef.current, allPods.length)
+          : allPods.length;
+        const visiblePods = allPods.slice(0, visibleCount);
+        const hiddenPods = allPods.slice(visibleCount);
+
+        // Auto-pick grid dimensions based on container aspect ratio
         const availW = containerW - PAD * 2;
         const availH = containerH - HUD_HEIGHT - PAD * 2;
         let bestCols = 1;
         let bestScore = -Infinity;
-        for (let c = 1; c <= allPodsCount; c++) {
-          const r = Math.ceil(allPodsCount / c);
+        for (let c = 1; c <= visibleCount; c++) {
+          const r = Math.ceil(visibleCount / c);
           const cellW = (availW - GAP * (c - 1)) / c;
           const cellH = (availH - GAP * (r - 1)) / r;
-          if (cellW < 200 || cellH < 150) continue; // too small to be usable
-          // Score: maximize the smaller dimension (area is less important than readability)
+          if (cellW < 200 || cellH < 150) continue;
           const score = Math.min(cellW, cellH);
           if (score > bestScore) { bestScore = score; bestCols = c; }
         }
         const cols = bestCols;
-        const rows = Math.ceil(allPodsCount / cols);
+        const rows = Math.ceil(visibleCount / cols);
         const podW = Math.floor((containerW - PAD * 2 - GAP * (cols - 1)) / cols);
         const podH = Math.floor((containerH - HUD_HEIGHT - PAD * 2 - GAP * (rows - 1)) / rows);
-        const allPods = [...(store.flightLayouts[workspaceId]?.pods ?? [])];
 
-        // Sort pods by spatial position so the grid preserves where the user
-        // placed them. Use the target row height as the bucket size so pods
-        // on the same visual row stay together.
-        const rowBucket = podH > 0 ? podH * 0.6 : 200;
-        allPods.sort((a, b) => {
-          const centerAY = a.y + a.height / 2;
-          const centerBY = b.y + b.height / 2;
-          const rowA = Math.floor(centerAY / rowBucket);
-          const rowB = Math.floor(centerBY / rowBucket);
-          if (rowA !== rowB) return rowA - rowB;
-          return (a.x + a.width / 2) - (b.x + b.width / 2);
-        });
-
-        // Lay out in a grid: columns then rows
-        for (let i = 0; i < allPods.length; i++) {
+        // Lay out visible pods in the grid
+        for (let i = 0; i < visiblePods.length; i++) {
           const col = i % cols;
           const row = Math.floor(i / cols);
           const x = PAD + col * (podW + GAP);
           const y = PAD + row * (podH + GAP);
-          store.updateFlightPod(workspaceId, allPods[i].id, {
+          store.updateFlightPod(workspaceId, visiblePods[i].id, {
             x, y, width: podW, height: podH,
+          } as any);
+        }
+        // Move hidden pods off-screen
+        for (const hp of hiddenPods) {
+          store.updateFlightPod(workspaceId, hp.id, {
+            x: -10000, y: -10000,
           } as any);
         }
 
@@ -547,73 +549,41 @@ const WorkspaceFlightView = React.memo(function WorkspaceFlightView({
         }
       }
 
-      // Cmd+0: zoom to fit ALL pods
+      // Cmd+0: show all pods in focus mode (reset visible count)
       if (e.metaKey && e.key === "0" && !e.shiftKey) {
         e.preventDefault();
-        const store = useWorkspaceStore.getState();
-        const pods = store.flightLayouts[workspaceId]?.pods ?? [];
-        if (pods.length === 0) return;
-        // Compute bounding box of all pods
-        let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-        for (const p of pods) {
-          minX = Math.min(minX, p.x);
-          minY = Math.min(minY, p.y);
-          maxX = Math.max(maxX, p.x + p.width);
-          maxY = Math.max(maxY, p.y + p.height);
+        if (!focusModeRef.current) {
+          setFocusMode(true);
+          focusModeRef.current = true;
         }
-        const totalW = maxX - minX;
-        const totalH = maxY - minY;
-        const rect = el.getBoundingClientRect();
-        const parentZoom = rect.width / el.offsetWidth;
-        const containerW = rect.width / parentZoom;
-        const containerH = rect.height / parentZoom;
-        const fitZoom = Math.min(containerW * 0.9 / totalW, containerH * 0.9 / totalH, 1.0);
-        const padX = (containerW - totalW * fitZoom) / 2;
-        const padY = (containerH - totalH * fitZoom) / 2;
-        let panX: number, panY: number;
-        if (fitZoom >= 1.0) {
-          panX = padX / fitZoom - minX;
-          panY = padY / fitZoom - minY;
-        } else {
-          panX = padX - minX * fitZoom;
-          panY = padY - minY * fitZoom;
-        }
-        store.setFlightViewport(workspaceId, { panX, panY, zoom: fitZoom });
+        setFocusVisibleCount(null);
+        focusVisibleCountRef.current = null;
+        setTimeout(() => {
+          const pods = useWorkspaceStore.getState().flightLayouts[workspaceId]?.pods ?? [];
+          if (pods.length > 0) navigateToRef.current?.(pods[0].id);
+        }, 0);
         return;
       }
 
-      // Cmd+number: set columns, Cmd+Shift+number: set rows (focus mode)
-      if (focusModeRef.current && e.metaKey && !e.altKey && !e.ctrlKey) {
+
+      // Cmd+number: show N pods in focus mode, Cmd+0: show all
+      if (e.metaKey && !e.altKey && !e.ctrlKey && !e.shiftKey) {
         const numMap: Record<string, number> = { "1": 1, "2": 2, "3": 3, "4": 4, "5": 5, "6": 6, "7": 7, "8": 8, "9": 9 };
-        // Shift+number produces special chars, so check both key and code
         const digit = numMap[e.key] ?? numMap[e.code?.replace("Digit", "")];
         if (digit) {
           e.preventDefault();
-          if (e.shiftKey) {
-            // Cmd+Shift+N: set rows
-            setFocusRows(digit);
-          } else {
-            // Cmd+N: set columns (capped to pod count in render)
-            const scroller = el.querySelector("[data-focus-scroller]") as HTMLElement | null;
-            const items = scroller?.querySelectorAll("[data-focus-snap-item]");
-            let leftmostIndex = 0;
-            if (scroller && items && items.length > 0) {
-              const scrollLeft = scroller.scrollLeft;
-              let best = Infinity;
-              items.forEach((item, i) => {
-                const dist = Math.abs((item as HTMLElement).offsetLeft - 4 - scrollLeft);
-                if (dist < best) { best = dist; leftmostIndex = i; }
-              });
-            }
-            setFocusColumns(digit);
-            requestAnimationFrame(() => {
-              if (!scroller) return;
-              const newItems = scroller.querySelectorAll("[data-focus-snap-item]");
-              if (newItems[leftmostIndex]) {
-                scroller.scrollLeft = (newItems[leftmostIndex] as HTMLElement).offsetLeft - 4;
-              }
-            });
+          // Enter focus mode if not already
+          if (!focusModeRef.current) {
+            setFocusMode(true);
+            focusModeRef.current = true;
           }
+          setFocusVisibleCount(digit);
+          focusVisibleCountRef.current = digit;
+          // Trigger relayout
+          setTimeout(() => {
+            const pods = useWorkspaceStore.getState().flightLayouts[workspaceId]?.pods ?? [];
+            if (pods.length > 0) navigateToRef.current?.(pods[0].id);
+          }, 0);
           return;
         }
       }

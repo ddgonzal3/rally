@@ -561,6 +561,10 @@ export function Terminal({ cwd, command, initialInput, ptyId: existingPtyId, loc
       if (ev.shiftKey && ev.key.toLowerCase() === "c") {
         return false;
       }
+      // Let Cmd+0-9 bubble for flight mode focus visible count
+      if (ev.key >= "0" && ev.key <= "9") {
+        return false;
+      }
       return true;
     });
 
