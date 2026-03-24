@@ -119,7 +119,7 @@ const styles: Record<string, React.CSSProperties> = {
     flexDirection: "column",
     alignItems: "center",
     justifyContent: "center",
-    paddingBottom: "21%",
+    paddingBottom: "5%",
     background: "var(--bg-app)",
     minHeight: 0,
     minWidth: 0,

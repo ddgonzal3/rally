@@ -148,7 +148,7 @@ function PodScriptDot({
 }
 
 /** Script footer bar for a flight pod — shows statusBar scripts for the pod's repo. */
-export function FlightPodFooter({ repoPath }: { repoPath: string }) {
+export function FlightPodFooter({ repoPath, onOpenTerminal }: { repoPath: string; onOpenTerminal?: () => void }) {
   const rallyConfig = useWorkspaceStore((s) => s.rallyConfigs[repoPath]);
   const loadRallyConfig = useWorkspaceStore((s) => s.loadRallyConfig);
   const [scriptCache, setScriptCache] = useState<ScriptEntry[]>([]);
@@ -202,6 +202,35 @@ export function FlightPodFooter({ repoPath }: { repoPath: string }) {
           scriptEntry={scriptCache.find((e) => e.name === scriptName)}
         />
       ))}
+      {onOpenTerminal && (
+        <>
+          <div style={{ flex: 1 }} />
+          <button
+            className="tab-action"
+            onClick={(e) => { e.stopPropagation(); onOpenTerminal(); }}
+            title="Open terminal (Ctrl+`)"
+            style={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              width: 20,
+              height: 20,
+              background: "none",
+              border: "none",
+              color: "var(--text-dim)",
+              cursor: "pointer",
+              borderRadius: 4,
+              padding: 0,
+              flexShrink: 0,
+            }}
+          >
+            <svg width="13" height="13" viewBox="0 0 16 16" fill="none">
+              <path d="M4 5l3 3-3 3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+              <line x1="9" y1="11" x2="13" y2="11" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+            </svg>
+          </button>
+        </>
+      )}
     </div>
   );
 }
