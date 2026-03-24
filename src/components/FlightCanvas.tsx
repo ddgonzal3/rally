@@ -34,7 +34,11 @@ const WorkspaceFlightView = React.memo(function WorkspaceFlightView({
   const [gridWrapped, setGridWrapped] = useState(false);
   const gridWrappedRef = useRef(gridWrapped);
   gridWrappedRef.current = gridWrapped;
+  const [focusStartColumn, setFocusStartColumn] = useState(0);
+  const focusStartColumnRef = useRef(focusStartColumn);
+  focusStartColumnRef.current = focusStartColumn;
   const [marquee, setMarquee] = useState<{ sx1: number; sy1: number; sx2: number; sy2: number } | null>(null);
+  const skipTransitionRef = useRef(false);
 
   // Stable selectors — primitives only, no new objects
   const panX = useWorkspaceStore((s) => s.flightLayouts[workspaceId]?.viewport?.panX ?? 0);
@@ -121,10 +125,22 @@ const WorkspaceFlightView = React.memo(function WorkspaceFlightView({
       if (wsId !== workspaceId) return;
       setFocusMode(true);
       focusModeRef.current = true;
-      // Reset visible count so the clicked pod's column is included
-      setFocusVisibleCount(null);
-      focusVisibleCountRef.current = null;
-      setTimeout(() => navigateToRef.current?.(podId), 0);
+      // Pods are already positioned from the last focus layout —
+      // just snap viewport to show the clicked pod. No relayout needed.
+      // Suppress the CSS transition so it's an instant snap, not an animated slide.
+      skipTransitionRef.current = true;
+      requestAnimationFrame(() => { skipTransitionRef.current = false; });
+      const store = useWorkspaceStore.getState();
+      const pod = store.flightLayouts[workspaceId]?.pods.find((p) => p.id === podId);
+      if (pod) {
+        const PAD = 12;
+        store.setFlightViewport(workspaceId, {
+          panX: PAD - pod.x,
+          panY: 0,
+          zoom: 1.0,
+        });
+        store.bringPodToFront(workspaceId, podId);
+      }
     };
     window.addEventListener("flight-focus-pod", handler);
     return () => window.removeEventListener("flight-focus-pod", handler);
@@ -152,34 +168,34 @@ const WorkspaceFlightView = React.memo(function WorkspaceFlightView({
     };
     el.addEventListener("mousedown", clickTracker, true); // capture phase
 
-    let focusLocked = false;
-    let focusPrevAbsDelta = 0;
+    let focusNavCooldown = 0;
 
     const wheelHandler = (e: WheelEvent) => {
-      // Focus mode: intercept scroll, navigate pods via viewport panning
+      // Focus mode: intercept horizontal scroll only, navigate one pod at a time
+      // Vertical scroll passes through to terminals for scrollback
       if (focusModeRef.current && !e.altKey && !e.ctrlKey) {
-        e.preventDefault();
-        e.stopImmediatePropagation();
+        const absDeltaX = Math.abs(e.deltaX);
+        const absDeltaY = Math.abs(e.deltaY);
 
-        const absDelta = Math.abs(e.deltaX);
-        if (absDelta < 1) return;
-        if (absDelta < Math.abs(e.deltaY)) return;
+        // Only intercept if clearly horizontal (not vertical terminal scroll)
+        if (absDeltaX > 2 && absDeltaX > absDeltaY * 2) {
+          e.preventDefault();
+          e.stopImmediatePropagation();
 
-        if (focusLocked) {
-          const isRampUp = absDelta > focusPrevAbsDelta && absDelta > 1;
-          focusPrevAbsDelta = absDelta;
-          if (!isRampUp) return;
-          focusLocked = false;
+          const now = performance.now();
+          if (now < focusNavCooldown) return;
+
+          // Natural scroll direction: swipe right (deltaX < 0) = go right
+          const dir: "left" | "right" = e.deltaX < 0 ? "right" : "left";
+          const target = findNeighborPod(dir);
+          if (target) {
+            focusNavCooldown = now + 400;
+            navigateToRef.current?.(target);
+          }
+          return;
         }
 
-        focusPrevAbsDelta = absDelta;
-
-        const dir: "left" | "right" = e.deltaX > 0 ? "right" : "left";
-        const target = findNeighborPod(dir);
-        if (target) {
-          focusLocked = true;
-          navigateToRef.current?.(target);
-        }
+        // Vertical scroll: let it pass through to the terminal
         return;
       }
       // Option+scroll or pinch = zoom — exits focus mode
@@ -419,38 +435,52 @@ const WorkspaceFlightView = React.memo(function WorkspaceFlightView({
           repoColumns.push({ repoPath: "__orphans__", pods: orphans });
         }
 
-        // Determine how many columns to show: focusVisibleCount or all
+        // All columns get uniform sizing based on how many fit in the viewport.
+        // Navigation works by panning the viewport, not by reorganizing pods.
         const totalColumns = repoColumns.length;
-        const visibleColCount = focusVisibleCountRef.current
+        const viewportCols = focusVisibleCountRef.current
           ? Math.min(focusVisibleCountRef.current, totalColumns)
           : totalColumns;
-        const visibleColumns = repoColumns.slice(0, visibleColCount);
-        const hiddenColumns = repoColumns.slice(visibleColCount);
 
-        // Lay out columns — single row or wrapped into grid (Cmd+G toggle)
         const availW = containerW - PAD * 2;
         const availH = containerH - HUD_HEIGHT - PAD * 2;
 
+        // Grid wrapping only when all columns fit in the viewport
         let gridCols: number;
         let gridRows: number;
-        if (gridWrappedRef.current && visibleColCount > 2) {
-          gridCols = Math.ceil(visibleColCount / 2);
+        const allVisible = viewportCols >= totalColumns;
+        if (gridWrappedRef.current && allVisible && totalColumns > 2) {
+          gridCols = Math.ceil(totalColumns / 2);
           gridRows = 2;
         } else {
-          gridCols = visibleColCount;
+          gridCols = viewportCols; // Size columns to fit this many in viewport
           gridRows = 1;
         }
+
         const colW = Math.floor((availW - GAP * (gridCols - 1)) / Math.max(gridCols, 1));
         const gridRowH = Math.floor((availH - GAP * (gridRows - 1)) / Math.max(gridRows, 1));
 
-        // Lay out visible columns in the grid
-        for (let colIdx = 0; colIdx < visibleColumns.length; colIdx++) {
-          const column = visibleColumns[colIdx];
-          const gridCol = colIdx % gridCols;
-          const gridRow = Math.floor(colIdx / gridCols);
-          const colX = PAD + gridCol * (colW + GAP);
-          const colY = gridRow * (gridRowH + GAP);
-          const colH = gridRowH;
+        // Lay out ALL columns at the same size
+        for (let colIdx = 0; colIdx < repoColumns.length; colIdx++) {
+          const column = repoColumns[colIdx];
+          let colX: number;
+          let colY: number;
+          let colH: number;
+
+          if (allVisible && gridWrappedRef.current && totalColumns > 2) {
+            // Grid layout when all columns visible + grid wrapping on
+            const gc = colIdx % gridCols;
+            const gr = Math.floor(colIdx / gridCols);
+            colX = PAD + gc * (colW + GAP);
+            colY = gr * (gridRowH + GAP);
+            colH = gridRowH;
+          } else {
+            // Horizontal row — all columns same width, extending beyond viewport
+            colX = PAD + colIdx * (colW + GAP);
+            colY = 0;
+            colH = gridRowH;
+          }
+
           const podCount = column.pods.length;
           const podH = Math.floor((colH - GAP * (podCount - 1)) / Math.max(podCount, 1));
 
@@ -462,23 +492,19 @@ const WorkspaceFlightView = React.memo(function WorkspaceFlightView({
           }
         }
 
-        // Place hidden columns after the visible grid — visible when zoomed out
-        const hiddenStartX = PAD + gridCols * (colW + GAP) + GAP * 2;
-        for (let hIdx = 0; hIdx < hiddenColumns.length; hIdx++) {
-          const col = hiddenColumns[hIdx];
-          const hColX = hiddenStartX + hIdx * (colW + GAP);
-          const hPodCount = col.pods.length;
-          const hPodH = Math.floor((gridRowH - GAP * (hPodCount - 1)) / Math.max(hPodCount, 1));
-          for (let rowIdx = 0; rowIdx < col.pods.length; rowIdx++) {
-            const y = PAD + rowIdx * (hPodH + GAP);
-            store.updateFlightPod(workspaceId, col.pods[rowIdx].id, {
-              x: hColX, y, width: colW, height: hPodH,
-            } as any);
-          }
+        // Pan viewport to center the target pod's column
+        if (allVisible && !(gridWrappedRef.current && totalColumns > 2)) {
+          // All columns fit in viewport — no panning needed
+          store.setFlightViewport(workspaceId, { panX: 0, panY: 0, zoom: 1.0 });
+        } else if (allVisible) {
+          // Grid-wrapped, all visible — no panning needed
+          store.setFlightViewport(workspaceId, { panX: 0, panY: 0, zoom: 1.0 });
+        } else {
+          // Pan to show the target pod's column
+          const targetColIdx = repoColumns.findIndex(col => col.pods.some(p => p.id === podId));
+          const panX = -(targetColIdx * (colW + GAP));
+          store.setFlightViewport(workspaceId, { panX, panY: 0, zoom: 1.0 });
         }
-
-        // Pan to show the first pod (page 0)
-        store.setFlightViewport(workspaceId, { panX: 0, panY: 0, zoom: 1.0 });
       } else {
         // Free mode: fit pod in viewport with minimal padding
         const fitZoom = Math.min(containerW * 0.99 / pod.width, containerH * 0.99 / pod.height, 1.0);
@@ -595,6 +621,8 @@ const WorkspaceFlightView = React.memo(function WorkspaceFlightView({
         }
         setFocusVisibleCount(null);
         focusVisibleCountRef.current = null;
+        setFocusStartColumn(0);
+        focusStartColumnRef.current = 0;
         setTimeout(() => {
           const pods = useWorkspaceStore.getState().flightLayouts[workspaceId]?.pods ?? [];
           if (pods.length > 0) navigateToRef.current?.(pods[0].id);
@@ -632,6 +660,8 @@ const WorkspaceFlightView = React.memo(function WorkspaceFlightView({
           }
           setFocusVisibleCount(digit);
           focusVisibleCountRef.current = digit;
+          setFocusStartColumn(0);
+          focusStartColumnRef.current = 0;
           // Auto-create pods for repos that don't have one yet
           const store2 = useWorkspaceStore.getState();
           const ws2 = store2.workspaces.find((w) => w.id === workspaceId);
@@ -852,7 +882,7 @@ const WorkspaceFlightView = React.memo(function WorkspaceFlightView({
       <div
         style={{
           ...canvasStyles.viewport,
-          transition: focusMode ? "left 0.15s ease-out, top 0.15s ease-out" : "none",
+          transition: focusMode && !skipTransitionRef.current ? "left 0.15s ease-out, top 0.15s ease-out" : "none",
           ...(zoom === 1.0
             ? { left: panX, top: panY }
             : zoom > 1.0
