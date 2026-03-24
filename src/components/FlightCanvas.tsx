@@ -25,13 +25,6 @@ const WorkspaceFlightView = React.memo(function WorkspaceFlightView({
   const focusModeRef = useRef(focusMode);
   focusModeRef.current = focusMode;
   const navigateToRef = useRef<((podId: string) => void) | null>(null);
-  const focusScrollRef = useRef<HTMLDivElement>(null);
-  const [focusColumns, setFocusColumns] = useState(2);
-  const focusColumnsRef = useRef(focusColumns);
-  focusColumnsRef.current = focusColumns;
-  const [focusRows, setFocusRows] = useState(1);
-  const focusRowsRef = useRef(focusRows);
-  focusRowsRef.current = focusRows;
   const [autoFocus, setAutoFocus] = useState(true);
   const autoFocusRef = useRef(autoFocus);
   autoFocusRef.current = autoFocus;
@@ -100,7 +93,7 @@ const WorkspaceFlightView = React.memo(function WorkspaceFlightView({
   }, [workspaceId]);
 
   // Cap columns to number of pods
-  const effectiveColumns = Math.min(focusColumns, podIdList.length || 1);
+  const effectiveColumns = Math.min(2, podIdList.length || 1);
 
   const focusPodWidth = useMemo(() => {
     if (!focusMode || containerSize.w === 0) return undefined;
@@ -114,8 +107,8 @@ const WorkspaceFlightView = React.memo(function WorkspaceFlightView({
     const GAP = 8;
     const PAD = 12;
     const HUD_HEIGHT = 35;
-    return Math.floor((containerSize.h - HUD_HEIGHT - PAD * 2 - GAP * (focusRows - 1)) / focusRows);
-  }, [focusMode, focusRows, containerSize.h]);
+    return Math.floor(containerSize.h - HUD_HEIGHT - PAD * 2);
+  }, [focusMode, containerSize.h]);
 
   useEffect(() => {
     getOrCreateFlightLayout(workspaceId);

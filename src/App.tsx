@@ -1544,7 +1544,18 @@ export function App() {
             const match = pods.find((p) => p.id === lastFocusedFlightPodId);
             if (match) focusedPod = match;
           }
-          s.addFlightPodTab(wsId, focusedPod.id, "claude", focusedPod.cwd);
+          // Add a claude pane to the focused pod's layout
+          const podLayoutId = `flight:${focusedPod.id}`;
+          const podLayout = s.getOrCreatePodLayout(podLayoutId, focusedPod.cwd, "claude");
+          const firstGroupId = Object.keys(podLayout.groups)[0];
+          if (firstGroupId) {
+            s.addPaneToGroup(podLayoutId, firstGroupId, {
+              id: crypto.randomUUID(),
+              type: "claude-launcher",
+              title: "Claude Code",
+              cwd: focusedPod.cwd,
+            });
+          }
         }
       }
       // Cmd+E: toggle file explorer
@@ -2242,111 +2253,33 @@ function ThemeIcon({ t, size = 18 }: { t: ThemeName; size?: number }) {
 function ThemeCycleButton() {
   const theme = useWorkspaceStore((s) => s.theme);
   const setTheme = useWorkspaceStore((s) => s.setTheme);
-  const [open, setOpen] = React.useState(false);
-  const ref = React.useRef<HTMLDivElement>(null);
-  // Fixed order: light (top), dimmed (middle), dark (bottom)
-  const ordered: ThemeName[] = ["light", "dimmed", "dark"];
 
-  React.useEffect(() => {
-    if (!open) return;
-    const handler = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node))
-        setOpen(false);
-    };
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
-  }, [open]);
-
-  const btnStyle: React.CSSProperties = {
-    background: "none",
-    border: "none",
-    cursor: "pointer",
-    width: 32,
-    height: 32,
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    borderRadius: 4,
-    color: "var(--text-secondary)",
-    padding: 0,
+  const toggle = () => {
+    setTheme(theme === "dark" ? "dimmed" : "dark");
   };
 
-  // Split into: items above the current theme, and items below
-  const currentIdx = ordered.indexOf(theme);
-  const above = ordered.slice(0, currentIdx);
-  const below = ordered.slice(currentIdx + 1);
-
   return (
-    <div
-      ref={ref}
-      style={{
-        display: "flex",
-        flexDirection: "column",
-        alignItems: "center",
-        marginBottom: 4,
-      }}
-    >
-      <div
-        style={{
-          display: "flex",
-          flexDirection: "column",
-          alignItems: "center",
-          overflow: "hidden",
-          maxHeight: open ? above.length * 32 : 0,
-          transition: "max-height 0.2s ease",
-        }}
-      >
-        {above.map((t) => (
-          <button
-            key={t}
-            className="activity-btn"
-            style={btnStyle}
-            onClick={() => {
-              setTheme(t);
-              setOpen(false);
-            }}
-            title={t.charAt(0).toUpperCase() + t.slice(1)}
-          >
-            <ThemeIcon t={t} />
-          </button>
-        ))}
-      </div>
+    <div style={{ display: "flex", flexDirection: "column", alignItems: "center", marginBottom: 4 }}>
       <button
         className="activity-btn"
         style={{
-          ...btnStyle,
-          ...(open ? { color: "var(--text-primary)" } : {}),
+          background: "none",
+          border: "none",
+          cursor: "pointer",
+          width: 32,
+          height: 32,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          borderRadius: 4,
+          color: "var(--text-secondary)",
+          padding: 0,
         }}
-        onClick={() => setOpen(!open)}
-        title="Theme"
+        onClick={toggle}
+        title={theme === "dark" ? "Switch to Dimmed" : "Switch to Dark"}
       >
         <ThemeIcon t={theme} />
       </button>
-      <div
-        style={{
-          display: "flex",
-          flexDirection: "column",
-          alignItems: "center",
-          overflow: "hidden",
-          maxHeight: open ? below.length * 32 : 0,
-          transition: "max-height 0.2s ease",
-        }}
-      >
-        {below.map((t) => (
-          <button
-            key={t}
-            className="activity-btn"
-            style={btnStyle}
-            onClick={() => {
-              setTheme(t);
-              setOpen(false);
-            }}
-            title={t.charAt(0).toUpperCase() + t.slice(1)}
-          >
-            <ThemeIcon t={t} />
-          </button>
-        ))}
-      </div>
     </div>
   );
 }

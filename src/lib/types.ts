@@ -556,19 +556,11 @@ export function createDefaultLayout(): WorkspaceLayout {
 
 // --- Flight Mode Types ---
 
-/** A single tab inside a flight pod */
+/** A single tab inside a flight pod's shell panel */
 export interface FlightTab {
   id: string;
   type: "claude" | "terminal";
   title: string;
-  cwd: string;
-  ptyId?: string;
-}
-
-/** A split pane inside a flight pod's terminal body */
-export interface FlightSplitPane {
-  id: string;
-  type: "claude" | "terminal";
   cwd: string;
   ptyId?: string;
 }
@@ -584,12 +576,6 @@ export interface FlightPodBase {
   title: string;
   ptyId?: string;
   zIndex: number;
-  /** Multiple tabs per pod. If empty/undefined, legacy single-tab mode. */
-  tabs?: FlightTab[];
-  activeTabId?: string;
-  /** Split panes inside the terminal body. If set, main body is divided. */
-  splitPanes?: FlightSplitPane[];
-  splitDirection?: "horizontal" | "vertical";
   /** Tabs for the shell panel (bottom terminal area). */
   shellTabs?: FlightTab[];
   activeShellTabId?: string;
