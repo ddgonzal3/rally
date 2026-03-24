@@ -69,15 +69,26 @@ const WorkspaceFlightView = React.memo(function WorkspaceFlightView({
   const [containerSize, setContainerSize] = useState({ w: 0, h: 0 });
   useEffect(() => {
     if (!containerRef.current) return;
-    const measure = () => setContainerSize({
-      w: containerRef.current?.clientWidth ?? 0,
-      h: containerRef.current?.clientHeight ?? 0,
-    });
+    const measure = () => {
+      setContainerSize({
+        w: containerRef.current?.clientWidth ?? 0,
+        h: containerRef.current?.clientHeight ?? 0,
+      });
+      // In focus mode, relayout pods to fit new container size
+      if (focusModeRef.current) {
+        setTimeout(() => {
+          const pods = useWorkspaceStore.getState().flightLayouts[workspaceId]?.pods ?? [];
+          if (pods.length > 0) {
+            navigateToRef.current?.(pods[0].id);
+          }
+        }, 0);
+      }
+    };
     measure();
     const obs = new ResizeObserver(measure);
     obs.observe(containerRef.current);
     return () => obs.disconnect();
-  }, []);
+  }, [workspaceId]);
 
   // Cap columns to number of pods
   const effectiveColumns = Math.min(focusColumns, podIdList.length || 1);
@@ -379,9 +390,23 @@ const WorkspaceFlightView = React.memo(function WorkspaceFlightView({
         const GAP = 8;
         const PAD = 12;
         const allPodsCount = (store.flightLayouts[workspaceId]?.pods ?? []).length;
-        const cols = Math.min(focusColumnsRef.current, allPodsCount || 1);
-        // Auto-expand rows to fit all pods instead of overlapping extras
-        const rows = Math.max(focusRowsRef.current, Math.ceil(allPodsCount / cols));
+        // Auto-pick grid dimensions based on container aspect ratio and pod count.
+        // For wide screens, prefer more columns; for tall screens, prefer more rows.
+        const availW = containerW - PAD * 2;
+        const availH = containerH - HUD_HEIGHT - PAD * 2;
+        let bestCols = 1;
+        let bestScore = -Infinity;
+        for (let c = 1; c <= allPodsCount; c++) {
+          const r = Math.ceil(allPodsCount / c);
+          const cellW = (availW - GAP * (c - 1)) / c;
+          const cellH = (availH - GAP * (r - 1)) / r;
+          if (cellW < 200 || cellH < 150) continue; // too small to be usable
+          // Score: maximize the smaller dimension (area is less important than readability)
+          const score = Math.min(cellW, cellH);
+          if (score > bestScore) { bestScore = score; bestCols = c; }
+        }
+        const cols = bestCols;
+        const rows = Math.ceil(allPodsCount / cols);
         const podW = Math.floor((containerW - PAD * 2 - GAP * (cols - 1)) / cols);
         const podH = Math.floor((containerH - HUD_HEIGHT - PAD * 2 - GAP * (rows - 1)) / rows);
         const allPods = [...(store.flightLayouts[workspaceId]?.pods ?? [])];
