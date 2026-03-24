@@ -365,31 +365,9 @@ export const FlightPod = React.memo(function FlightPod({
     // Don't steal focus if clicking inside the shell panel
     if ((e.target as HTMLElement).closest("[data-shell-panel]")) return;
 
-    // When zoomed out past threshold, click zooms to fit this pod in the viewport
+    // When zoomed out past threshold, click enters focus mode on this pod
     if (zoom < ZOOM_TO_FIT_THRESHOLD) {
-      const container = podRef.current?.closest("[data-flight-canvas]") as HTMLElement | null;
-      if (container) {
-        const rect = container.getBoundingClientRect();
-        // Account for CSS zoom on ancestors — rect is in viewport pixels
-        const parentZoom = rect.width / container.offsetWidth;
-        const containerW = rect.width / parentZoom;
-        const containerH = rect.height / parentZoom;
-        const fitZoom = Math.min(containerW * 0.95 / podWidth, containerH * 0.95 / podHeight, 1.0);
-        // Position pod with small padding from top-left
-        const padX = containerW * 0.02;
-        const padY = containerH * 0.02;
-        let panX: number, panY: number;
-        if (fitZoom >= 1.0) {
-          // CSS zoom: screen = (pan + P) * zoom → pan = screen/zoom - P
-          panX = padX / fitZoom - podX;
-          panY = padY / fitZoom - podY;
-        } else {
-          // transform scale: screen = pan + P * zoom → pan = screen - P * zoom
-          panX = padX - podX * fitZoom;
-          panY = padY - podY * fitZoom;
-        }
-        setFlightViewport(workspaceId, { panX, panY, zoom: fitZoom });
-      }
+      window.dispatchEvent(new CustomEvent("flight-focus-pod", { detail: { workspaceId, podId } }));
       return;
     }
     // If showing the launcher, only start Claude when clicking the launch button itself
@@ -400,7 +378,7 @@ export const FlightPod = React.memo(function FlightPod({
     if (!podRef.current) return;
     const mainTerminal = podRef.current.querySelector("[data-main-terminal] textarea.xterm-helper-textarea") as HTMLTextAreaElement | null;
     if (mainTerminal) mainTerminal.focus();
-  }, [zoom, podX, podY, podWidth, podHeight, workspaceId, setFlightViewport, podType, claudeLaunched, podPtyId]);
+  }, [zoom, workspaceId, podId, podType, claudeLaunched, podPtyId]);
 
   if (!podType) return null;
 

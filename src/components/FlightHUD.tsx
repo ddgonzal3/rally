@@ -26,11 +26,22 @@ export function FlightHUD({ workspaceId, zoom, focusMode, onToggleFocus }: Fligh
   const handleResetZoom = () => setFlightViewport(workspaceId, { zoom: 1.0 });
   const handleResetSizes = () => {
     if (!pods) return;
+    // In focus mode, cap width so ≥2 pods fit (same logic as navigateTo)
+    const container = document.querySelector("[data-flight-canvas]") as HTMLElement | null;
+    let maxW = Infinity;
+    if (focusMode && container) {
+      const rect = container.getBoundingClientRect();
+      const parentZoom = rect.width / container.offsetWidth;
+      const containerW = rect.width / parentZoom;
+      maxW = Math.floor((containerW - 8 - 24) / 2); // GAP=8, PAD=12*2
+    }
     for (const pod of pods) {
       const isClaudeType = pod.type === "claude";
+      const defaultW = isClaudeType ? FLIGHT_DEFAULT_CLAUDE_WIDTH : FLIGHT_DEFAULT_TERMINAL_WIDTH;
+      const defaultH = isClaudeType ? FLIGHT_DEFAULT_CLAUDE_HEIGHT : FLIGHT_DEFAULT_TERMINAL_HEIGHT;
       updateFlightPod(workspaceId, pod.id, {
-        width: isClaudeType ? FLIGHT_DEFAULT_CLAUDE_WIDTH : FLIGHT_DEFAULT_TERMINAL_WIDTH,
-        height: isClaudeType ? FLIGHT_DEFAULT_CLAUDE_HEIGHT : FLIGHT_DEFAULT_TERMINAL_HEIGHT,
+        width: Math.min(defaultW, maxW),
+        height: defaultH,
       } as any);
     }
   };

@@ -21,7 +21,7 @@ const WorkspaceFlightView = React.memo(function WorkspaceFlightView({
   const [selectedPods, setSelectedPods] = useState<Set<string>>(new Set());
   const selectedPodsRef = useRef(selectedPods);
   selectedPodsRef.current = selectedPods;
-  const [focusMode, setFocusMode] = useState(false);
+  const [focusMode, setFocusMode] = useState(true);
   const focusModeRef = useRef(focusMode);
   focusModeRef.current = focusMode;
   const navigateToRef = useRef<((podId: string) => void) | null>(null);
@@ -65,6 +65,19 @@ const WorkspaceFlightView = React.memo(function WorkspaceFlightView({
     return () => observer.disconnect();
   }, [workspaceId]);
 
+  // Listen for zoom-click on pods to enter focus mode
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const { workspaceId: wsId, podId } = (e as CustomEvent).detail;
+      if (wsId !== workspaceId) return;
+      setFocusMode(true);
+      focusModeRef.current = true;
+      setTimeout(() => navigateToRef.current?.(podId), 0);
+    };
+    window.addEventListener("flight-focus-pod", handler);
+    return () => window.removeEventListener("flight-focus-pod", handler);
+  }, [workspaceId]);
+
   // Native wheel listener — MUST be non-passive to call preventDefault()
   useEffect(() => {
     const el = containerRef.current;
@@ -87,10 +100,26 @@ const WorkspaceFlightView = React.memo(function WorkspaceFlightView({
     };
     el.addEventListener("mousedown", clickTracker, true); // capture phase
 
+    let lastFocusNavTime = 0;
     const wheelHandler = (e: WheelEvent) => {
-      // In Focus Mode, block ALL non-zoom scroll events (handled by focusScrollHandler)
+      // In Focus Mode: horizontal scroll navigates pods
       if (focusModeRef.current && !e.altKey && !e.ctrlKey) {
         e.preventDefault();
+        e.stopImmediatePropagation();
+
+        if (Math.abs(e.deltaX) < 1) return;
+        if (Math.abs(e.deltaX) < Math.abs(e.deltaY)) return;
+
+        // Simple fixed cooldown — ignore events within 400ms of last nav
+        const now = performance.now();
+        if (now - lastFocusNavTime < 400) return;
+
+        const dir: "left" | "right" = e.deltaX > 0 ? "right" : "left";
+        const target = findNeighborPod(dir);
+        if (target) {
+          navigateToRef.current?.(target);
+          lastFocusNavTime = now;
+        }
         return;
       }
       // Option+scroll or pinch = zoom — exits focus mode
@@ -488,45 +517,14 @@ const WorkspaceFlightView = React.memo(function WorkspaceFlightView({
     };
     document.addEventListener("keydown", navHandler, true); // capture phase
 
-    // --- Focus Mode scroll: any scroll on a pod navigates to next/prev ---
-    // Free mode: horizontal scroll pans freely
-    let focusNavCooldown = false;
-    let focusNavDir: "left" | "right" | null = null;
-    let focusNavTimer: ReturnType<typeof setTimeout> | null = null;
+    // Free mode: horizontal scroll on pods pans freely
     let freeScrollTimer: ReturnType<typeof setTimeout> | null = null;
     let freeScrollActive = false;
     const focusScrollHandler = (e: WheelEvent) => {
       if (e.altKey || e.ctrlKey) return;
+      if (focusModeRef.current) return; // Handled by wheelHandler now
 
-      if (focusModeRef.current) {
-        e.preventDefault();
-        e.stopPropagation();
-        if (Math.abs(e.deltaX) < 3) return;
-        const dir: "left" | "right" = e.deltaX > 0 ? "right" : "left";
-
-        if (focusNavCooldown) {
-          // If direction changed, allow immediate navigation
-          if (dir !== focusNavDir) {
-            focusNavCooldown = false;
-          } else {
-            // Same direction inertia — eat it, extend cooldown
-            if (focusNavTimer) clearTimeout(focusNavTimer);
-            focusNavTimer = setTimeout(() => { focusNavCooldown = false; focusNavDir = null; }, 600);
-            return;
-          }
-        }
-
-        focusNavCooldown = true;
-        focusNavDir = dir;
-        const target = findNeighborPod(dir);
-        if (target) navigateToRef.current?.(target);
-        if (focusNavTimer) clearTimeout(focusNavTimer);
-        focusNavTimer = setTimeout(() => {
-          focusNavCooldown = false;
-          focusNavDir = null;
-        }, 600);
-      } else {
-        // Free mode: horizontal scroll pans (only on pods)
+      {
         if (!((e.target as HTMLElement).closest("[data-flight-pod]"))) return;
         if (Math.abs(e.deltaX) > Math.abs(e.deltaY) * 2 && Math.abs(e.deltaX) > 5) {
           freeScrollActive = true;
@@ -560,7 +558,6 @@ const WorkspaceFlightView = React.memo(function WorkspaceFlightView({
       window.removeEventListener("keyup", keyUpHandler);
       document.removeEventListener("keydown", deleteHandler);
       document.removeEventListener("keydown", navHandler, true);
-      if (focusNavTimer) clearTimeout(focusNavTimer);
       if (freeScrollTimer) clearTimeout(freeScrollTimer);
     };
   }, [workspaceId, setFlightViewport]);
@@ -690,9 +687,12 @@ const WorkspaceFlightView = React.memo(function WorkspaceFlightView({
           pointer-events: none;
         }
       `}</style>
+
       <div
         style={{
           ...canvasStyles.viewport,
+          // Smooth pan animation in focus mode
+          transition: focusMode ? "left 0.3s ease, top 0.3s ease, transform 0.3s ease" : "none",
           // CSS zoom > 1.0: re-rasterizes at higher res → crisp upscale
           // transform scale < 1.0: pixel-perfect downscale → crisp shrink
           // Hybrid gives sharp text at ALL zoom levels
