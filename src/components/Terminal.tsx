@@ -557,6 +557,10 @@ export function Terminal({ cwd, command, initialInput, ptyId: existingPtyId, loc
       if (ev.shiftKey && (ev.code === "BracketLeft" || ev.code === "BracketRight")) {
         return false;
       }
+      // Let Cmd+Shift+C bubble for new Claude tab in flight mode
+      if (ev.shiftKey && ev.key.toLowerCase() === "c") {
+        return false;
+      }
       return true;
     });
 

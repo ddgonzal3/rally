@@ -166,6 +166,10 @@ export const FlightPod = React.memo(function FlightPod({
   const removeFlightPod = useWorkspaceStore((s) => s.removeFlightPod);
   const bringPodToFront = useWorkspaceStore((s) => s.bringPodToFront);
   const togglePodShell = useWorkspaceStore((s) => s.togglePodShell);
+  const addFlightPodTab = useWorkspaceStore((s) => s.addFlightPodTab);
+  const removeFlightPodTab = useWorkspaceStore((s) => s.removeFlightPodTab);
+  const setActiveFlightTab = useWorkspaceStore((s) => s.setActiveFlightTab);
+  const setFlightTabPtyId = useWorkspaceStore((s) => s.setFlightTabPtyId);
 
   // Stable selectors — avoid returning new objects
   const podX = useWorkspaceStore((s) => s.flightLayouts[workspaceId]?.pods.find((p) => p.id === podId)?.x ?? 0);
@@ -189,6 +193,14 @@ export const FlightPod = React.memo(function FlightPod({
     const pod = s.flightLayouts[workspaceId]?.pods.find((p) => p.id === podId);
     return pod?.type === "claude" ? pod.shellPtyId : undefined;
   });
+  const podTabs = useWorkspaceStore((s) => s.flightLayouts[workspaceId]?.pods.find((p) => p.id === podId)?.tabs);
+  const activeTabId = useWorkspaceStore((s) => s.flightLayouts[workspaceId]?.pods.find((p) => p.id === podId)?.activeTabId);
+
+  // Derive active tab (if tabs exist)
+  const activeTab = useMemo(() => {
+    if (!podTabs || podTabs.length === 0) return null;
+    return podTabs.find((t) => t.id === activeTabId) ?? podTabs[0];
+  }, [podTabs, activeTabId]);
 
   const podRef = useRef<HTMLDivElement>(null);
   const dragState = useRef<{ startX: number; startY: number; origX: number; origY: number } | null>(null);
@@ -196,7 +208,15 @@ export const FlightPod = React.memo(function FlightPod({
   const suppressClickRef = useRef(false);
 
   // Track whether user has clicked "Start" for Claude pods (when no ptyId on restore)
-  const [claudeLaunched, setClaudeLaunched] = useState(!!podPtyId);
+  // For tabbed mode, track per active tab; for legacy mode, use podPtyId
+  const [claudeLaunched, setClaudeLaunched] = useState(!!podPtyId || !!(activeTab?.ptyId));
+
+  // Reset claudeLaunched when active tab changes
+  useEffect(() => {
+    if (activeTab) {
+      setClaudeLaunched(!!activeTab.ptyId);
+    }
+  }, [activeTab?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Derive basename for display
   const cwdBasename = useMemo(() => {
@@ -358,6 +378,10 @@ export const FlightPod = React.memo(function FlightPod({
     updateFlightPod(workspaceId, podId, { shellPtyId: ptyId } as Partial<FlightPodType>);
   }, [updateFlightPod, workspaceId, podId]);
 
+  const handleTabPtySpawned = useCallback((tabId: string) => (ptyId: string) => {
+    setFlightTabPtyId(workspaceId, podId, tabId, ptyId);
+  }, [setFlightTabPtyId, workspaceId, podId]);
+
   const setFlightViewport = useWorkspaceStore((s) => s.setFlightViewport);
 
   const handleFocusClick = useCallback((e: React.MouseEvent) => {
@@ -381,6 +405,18 @@ export const FlightPod = React.memo(function FlightPod({
     if (mainTerminal) mainTerminal.focus();
   }, [zoom, workspaceId, podId, podType, claudeLaunched, podPtyId]);
 
+  const addFlightPodAt = useWorkspaceStore((s) => s.addFlightPodAt);
+
+  const handleSplitRight = useCallback((e: React.MouseEvent) => {
+    e.stopPropagation();
+    addFlightPodTab(workspaceId, podId, "terminal", podCwd);
+  }, [addFlightPodTab, workspaceId, podId, podCwd]);
+
+  const handleAddTab = useCallback((e: React.MouseEvent) => {
+    e.stopPropagation();
+    addFlightPodTab(workspaceId, podId, "terminal", podCwd);
+  }, [addFlightPodTab, workspaceId, podId, podCwd]);
+
   const hasScriptFooter = useWorkspaceStore((s) => {
     const config = s.rallyConfigs[podCwd];
     return !!(config?.statusBar && config.statusBar.length > 0);
@@ -389,7 +425,7 @@ export const FlightPod = React.memo(function FlightPod({
   if (!podType) return null;
 
   const isClaudePod = podType === "claude";
-  const HEADER_H = 32;
+  const HEADER_H = 29;
   const SHELL_FOOTER_H = isClaudePod ? 24 : 0;
   const SCRIPT_FOOTER_H = isClaudePod && hasScriptFooter ? 28 : 0;
   const FOOTER_H = SHELL_FOOTER_H + SCRIPT_FOOTER_H;
@@ -421,7 +457,7 @@ export const FlightPod = React.memo(function FlightPod({
         cursor: zoom < ZOOM_TO_FIT_THRESHOLD ? "zoom-in" : undefined,
       }}
     >
-      {/* Header */}
+      {/* Tab bar header */}
       <div
         onMouseDown={handleHeaderMouseDown}
         onContextMenu={(e) => {
@@ -443,7 +479,6 @@ export const FlightPod = React.memo(function FlightPod({
               case "above": nx = podX; ny = podY - h - GAP; nw = podWidth; nh = h; break;
             }
 
-            // Push existing pods out of the way
             const pushAmount = dir === "right" || dir === "left" ? nw + GAP : nh + GAP;
             for (const p of layout.pods) {
               if (p.id === podId) continue;
@@ -467,34 +502,105 @@ export const FlightPod = React.memo(function FlightPod({
             { label: "New Below", action: () => insertPod("below") },
           ]);
         }}
-        style={headerStyles.header}
+        style={tabBarStyles.bar}
       >
-        {/* Left: icon + title */}
-        <div style={headerStyles.left}>
-          {isClaudePod ? (
-            <svg width="14" height="14" viewBox="-2 -1 28 26" style={{ ...headerStyles.icon, flexShrink: 0 }}>
-              <path d={CLAUDE_PATH} fill="#D97757" fillRule="nonzero" />
-            </svg>
+        {/* Tabs */}
+        <div style={tabBarStyles.tabs}>
+          {podTabs && podTabs.length > 0 ? (
+            podTabs.map((tab) => {
+              const isActive = tab.id === (activeTabId ?? podTabs[0]?.id);
+              return (
+                <div
+                  key={tab.id}
+                  className={`pane-tab${isActive ? " pane-tab-active" : ""}`}
+                  onMouseDown={(e) => {
+                    e.stopPropagation();
+                    setActiveFlightTab(workspaceId, podId, tab.id);
+                  }}
+                  style={{
+                    ...tabBarStyles.tab,
+                    ...(isActive ? tabBarStyles.tabActive : tabBarStyles.tabInactive),
+                  }}
+                >
+                  {tab.type === "claude" ? (
+                    <svg width="14" height="14" viewBox="-2 -1 28 26" fill="none" style={{ flexShrink: 0 }}>
+                      <path d={CLAUDE_PATH} fill="#D97757" fillRule="nonzero" />
+                    </svg>
+                  ) : (
+                    <svg width="12" height="12" viewBox="0 0 12 12" fill="none" style={{ flexShrink: 0 }}>
+                      <polyline points="2,4 5,6 2,8" stroke="#999" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" />
+                      <line x1="6" y1="8" x2="10" y2="8" stroke="#999" strokeWidth="1.2" strokeLinecap="round" />
+                    </svg>
+                  )}
+                  <span style={tabBarStyles.tabLabel}>{tab.title}</span>
+                  <button
+                    className={`tab-close${isActive ? " tab-close-active" : ""}`}
+                    style={tabBarStyles.tabClose}
+                    onMouseDown={(e) => e.stopPropagation()}
+                    onClick={(e) => { e.stopPropagation(); removeFlightPodTab(workspaceId, podId, tab.id); }}
+                  >
+                    <svg width="11" height="11" viewBox="0 0 14 14" fill="none">
+                      <line x1="3" y1="3" x2="11" y2="11" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+                      <line x1="11" y1="3" x2="3" y2="11" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+                    </svg>
+                  </button>
+                </div>
+              );
+            })
           ) : (
-            <svg width="12" height="12" viewBox="0 0 12 12" fill="none" style={headerStyles.icon}>
-              <polyline points="2,4 5,6 2,8" stroke="#999" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" />
-              <line x1="6" y1="8" x2="10" y2="8" stroke="#999" strokeWidth="1.2" strokeLinecap="round" />
-            </svg>
+            /* Legacy single-tab display */
+            <div className="pane-tab pane-tab-active" style={{ ...tabBarStyles.tab, ...tabBarStyles.tabActive }}>
+              {isClaudePod ? (
+                <svg width="14" height="14" viewBox="-2 -1 28 26" fill="none" style={{ flexShrink: 0 }}>
+                  <path d={CLAUDE_PATH} fill="#D97757" fillRule="nonzero" />
+                </svg>
+              ) : (
+                <svg width="12" height="12" viewBox="0 0 12 12" fill="none" style={{ flexShrink: 0 }}>
+                  <polyline points="2,4 5,6 2,8" stroke="#999" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" />
+                  <line x1="6" y1="8" x2="10" y2="8" stroke="#999" strokeWidth="1.2" strokeLinecap="round" />
+                </svg>
+              )}
+              <span style={tabBarStyles.tabLabel}>{podTitle || cwdBasename}</span>
+            </div>
           )}
-          <span style={headerStyles.title}>{podTitle || cwdBasename}</span>
+          {/* + button */}
+          <button
+            className="tab-action new-tab-btn"
+            style={tabBarStyles.newTabBtn}
+            onMouseDown={(e) => e.stopPropagation()}
+            onClick={handleAddTab}
+            title="New tab"
+          >
+            <svg width="12" height="12" viewBox="0 0 14 14" fill="none">
+              <path d="M7 1v12M1 7h12" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+            </svg>
+          </button>
         </div>
 
-        {/* Right: close */}
-        <div style={headerStyles.right}>
+        {/* Right actions: split-right + close-pod */}
+        <div style={tabBarStyles.actions}>
           <button
-            style={headerStyles.btn}
+            className="tab-action"
+            style={tabBarStyles.actionBtn}
+            onMouseDown={(e) => e.stopPropagation()}
+            onClick={handleSplitRight}
+            title="Split right"
+          >
+            <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+              <rect x="1" y="1" width="12" height="12" rx="2" stroke="currentColor" strokeWidth="1.2" />
+              <line x1="7" y1="1" x2="7" y2="13" stroke="currentColor" strokeWidth="1.2" />
+            </svg>
+          </button>
+          <button
+            className="tab-action"
+            style={tabBarStyles.actionBtn}
             onMouseDown={(e) => e.stopPropagation()}
             onClick={handleClose}
             title="Close pod"
           >
-            <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
-              <line x1="2" y1="2" x2="8" y2="8" stroke="#999" strokeWidth="1.2" strokeLinecap="round" />
-              <line x1="8" y1="2" x2="2" y2="8" stroke="#999" strokeWidth="1.2" strokeLinecap="round" />
+            <svg width="11" height="11" viewBox="0 0 14 14" fill="none">
+              <line x1="3" y1="3" x2="11" y2="11" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+              <line x1="11" y1="3" x2="3" y2="11" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
             </svg>
           </button>
         </div>
@@ -513,45 +619,82 @@ export const FlightPod = React.memo(function FlightPod({
           overflow: "hidden",
         }}
       >
-        {isClaudePod && !claudeLaunched && !podPtyId ? (
-          /* Claude launcher — shown when pod is restored without a ptyId */
-          <FlightLauncher
-            cwd={podCwd}
-            cwdBasename={cwdBasename}
-            workspaceId={workspaceId}
-            onLaunch={() => setClaudeLaunched(true)}
-            onLaunchClaude={(cwd) => {
-              if (cwd && cwd !== podCwd) {
-                updateFlightPod(workspaceId, podId, { cwd, title: cwd.split("/").pop() || "Claude Code" } as Partial<FlightPodType>);
-              }
-              setClaudeLaunched(true);
-            }}
-            onLaunchTerminal={(cwd) => {
-              // Spawn a new terminal pod next to this one
-              const store = useWorkspaceStore.getState();
-              store.addFlightPodAt(
-                workspaceId, "terminal",
-                podX + podWidth + 8, podY,
-                FLIGHT_DEFAULT_TERMINAL_WIDTH, podHeight,
-                cwd || podCwd,
-              );
-            }}
-          />
-        ) : isClaudePod ? (
-          <ClaudeTerminalWrapper
-            cwd={podCwd}
-            command="claude"
-            ptyId={podPtyId}
-            workspaceId={workspaceId}
-            onPtySpawned={handlePtySpawned}
-          />
+        {activeTab ? (
+          /* Tabbed mode — render based on active tab */
+          activeTab.type === "claude" && !claudeLaunched && !activeTab.ptyId ? (
+            <FlightLauncher
+              cwd={activeTab.cwd}
+              cwdBasename={activeTab.cwd.replace(/\/$/, "").split("/").pop() || "Claude Code"}
+              workspaceId={workspaceId}
+              onLaunch={() => setClaudeLaunched(true)}
+              onLaunchClaude={(cwd) => {
+                if (cwd && cwd !== activeTab.cwd) {
+                  // Update the tab's cwd (not easily done without a dedicated action, so just launch)
+                }
+                setClaudeLaunched(true);
+              }}
+              onLaunchTerminal={(cwd) => {
+                addFlightPodTab(workspaceId, podId, "terminal", cwd || activeTab.cwd);
+              }}
+            />
+          ) : activeTab.type === "claude" ? (
+            <ClaudeTerminalWrapper
+              key={activeTab.id}
+              cwd={activeTab.cwd}
+              command="claude"
+              ptyId={activeTab.ptyId}
+              workspaceId={workspaceId}
+              onPtySpawned={handleTabPtySpawned(activeTab.id)}
+            />
+          ) : (
+            <Terminal
+              key={activeTab.id}
+              cwd={activeTab.cwd}
+              ptyId={activeTab.ptyId}
+              workspaceId={workspaceId}
+              onPtySpawned={handleTabPtySpawned(activeTab.id)}
+            />
+          )
         ) : (
-          <Terminal
-            cwd={podCwd}
-            ptyId={podPtyId}
-            workspaceId={workspaceId}
-            onPtySpawned={handlePtySpawned}
-          />
+          /* Legacy single-tab mode */
+          isClaudePod && !claudeLaunched && !podPtyId ? (
+            <FlightLauncher
+              cwd={podCwd}
+              cwdBasename={cwdBasename}
+              workspaceId={workspaceId}
+              onLaunch={() => setClaudeLaunched(true)}
+              onLaunchClaude={(cwd) => {
+                if (cwd && cwd !== podCwd) {
+                  updateFlightPod(workspaceId, podId, { cwd, title: cwd.split("/").pop() || "Claude Code" } as Partial<FlightPodType>);
+                }
+                setClaudeLaunched(true);
+              }}
+              onLaunchTerminal={(cwd) => {
+                const store = useWorkspaceStore.getState();
+                store.addFlightPodAt(
+                  workspaceId, "terminal",
+                  podX + podWidth + 8, podY,
+                  FLIGHT_DEFAULT_TERMINAL_WIDTH, podHeight,
+                  cwd || podCwd,
+                );
+              }}
+            />
+          ) : isClaudePod ? (
+            <ClaudeTerminalWrapper
+              cwd={podCwd}
+              command="claude"
+              ptyId={podPtyId}
+              workspaceId={workspaceId}
+              onPtySpawned={handlePtySpawned}
+            />
+          ) : (
+            <Terminal
+              cwd={podCwd}
+              ptyId={podPtyId}
+              workspaceId={workspaceId}
+              onPtySpawned={handlePtySpawned}
+            />
+          )
         )}
       </div>
 
@@ -942,55 +1085,102 @@ const EdgeSpawnButtons = React.memo(function EdgeSpawnButtons({
   );
 });
 
-const headerStyles: Record<string, React.CSSProperties> = {
-  header: {
-    height: 32,
+const tabBarStyles: Record<string, React.CSSProperties> = {
+  bar: {
+    height: 29,
     display: "flex",
-    alignItems: "center",
+    alignItems: "stretch",
     justifyContent: "space-between",
-    padding: "0 8px",
     cursor: "grab",
     flexShrink: 0,
-    borderBottom: "1px solid rgba(255, 255, 255, 0.06)",
-    background: "rgb(30, 30, 30)",
+    background: "var(--bg-surface)",
   },
-  left: {
+  tabs: {
     display: "flex",
-    alignItems: "center",
-    gap: 6,
+    alignItems: "stretch",
     minWidth: 0,
     overflow: "hidden",
+    flex: 1,
   },
-  icon: {
-    flexShrink: 0,
-  },
-  title: {
-    fontSize: 13,
+  tab: {
+    display: "flex",
+    alignItems: "center",
+    gap: 4,
+    padding: "0 2px 0 6px",
+    fontSize: 14,
     fontWeight: 500,
+    cursor: "pointer",
+    whiteSpace: "nowrap" as const,
+    minWidth: 0,
+  },
+  tabActive: {
     color: "var(--text-primary)",
+    background: "var(--bg-app)",
+    borderTop: "1px solid var(--tab-indicator)",
+    marginBottom: -1,
+    paddingBottom: 1,
+  },
+  tabInactive: {
+    color: "var(--text-dim)",
+    background: "var(--bg-surface)",
+    borderRight: "1px solid var(--bg-elevated)",
+    boxShadow: "inset 0 -1px 0 var(--bg-elevated)",
+  },
+  tabLabel: {
     overflow: "hidden",
     textOverflow: "ellipsis",
-    whiteSpace: "nowrap",
-    lineHeight: 1,
+    fontWeight: 600,
   },
-  right: {
+  tabClose: {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    width: 20,
+    height: 20,
+    background: "none",
+    border: "none",
+    color: "var(--text-secondary)",
+    cursor: "pointer",
+    borderRadius: 4,
+    padding: 0,
+    flexShrink: 0,
+  },
+  newTabBtn: {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    alignSelf: "center",
+    width: 20,
+    minWidth: 20,
+    height: 20,
+    background: "var(--bg-surface)",
+    border: "none",
+    color: "var(--text-dim)",
+    cursor: "pointer",
+    borderRadius: 4,
+    padding: 0,
+    flexShrink: 0,
+    marginLeft: 2,
+  },
+  actions: {
     display: "flex",
     alignItems: "center",
     gap: 2,
     flexShrink: 0,
+    paddingRight: 4,
   },
-  btn: {
+  actionBtn: {
     display: "flex",
     alignItems: "center",
     justifyContent: "center",
-    width: 22,
-    height: 22,
+    width: 20,
+    height: 20,
     background: "none",
     border: "none",
+    color: "var(--text-dim)",
     cursor: "pointer",
     borderRadius: 4,
     padding: 0,
-    color: "#999",
   },
 };
 

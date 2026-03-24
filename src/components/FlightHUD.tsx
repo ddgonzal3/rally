@@ -12,9 +12,11 @@ interface FlightHUDProps {
   zoom: number;
   focusMode: boolean;
   onToggleFocus: () => void;
+  autoFocus: boolean;
+  onToggleAutoFocus: () => void;
 }
 
-export function FlightHUD({ workspaceId, zoom, focusMode, onToggleFocus }: FlightHUDProps) {
+export function FlightHUD({ workspaceId, zoom, focusMode, onToggleFocus, autoFocus, onToggleAutoFocus }: FlightHUDProps) {
   const addFlightPod = useWorkspaceStore((s) => s.addFlightPod);
   const setFlightViewport = useWorkspaceStore((s) => s.setFlightViewport);
 
@@ -89,6 +91,16 @@ export function FlightHUD({ workspaceId, zoom, focusMode, onToggleFocus }: Fligh
           <circle cx="6" cy="6" r="1.5" fill="currentColor" />
         </svg>
         <span style={styles.btnLabel}>Focus</span>
+      </button>
+      <button
+        style={{ ...styles.btn, color: autoFocus ? "var(--text-primary)" : "#666" }}
+        onClick={onToggleAutoFocus}
+        title={autoFocus ? "Auto-focus ON — new pods trigger focus mode" : "Auto-focus OFF — new pods stay in free canvas"}
+      >
+        <svg width="12" height="12" viewBox="0 0 12 12" fill="none" style={styles.icon}>
+          <path d="M1 4V2a1 1 0 011-1h2M8 1h2a1 1 0 011 1v2M11 8v2a1 1 0 01-1 1H8M4 11H2a1 1 0 01-1-1V8" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
+        </svg>
+        <span style={styles.btnLabel}>Auto</span>
       </button>
       <div style={styles.divider} />
       <button

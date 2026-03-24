@@ -556,6 +556,15 @@ export function createDefaultLayout(): WorkspaceLayout {
 
 // --- Flight Mode Types ---
 
+/** A single tab inside a flight pod */
+export interface FlightTab {
+  id: string;
+  type: "claude" | "terminal";
+  title: string;
+  cwd: string;
+  ptyId?: string;
+}
+
 /** Base spatial properties shared by all pods */
 export interface FlightPodBase {
   id: string;
@@ -567,6 +576,9 @@ export interface FlightPodBase {
   title: string;
   ptyId?: string;
   zIndex: number;
+  /** Multiple tabs per pod. If empty/undefined, legacy single-tab mode. */
+  tabs?: FlightTab[];
+  activeTabId?: string;
 }
 
 /** Claude Code pod — has an optional attached shell */

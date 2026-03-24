@@ -32,6 +32,9 @@ const WorkspaceFlightView = React.memo(function WorkspaceFlightView({
   const [focusRows, setFocusRows] = useState(1);
   const focusRowsRef = useRef(focusRows);
   focusRowsRef.current = focusRows;
+  const [autoFocus, setAutoFocus] = useState(true);
+  const autoFocusRef = useRef(autoFocus);
+  autoFocusRef.current = autoFocus;
   const [marquee, setMarquee] = useState<{ sx1: number; sy1: number; sx2: number; sy2: number } | null>(null);
 
   // Stable selectors — primitives only, no new objects
@@ -716,6 +719,22 @@ const WorkspaceFlightView = React.memo(function WorkspaceFlightView({
   const handleCanvasMouseDown = useCallback((e: React.MouseEvent) => {
     mouseDownPosRef.current = { x: e.clientX, y: e.clientY };
   }, []);
+  /** After adding a pod, enter focus mode (if auto-focus is on) and relayout */
+  const autoEnterFocusAndRelayout = useCallback(() => {
+    setTimeout(() => {
+      const pods = useWorkspaceStore.getState().flightLayouts[workspaceId]?.pods ?? [];
+      if (pods.length === 0) return;
+      const newest = pods[pods.length - 1];
+      if (!focusModeRef.current && autoFocusRef.current) {
+        setFocusMode(true);
+        focusModeRef.current = true;
+      }
+      if (focusModeRef.current) {
+        navigateToRef.current?.(newest.id);
+      }
+    }, 0);
+  }, [workspaceId]);
+
   /** Show the frosted glass folder picker menu on double-click or right-click */
   const openCanvasMenu = useCallback((e: React.MouseEvent) => {
     if ((e.target as HTMLElement).closest("[data-flight-pod]")) return;
@@ -808,7 +827,7 @@ const WorkspaceFlightView = React.memo(function WorkspaceFlightView({
           <FlightPod key={podId} podId={podId} workspaceId={workspaceId} zoom={zoom} isSelected={selectedPods.has(podId)} />
         ))}
       </div>
-      {isActive && <FlightHUD workspaceId={workspaceId} zoom={zoom} focusMode={focusMode} onToggleFocus={() => {
+      {isActive && <FlightHUD workspaceId={workspaceId} zoom={zoom} focusMode={focusMode} autoFocus={autoFocus} onToggleAutoFocus={() => setAutoFocus((v) => !v)} onToggleFocus={() => {
         const next = !focusMode;
         setFocusMode(next);
         if (next) {
@@ -870,16 +889,7 @@ const WorkspaceFlightView = React.memo(function WorkspaceFlightView({
                 const p2 = computeSnapPlacement(contextMenu.canvasX, contextMenu.canvasY, FLIGHT_DEFAULT_CLAUDE_WIDTH, FLIGHT_DEFAULT_CLAUDE_HEIGHT);
                 addFlightPodAt(workspaceId, "claude", p2.x, p2.y, p2.w, p2.h, p);
                 setContextMenu(null);
-                // In focus mode, relayout the grid to fit the new pod
-                if (focusModeRef.current) {
-                  setTimeout(() => {
-                    const pods = useWorkspaceStore.getState().flightLayouts[workspaceId]?.pods ?? [];
-                    if (pods.length > 0) {
-                      const newest = pods[pods.length - 1];
-                      navigateToRef.current?.(newest.id);
-                    }
-                  }, 0);
-                }
+                autoEnterFocusAndRelayout();
               }}
             >
               <svg width="11" height="11" viewBox="-2 -1 28 26" fill="none" style={{ flexShrink: 0 }}>
@@ -900,16 +910,7 @@ const WorkspaceFlightView = React.memo(function WorkspaceFlightView({
                 const p2 = computeSnapPlacement(contextMenu.canvasX, contextMenu.canvasY, FLIGHT_DEFAULT_TERMINAL_WIDTH, FLIGHT_DEFAULT_TERMINAL_HEIGHT);
                 addFlightPodAt(workspaceId, "terminal", p2.x, p2.y, p2.w, p2.h, p);
                 setContextMenu(null);
-                // In focus mode, relayout the grid to fit the new pod
-                if (focusModeRef.current) {
-                  setTimeout(() => {
-                    const pods = useWorkspaceStore.getState().flightLayouts[workspaceId]?.pods ?? [];
-                    if (pods.length > 0) {
-                      const newest = pods[pods.length - 1];
-                      navigateToRef.current?.(newest.id);
-                    }
-                  }, 0);
-                }
+                autoEnterFocusAndRelayout();
               }}
             >
               <svg width="12" height="12" viewBox="0 0 16 16" fill="none" style={{ flexShrink: 0 }}>

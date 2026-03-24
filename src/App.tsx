@@ -1520,6 +1520,40 @@ export function App() {
           }
         }
       }
+      // Cmd+Shift+C: add Claude tab to focused pod (flight mode)
+      if (
+        (e.metaKey || e.ctrlKey) &&
+        e.shiftKey &&
+        e.key.toLowerCase() === "c"
+      ) {
+        const s = useWorkspaceStore.getState();
+        const wsId = s.activeWorkspaceId;
+        if (!wsId) return;
+        const mode = s.workspaceModes[wsId] ?? "flight";
+        if (mode === "flight") {
+          e.preventDefault();
+          const layout = s.flightLayouts[wsId];
+          if (!layout) return;
+          const pods = layout.pods;
+          if (pods.length === 0) return;
+          // Find focused pod
+          let focusedPod = pods[0];
+          const activeEl = document.activeElement;
+          if (activeEl) {
+            const podEl = activeEl.closest("[data-flight-pod]");
+            if (podEl) {
+              const podId = podEl.getAttribute("data-flight-pod");
+              const match = pods.find((p) => p.id === podId);
+              if (match) focusedPod = match;
+            }
+          }
+          if (!activeEl?.closest("[data-flight-pod]")) {
+            const byZ = [...pods].sort((a, b) => b.zIndex - a.zIndex);
+            focusedPod = byZ[0];
+          }
+          s.addFlightPodTab(wsId, focusedPod.id, "claude", focusedPod.cwd);
+        }
+      }
       // Cmd+E: toggle file explorer
       if (
         (e.metaKey || e.ctrlKey) &&

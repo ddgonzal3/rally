@@ -28,6 +28,7 @@ import type {
   ThemeName,
   DetectedPort,
   FlightPod,
+  FlightTab,
   FlightLayout,
   FlightViewport,
   FlightLayoutPreset,
@@ -537,6 +538,10 @@ interface WorkspaceState {
   setFlightViewport: (workspaceId: string, viewport: Partial<FlightViewport>) => void;
   bringPodToFront: (workspaceId: string, podId: string) => void;
   togglePodShell: (workspaceId: string, podId: string) => void;
+  addFlightPodTab: (workspaceId: string, podId: string, tabType: "claude" | "terminal", cwd: string) => void;
+  removeFlightPodTab: (workspaceId: string, podId: string, tabId: string) => void;
+  setActiveFlightTab: (workspaceId: string, podId: string, tabId: string) => void;
+  setFlightTabPtyId: (workspaceId: string, podId: string, tabId: string, ptyId: string) => void;
   /** Save current flight layout as a named preset */
   saveFlightLayoutPreset: (workspaceId: string, name: string) => void;
   /** Restore a saved flight layout preset (kills existing PTYs, respawned on mount) */
@@ -3394,6 +3399,12 @@ export const useWorkspaceStore = create<WorkspaceState>()(
     const pod = layout.pods.find((p) => p.id === podId);
     if (pod?.ptyId) api.killPty(pod.ptyId).catch(() => {});
     if (pod?.type === "claude" && pod.shellPtyId) api.killPty(pod.shellPtyId).catch(() => {});
+    // Kill all tab PTYs
+    if (pod?.tabs) {
+      for (const tab of pod.tabs) {
+        if (tab.ptyId) api.killPty(tab.ptyId).catch(() => {});
+      }
+    }
     set((s) => ({
       flightLayouts: { ...s.flightLayouts, [workspaceId]: { ...layout, pods: layout.pods.filter((p) => p.id !== podId) } },
     }));
@@ -3434,6 +3445,85 @@ export const useWorkspaceStore = create<WorkspaceState>()(
       flightLayouts: { ...s.flightLayouts, [workspaceId]: { ...layout, pods: layout.pods.map((p) => {
         if (p.id !== podId || p.type !== "claude") return p;
         return { ...p, shellExpanded: !p.shellExpanded };
+      }) } },
+    }));
+  },
+
+  addFlightPodTab: (workspaceId: string, podId: string, tabType: "claude" | "terminal", cwd: string) => {
+    const layout = get().flightLayouts[workspaceId];
+    if (!layout) return;
+    set((s) => ({
+      flightLayouts: { ...s.flightLayouts, [workspaceId]: { ...layout, pods: layout.pods.map((p) => {
+        if (p.id !== podId) return p;
+        let pod = p;
+        // If pod has no tabs array yet, migrate existing state into first tab
+        if (!pod.tabs || pod.tabs.length === 0) {
+          const firstTab: FlightTab = {
+            id: crypto.randomUUID(),
+            type: pod.type,
+            title: pod.title,
+            cwd: pod.cwd,
+            ptyId: pod.ptyId,
+          };
+          pod = { ...pod, tabs: [firstTab], activeTabId: firstTab.id };
+        }
+        const newTab: FlightTab = {
+          id: crypto.randomUUID(),
+          type: tabType,
+          title: tabType === "claude" ? "Claude Code" : (cwd.split("/").pop() || "Terminal"),
+          cwd,
+        };
+        return { ...pod, tabs: [...(pod.tabs ?? []), newTab], activeTabId: newTab.id } as FlightPod;
+      }) } },
+    }));
+  },
+
+  removeFlightPodTab: (workspaceId: string, podId: string, tabId: string) => {
+    const layout = get().flightLayouts[workspaceId];
+    if (!layout) return;
+    const pod = layout.pods.find((p) => p.id === podId);
+    if (!pod || !pod.tabs) return;
+    const tab = pod.tabs.find((t) => t.id === tabId);
+    if (tab?.ptyId) api.killPty(tab.ptyId).catch(() => {});
+    const remaining = pod.tabs.filter((t) => t.id !== tabId);
+    if (remaining.length === 0) {
+      // Last tab — remove the entire pod
+      get().removeFlightPod(workspaceId, podId);
+      return;
+    }
+    let newActiveId = pod.activeTabId;
+    if (pod.activeTabId === tabId) {
+      // Switch to adjacent tab
+      const oldIdx = pod.tabs.findIndex((t) => t.id === tabId);
+      const newIdx = Math.min(oldIdx, remaining.length - 1);
+      newActiveId = remaining[newIdx].id;
+    }
+    set((s) => ({
+      flightLayouts: { ...s.flightLayouts, [workspaceId]: { ...layout, pods: layout.pods.map((p) => {
+        if (p.id !== podId) return p;
+        return { ...p, tabs: remaining, activeTabId: newActiveId } as FlightPod;
+      }) } },
+    }));
+  },
+
+  setActiveFlightTab: (workspaceId: string, podId: string, tabId: string) => {
+    const layout = get().flightLayouts[workspaceId];
+    if (!layout) return;
+    set((s) => ({
+      flightLayouts: { ...s.flightLayouts, [workspaceId]: { ...layout, pods: layout.pods.map((p) => {
+        if (p.id !== podId) return p;
+        return { ...p, activeTabId: tabId } as FlightPod;
+      }) } },
+    }));
+  },
+
+  setFlightTabPtyId: (workspaceId: string, podId: string, tabId: string, ptyId: string) => {
+    const layout = get().flightLayouts[workspaceId];
+    if (!layout) return;
+    set((s) => ({
+      flightLayouts: { ...s.flightLayouts, [workspaceId]: { ...layout, pods: layout.pods.map((p) => {
+        if (p.id !== podId) return p;
+        return { ...p, tabs: (p.tabs ?? []).map((t) => t.id === tabId ? { ...t, ptyId } : t) } as FlightPod;
       }) } },
     }));
   },
