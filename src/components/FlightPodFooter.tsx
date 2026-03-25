@@ -339,6 +339,7 @@ function PodScriptDot({
 export function FlightPodFooter({ repoPath, onOpenTerminal }: { repoPath: string; onOpenTerminal?: () => void }) {
   const rallyConfig = useWorkspaceStore((s) => s.rallyConfigs[repoPath]);
   const loadRallyConfig = useWorkspaceStore((s) => s.loadRallyConfig);
+  const branch = useWorkspaceStore((s) => s.gitStatuses[repoPath]?.branch);
   const [scriptCache, setScriptCache] = useState<ScriptEntry[]>([]);
 
   useEffect(() => {
@@ -347,7 +348,7 @@ export function FlightPodFooter({ repoPath, onOpenTerminal }: { repoPath: string
   }, [repoPath, loadRallyConfig, rallyConfig]);
 
   const scripts = rallyConfig?.statusBar ?? [];
-  if (scripts.length === 0) return null;
+  if (scripts.length === 0 && !branch) return null;
 
   const repoName = repoPath.split("/").pop() ?? repoPath;
 
@@ -377,11 +378,26 @@ export function FlightPodFooter({ repoPath, onOpenTerminal }: { repoPath: string
           whiteSpace: "nowrap",
           lineHeight: 1,
           flexShrink: 0,
-          marginRight: 5,
+          marginRight: branch ? 4 : 5,
         }}
       >
         {repoName}
       </span>
+      {branch && (
+        <span
+          style={{
+            fontSize: 12,
+            color: "var(--text-secondary)",
+            whiteSpace: "nowrap",
+            lineHeight: 1,
+            flexShrink: 0,
+            marginRight: 6,
+            opacity: 0.7,
+          }}
+        >
+          {branch}
+        </span>
+      )}
       {scripts.map((scriptName) => (
         <PodScriptDot
           key={scriptName}
