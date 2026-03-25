@@ -541,6 +541,7 @@ export const FlightPod = React.memo(function FlightPod({
           {/* Expandable shell terminal */}
           <div
             data-shell-panel=""
+            data-shell-area=""
             style={{
               display: shellExpanded ? "flex" : "none",
               flexDirection: "column",

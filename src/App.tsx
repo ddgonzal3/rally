@@ -1333,6 +1333,14 @@ export function App() {
           if (!focusedPod.shellExpanded) {
             // Collapsed → expand to default height
             s.togglePodShell(wsId, focusedPod.id);
+            // Focus the shell terminal after it becomes visible
+            setTimeout(() => {
+              const podEl = document.querySelector(`[data-flight-pod="${focusedPod.id}"]`);
+              if (podEl) {
+                const shellArea = podEl.querySelector("[data-shell-area] textarea, [data-shell-area] .xterm-helper-textarea");
+                if (shellArea) (shellArea as HTMLElement).focus();
+              }
+            }, 50);
           } else if (focusedPod.shellHeight > FLIGHT_DEFAULT_SHELL_HEIGHT + 10) {
             // Bigger than default → snap to default
             s.updateFlightPod(wsId, focusedPod.id, { shellHeight: FLIGHT_DEFAULT_SHELL_HEIGHT } as any);
