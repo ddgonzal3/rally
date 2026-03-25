@@ -1551,7 +1551,7 @@ export function App() {
           if (firstGroupId) {
             s.addPaneToGroup(podLayoutId, firstGroupId, {
               id: crypto.randomUUID(),
-              type: "claude-launcher",
+              type: "claude",
               title: "Claude Code",
               cwd: focusedPod.cwd,
             });

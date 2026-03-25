@@ -229,6 +229,12 @@ export function PaneGroupView({
 
   function handleAction(actionType: PendingAction["type"]) {
     if (actionType === "terminal") {
+      // Flight mode: skip CWD picker, use active pane's cwd directly
+      if (workspaceId.startsWith("flight:")) {
+        const activePane = group.panes.find((p) => p.id === activePaneId);
+        executeAction("terminal", activePane?.cwd || workspacePath);
+        return;
+      }
       window.dispatchEvent(
         new CustomEvent<RequestNewTerminalCwdDetail>(
           REQUEST_NEW_TERMINAL_CWD_EVENT,
