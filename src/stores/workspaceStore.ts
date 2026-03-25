@@ -2433,7 +2433,20 @@ export const useWorkspaceStore = create<WorkspaceState>()(
       const isRow =
         (!parentInfo || isDirectChildOfRootVSplit) && !isBottomRow;
 
-      if (isRow && !isFlightPodLayout) {
+      if (isFlightPodLayout && parentInfo) {
+        // Flight pod layouts: always collapse the group so the sibling expands
+        const siblingIndex = parentInfo.index === 0 ? 1 : 0;
+        const siblingNode = parentInfo.parent.children[siblingIndex];
+        const targetGroupId = findFirstGroupInSubtree(siblingNode);
+        get().closeGroup(workspaceId, groupId);
+        if (targetGroupId) {
+          setTimeout(() => {
+            window.dispatchEvent(
+              new CustomEvent("rally-focus-group", { detail: targetGroupId }),
+            );
+          }, 0);
+        }
+      } else if (isRow && !isFlightPodLayout) {
         // This group is a row — show empty state
         set((s) => ({
           layouts: {
