@@ -35,10 +35,33 @@ else
 fi
 
 head_before=$(git rev-parse HEAD)
-git rebase "$main_branch" || {
-  git rebase --abort 2>/dev/null
-  echo "Failed to rebase onto $main_branch"
-  exit 1
+# Rebase with main taking precedence on conflicts: -Xtheirs means
+# "when replaying our commits on top of main, prefer main's version"
+# (in rebase context, "theirs" = the branch being rebased onto = main)
+git rebase -Xtheirs "$main_branch" || {
+  # If rebase still fails (e.g. add/add conflicts that -Xtheirs can't
+  # auto-resolve), force-resolve each remaining conflict using main's version
+  while [ -d ".git/rebase-merge" ] || [ -d ".git/rebase-apply" ]; do
+    conflicted=$(git diff --name-only --diff-filter=U)
+    if [ -z "$conflicted" ]; then
+      # No conflicts but rebase paused — skip this commit
+      git rebase --skip 2>/dev/null || break
+    else
+      echo "$conflicted" | while IFS= read -r f; do
+        git checkout --theirs -- "$f" 2>/dev/null && git add "$f"
+      done
+      GIT_EDITOR=true git rebase --continue 2>/dev/null || {
+        # If continue fails, skip this commit entirely
+        git rebase --skip 2>/dev/null || break
+      }
+    fi
+  done
+  # Verify rebase completed
+  if [ -d ".git/rebase-merge" ] || [ -d ".git/rebase-apply" ]; then
+    git rebase --abort 2>/dev/null
+    echo "Failed to rebase onto $main_branch"
+    exit 1
+  fi
 }
 head_after=$(git rev-parse HEAD)
 
