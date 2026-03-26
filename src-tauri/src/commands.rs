@@ -360,6 +360,10 @@ pub async fn clone_repo(source_path: String, name: String) -> Result<String, Str
     if !remote_url.is_empty() {
         crate::git_ops::git_cmd(&target_str, &["remote", "set-url", "origin", &remote_url])
             .await?;
+        // Update origin/HEAD to match the remote's default branch
+        // (local clone inherits the source repo's HEAD, not GitHub's default)
+        let _ = crate::git_ops::git_cmd(&target_str, &["remote", "set-head", "origin", "--auto"])
+            .await;
     }
 
     Ok(target_str)
