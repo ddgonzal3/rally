@@ -7,7 +7,17 @@
 set -e
 
 branch=$(git symbolic-ref --short HEAD 2>/dev/null)
-main=main
+# Auto-detect default branch (main, master, staging, develop, etc.)
+main=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's|refs/remotes/origin/||')
+if [ -z "$main" ]; then
+  # Fallback: check common names
+  for candidate in staging main master; do
+    if git rev-parse --verify "origin/$candidate" &>/dev/null; then
+      main=$candidate; break
+    fi
+  done
+fi
+if [ -z "$main" ]; then echo "Cannot detect default branch"; exit 1; fi
 
 if [ -z "$branch" ]; then echo "Not in a git repo"; exit 1; fi
 if [ "$branch" = "$main" ]; then echo "Already on $main"; exit 1; fi
