@@ -1,16 +1,31 @@
 #!/bin/bash
-# gpr — Push and create PR into main
+# gpr — Push and create PR into the default branch
 # Installed to ~/.rally/bin/ by Rally on startup
 
 branch=$(git symbolic-ref --short HEAD 2>/dev/null)
 if [ -z "$branch" ]; then echo "Not in a git repo"; exit 1; fi
-if [ "$branch" = "main" ] || [ "$branch" = "master" ]; then
-  echo "Cannot create PR from $branch. Switch to a feature branch first."
+
+# Auto-detect default branch
+base=$(git config rally.syncBranch 2>/dev/null || true)
+if [ -z "$base" ]; then
+  base=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's|refs/remotes/origin/||')
+fi
+if [ -z "$base" ]; then
+  for candidate in staging main master; do
+    if git rev-parse --verify "origin/$candidate" &>/dev/null; then
+      base=$candidate; break
+    fi
+  done
+fi
+if [ -z "$base" ]; then echo "Cannot detect default branch"; exit 1; fi
+
+if [ "$branch" = "$base" ]; then
+  echo "Cannot create PR from $base. Switch to a feature branch first."
   exit 1
 fi
 
 echo "Pushing $branch..."
 git push 2>/dev/null || git push --set-upstream origin "$branch"
 
-echo "Creating PR..."
-gh pr create --fill
+echo "Creating PR into $base..."
+gh pr create --fill --base "$base"
