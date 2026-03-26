@@ -2372,8 +2372,8 @@ const styles: Record<string, React.CSSProperties> = {
     overflow: "hidden",
   },
   activityBar: {
-    width: 46,
-    minWidth: 46,
+    width: 36,
+    minWidth: 36,
     display: "flex",
     flexDirection: "column",
     alignItems: "center",
