@@ -1,46 +1,31 @@
 #!/bin/bash
-# gsync — Sync current branch with main. Main always wins on conflicts.
+# gsync — Reset current branch to match origin/main exactly.
+# The branch becomes a clean copy of main under the same name.
+# All local commits on the branch are discarded.
 # Installed to ~/.rally/bin/ by Rally on startup
+
+set -e
 
 branch=$(git symbolic-ref --short HEAD 2>/dev/null)
 main=main
 
 if [ -z "$branch" ]; then echo "Not in a git repo"; exit 1; fi
 if [ "$branch" = "$main" ]; then echo "Already on $main"; exit 1; fi
-if [ -n "$(git status --porcelain -uno)" ]; then
-  echo "Dirty working tree. Commit or stash first."
+if [ -n "$(git status --porcelain)" ]; then
+  echo "Working tree is dirty (uncommitted or untracked changes)."
+  echo "Commit, stash, or clean first."
   exit 1
 fi
 
 rm -f .git/index.lock
 git fetch origin "$main" || { echo "Fetch failed"; exit 1; }
 
-# If branch tree matches main, it's already merged — just reset
-if [ -z "$(git diff --stat "origin/$main" HEAD)" ]; then
-  git reset --hard "origin/$main"
-  git push --force-with-lease 2>/dev/null || true
-  echo "$branch reset to $main (already merged)."
-  exit 0
+echo "Resetting $branch to origin/$main..."
+git reset --hard "origin/$main"
+
+# Push the reset branch to remote
+if git rev-parse --verify "origin/$branch" &>/dev/null; then
+  git push --force-with-lease || { echo "Push failed"; exit 1; }
 fi
 
-# Rebase onto origin/main — main wins all conflicts
-git rebase -Xtheirs "origin/$main" || {
-  while [ -d .git/rebase-merge ] || [ -d .git/rebase-apply ]; do
-    conflicted=$(git diff --name-only --diff-filter=U)
-    if [ -n "$conflicted" ]; then
-      echo "$conflicted" | while IFS= read -r f; do
-        git checkout --theirs -- "$f" 2>/dev/null && git add "$f"
-      done
-      GIT_EDITOR=true git rebase --continue 2>/dev/null || git rebase --skip 2>/dev/null || break
-    else
-      git rebase --skip 2>/dev/null || break
-    fi
-  done
-  if [ -d .git/rebase-merge ] || [ -d .git/rebase-apply ]; then
-    git rebase --abort 2>/dev/null
-    echo "Rebase failed"; exit 1
-  fi
-}
-
-git push --force-with-lease 2>/dev/null || true
-echo "$branch rebased onto $main."
+echo "$branch is now identical to $main."
