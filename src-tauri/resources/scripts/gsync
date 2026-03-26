@@ -24,9 +24,8 @@ if [ -z "$main" ]; then echo "Cannot detect default branch"; exit 1; fi
 
 if [ -z "$branch" ]; then echo "Not in a git repo"; exit 1; fi
 if [ "$branch" = "$main" ]; then echo "Already on $main"; exit 1; fi
-if [ -n "$(git status --porcelain)" ]; then
-  echo "Working tree is dirty (uncommitted or untracked changes)."
-  echo "Commit, stash, or clean first."
+if [ -n "$(git status --porcelain -uno)" ]; then
+  echo "Working tree is dirty. Commit or stash first."
   exit 1
 fi
 
