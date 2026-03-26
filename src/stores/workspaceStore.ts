@@ -2401,6 +2401,12 @@ export const useWorkspaceStore = create<WorkspaceState>()(
         },
       },
     }));
+    // Focus the new group's terminal after it mounts
+    setTimeout(() => {
+      window.dispatchEvent(
+        new CustomEvent("rally-focus-group", { detail: newGroup.id }),
+      );
+    }, 100);
   },
 
   closePane: (workspaceId, groupId, paneId) => {
