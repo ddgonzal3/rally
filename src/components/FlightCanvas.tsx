@@ -504,12 +504,12 @@ const WorkspaceFlightView = React.memo(function WorkspaceFlightView({
         const availW = containerW - PAD * 2;
         const availH = containerH - HUD_HEIGHT - PAD * 2;
 
-        // Grid wrapping only when all columns fit in the viewport
+        // Grid wrapping: arrange visible columns in a balanced grid
         let gridCols: number;
         let gridRows: number;
         const allVisible = viewportCols >= totalColumns;
-        if (gridWrappedRef.current && allVisible && totalColumns > 2) {
-          gridCols = Math.ceil(totalColumns / 2);
+        if (gridWrappedRef.current && viewportCols > 2) {
+          gridCols = Math.ceil(viewportCols / 2);
           gridRows = 2;
         } else {
           gridCols = viewportCols; // Size columns to fit this many in viewport
@@ -526,8 +526,8 @@ const WorkspaceFlightView = React.memo(function WorkspaceFlightView({
           let colY: number;
           let colH: number;
 
-          if (allVisible && gridWrappedRef.current && totalColumns > 2) {
-            // Grid layout when all columns visible + grid wrapping on
+          if (gridWrappedRef.current && viewportCols > 2) {
+            // Grid layout: wrap columns into rows
             const gc = colIdx % gridCols;
             const gr = Math.floor(colIdx / gridCols);
             colX = PAD + gc * (colW + GAP);
@@ -551,15 +551,20 @@ const WorkspaceFlightView = React.memo(function WorkspaceFlightView({
           }
         }
 
-        // Pan viewport to center the target pod's column
-        if (allVisible && !(gridWrappedRef.current && totalColumns > 2)) {
-          // All columns fit in viewport — no panning needed
+        // Pan viewport to show the target pod
+        if (allVisible) {
+          // All columns fit — no panning needed
           store.setFlightViewport(workspaceId, { panX: 0, panY: 0, zoom: 1.0 });
-        } else if (allVisible) {
-          // Grid-wrapped, all visible — no panning needed
-          store.setFlightViewport(workspaceId, { panX: 0, panY: 0, zoom: 1.0 });
+        } else if (gridWrappedRef.current && viewportCols > 2) {
+          // Grid mode with overflow: pan by grid pages
+          const targetColIdx = repoColumns.findIndex(col => col.pods.some(p => p.id === podId));
+          const pageSize = viewportCols; // columns per grid page
+          const pageStart = Math.floor(targetColIdx / pageSize) * pageSize;
+          const gridPageCol = Math.floor(pageStart / gridRows); // grid column offset
+          const panX = -(gridPageCol * (colW + GAP));
+          store.setFlightViewport(workspaceId, { panX, panY: 0, zoom: 1.0 });
         } else {
-          // Pan to show the target pod's column
+          // Row mode: pan to show the target column
           const targetColIdx = repoColumns.findIndex(col => col.pods.some(p => p.id === podId));
           const panX = -(targetColIdx * (colW + GAP));
           store.setFlightViewport(workspaceId, { panX, panY: 0, zoom: 1.0 });
