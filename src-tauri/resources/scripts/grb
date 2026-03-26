@@ -3,8 +3,12 @@
 # Installed to ~/.rally/bin/ by Rally on startup
 
 branch=$(git symbolic-ref --short HEAD 2>/dev/null)
-# Auto-detect default branch (main, master, staging, develop, etc.)
-main_branch=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's|refs/remotes/origin/||')
+# Per-repo override: git config rally.syncBranch staging
+# Otherwise auto-detect via origin/HEAD
+main_branch=$(git config rally.syncBranch 2>/dev/null)
+if [ -z "$main_branch" ]; then
+  main_branch=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's|refs/remotes/origin/||')
+fi
 if [ -z "$main_branch" ]; then
   for candidate in staging main master; do
     if git rev-parse --verify "origin/$candidate" &>/dev/null; then
