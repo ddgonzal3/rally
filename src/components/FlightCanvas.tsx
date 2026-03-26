@@ -310,10 +310,29 @@ const WorkspaceFlightView = React.memo(function WorkspaceFlightView({
     let lastX = 0;
     let lastY = 0;
     let isPanning = false;
+    let spaceHeld = false;
+
+    // Spacebar + drag to pan (like Figma/Photoshop)
+    const spaceDownHandler = (e: KeyboardEvent) => {
+      if (e.key === " " && !e.repeat && !(e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement)) {
+        spaceHeld = true;
+        el.style.cursor = "grab";
+      }
+    };
+    const spaceUpHandler = (e: KeyboardEvent) => {
+      if (e.key === " ") {
+        spaceHeld = false;
+        if (isPanning) {
+          isPanning = false;
+          el.classList.remove("flight-panning");
+        }
+        el.style.cursor = "";
+      }
+    };
 
     const moveHandler = (e: MouseEvent) => {
-      // Shift+move = pan
-      if (e.ctrlKey && !e.altKey) {
+      // Space+move = pan
+      if (spaceHeld) {
         if (!isPanning) {
           isPanning = true;
           lastX = e.clientX;
@@ -335,17 +354,7 @@ const WorkspaceFlightView = React.memo(function WorkspaceFlightView({
         }
         return;
       }
-      if (isPanning && !e.ctrlKey) {
-        isPanning = false;
-        el.style.cursor = "";
-        el.classList.remove("flight-panning");
-      }
-
-      // (Option+move pod drag removed — drag via header only)
-    };
-
-    const keyUpHandler = (e: KeyboardEvent) => {
-      if (e.key === "Control" && isPanning) {
+      if (isPanning) {
         isPanning = false;
         el.style.cursor = "";
         el.classList.remove("flight-panning");
@@ -353,7 +362,8 @@ const WorkspaceFlightView = React.memo(function WorkspaceFlightView({
     };
 
     el.addEventListener("mousemove", moveHandler);
-    window.addEventListener("keyup", keyUpHandler);
+    window.addEventListener("keydown", spaceDownHandler);
+    window.addEventListener("keyup", spaceUpHandler);
 
     // Marquee selection: left-click drag on empty canvas (no modifiers)
     const marqueeDownHandler = (e: MouseEvent) => {
@@ -838,7 +848,8 @@ const WorkspaceFlightView = React.memo(function WorkspaceFlightView({
       el.removeEventListener("mousedown", clickTracker, true);
       el.removeEventListener("mousemove", moveHandler);
       el.removeEventListener("mousedown", marqueeDownHandler);
-      window.removeEventListener("keyup", keyUpHandler);
+      window.removeEventListener("keydown", spaceDownHandler);
+      window.removeEventListener("keyup", spaceUpHandler);
       document.removeEventListener("keydown", deleteHandler);
       document.removeEventListener("keydown", navHandler, true);
       if (freeScrollTimer) clearTimeout(freeScrollTimer);
