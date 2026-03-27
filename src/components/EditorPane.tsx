@@ -221,6 +221,7 @@ function TextEditor({ filePath, paneId, workspaceId, groupId }: { filePath: stri
 
   useEffect(() => {
     setContent(null);
+    isDirtyRef.current = false;
     markClean(paneId);
     setError(null);
     invoke<string>("read_file_content", { path: filePath })
@@ -232,6 +233,8 @@ function TextEditor({ filePath, paneId, workspaceId, groupId }: { filePath: stri
       .catch((e) => setError(String(e)));
   }, [filePath, paneId, markClean]);
 
+  // Poll for external file changes when in preview mode (e.g. markdown edited by Claude)
+  const isDirtyRef = useRef(false);
   const ext = getExtension(filePath);
   const isMarkdown = ext === "md";
   const isHtml = ext === "html" || ext === "htm";
@@ -239,12 +242,35 @@ function TextEditor({ filePath, paneId, workspaceId, groupId }: { filePath: stri
   const defaultViewMode = isMarkdown ? "preview" : "raw";
   const viewMode = hasPreview ? (editorViewMode ?? defaultViewMode) : "raw";
 
+  useEffect(() => {
+    if (viewMode === "raw") return;
+    const interval = setInterval(() => {
+      if (isDirtyRef.current) return;
+      invoke<string>("read_file_content", { path: filePath })
+        .then((c) => {
+          if (c !== contentRef.current) {
+            contentRef.current = c;
+            setContent(c);
+            setPreviewContent(c);
+            // Also update the Monaco editor if mounted
+            const editor = editorRef.current;
+            if (editor && editor.getValue() !== c) {
+              editor.setValue(c);
+            }
+          }
+        })
+        .catch(() => {});
+    }, 2000);
+    return () => clearInterval(interval);
+  }, [filePath, viewMode]);
+
   const handleSave = useCallback(async () => {
     try {
       await invoke("write_file_content", {
         path: filePath,
         content: contentRef.current,
       });
+      isDirtyRef.current = false;
       markClean(paneId);
       addToast({ type: "info", title: "Saved", message: filePath.split("/").pop() ?? filePath, duration: 2000 });
     } catch (e) {
@@ -533,6 +559,7 @@ function TextEditor({ filePath, paneId, workspaceId, groupId }: { filePath: stri
       keepCurrentModel
       onChange={(value) => {
         contentRef.current = value ?? "";
+        isDirtyRef.current = true;
         markDirty(paneId);
         if (viewMode !== "raw") {
           setPreviewContent(value ?? "");
