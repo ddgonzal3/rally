@@ -236,7 +236,8 @@ function TextEditor({ filePath, paneId, workspaceId, groupId }: { filePath: stri
   const isMarkdown = ext === "md";
   const isHtml = ext === "html" || ext === "htm";
   const hasPreview = isMarkdown || isHtml;
-  const viewMode = hasPreview ? (editorViewMode ?? "raw") : "raw";
+  const defaultViewMode = isMarkdown ? "preview" : "raw";
+  const viewMode = hasPreview ? (editorViewMode ?? defaultViewMode) : "raw";
 
   const handleSave = useCallback(async () => {
     try {

@@ -222,12 +222,16 @@ export class TerminalLinkProvider implements ILinkProvider {
           pointerCursor: this._cmdHeld,
           underline: this._cmdHeld,
         },
-        activate: (_event: MouseEvent, linkText: string) => {
+        activate: (event: MouseEvent, linkText: string) => {
           // Only activate when Cmd is held. We use our own cmdHeld state
           // (tracked via keydown/keyup) instead of event.metaKey because
           // WebKit in Tauri's webview doesn't reliably set metaKey on
           // the mouseup event that xterm passes to activate().
           if (!this._cmdHeld) return;
+
+          // Prevent the webview from also opening this as a browser link
+          event.preventDefault();
+          event.stopPropagation();
 
           // Use the original match text, not xterm's linkText — xterm may
           // truncate it for wrapped links or modify whitespace.
