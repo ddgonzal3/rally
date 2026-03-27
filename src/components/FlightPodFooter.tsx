@@ -387,7 +387,7 @@ export function FlightPodFooter({ repoPath, onOpenTerminal }: { repoPath: string
         <span
           style={{
             fontSize: 12,
-            color: "var(--text-secondary)",
+            color: "var(--text-primary)",
             whiteSpace: "nowrap",
             lineHeight: 1,
             flexShrink: 0,
