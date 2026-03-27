@@ -3301,11 +3301,18 @@ export const useWorkspaceStore = create<WorkspaceState>()(
     newRoot = replaceNode(newRoot, targetGroupId, splitNode);
 
     set((s) => ({
+      activeGroupIds: { ...s.activeGroupIds, [workspaceId]: newGroup.id },
       layouts: {
         ...s.layouts,
         [workspaceId]: { root: normalizeLayoutTree(newRoot), groups: newGroups },
       },
     }));
+    // Focus the dropped pane's terminal after it mounts
+    setTimeout(() => {
+      window.dispatchEvent(
+        new CustomEvent("rally-focus-group", { detail: newGroup.id }),
+      );
+    }, 100);
   },
 
   dropFileOnGroup: (workspaceId, targetGroupId, filePaths, position) => {

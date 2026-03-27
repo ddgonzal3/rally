@@ -1079,14 +1079,21 @@ function PaneContent({
   useEffect(() => {
     function handleFocusGroup(e: Event) {
       const targetId = (e as CustomEvent).detail;
-      if (targetId === groupId && contentRef.current) {
-        requestAnimationFrame(() => {
-          const textarea = contentRef.current?.querySelector(
-            "textarea.xterm-helper-textarea",
-          ) as HTMLTextAreaElement | null;
-          textarea?.focus();
-        });
-      }
+      if (targetId !== groupId || !contentRef.current) return;
+      // Retry focus a few times — the terminal may still be mounting/re-attaching
+      let attempts = 0;
+      const tryFocus = () => {
+        const textarea = contentRef.current?.querySelector(
+          "textarea.xterm-helper-textarea",
+        ) as HTMLTextAreaElement | null;
+        if (textarea) {
+          textarea.focus();
+        } else if (attempts < 5) {
+          attempts++;
+          requestAnimationFrame(tryFocus);
+        }
+      };
+      requestAnimationFrame(tryFocus);
     }
     window.addEventListener("rally-focus-group", handleFocusGroup);
     return () =>

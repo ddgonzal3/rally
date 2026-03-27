@@ -334,12 +334,16 @@ export function Terminal({ cwd, command, initialInput, ptyId: existingPtyId, loc
     // Always focus — even if already active — to handle app activation
     // click-through (clicking into an inactive window should route focus
     // to the terminal that was clicked, not where focus was last).
-    const textarea = containerRef.current?.querySelector(
-      "textarea.xterm-helper-textarea"
-    ) as HTMLTextAreaElement | null;
-    if (textarea) {
-      textarea.focus();
-    }
+    // Focus both synchronously AND in rAF to survive any re-renders
+    // triggered by group activation (e.g. focusGroup updating store).
+    const focusTextarea = () => {
+      const textarea = containerRef.current?.querySelector(
+        "textarea.xterm-helper-textarea"
+      ) as HTMLTextAreaElement | null;
+      if (textarea) textarea.focus();
+    };
+    focusTextarea();
+    requestAnimationFrame(focusTextarea);
   }, []);
 
   useEffect(() => {
