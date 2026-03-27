@@ -1,12 +1,25 @@
 #!/bin/bash
-# gmerge — Squash merge PR + sync local branch with main
+# gmerge — Squash merge PR + sync local branch with default branch
 # Installed to ~/.rally/bin/ by Rally on startup
 
 branch=$(git symbolic-ref --short HEAD 2>/dev/null)
-main_branch="main"
+
+# Auto-detect default branch
+main_branch=$(git config rally.syncBranch 2>/dev/null || true)
+if [ -z "$main_branch" ]; then
+  main_branch=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's|refs/remotes/origin/||')
+fi
+if [ -z "$main_branch" ]; then
+  for candidate in staging main master; do
+    if git rev-parse --verify "origin/$candidate" &>/dev/null; then
+      main_branch=$candidate; break
+    fi
+  done
+fi
+if [ -z "$main_branch" ]; then echo "Cannot detect default branch"; exit 1; fi
 
 if [ -z "$branch" ]; then echo "Not in a git repo"; exit 1; fi
-if [ "$branch" = "$main_branch" ] || [ "$branch" = "master" ]; then
+if [ "$branch" = "$main_branch" ]; then
   echo "Cannot merge from $main_branch. Switch to a feature branch."
   exit 1
 fi
@@ -29,7 +42,7 @@ if [ -n "$remote_head" ]; then
   fi
 fi
 
-# Check PR exists and is mergeable (single API call)
+# Check PR exists and is mergeable
 pr_json=$(gh pr view --json state,mergeable 2>/dev/null)
 if [ -z "$pr_json" ]; then
   echo "No PR found for branch $branch."
@@ -52,17 +65,10 @@ fi
 echo "Squash merging PR..."
 gh pr merge --squash --admin || { echo "Merge failed."; exit 1; }
 
-# Sync local branch with main
+# Sync local branch to match default branch
 echo "Syncing $branch with $main_branch..."
-git checkout "$main_branch" || { echo "Failed to checkout $main_branch"; exit 1; }
-git pull || { echo "Failed to pull $main_branch"; exit 1; }
-
-git checkout "$branch" || { echo "Failed to checkout $branch"; exit 1; }
-ahead=$(git rev-list --count "$main_branch".."$branch" 2>/dev/null || echo "0")
-if [ "$ahead" -gt 0 ]; then
-  git reset --hard "$main_branch" || { echo "Failed to reset $branch"; exit 1; }
-  git rebase "$main_branch" || { echo "Failed to rebase onto $main_branch"; exit 1; }
-fi
+git fetch origin "$main_branch"
+git reset --hard "origin/$main_branch"
 
 # Push if remote branch still exists (may have been auto-deleted on merge)
 if git ls-remote --exit-code origin "$branch" >/dev/null 2>&1; then
