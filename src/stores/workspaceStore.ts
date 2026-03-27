@@ -5,6 +5,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { addToast } from "../components/ToastContainer";
 import { openUrl } from "../lib/tauri";
+import { lastFocusedFlightPodId } from "../lib/flightState";
 import type {
   Workspace,
   GitStatus,
@@ -3049,7 +3050,30 @@ export const useWorkspaceStore = create<WorkspaceState>()(
       set({ unifiedGitPanelOpen: false, unifiedGitPanelPath: null, gitDiffScrollToFile: null, prReviewScrollToFile: null });
     }
 
-    const layout = get().getOrCreateLayout(workspaceId);
+    // In flight mode, open in the focused pod's layout instead of the workspace layout
+    const mode = get().workspaceModes[workspaceId] ?? "flight";
+    let layoutId = workspaceId;
+    if (mode === "flight") {
+      const flightLayout = get().flightLayouts[workspaceId];
+      const pods = flightLayout?.pods ?? [];
+      // Use the last focused pod, or find a pod whose cwd contains the file
+      let targetPod = lastFocusedFlightPodId
+        ? pods.find((p) => p.id === lastFocusedFlightPodId)
+        : undefined;
+      if (!targetPod) {
+        targetPod = pods.find((p) => filePath.startsWith(p.cwd));
+      }
+      if (!targetPod && pods.length > 0) {
+        targetPod = pods[0];
+      }
+      if (targetPod) {
+        layoutId = `flight:${targetPod.id}`;
+        // Ensure pod layout exists
+        get().getOrCreatePodLayout(layoutId, targetPod.cwd, "claude");
+      }
+    }
+
+    const layout = get().getOrCreateLayout(layoutId);
 
     // Find target group in the "top" area of the layout
     let targetGroupId: string | null = null;
@@ -3071,12 +3095,12 @@ export const useWorkspaceStore = create<WorkspaceState>()(
       if (existing) {
         // Update line:col even if already focused (user Cmd+clicked a different line)
         if (options?.line) {
-          get().transformPane(workspaceId, targetGroupId, existing.id, {
+          get().transformPane(layoutId, targetGroupId, existing.id, {
             initialLine: options.line,
             initialCol: options.col,
           });
         }
-        get().setActivePane(workspaceId, targetGroupId, existing.id);
+        get().setActivePane(layoutId, targetGroupId, existing.id);
         return;
       }
     }
@@ -3090,7 +3114,7 @@ export const useWorkspaceStore = create<WorkspaceState>()(
       initialLine: options?.line,
       initialCol: options?.col,
     };
-    get().addPaneToGroup(workspaceId, targetGroupId, pane);
+    get().addPaneToGroup(layoutId, targetGroupId, pane);
 
     // Reveal the file in the explorer (expand ancestors, scroll into view)
     // and ensure the explorer panel is visible — skip when opened directly from the explorer

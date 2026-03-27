@@ -4,6 +4,7 @@ import { Terminal } from "./Terminal";
 import { SplitContainer } from "./SplitContainer";
 import { api } from "../lib/tauri";
 import { showContextMenu } from "../lib/contextMenu";
+import { setLastFocusedFlightPodId } from "../lib/flightState";
 import { FlightPodFooter } from "./FlightPodFooter";
 import type { FlightPod as FlightPodType } from "../lib/types";
 import {
@@ -154,8 +155,8 @@ interface FlightPodProps {
   isSelected?: boolean;
 }
 
-/** Tracks the last pod the user clicked/interacted with — used by Ctrl+` etc. */
-export let lastFocusedFlightPodId: string | null = null;
+// Re-export from shared module for backwards compatibility
+export { lastFocusedFlightPodId } from "../lib/flightState";
 
 export const FlightPod = React.memo(function FlightPod({
   podId,
@@ -404,7 +405,7 @@ export const FlightPod = React.memo(function FlightPod({
     <div
       ref={podRef}
       data-flight-pod={podId}
-      onMouseDownCapture={() => { lastFocusedFlightPodId = podId; }}
+      onMouseDownCapture={() => { setLastFocusedFlightPodId(podId); }}
       onClick={handleFocusClick}
       style={{
         position: "absolute",
