@@ -527,10 +527,14 @@ const WorkspaceFlightView = React.memo(function WorkspaceFlightView({
           let colH: number;
 
           if (gridWrappedRef.current && viewportCols > 2) {
-            // Grid layout: wrap columns into rows
-            const gc = colIdx % gridCols;
-            const gr = Math.floor(colIdx / gridCols);
-            colX = PAD + gc * (colW + GAP);
+            // Grid layout: fill pages (gridCols x gridRows), overflow pages extend right
+            const pageSize = gridCols * gridRows;
+            const pageIdx = Math.floor(colIdx / pageSize);
+            const withinPage = colIdx % pageSize;
+            const gc = withinPage % gridCols;
+            const gr = Math.floor(withinPage / gridCols);
+            const pageOffsetX = pageIdx * (gridCols * (colW + GAP));
+            colX = PAD + pageOffsetX + gc * (colW + GAP);
             colY = gr * (gridRowH + GAP);
             colH = gridRowH;
           } else {
@@ -558,10 +562,9 @@ const WorkspaceFlightView = React.memo(function WorkspaceFlightView({
         } else if (gridWrappedRef.current && viewportCols > 2) {
           // Grid mode with overflow: pan by grid pages
           const targetColIdx = repoColumns.findIndex(col => col.pods.some(p => p.id === podId));
-          const pageSize = viewportCols; // columns per grid page
-          const pageStart = Math.floor(targetColIdx / pageSize) * pageSize;
-          const gridPageCol = Math.floor(pageStart / gridRows); // grid column offset
-          const panX = -(gridPageCol * (colW + GAP));
+          const pageSize = gridCols * gridRows;
+          const pageIdx = Math.floor(targetColIdx / pageSize);
+          const panX = -(pageIdx * (gridCols * (colW + GAP)));
           store.setFlightViewport(workspaceId, { panX, panY: 0, zoom: 1.0 });
         } else {
           // Row mode: pan to show the target column
