@@ -94,9 +94,12 @@ export function BuildStatusDrawer() {
     const onClick = (e: MouseEvent) => {
       if (pinned) return;
       const target = e.target as Node;
-      // Don't close if clicking inside the drawer or the status bar (status bar handles its own toggle)
-      if (panelRef.current && !panelRef.current.contains(target)
-        && !(target instanceof Element && (target.closest("[data-statusbar]") || target.closest("[data-pod-footer]")))) {
+      // Don't close if clicking inside ANY drawer instance (there are two — one per mode),
+      // or inside the status bar / pod footer (they handle their own toggle)
+      if (target instanceof Element && (target.closest("[data-status-drawer]") || target.closest("[data-statusbar]") || target.closest("[data-pod-footer]"))) {
+        return;
+      }
+      if (panelRef.current && !panelRef.current.contains(target)) {
         closeStatusBarDrawer();
       }
     };
@@ -281,7 +284,7 @@ export function BuildStatusDrawer() {
   const isSliding = animState !== "visible";
 
   return (
-    <div ref={panelRef}
+    <div ref={panelRef} data-status-drawer=""
       onMouseEnter={() => {
         cancelDrawerHoverClose();
       }}
