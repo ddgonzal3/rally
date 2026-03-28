@@ -395,7 +395,7 @@ export function FlightPodFooter({ repoPath, onOpenTerminal }: { repoPath: string
             opacity: 0.7,
           }}
         >
-          {branch}
+          {branch.length > 24 ? branch.slice(0, 22) + "…" : branch}
         </span>
       )}
       {scripts.map((scriptName) => (
