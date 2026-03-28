@@ -299,11 +299,7 @@ function ScriptDot({
         action: kill,
       });
     }
-    // Nudge Y above the status bar so the menu opens upward instead of
-    // clipping against the bottom window edge.
-    const bar = (e.currentTarget as HTMLElement).closest("[data-statusbar]");
-    const barTop = bar ? bar.getBoundingClientRect().top : e.clientY;
-    showContextMenu(items, { x: e.clientX, y: barTop });
+    showContextMenu(items, { x: e.clientX, y: e.clientY });
   };
 
   return (
