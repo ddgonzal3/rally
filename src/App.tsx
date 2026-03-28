@@ -1616,15 +1616,21 @@ export function App() {
         const s = useWorkspaceStore.getState();
         const wsId = s.activeWorkspaceId;
         if (!wsId) return;
-        const layout = s.getOrCreateLayout(wsId);
-        const groupId = s.activeGroupIds[wsId];
+        // In flight mode, use the focused pod's layout
+        const mode = s.workspaceModes[wsId] ?? "flight";
+        let layoutKey = wsId;
+        if (mode === "flight" && lastFocusedFlightPodId) {
+          layoutKey = `flight:${lastFocusedFlightPodId}`;
+        }
+        const layout = s.getOrCreateLayout(layoutKey);
+        const groupId = s.activeGroupIds[layoutKey];
         if (!groupId) return;
         const group = layout.groups[groupId];
         if (!group || group.panes.length < 2) return;
         const idx = group.panes.findIndex((p) => p.id === group.activePaneId);
         const delta = e.code === "BracketLeft" ? -1 : 1;
         const next = (idx + delta + group.panes.length) % group.panes.length;
-        s.setActivePane(wsId, groupId, group.panes[next].id);
+        s.setActivePane(layoutKey, groupId, group.panes[next].id);
       }
       // Shift+Arrow: navigate between pane groups
       if (e.shiftKey && !e.metaKey && !e.ctrlKey && !e.altKey) {
