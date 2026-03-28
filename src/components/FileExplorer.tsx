@@ -59,6 +59,41 @@ function computeRepoInsertIndex(
   return clamp(insertionIndex, 0, orderedPaths.length - 1);
 }
 
+// --- Revealed file path tracking (module-level, avoids per-node Zustand subscriptions) ---
+
+let revealedFilePath: string | null = null;
+const revealListeners = new Set<() => void>();
+
+function subscribeReveal(cb: () => void) {
+  revealListeners.add(cb);
+  return () => { revealListeners.delete(cb); };
+}
+
+function setRevealedFilePath(path: string | null) {
+  if (revealedFilePath === path) return;
+  revealedFilePath = path;
+  for (const cb of revealListeners) cb();
+}
+
+function useIsRevealTarget(path: string): boolean {
+  return useSyncExternalStore(
+    subscribeReveal,
+    () => revealedFilePath === path,
+  );
+}
+
+function useIsAncestorOfReveal(path: string): boolean {
+  return useSyncExternalStore(
+    subscribeReveal,
+    () => !!revealedFilePath && revealedFilePath.startsWith(path + "/"),
+  );
+}
+
+// Sync from Zustand store to module-level external store
+useWorkspaceStore.subscribe((s) => {
+  setRevealedFilePath(s.revealedFilePath);
+});
+
 /** Module-level set of expanded folder paths — persisted to localStorage */
 const expandedPaths = new Set<string>(
   (() => {
@@ -537,9 +572,9 @@ const FileTreeNode = React.memo(
     const isGitIgnored = gitIgnoredCache.get(parentPath)?.has(entry.name) ?? false;
 
     const isActiveFile = !entry.is_dir && entry.path === activeFilePath;
-    // Derived boolean selectors — only re-render when this node's reveal status changes
-    const isRevealTarget = useWorkspaceStore((s) => !entry.is_dir && s.revealedFilePath === entry.path);
-    const isAncestorOfReveal = useWorkspaceStore((s) => entry.is_dir && !!s.revealedFilePath && s.revealedFilePath.startsWith(entry.path + "/"));
+    // Derived boolean selectors — lightweight external store, no per-node Zustand subscription
+    const isRevealTarget = useIsRevealTarget(entry.path) && !entry.is_dir;
+    const isAncestorOfReveal = useIsAncestorOfReveal(entry.path) && entry.is_dir;
 
     // Auto-load children when remounting a previously-expanded folder
     useEffect(() => {
@@ -689,18 +724,23 @@ const FileTreeNode = React.memo(
       return () => document.removeEventListener("rally:dir-refresh", handler);
     }, [entry.is_dir, entry.path, expanded]);
 
-    // Re-fetch directory listing when filesystem changes are detected
+    // Re-fetch directory listing when filesystem changes are detected (debounced)
     useEffect(() => {
       if (!entry.is_dir || !expanded) return;
+      let timer: ReturnType<typeof setTimeout> | null = null;
       const handler = (e: Event) => {
         const detail = (e as CustomEvent<{ rootPath: string }>).detail;
         // Refresh if this directory is under the changed root
         if (detail?.rootPath && entry.path.startsWith(detail.rootPath)) {
-          refreshChildren();
+          if (timer) clearTimeout(timer);
+          timer = setTimeout(refreshChildren, 300);
         }
       };
       document.addEventListener(FS_CHANGED_EVENT, handler);
-      return () => document.removeEventListener(FS_CHANGED_EVENT, handler);
+      return () => {
+        document.removeEventListener(FS_CHANGED_EVENT, handler);
+        if (timer) clearTimeout(timer);
+      };
     }, [entry.is_dir, entry.path, expanded, refreshChildren]);
 
     const dragStartRef = useRef<{
@@ -987,7 +1027,7 @@ const FileTreeNode = React.memo(
           />
         )}
         {expanded &&
-          children.filter((c) => !HIDDEN_FILES.has(c.name)).map((c) => (
+          children.map((c) => HIDDEN_FILES.has(c.name) ? null : (
             <FileTreeNode
               key={c.path}
               entry={c}
