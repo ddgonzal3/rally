@@ -193,11 +193,11 @@ function TextEditor({ filePath, paneId, workspaceId, groupId }: { filePath: stri
   const markClean = useWorkspaceStore((s) => s.markPaneClean);
   const appTheme = useWorkspaceStore((s) => s.theme);
 
-  // Neutralize body CSS zoom on Monaco's DOM element so coordinate math
-  // (click-to-position, double-click selection) works correctly.
-  // Same technique as Terminal.tsx: body has zoom:Z, we apply zoom:1/Z
-  // on Monaco's element, then scale font size by Z to compensate visually.
+  // Neutralize body CSS zoom so Monaco's coordinate math works correctly.
+  // Apply zoom:1/Z on the container div and scale the editor dimensions by Z
+  // so it fills the container visually despite the inverse zoom.
   const zoomRef = useRef(getStoredZoomLevel());
+  const [uiZoom, setUiZoom] = useState(getStoredZoomLevel);
 
   // Subscribe to initialLine/initialCol/editorViewMode from pane data (set via Cmd+click)
   // Direct lookup by workspaceId/groupId avoids iterating all layouts/groups
@@ -406,22 +406,6 @@ function TextEditor({ filePath, paneId, workspaceId, groupId }: { filePath: stri
         () => handleSaveRef.current()
       );
 
-      // Neutralize body CSS zoom on Monaco's DOM element.
-      // The inverse zoom shrinks the element — compensate with absolute
-      // positioning and scaled dimensions so it fills the container.
-      const domNode = editor.getDomNode();
-      if (domNode) {
-        const z = getStoredZoomLevel();
-        if (z !== 1) {
-          domNode.style.zoom = String(1 / z);
-          domNode.style.position = "absolute";
-          domNode.style.top = "0";
-          domNode.style.left = "0";
-          domNode.style.width = `${z * 100}%`;
-          domNode.style.height = `${z * 100}%`;
-        }
-      }
-
       // Jump to line:col if specified (e.g. from Cmd+click in terminal)
       if (initialLine) {
         editor.revealLineInCenter(initialLine);
@@ -445,19 +429,7 @@ function TextEditor({ filePath, paneId, workspaceId, groupId }: { filePath: stri
       const z = getStoredZoomLevel();
       if (z !== zoomRef.current) {
         zoomRef.current = z;
-        if (z === 1) {
-          domNode.style.zoom = "";
-          domNode.style.position = "";
-          domNode.style.width = "";
-          domNode.style.height = "";
-        } else {
-          domNode.style.zoom = String(1 / z);
-          domNode.style.position = "absolute";
-          domNode.style.top = "0";
-          domNode.style.left = "0";
-          domNode.style.width = `${z * 100}%`;
-          domNode.style.height = `${z * 100}%`;
-        }
+        setUiZoom(z);
         editor.updateOptions({ fontSize: Math.round(BASE_FONT_SIZE * z) });
         editor.layout();
       }
@@ -567,6 +539,20 @@ function TextEditor({ filePath, paneId, workspaceId, groupId }: { filePath: stri
     return <div style={styles.center} />;
   }
 
+  // When zoom != 1, wrap editor in an absolutely positioned div with zoom:1/z
+  // and scaled dimensions so Monaco's coordinate math works at native resolution.
+  const needsZoomWrap = uiZoom !== 1;
+  const zoomWrapStyle: React.CSSProperties | undefined = needsZoomWrap
+    ? {
+        position: "absolute",
+        top: 0,
+        left: 0,
+        width: `${uiZoom * 100}%`,
+        height: `${uiZoom * 100}%`,
+        zoom: 1 / uiZoom,
+      }
+    : undefined;
+
   const editorElement = (
     <Editor
       height="100%"
@@ -616,7 +602,11 @@ function TextEditor({ filePath, paneId, workspaceId, groupId }: { filePath: stri
 
   return (
     <div style={styles.container} onContextMenu={handleContextMenu}>
-      {editorElement}
+      {needsZoomWrap ? (
+        <div style={zoomWrapStyle}>{editorElement}</div>
+      ) : (
+        editorElement
+      )}
     </div>
   );
 }
