@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef, useSyncExternalStore } from "react";
+import React, { useState, useEffect, useCallback, useRef, useMemo, useSyncExternalStore } from "react";
 import { createPortal } from "react-dom";
 import { useWorkspaceStore } from "../stores/workspaceStore";
 import { invoke } from "@tauri-apps/api/core";
@@ -442,6 +442,247 @@ function InlineInput({
           } as React.CSSProperties
         }
       />
+    </div>
+  );
+}
+
+// --- Virtualized file tree ---
+
+const ROW_HEIGHT = 22;
+const OVERSCAN = 10;
+
+interface FlatEntry {
+  entry: FileEntry;
+  depth: number;
+  expanded: boolean;
+  loaded: boolean;
+}
+
+/** Walk the tree using expandedPaths + directoryCache to produce a flat list of visible entries. */
+function flattenVisibleEntries(roots: FileEntry[], startDepth: number): FlatEntry[] {
+  const result: FlatEntry[] = [];
+  function walk(entries: FileEntry[], depth: number) {
+    for (const entry of entries) {
+      if (HIDDEN_FILES.has(entry.name)) continue;
+      const isExpanded = entry.is_dir && expandedPaths.has(entry.path);
+      const children = entry.is_dir ? (directoryCache.get(entry.path) ?? []) : [];
+      const loaded = entry.is_dir ? directoryCache.has(entry.path) : true;
+      result.push({ entry, depth, expanded: isExpanded, loaded });
+      if (isExpanded && children.length > 0) {
+        walk(children, depth + 1);
+      }
+    }
+  }
+  walk(roots, startDepth);
+  return result;
+}
+
+/** Virtualized file tree — only renders rows visible in the scroll viewport. */
+function VirtualFileTree({
+  entries,
+  rootPath,
+  activeWorkspaceId,
+  activeFilePath,
+  onOpenFile,
+  onRefreshDir,
+}: {
+  entries: FileEntry[];
+  rootPath: string;
+  activeWorkspaceId: string | null;
+  activeFilePath: string | null;
+  onOpenFile: (workspaceId: string, filePath: string, options?: { skipReveal?: boolean }) => void;
+  onRefreshDir: (dirPath: string) => void;
+}) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [scrollTop, setScrollTop] = useState(0);
+  const [viewportHeight, setViewportHeight] = useState(600);
+  // Bump version to force re-flatten when expand/collapse/cache changes
+  const [version, setVersion] = useState(0);
+
+  // Listen for expand/collapse/cache changes
+  useEffect(() => {
+    const bump = () => setVersion((v) => v + 1);
+    document.addEventListener("rally:expanded-paths-changed", bump);
+    document.addEventListener("rally:dir-refresh", bump);
+    document.addEventListener("rally:fs-changed", bump);
+    return () => {
+      document.removeEventListener("rally:expanded-paths-changed", bump);
+      document.removeEventListener("rally:dir-refresh", bump);
+      document.removeEventListener("rally:fs-changed", bump);
+    };
+  }, []);
+
+  const flat = useMemo(
+    () => flattenVisibleEntries(entries, 1),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [entries, version],
+  );
+
+  const totalHeight = flat.length * ROW_HEIGHT;
+
+  // Find the nearest scrollable ancestor and track its scroll position
+  // relative to our container, so we know which rows are in the viewport.
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    // Walk up to find the scrollable ancestor (the ScrollArea content div)
+    let scrollParent: HTMLElement | null = el.parentElement;
+    while (scrollParent && scrollParent.scrollHeight <= scrollParent.clientHeight) {
+      scrollParent = scrollParent.parentElement;
+    }
+    if (!scrollParent) scrollParent = el.parentElement;
+    if (!scrollParent) return;
+    const sp = scrollParent;
+
+    const update = () => {
+      const elRect = el.getBoundingClientRect();
+      const spRect = sp.getBoundingClientRect();
+      // How far above the viewport top is our container?
+      const offsetInViewport = elRect.top - spRect.top;
+      const visibleStart = Math.max(0, -offsetInViewport);
+      setScrollTop(visibleStart);
+      setViewportHeight(sp.clientHeight);
+    };
+    update();
+    sp.addEventListener("scroll", update, { passive: true });
+    const ro = new ResizeObserver(update);
+    ro.observe(sp);
+    return () => {
+      sp.removeEventListener("scroll", update);
+      ro.disconnect();
+    };
+  }, [flat.length]); // re-attach when tree size changes
+
+  const startIdx = Math.max(0, Math.floor(scrollTop / ROW_HEIGHT) - OVERSCAN);
+  const endIdx = Math.min(flat.length, Math.ceil((scrollTop + viewportHeight) / ROW_HEIGHT) + OVERSCAN);
+
+  // Load children for expanded but unloaded directories
+  useEffect(() => {
+    for (const item of flat) {
+      if (item.entry.is_dir && item.expanded && !item.loaded) {
+        invoke<FileEntry[]>("list_directory", { path: item.entry.path })
+          .then((children) => {
+            directoryCache.set(item.entry.path, children);
+            fetchGitIgnored(item.entry.path);
+            setVersion((v) => v + 1);
+          })
+          .catch(() => {});
+      }
+    }
+  }, [flat]);
+
+  const handleRowClick = useCallback(
+    async (item: FlatEntry, e: React.MouseEvent) => {
+      if (item.entry.is_dir) {
+        clearSelectedFilePaths();
+        toggleSelectedFilePath(item.entry.path, false);
+        if (!item.loaded) {
+          try {
+            const children = await invoke<FileEntry[]>("list_directory", { path: item.entry.path });
+            directoryCache.set(item.entry.path, children);
+            fetchGitIgnored(item.entry.path);
+          } catch {}
+        }
+        if (expandedPaths.has(item.entry.path)) {
+          expandedPaths.delete(item.entry.path);
+        } else {
+          expandedPaths.add(item.entry.path);
+        }
+        saveExpandedPaths();
+        setVersion((v) => v + 1);
+      } else if (e.metaKey) {
+        toggleSelectedFilePath(item.entry.path, true);
+      } else {
+        clearSelectedFilePaths();
+        toggleSelectedFilePath(item.entry.path, false);
+        if (activeWorkspaceId) {
+          onOpenFile(activeWorkspaceId, item.entry.path, { skipReveal: true });
+          clearSelectedFilePaths();
+        }
+      }
+    },
+    [activeWorkspaceId, onOpenFile],
+  );
+
+  const handleRowContextMenu = useCallback(
+    (item: FlatEntry, e: React.MouseEvent) => {
+      e.preventDefault();
+      if (!selectedFilePaths.has(item.entry.path)) {
+        toggleSelectedFilePath(item.entry.path, false);
+      }
+      const scriptName = item.entry.path.split("/").pop() || "";
+      const statusBarScripts = useWorkspaceStore.getState().rallyConfigs[rootPath]?.statusBar ?? [];
+      const isInStatusBar = statusBarScripts.includes(scriptName);
+      showContextMenu(
+        fileContextMenu(item.entry.path, rootPath, item.entry.is_dir, {
+          onTrash: () => {
+            onRefreshDir(parentDir(item.entry.path));
+          },
+          onRename: () =>
+            setInlineEdit({ type: "rename", path: item.entry.path }),
+          onNewFile: (p) =>
+            setInlineEdit({ type: "create", parentPath: p, isDir: false }),
+          onNewFolder: (p) =>
+            setInlineEdit({ type: "create", parentPath: p, isDir: true }),
+          onAddToStatusBar:
+            !item.entry.is_dir && item.entry.path.endsWith(".sh") && !isInStatusBar
+              ? () => useWorkspaceStore.getState().addToStatusBar(rootPath, scriptName)
+              : undefined,
+          onRemoveFromStatusBar:
+            !item.entry.is_dir && item.entry.path.endsWith(".sh") && isInStatusBar
+              ? () => useWorkspaceStore.getState().removeFromStatusBar(rootPath, scriptName)
+              : undefined,
+          onOpenInWebView: (fp) => {
+            if (activeWorkspaceId) {
+              useWorkspaceStore.getState().openWebView(activeWorkspaceId, fp);
+            }
+          },
+        }),
+        { x: e.clientX, y: e.clientY },
+      );
+    },
+    [rootPath, activeWorkspaceId, onRefreshDir],
+  );
+
+  return (
+    <div
+      ref={containerRef}
+      style={{ height: totalHeight, position: "relative" }}
+    >
+        {flat.slice(startIdx, endIdx).map((item, i) => {
+          const idx = startIdx + i;
+          const isActive = !item.entry.is_dir && item.entry.path === activeFilePath;
+          const parentPath = item.entry.path.replace(/\/[^/]+$/, "");
+          const isGitIgnored = gitIgnoredCache.get(parentPath)?.has(item.entry.name) ?? false;
+          return (
+            <button
+              key={item.entry.path}
+              className={`file-node${isActive ? " file-node-active" : ""}`}
+              onClick={(e) => handleRowClick(item, e)}
+              onContextMenu={(e) => handleRowContextMenu(item, e)}
+              style={{
+                ...styles.node,
+                position: "absolute",
+                top: idx * ROW_HEIGHT,
+                left: 0,
+                right: 0,
+                height: ROW_HEIGHT,
+                paddingLeft: item.depth * 10,
+                ...(isGitIgnored ? { opacity: 0.4 } : undefined),
+              }}
+            >
+              {item.entry.is_dir ? (
+                <ChevronIcon open={item.expanded} />
+              ) : (
+                <span style={styles.spacer} />
+              )}
+              <FileIcon name={item.entry.name} isDir={item.entry.is_dir} isOpen={false} />
+              <span data-file-name style={styles.name}>
+                {item.entry.name}
+              </span>
+            </button>
+          );
+        })}
     </div>
   );
 }
@@ -1860,20 +2101,16 @@ function RootSection({
                     onCancel={() => setInlineEdit(null)}
                   />
                 )}
-              {filesExpanded &&
-                fsLoaded &&
-                fsEntries.filter((e) => !HIDDEN_FILES.has(e.name)).map((e) => (
-                  <FileTreeNode
-                    key={e.path}
-                    entry={e}
-                    depth={1}
-                    rootPath={rootPath}
-                    activeWorkspaceId={activeWorkspaceId}
-                    activeFilePath={activeFilePath}
-                    onOpenFile={openFile}
-                    removeChild={handleRemoveRootChild}
-                  />
-                ))}
+              {filesExpanded && fsLoaded && (
+                <VirtualFileTree
+                  entries={fsEntries}
+                  rootPath={rootPath}
+                  activeWorkspaceId={activeWorkspaceId}
+                  activeFilePath={activeFilePath}
+                  onOpenFile={openFile}
+                  onRefreshDir={refreshRootEntries}
+                />
+              )}
             </div>
             {/* Changes/PR panels — absolutely positioned over hidden file tree */}
             {showChanges && (
