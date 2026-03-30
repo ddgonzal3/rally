@@ -370,8 +370,10 @@ export const FlightPod = React.memo(function FlightPod({
   const handleFocusClick = useCallback((e: React.MouseEvent) => {
     // Don't fire after a drag
     if (suppressClickRef.current) return;
-    // Don't steal focus if clicking inside the shell panel
-    if ((e.target as HTMLElement).closest("[data-shell-panel]")) return;
+    // Don't steal focus if clicking inside the shell panel or any terminal
+    const target = e.target as HTMLElement;
+    if (target.closest("[data-shell-panel]")) return;
+    if (target.closest(".xterm")) return;
 
     // When zoomed out past threshold, click enters focus mode on this pod
     if (zoom < ZOOM_TO_FIT_THRESHOLD) {

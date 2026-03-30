@@ -1061,19 +1061,26 @@ function PaneContent({
     ].slice(0, MAX_CACHED_PANES);
   }, [activePaneId]);
 
-  // Auto-focus the active terminal when a pane is closed within this group
+  // Auto-focus the active terminal when a pane is closed within this group.
+  // Skip when a pane was moved out (not closed) — dropPaneOnGroup sets
+  // activeGroupIds to the NEW group before this effect runs.
   useEffect(() => {
     const prevCount = prevPaneCountRef.current;
     prevPaneCountRef.current = panes.length;
     if (panes.length < prevCount && activePaneId && contentRef.current) {
       requestAnimationFrame(() => {
+        // Only re-focus if this group is still the active group — if a pane
+        // was dragged out to a new split, the new group is active instead.
+        const s = useWorkspaceStore.getState();
+        const isActive = Object.values(s.activeGroupIds).includes(groupId);
+        if (!isActive) return;
         const textarea = contentRef.current?.querySelector(
           "textarea.xterm-helper-textarea",
         ) as HTMLTextAreaElement | null;
         textarea?.focus();
       });
     }
-  }, [panes.length, activePaneId]);
+  }, [panes.length, activePaneId, groupId]);
 
   // Auto-focus when a sibling group is closed and this group survives
   useEffect(() => {
