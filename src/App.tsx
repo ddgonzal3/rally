@@ -828,7 +828,7 @@ export function App() {
       if (!rootPath) return;
       const existing = refreshTimers.get(rootPath);
       if (existing) clearTimeout(existing);
-      const delay = shouldDeferBackgroundWork() ? 1200 : 120;
+      const delay = shouldDeferBackgroundWork() ? 500 : 120;
       const timer = setTimeout(() => {
         refreshTimers.delete(rootPath);
         if (cancelled) return;
@@ -857,6 +857,18 @@ export function App() {
       unlisten?.();
     };
   }, [refreshGitStatusForPath, shouldDeferBackgroundWork, loadRallyConfig]);
+
+  // Keep git file watcher roots in sync with workspace paths.
+  // Must live here (not in FileExplorer) because the explorer can be unmounted
+  // when collapsed, which would leave the watcher unregistered.
+  const activeWs = workspaces.find((w) => w.id === activeWorkspaceId);
+  const activeWsPaths = activeWs?.paths;
+  useEffect(() => {
+    const roots = activeWsPaths ?? [];
+    api.updateGitWatchRoots(roots).catch((e) => {
+      console.error("Failed to update git watch roots:", e);
+    });
+  }, [activeWsPaths]);
 
   // Native File menu actions (always handled here so they work even when
   // sidebar/explorer panels are collapsed).
