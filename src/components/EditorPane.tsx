@@ -406,12 +406,19 @@ function TextEditor({ filePath, paneId, workspaceId, groupId }: { filePath: stri
         () => handleSaveRef.current()
       );
 
-      // Neutralize body CSS zoom on Monaco's DOM element
+      // Neutralize body CSS zoom on Monaco's DOM element.
+      // The inverse zoom shrinks the element — compensate with absolute
+      // positioning and scaled dimensions so it fills the container.
       const domNode = editor.getDomNode();
       if (domNode) {
         const z = getStoredZoomLevel();
         if (z !== 1) {
           domNode.style.zoom = String(1 / z);
+          domNode.style.position = "absolute";
+          domNode.style.top = "0";
+          domNode.style.left = "0";
+          domNode.style.width = `${z * 100}%`;
+          domNode.style.height = `${z * 100}%`;
         }
       }
 
@@ -438,7 +445,19 @@ function TextEditor({ filePath, paneId, workspaceId, groupId }: { filePath: stri
       const z = getStoredZoomLevel();
       if (z !== zoomRef.current) {
         zoomRef.current = z;
-        domNode.style.zoom = z === 1 ? "" : String(1 / z);
+        if (z === 1) {
+          domNode.style.zoom = "";
+          domNode.style.position = "";
+          domNode.style.width = "";
+          domNode.style.height = "";
+        } else {
+          domNode.style.zoom = String(1 / z);
+          domNode.style.position = "absolute";
+          domNode.style.top = "0";
+          domNode.style.left = "0";
+          domNode.style.width = `${z * 100}%`;
+          domNode.style.height = `${z * 100}%`;
+        }
         editor.updateOptions({ fontSize: Math.round(BASE_FONT_SIZE * z) });
         editor.layout();
       }
