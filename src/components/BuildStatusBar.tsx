@@ -245,6 +245,10 @@ function ScriptDot({
     // Watcher running (idle or success) — steady green
     dotStyle.background = "var(--status-green)";
     dotStyle.opacity = 0.7;
+  } else if (!isRunning && run?.status === "success") {
+    // Non-watcher completed successfully — stay green (not idle gray)
+    dotStyle.background = "var(--status-green)";
+    dotStyle.opacity = 0.7;
   } else {
     // Idle
     dotStyle.background = "var(--text-dim)";
