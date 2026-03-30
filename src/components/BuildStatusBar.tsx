@@ -262,8 +262,6 @@ function ScriptDot({
     // Small delay to let the PTY clean up before respawning
     setTimeout(() => {
       runScript(repoPath, scriptName, command);
-      // Auto-open the drawer so the user can see output streaming
-      setTimeout(() => openStatusBarDrawer(repoPath, scriptName), 50);
     }, 100);
   };
 
