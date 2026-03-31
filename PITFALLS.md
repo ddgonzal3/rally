@@ -65,7 +65,7 @@ The app uses CSS `zoom` on the body container (`App.tsx`) for UI scaling. xterm.
 
 ## Terminal Typing Lag: Background Polling Must Defer During Typing
 
-xterm.js captures keyboard events and calls `stopPropagation()`, so `document.addEventListener("keydown", ...)` in the **bubble** phase never fires during terminal typing. If background work (git polling, ship polling, etc.) checks a "last interaction" timestamp to defer, that timestamp never updates during typing — causing background Tauri invokes to fire and congest the IPC channel.
+xterm.js captures keyboard events and calls `stopPropagation()`, so `document.addEventListener("keydown", ...)` in the **bubble** phase never fires during terminal typing. If background work (git polling, etc.) checks a "last interaction" timestamp to defer, that timestamp never updates during typing — causing background Tauri invokes to fire and congest the IPC channel.
 
 **Fix:** Use `capture: true` on the document keydown listener so it fires before xterm can stop propagation. See `App.tsx` `markInteraction`.
 

@@ -498,7 +498,7 @@ export function App() {
   const fileExplorerWidthKey = `rally:fileExplorerWidth:${windowLabel}`;
 
   // Individual selectors for action functions — prevents App from re-rendering
-  // on every store data change (git/PR/ship polls, task output, etc.)
+  // on every store data change (git/PR polls, task output, etc.)
   const loadWorkspaces = useWorkspaceStore((s) => s.loadWorkspaces);
   const setActiveWorkspace = useWorkspaceStore((s) => s.setActive);
   const workspaces = useWorkspaceStore((s) => s.workspaces);

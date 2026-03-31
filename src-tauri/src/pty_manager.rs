@@ -188,7 +188,7 @@ impl PtyManager {
             cmd.env(key, value);
         }
         // When launched as .app, PATH is minimal. Grab full PATH from a login shell.
-        // Prepend ~/.rally/bin so Rally CLI tools (ship, etc.) are available.
+        // Prepend ~/.rally/bin so Rally CLI tools are available.
         let rally_bin = std::env::var("HOME")
             .map(|h| format!("{}/.rally/bin", h))
             .unwrap_or_default();
