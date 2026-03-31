@@ -2092,67 +2092,62 @@ export function App() {
           <div style={{ flex: 1 }} />
           <ThemeCycleButton />
         </div>
-        {!fileExplorerCollapsed &&
-          (() => {
-            return (
-              <div
-                style={{
-                  display: "flex",
-                  flexShrink: 0,
+        <div
+          style={{
+            display: fileExplorerCollapsed ? "none" : "flex",
+            flexShrink: 0,
+          }}
+        >
+          <div
+            ref={explorerRef}
+            style={{
+              width: fileExplorerWidth,
+              minWidth: fileExplorerWidth,
+              flexShrink: 0,
+              background: "var(--bg-app)",
+            }}
+          >
+            {explorerView === "workspaces" && (
+              <WorkspacePicker
+                onSelect={(id) => {
+                  setActiveWorkspace(id);
+                  setExplorerView("files");
                 }}
-              >
-                <div
-                  ref={explorerRef}
-                  style={{
-                    width: fileExplorerWidth,
-                    minWidth: fileExplorerWidth,
-                    flexShrink: 0,
-                    background: "var(--bg-app)",
-                  }}
-                >
-                  {explorerView === "workspaces" && (
-                    <WorkspacePicker
-                      onSelect={(id) => {
-                        setActiveWorkspace(id);
-                        setExplorerView("files");
-                      }}
-                    />
-                  )}
-                  <div
-                    style={{
-                      display: explorerView === "search" ? undefined : "none",
-                      height: "100%",
-                    }}
-                  >
-                    <SearchPanel
-                      onCollapse={() => setFileExplorerCollapsed(true)}
-                      flushLeft
-                    />
-                  </div>
-                  {explorerView === "claude" && <GlobalConfigExplorer />}
-                  {explorerView === "scripts" && <ScriptEditor />}
-                  <div
-                    style={{
-                      display: explorerView === "files" ? undefined : "none",
-                      height: "100%",
-                    }}
-                  >
-                    <FileExplorer
-                      onCollapse={() => setFileExplorerCollapsed(true)}
-                      flushLeft
-                    />
-                  </div>
-                </div>
-                <div
-                  onMouseDown={handleExplorerResize}
-                  style={styles.explorerResizeHandle}
-                >
-                  <div style={styles.resizeLine} />
-                  <div style={styles.explorerResizeHeaderBorder} />
-                </div>
-              </div>
-            );
-          })()}
+              />
+            )}
+            <div
+              style={{
+                display: explorerView === "search" ? undefined : "none",
+                height: "100%",
+              }}
+            >
+              <SearchPanel
+                onCollapse={() => setFileExplorerCollapsed(true)}
+                flushLeft
+              />
+            </div>
+            {explorerView === "claude" && <GlobalConfigExplorer />}
+            {explorerView === "scripts" && <ScriptEditor />}
+            <div
+              style={{
+                display: explorerView === "files" ? undefined : "none",
+                height: "100%",
+              }}
+            >
+              <FileExplorer
+                onCollapse={() => setFileExplorerCollapsed(true)}
+                flushLeft
+              />
+            </div>
+          </div>
+          <div
+            onMouseDown={handleExplorerResize}
+            style={styles.explorerResizeHandle}
+          >
+            <div style={styles.resizeLine} />
+            <div style={styles.explorerResizeHeaderBorder} />
+          </div>
+        </div>
         <div style={styles.main}>
           <div
             style={{

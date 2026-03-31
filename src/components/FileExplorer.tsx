@@ -556,19 +556,39 @@ function VirtualFileTree({
   const startIdx = Math.max(0, Math.floor(scrollTop / ROW_HEIGHT) - OVERSCAN);
   const endIdx = Math.min(flat.length, Math.ceil((scrollTop + viewportHeight) / ROW_HEIGHT) + OVERSCAN);
 
-  // Load children for expanded but unloaded directories
+  // Load children for expanded but unloaded directories — sequentially to avoid
+  // flooding IPC + spawning dozens of git check-ignore processes simultaneously.
+  // Bumps version every BATCH_SIZE dirs so the tree populates progressively.
   useEffect(() => {
-    for (const item of flat) {
-      if (item.entry.is_dir && item.expanded && !item.loaded) {
-        invoke<FileEntry[]>("list_directory", { path: item.entry.path })
-          .then((children) => {
-            directoryCache.set(item.entry.path, children);
-            fetchGitIgnored(item.entry.path);
-            setVersion((v) => v + 1);
-          })
-          .catch(() => {});
+    let cancelled = false;
+    const unloaded = flat.filter(
+      (item) => item.entry.is_dir && item.expanded && !item.loaded,
+    );
+    if (unloaded.length === 0) return;
+
+    const BATCH_SIZE = 4;
+    (async () => {
+      let loaded = 0;
+      for (const item of unloaded) {
+        if (cancelled) break;
+        if (directoryCache.has(item.entry.path)) continue;
+        try {
+          const children = await invoke<FileEntry[]>("list_directory", {
+            path: item.entry.path,
+          });
+          if (cancelled) break;
+          directoryCache.set(item.entry.path, children);
+          fetchGitIgnored(item.entry.path);
+          loaded++;
+          if (loaded % BATCH_SIZE === 0) setVersion((v) => v + 1);
+        } catch {
+          // ignore
+        }
       }
-    }
+      if (!cancelled && loaded % BATCH_SIZE !== 0) setVersion((v) => v + 1);
+    })();
+
+    return () => { cancelled = true; };
   }, [flat]);
 
   const handleRowClick = useCallback(
