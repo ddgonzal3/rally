@@ -5,7 +5,6 @@ pub mod git_ops;
 pub mod git_watch;
 pub mod pty_manager;
 pub mod search_ops;
-pub mod ship_ops;
 #[cfg(feature = "test-bridge")]
 pub mod test_server;
 pub mod workspace;

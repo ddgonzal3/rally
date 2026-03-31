@@ -80,7 +80,6 @@ Rust Backend (src-tauri/src/)
 | `src-tauri/src/git_ops.rs` | `git_cmd()` helper + status/sync/rebase/commit/push/PR |
 | `src-tauri/src/commands.rs` | Tauri command handlers for workspace CRUD + file listing + git info detection |
 | `src-tauri/src/config_ops.rs` | Read/write CLAUDE.md files, list configs + skills |
-| `src-tauri/src/ship_ops.rs` | Ship signal protocol, built-in command install + symlinks, post-merge sync |
 | `src-tauri/src/workspace.rs` | Workspace/ProcessConfig/GitStatus structs + JSON persistence |
 | `src-tauri/tauri.conf.json` | Window config, bundle targets, plugin permissions |
 | `src-tauri/capabilities/default.json` | Tauri v2 permission grants |
@@ -99,7 +98,6 @@ Rust Backend (src-tauri/src/)
 | `src/components/BuildStatusDrawer.tsx` | Expandable terminal drawer for script output |
 | `src/components/AddWorkspaceModal.tsx` | New workspace form with folder picker + git auto-detect |
 | `src/components/SettingsPanel.tsx` | Monaco editor for CLAUDE.md/skills files |
-| `src/components/ShipStatusPill.tsx` | Floating ship progress pill — PTY-backed (expandable terminal) or headless (status only) |
 | `src/stores/workspaceStore.ts` | Zustand store: workspaces, git statuses, panes, all actions |
 | `src/lib/tauri.ts` | Typed wrappers for all Tauri invoke() calls |
 | `src/lib/types.ts` | Workspace, GitStatus, Pane, ProcessConfig types |
@@ -119,99 +117,6 @@ PTY events use the pattern `pty-{eventtype}-{ptyid}`. To add a new event:
 1. Define payload struct in `pty_manager.rs` with `#[derive(Serialize, Clone)]`
 2. Emit from the reader thread via `app_handle.emit(&format!("pty-eventtype-{}", id), payload)`
 3. Listen in `Terminal.tsx` via `listen<PayloadType>("pty-eventtype-" + ptyId, callback)`
-
-## Built-in Commands (Ship, Review PR)
-
-Rally ships with built-in Claude commands (`/rally-ship`, `/rally-review-pr`) symlinked to `~/.claude/commands/` so they work in any Claude Code session. The `rally-` prefix prevents conflicts with repo-level commands that share the same base name. Auto-discovered scripts from the `scripts/` directory are shown in the bottom status bar.
-
-### File Layout
-
-```
-~/.rally/commands/               ← Actual files (app's domain, written on startup)
-  rally-ship.md                    Embedded in binary via include_str!()
-  rally-review-pr.md               Version markers control update logic
-
-~/.claude/commands/              ← Symlinks (so Claude Code finds them as slash commands)
-  rally-ship.md → ~/.rally/commands/rally-ship.md
-  rally-review-pr.md → ~/.rally/commands/rally-review-pr.md
-
-src-tauri/resources/commands/    ← Source .md files (compiled into binary)
-  rally-ship.md
-  rally-review-pr.md
-```
-
-### Key Design Decisions
-
-- **Symlinks, not copies**: The app never writes real files into `~/.claude/`. If the user has their own `ship.md` (a real file, not a symlink), the app leaves it alone.
-- **Version markers**: Each .md starts with `<!-- rally-ship-v1 -->`. The app only overwrites if the version is older.
-- **All built-ins shown by default**: Ship, Review PR, and Merge PR appear in every workspace automatically. To hide specific commands, use `"excludeBuiltins": ["rally-ship"]` in RALLY.json.
-- **No focus steal**: Clicking a built-in command opens a Claude pane but does not switch focus away from the current pane.
-
-### Ship Signal Protocol
-
-The `/rally-ship` command (commit → push → PR → review → merge) communicates with the app via signal files:
-
-```
-~/.rally/ship-signals/<sanitized-repo-path>.json
-```
-
-`rally-ship.md` writes/updates the signal file **at every phase change** (not just at the end). This allows Rally to track progress regardless of where `/ship` is running — from Rally's Ship button, an external Claude Code terminal, or any other context.
-
-#### Signal File Format
-
-```json
-{
-  "version": 1,
-  "timestamp": "2025-01-01T00:00:00Z",
-  "repo_path": "/Users/you/project",
-  "branch": "feature-branch",
-  "verdict": "shipping | auto_merge | manual_review",
-  "phase": "detecting | committing | pushing | creating_pr | checking | reviewing | writing_verdict | complete",
-  "pr_number": 123,
-  "pr_url": "https://github.com/org/repo/pull/123",
-  "summary": "...",
-  "flagged_items": []
-}
-```
-
-#### Verdict Types
-
-| Verdict | Meaning | App Behavior |
-|---------|---------|-------------|
-| `shipping` | In-progress — `/rally-ship` is running | Creates a "headless" `ShipSession` (no PTY). Shows status pill with phase updates. |
-| `auto_merge` | Review passed — ready to merge | Merges PR → syncs shipping branch to main → marks related repos as needing sync → deletes signal |
-| `manual_review` | Flagged items need attention | Shows amber "Review Needed" badge — no auto-open, no focus steal |
-
-#### Two Session Types
-
-1. **PTY-backed session** (Rally Ship button): Rally owns the PTY, parses output for phase markers as a fast path (~instant updates). Also gets signal-file updates as a fallback.
-2. **Headless session** (external `/rally-ship`): No PTY. `pollShipSignals` detects `verdict: "shipping"` and creates a lightweight session. Phase updates come from signal file polling (~5s intervals). No terminal view, no dock button.
-
-#### Staleness Handling
-
-If a `verdict: "shipping"` signal has a timestamp older than 30 minutes, `pollShipSignals` treats it as stale — clears the signal file and dismisses any headless session for that repo. This handles the case where an external `/rally-ship` process crashes without writing a final signal.
-
-#### Edge Cases
-
-- **External `/rally-ship` while Rally session running**: Existing PTY session takes precedence — headless session is not created.
-- **Rally Ship button while headless session exists**: `startShipSession` returns early — user must dismiss the headless pill first.
-- **User dismisses headless pill**: Clears `shipSession` (no PTY to kill). If `/rally-ship` is still running, the next poll recreates the session.
-
-### Adding New Built-in Commands
-
-1. Create the `.md` file in `src-tauri/resources/commands/`
-2. Add `include_str!()` + version constant in `ship_ops.rs`
-3. Add to `install_command()` and `symlink_command()` calls in `ensure_default_commands()`
-4. Add entry in `builtin_commands()` in `commands.rs`
-
-### Related Files
-
-| File | Role |
-|------|------|
-| `src-tauri/src/ship_ops.rs` | Signal file ops, command install + symlinks, post-merge sync |
-| `src-tauri/src/commands.rs` | `list_scripts()` discovers scripts from `scripts/` dir + built-in commands |
-| `src/components/BuildStatusBar.tsx` | Renders script status items in the bottom status bar |
-| `src/stores/workspaceStore.ts` | `pollShipSignals()`, `handleAutoMerge()`, `openClaudeCommand()` |
 
 ## UI Design Rules
 

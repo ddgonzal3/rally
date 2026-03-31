@@ -601,8 +601,6 @@ pub struct SetupConfig {
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct RallyConfig {
-    #[serde(default, rename = "excludeBuiltins")]
-    exclude_builtins: Vec<String>,
     #[serde(default, rename = "excludeScripts")]
     exclude_scripts: Vec<String>,
     #[serde(default)]
@@ -624,7 +622,6 @@ pub fn read_rally_config(root_path: String) -> Result<RallyConfig, String> {
     let rally_json = Path::new(&root_path).join("RALLY.json");
     if !rally_json.exists() {
         return Ok(RallyConfig {
-            exclude_builtins: Vec::new(),
             exclude_scripts: Vec::new(),
             mode: None,
             setup: None,
@@ -782,29 +779,6 @@ pub struct ScriptEntry {
     pub file_path: Option<String>,
 }
 
-/// Built-in commands that ship with the app.
-fn builtin_commands() -> Vec<ScriptEntry> {
-    let cmd_dir = crate::ship_ops::rally_commands_dir()
-        .unwrap_or_else(|_| std::path::PathBuf::from("."));
-
-    vec![
-        ScriptEntry {
-            name: "rally-ship".to_string(),
-            label: "/rally-ship".to_string(),
-            command: "claude:/rally-ship".to_string(),
-            builtin: true,
-            file_path: Some(cmd_dir.join("rally-ship.md").to_string_lossy().to_string()),
-        },
-        ScriptEntry {
-            name: "rally-review-pr".to_string(),
-            label: "/rally-review-pr".to_string(),
-            command: "claude:/rally-review-pr".to_string(),
-            builtin: true,
-            file_path: Some(cmd_dir.join("rally-review-pr.md").to_string_lossy().to_string()),
-        },
-    ]
-}
-
 /// Discover script files from the `scripts/` directory at the repo root.
 fn discover_scripts(root_path: &str, exclude: &[String]) -> Vec<ScriptEntry> {
     let scripts_dir = Path::new(root_path).join("scripts");
@@ -901,50 +875,17 @@ pub fn save_clipboard_image(data: String, mime_type: String) -> Result<String, S
 pub fn list_scripts(root_path: String) -> Result<Vec<ScriptEntry>, String> {
     let rally_json = Path::new(&root_path).join("RALLY.json");
 
-    let (exclude_builtins, exclude_scripts) = if rally_json.exists() {
+    let exclude_scripts = if rally_json.exists() {
         let content = fs::read_to_string(&rally_json)
             .map_err(|e| format!("Failed to read RALLY.json: {}", e))?;
         let config: RallyConfig = serde_json::from_str(&content)
             .map_err(|e| format!("Failed to parse RALLY.json: {}", e))?;
-        (config.exclude_builtins, config.exclude_scripts)
+        config.exclude_scripts
     } else {
-        (Vec::new(), Vec::new())
+        Vec::new()
     };
 
     let mut entries: Vec<ScriptEntry> = Vec::new();
-
-    // Check for repo-level Claude commands that override built-ins.
-    // If the repo has its own .claude/commands/<name>.md (a real file, not
-    // a symlink to Rally's version), skip the built-in so the repo's
-    // command takes precedence.
-    let repo_commands_dir = Path::new(&root_path).join(".claude").join("commands");
-    let rally_commands = crate::ship_ops::rally_commands_dir()
-        .unwrap_or_else(|_| std::path::PathBuf::from("."));
-
-    // Add built-in commands (filtered)
-    for builtin in builtin_commands() {
-        if exclude_builtins.contains(&builtin.name) {
-            continue;
-        }
-        // Check if repo has its own version of this command
-        let repo_cmd_path = repo_commands_dir.join(format!("{}.md", builtin.name));
-        if repo_cmd_path.exists() {
-            // If it's a symlink pointing to Rally's copy, keep the built-in
-            let is_rally_symlink = repo_cmd_path.symlink_metadata()
-                .ok()
-                .map(|m| m.file_type().is_symlink())
-                .unwrap_or(false)
-                && repo_cmd_path.read_link()
-                    .ok()
-                    .map(|target| target.starts_with(&rally_commands))
-                    .unwrap_or(false);
-            if !is_rally_symlink {
-                // Repo has its own real command file — skip built-in
-                continue;
-            }
-        }
-        entries.push(builtin);
-    }
 
     // Add discovered scripts (filtered)
     entries.extend(discover_scripts(&root_path, &exclude_scripts));

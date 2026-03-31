@@ -8,7 +8,6 @@ use rally::commands;
 use rally::config_ops;
 use rally::git_watch::GitWatchState;
 use rally::pty_manager::{self, PtyManager};
-use rally::ship_ops;
 use tauri::menu::{MenuItemBuilder, SubmenuBuilder};
 use tauri::Emitter;
 use tauri::Manager;
@@ -207,6 +206,8 @@ fn main() {
         pty_manager::list_ptys,
         pty_manager::kill_all_ptys,
         pty_manager::get_pty_foreground_process,
+        pty_manager::pause_pty_monitor,
+        pty_manager::resume_pty_monitor,
         config_ops::get_home_dir,
         config_ops::read_file_content,
         config_ops::read_file_base64,
@@ -215,12 +216,6 @@ fn main() {
         config_ops::path_status,
         config_ops::list_claude_configs,
         config_ops::list_skills,
-        ship_ops::check_ship_signal,
-        ship_ops::clear_ship_signal,
-        ship_ops::check_ship_trigger,
-        ship_ops::post_merge_sync,
-        ship_ops::list_rally_scripts,
-        ship_ops::restore_rally_script,
         rally::search_ops::search_in_files,
         rally::search_ops::replace_in_files,
         rally::search_ops::list_all_files,
@@ -320,11 +315,6 @@ fn main() {
             let test_pending = test_bridge_pending.clone();
 
             move |app| {
-            // Install default commands (ship.md, review-pr.md) globally
-            if let Err(e) = ship_ops::ensure_default_commands() {
-                eprintln!("Warning: failed to install default commands: {}", e);
-            }
-
             // Start the CLI server (localhost HTTP listener for `rally` CLI)
             rally::cli_server::start(app.handle().clone());
 

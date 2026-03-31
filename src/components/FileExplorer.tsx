@@ -3014,7 +3014,7 @@ interface FileExplorerProps {
 
 export function FileExplorer({ onCollapse, flushLeft }: FileExplorerProps) {
   // Individual selectors — avoids re-rendering on unrelated store changes
-  // (git polls, ship polls, task output, etc.)
+  // (git polls, task output, etc.)
   const activeWorkspaceId = useWorkspaceStore((s) => s.activeWorkspaceId);
   const workspaces = useWorkspaceStore((s) => s.workspaces);
   const addPathToWorkspace = useWorkspaceStore((s) => s.addPathToWorkspace);

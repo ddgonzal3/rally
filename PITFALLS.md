@@ -20,23 +20,9 @@ Never round-trip PTY output through `TextDecoder` → string manipulation → `T
 
 When Tauri (WebKit) unmounts and remounts a component, the browser can flash a blue text selection overlay. Inline React `userSelect: "none"` isn't reliable because React must render first. Fix: use a CSS class (`.no-select`) in the global stylesheet with `-webkit-user-select: none`, a `*` descendant selector, and `::selection { background: transparent }` as a fallback.
 
-## Ship Terminal: Use Persistent Hidden xterm
-
-The ship terminal uses a persistent hidden xterm (offscreen via `position: fixed; left: -9999`) that processes PTY output incrementally via polling the store buffer. This avoids:
-1. Buffer replay garble from rich TUI apps (Claude Code / Ink)
-2. Missed terminal setup sequences from listener registration gaps
-
 ## Tauri v2: `Emitter` Trait Must Be Imported
 
 In Tauri v2, calling `window.emit()` requires `use tauri::Emitter;` in scope. The compiler error is not obvious — it says "no method named `emit` found" rather than mentioning the missing trait import.
-
-## Ship Signal: `phase` Field Uses `#[serde(default)]`
-
-The `ShipSignal` struct in `ship_ops.rs` has `phase: Option<String>` with `#[serde(default)]`. This means older signal files (from ship.md v5 and earlier) that don't include a `phase` field will deserialize successfully with `phase: None`. If you add new required fields to the signal file format, always use `#[serde(default)]` for backward compatibility with in-flight ship runs.
-
-## Ship Sessions: Always Guard `ptyId` Before PTY Operations
-
-`ShipSession.ptyId` is optional — headless sessions (created from external `/ship` runs) have no PTY. Always check `session.ptyId` before calling `killPty`, `resizePty`, `writePty`, or docking the session. The `dismissShipSession` and `dockShipSession` store actions already guard this.
 
 ## File Explorer Change Items: Use `display: none` Not `visibility: hidden` for Hover Actions
 
@@ -79,7 +65,7 @@ The app uses CSS `zoom` on the body container (`App.tsx`) for UI scaling. xterm.
 
 ## Terminal Typing Lag: Background Polling Must Defer During Typing
 
-xterm.js captures keyboard events and calls `stopPropagation()`, so `document.addEventListener("keydown", ...)` in the **bubble** phase never fires during terminal typing. If background work (git polling, ship polling, etc.) checks a "last interaction" timestamp to defer, that timestamp never updates during typing — causing background Tauri invokes to fire and congest the IPC channel.
+xterm.js captures keyboard events and calls `stopPropagation()`, so `document.addEventListener("keydown", ...)` in the **bubble** phase never fires during terminal typing. If background work (git polling, etc.) checks a "last interaction" timestamp to defer, that timestamp never updates during typing — causing background Tauri invokes to fire and congest the IPC channel.
 
 **Fix:** Use `capture: true` on the document keydown listener so it fires before xterm can stop propagation. See `App.tsx` `markInteraction`.
 
