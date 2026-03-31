@@ -17,10 +17,6 @@ import type {
   SplitDirection,
   PaneGroup,
   ScriptRun,
-  ShipStatus,
-  ShipSession,
-  ShipSignal,
-  ShipDetailPhase,
   EditorViewMode,
   RallyConfig,
   WorkspaceMode,
@@ -58,15 +54,8 @@ import {
 } from "../lib/watcherStatus";
 
 /**
- * Ship PTY output buffer — stored outside Zustand state to avoid O(n) array
- * copies and React re-renders on every PTY output chunk. The store listener
- * pushes raw bytes here; ShipTerminalView polls it directly.
- */
-export const shipOutputBuffer: Uint8Array[] = [];
-
-/**
- * Script PTY output buffers — stored outside Zustand state (like shipOutputBuffer)
- * to avoid O(n) array copies and React re-renders on every PTY output chunk.
+ * Script PTY output buffers — stored outside Zustand state to avoid O(n) array
+ * copies and React re-renders on every PTY output chunk.
  * Keyed by "rootPath:scriptName".
  */
 export const scriptOutputBuffers = new Map<string, Uint8Array[]>();
@@ -77,7 +66,6 @@ export const scriptOutputBuffers = new Map<string, Uint8Array[]>();
  * Limited to MAX_PTY_BUFFER_CHUNKS to prevent unbounded memory growth.
  */
 const MAX_PTY_BUFFER_CHUNKS = 500;
-const MAX_SHIP_BUFFER_CHUNKS = 500;
 const MAX_SCRIPT_BUFFER_CHUNKS = 500;
 export const ptyOutputBuffers = new Map<string, Uint8Array[]>();
 
@@ -309,10 +297,6 @@ interface WorkspaceState {
   activePresetId: Record<string, string>;
   /** Active script runs keyed by "rootPath:scriptName" */
   scriptRuns: Record<string, ScriptRun>;
-  /** Ship status keyed by repo path */
-  shipStatuses: Record<string, ShipStatus>;
-  /** Active ship session (detached PTY running /ship) */
-  shipSession: ShipSession | null;
   /** File path to reveal in explorer (set on explicit reveal, auto-clears) */
   revealedFilePath: string | null;
   /** Git diff state (shared by GitDiffContent) */
@@ -488,16 +472,6 @@ interface WorkspaceState {
   setGitDiffActiveTab: (tab: "unstaged" | "staged") => void;
   /** Open a diff view for a repo path */
   openDiff: (workspaceId: string, rootPath: string) => void;
-  // Ship actions
-  pollShipSignals: () => Promise<void>;
-  handleAutoMerge: (repoPath: string) => Promise<void>;
-  /** Spawn a detached PTY running /ship. Shows status pill. */
-  startShipSession: (repoPath: string) => Promise<void>;
-  /** Dock the ship terminal into the top-left pane group */
-  dockShipSession: (workspaceId: string) => void;
-  /** Kill PTY and clear ship session */
-  dismissShipSession: () => void;
-
   /** Open a plain terminal pane in the bottom half of the layout. */
   openTerminalInBottom: (workspaceId: string, cwd: string) => void;
 
@@ -821,8 +795,6 @@ export const useWorkspaceStore = create<WorkspaceState>()(
   layoutPresets: {},
   activePresetId: {},
   scriptRuns: {},
-  shipStatuses: {},
-  shipSession: null,
   revealedFilePath: null,
   gitDiffActiveTab: "unstaged" as const,
   gitDiffScrollToFile: null,
@@ -1495,396 +1467,6 @@ export const useWorkspaceStore = create<WorkspaceState>()(
 
   // --- Layout actions ---
 
-
-  // --- Ship actions ---
-
-  pollShipSignals: async () => {
-    // Check for trigger files from the `ship` zsh alias
-    try {
-      const triggerPath = await api.checkShipTrigger();
-      if (triggerPath && !get().shipSession) {
-        get().startShipSession(triggerPath);
-      }
-    } catch { /* trigger check failed — ignore */ }
-
-    const workspaces = get().workspaces;
-    const allPaths = new Set<string>();
-    for (const ws of workspaces) {
-      for (const p of ws.paths) allPaths.add(p);
-    }
-
-    for (const repoPath of allPaths) {
-      const currentStatus = get().shipStatuses[repoPath];
-      // Skip paths already in merging/syncing phase (app is handling them)
-      if (currentStatus?.phase === "merging" || currentStatus?.phase === "syncing") continue;
-
-      try {
-        const signal = await api.checkShipSignal(repoPath);
-        if (!signal) {
-          // No signal — if we were tracking this path, clear it
-          if (currentStatus && currentStatus.phase !== "idle") {
-            set((s) => ({
-              shipStatuses: { ...s.shipStatuses, [repoPath]: { phase: "idle" } },
-            }));
-          }
-          // Also clear headless ship sessions for this repo if signal disappears
-          const session = get().shipSession;
-          if (session && !session.ptyId && session.repoPath === repoPath && !session.signal) {
-            set({ shipSession: null });
-          }
-          continue;
-        }
-
-        // If there's an active ship session for this repo, validate + update it
-        const session = get().shipSession;
-        if (session && session.repoPath === repoPath) {
-          // Auto-dismiss headless sessions if the PR is no longer open
-          if (!session.ptyId && signal.verdict === "shipping" && signal.pr_number > 0) {
-            const livePr = get().prStatuses[repoPath];
-            if (livePr && livePr.state !== "OPEN") {
-              await api.clearShipSignal(repoPath).catch(() => {});
-              set({ shipSession: null });
-              continue;
-            }
-          }
-          if (signal.verdict === "shipping") {
-            // In-progress signal — update phase and attach signal when it has PR info.
-            // ship.md writes phases to the signal file instead of echoing
-            // <<RALLY_PHASE>> markers, so this is the primary phase source.
-            const newPhase = (signal as ShipSignal).phase;
-            const phaseChanged = newPhase && newPhase !== session.phase;
-            const signalHasNewPrInfo = signal.pr_number > 0 && !session.signal?.pr_number;
-            if (phaseChanged || signalHasNewPrInfo) {
-              set((s) => ({
-                shipSession: s.shipSession ? {
-                  ...s.shipSession,
-                  phase: newPhase ?? s.shipSession.phase,
-                  // Attach signal when it has PR info so the pill can show PR # and link
-                  signal: signal.pr_number > 0 ? signal : s.shipSession.signal,
-                } : null,
-              }));
-            }
-          } else if (!session.signal) {
-            // Final signal — attach to any session type (only once)
-            set((s) => ({
-              shipSession: s.shipSession ? {
-                ...s.shipSession,
-                signal,
-                phase: signal.verdict === "manual_review" ? "complete" : s.shipSession.phase,
-              } : null,
-            }));
-          }
-        }
-
-        // Handle "shipping" verdict — in-progress signal from external /ship
-        if (signal.verdict === "shipping") {
-          // Staleness check: if timestamp > 30 min old, clear it
-          const signalAge = Date.now() - new Date(signal.timestamp).getTime();
-          if (signalAge > 30 * 60 * 1000) {
-            await api.clearShipSignal(repoPath).catch(() => {});
-            if (get().shipSession?.repoPath === repoPath && !get().shipSession?.ptyId) {
-              set({ shipSession: null });
-            }
-            continue;
-          }
-
-          // PR state validation: if signal references a PR that's no longer open,
-          // the shipping process is dead — clear the stale signal
-          if (signal.pr_number > 0) {
-            const livePr = get().prStatuses[repoPath];
-            if (livePr && livePr.state !== "OPEN") {
-              await api.clearShipSignal(repoPath).catch(() => {});
-              if (get().shipSession?.repoPath === repoPath && !get().shipSession?.ptyId) {
-                set({ shipSession: null });
-              }
-              continue;
-            }
-          }
-
-          // If no existing shipSession, create a headless one
-          if (!get().shipSession) {
-            set({
-              shipSession: {
-                repoPath,
-                phase: (signal as ShipSignal).phase ?? "detecting",
-                exited: false,
-                exitCode: null,
-                docked: false,
-              },
-            });
-          }
-          continue;
-        }
-
-        if (signal.verdict === "auto_merge") {
-          // Trigger auto-merge flow
-          set((s) => ({
-            shipStatuses: {
-              ...s.shipStatuses,
-              [repoPath]: { phase: "merging", signal, pr_number: signal.pr_number },
-            },
-          }));
-          addToast({
-            type: "info",
-            title: `Merging PR #${signal.pr_number}`,
-            message: signal.summary || "Auto-merging approved PR",
-            actions: signal.pr_url
-              ? [{ label: "View PR", onClick: () => openUrl(signal.pr_url) }]
-              : undefined,
-          });
-          // Don't await — let it run async
-          get().handleAutoMerge(repoPath);
-        } else if (signal.verdict === "manual_review") {
-          // Only notify on transition into awaiting_review (not every poll)
-          // Skip toast if there's an active ship session for this repo (the card handles it)
-          const hasShipSession = get().shipSession?.repoPath === repoPath;
-          if (currentStatus?.phase !== "awaiting_review" && !hasShipSession) {
-            const items = signal.flagged_items?.length ?? 0;
-            const message = items > 0
-              ? `${items} flagged item${items !== 1 ? "s" : ""}: ${signal.summary}`
-              : signal.summary || "Manual review required";
-
-            const actions: { label: string; onClick: () => void }[] = [];
-            if (signal.pr_url) {
-              actions.push({ label: "View PR", onClick: () => openUrl(signal.pr_url) });
-            }
-
-            addToast({
-              type: "warning",
-              title: `Review Needed — PR #${signal.pr_number}`,
-              message,
-              actions: actions.length > 0 ? actions : undefined,
-              duration: 0, // persistent — user needs to act
-            });
-          }
-          set((s) => ({
-            shipStatuses: {
-              ...s.shipStatuses,
-              [repoPath]: { phase: "awaiting_review", signal, pr_number: signal.pr_number },
-            },
-          }));
-          // Clear signal file so we don't re-toast on app restart
-          await api.clearShipSignal(repoPath).catch(() => {});
-        }
-      } catch {
-        // Signal check failed — ignore silently
-      }
-    }
-  },
-
-  handleAutoMerge: async (repoPath) => {
-    const signal = get().shipStatuses[repoPath]?.signal;
-    if (!signal) return;
-
-    const ws = get().workspaces.find((w) => w.paths.includes(repoPath));
-    const mainBranch = ws?.main_branch ?? "main";
-
-    try {
-      // Phase: merging
-      set((s) => ({
-        shipStatuses: {
-          ...s.shipStatuses,
-          [repoPath]: { phase: "merging", signal, pr_number: signal.pr_number },
-        },
-      }));
-
-      // Merge the PR
-      await api.gitMergePr(repoPath, "squash");
-
-      // Phase: syncing
-      set((s) => ({
-        shipStatuses: {
-          ...s.shipStatuses,
-          [repoPath]: { phase: "syncing", signal, pr_number: signal.pr_number },
-        },
-      }));
-
-      // Auto-sync the shipping branch back to main
-      await api.postMergeSync(repoPath, mainBranch, signal.branch);
-
-      // Clear signal file
-      await api.clearShipSignal(repoPath);
-
-      // Refresh git status (must complete before fetchAllRepos to avoid git lock races)
-      await get().refreshGitStatusForPath(repoPath, mainBranch);
-      await get().refreshPrStatusForPath(repoPath);
-
-      // Fetch all repos so other checkouts see the behind count
-      get().fetchAllRepos().catch(() => {});
-
-      // Notify that merge + sync completed
-      addToast({
-        type: "success",
-        title: `PR #${signal.pr_number} Merged`,
-        message: `Branch synced with ${mainBranch} and ready to work on`,
-        actions: signal.pr_url
-          ? [{ label: "View PR", onClick: () => openUrl(signal.pr_url) }]
-          : undefined,
-      });
-
-      // Done — clear ship status and dismiss ship session for this repo
-      const session = get().shipSession;
-      if (session && session.repoPath === repoPath) {
-        if (session.ptyId && !session.exited) {
-          api.killPty(session.ptyId).catch(() => {});
-        }
-        shipOutputBuffer.length = 0;
-      }
-      set((s) => ({
-        shipStatuses: { ...s.shipStatuses, [repoPath]: { phase: "idle" } },
-        shipSession: s.shipSession?.repoPath === repoPath ? null : s.shipSession,
-      }));
-    } catch (e) {
-      console.error(`Auto-merge failed for ${repoPath}:`, e);
-      // Revert to showing signal so user can see what happened
-      set((s) => ({
-        shipStatuses: {
-          ...s.shipStatuses,
-          [repoPath]: { phase: "awaiting_review", signal, pr_number: signal.pr_number },
-        },
-      }));
-    }
-  },
-
-  startShipSession: async (repoPath) => {
-    // Don't start a second session
-    if (get().shipSession) return;
-
-    // Clear any stale signal file from a previous ship run for this repo
-    await api.clearShipSignal(repoPath).catch(() => {});
-    // Clear stale ship status
-    set((s) => ({
-      shipStatuses: { ...s.shipStatuses, [repoPath]: { phase: "idle" } },
-    }));
-
-    try {
-      // Spawn at 80x24 (standard size). The floating terminal will resize
-      // the PTY when opened — going wider is clean, going narrower garbles.
-      const ptyId = await api.spawnPty(
-        repoPath,
-        'claude --dangerously-skip-permissions "/rally-ship"',
-        80,
-        24
-      );
-
-      // Reset the module-level output buffer (outside Zustand to avoid
-      // O(n) array copies and React re-renders on every PTY chunk)
-      shipOutputBuffer.length = 0;
-
-      set({
-        shipSession: {
-          ptyId,
-          repoPath,
-          phase: "detecting",
-          exited: false,
-          exitCode: null,
-          docked: false,
-        },
-      });
-
-      // Listen for PTY output — buffer raw bytes and parse phase markers
-      const phaseRegex = /<<RALLY_PHASE:(\w+)>>/;
-      const unlistenOutput = await listen<{ data: number[] }>(
-        `pty-output-${ptyId}`,
-        (event) => {
-          const chunk = new Uint8Array(event.payload.data);
-
-          // Scan for phase markers in this chunk
-          const text = new TextDecoder().decode(chunk);
-          const match = phaseRegex.exec(text);
-          if (match) {
-            const phase = match[1] as ShipDetailPhase;
-            set((s) => {
-              if (!s.shipSession || s.shipSession.ptyId !== ptyId) return s;
-              return { shipSession: { ...s.shipSession, phase } };
-            });
-          }
-
-          // Buffer raw bytes in the module-level array (not Zustand state).
-          // This avoids O(n) array copies and React re-renders on every chunk,
-          // which was causing lag across all terminals and editors.
-          pushLimitedChunk(shipOutputBuffer, chunk, MAX_SHIP_BUFFER_CHUNKS);
-        }
-      );
-
-      // Listen for PTY exit
-      const unlistenExit = await listen<{ code: number | null }>(
-        `pty-exit-${ptyId}`,
-        (event) => {
-          set((s) => {
-            if (!s.shipSession || s.shipSession.ptyId !== ptyId) return s;
-            return {
-              shipSession: {
-                ...s.shipSession,
-                exited: true,
-                exitCode: event.payload.code,
-                // Show "finishing" until we detect the signal with the verdict
-                phase: s.shipSession.signal ? s.shipSession.phase : "finishing",
-              },
-            };
-          });
-          unlistenOutput();
-          unlistenExit();
-          // Immediately poll for the signal instead of waiting up to 5s
-          setTimeout(() => get().pollShipSignals(), 500);
-        }
-      );
-    } catch (e) {
-      console.error("Failed to start ship session:", e);
-      set({ shipSession: null });
-    }
-  },
-
-  dockShipSession: (workspaceId) => {
-    const session = get().shipSession;
-    if (!session || !session.ptyId) return;
-
-    const layout = get().getOrCreateLayout(workspaceId);
-
-    // Find the top-left pane group (same logic as openFile)
-    let targetGroupId: string | null = null;
-    const root = layout.root;
-    if (root.type === "split" && root.direction === "vertical") {
-      targetGroupId = findFirstGroupInSubtree(root.children[0]);
-    }
-    if (!targetGroupId) {
-      targetGroupId = findFirstGroupInSubtree(root);
-    }
-    if (!targetGroupId) return;
-
-    const repoName = session.repoPath.split("/").pop() ?? "Ship";
-    const pane: Pane = {
-      id: crypto.randomUUID(),
-      type: "claude",
-      title: `Ship: ${repoName}`,
-      cwd: session.repoPath,
-      ptyId: session.ptyId,
-    };
-
-    get().addPaneToGroup(workspaceId, targetGroupId, pane);
-    set((s) => ({
-      shipSession: s.shipSession ? { ...s.shipSession, docked: true } : null,
-    }));
-  },
-
-  dismissShipSession: () => {
-    const session = get().shipSession;
-    if (!session) return;
-    if (session.ptyId) {
-      // PTY-backed: we own the process — kill it and clear the signal
-      if (!session.exited) {
-        api.killPty(session.ptyId).catch(() => {});
-      }
-    }
-    // Always clear the signal file on dismiss. For headless sessions where
-    // an external /ship is still running, it will write a new signal on
-    // its next phase change (within seconds). For early-exit cases (guard
-    // rails, errors), clearing prevents the poll loop from recreating the
-    // session indefinitely.
-    api.clearShipSignal(session.repoPath).catch(() => {});
-    shipOutputBuffer.length = 0;
-    set({ shipSession: null });
-  },
 
   openTerminalInBottom: (workspaceId, cwd) => {
     const layout = get().getOrCreateLayout(workspaceId);

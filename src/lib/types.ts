@@ -117,52 +117,6 @@ export interface CommitEntry {
   date: string;
 }
 
-// --- Ship Signal Types ---
-
-export interface ShipSignalFlaggedItem {
-  file: string;
-  line: number;
-  severity: string;
-  description: string;
-}
-
-export interface ShipSignal {
-  version: number;
-  timestamp: string;
-  repo_path: string;
-  branch: string;
-  verdict: "auto_merge" | "manual_review" | "shipping";
-  phase?: ShipDetailPhase;
-  pr_number: number;
-  pr_url: string;
-  summary: string;
-  flagged_items: ShipSignalFlaggedItem[];
-}
-
-export type ShipPhase = "idle" | "shipping" | "awaiting_review" | "merging" | "syncing";
-
-export type ShipDetailPhase =
-  | "detecting" | "syncing" | "pushing" | "creating_pr"
-  | "checking" | "reviewing" | "writing_verdict"
-  | "merging" | "finishing" | "complete";
-
-export interface ShipSession {
-  ptyId?: string;
-  repoPath: string;
-  phase: ShipDetailPhase;
-  exited: boolean;
-  exitCode: number | null;
-  docked: boolean;
-  /** Set when the signal file is detected — carries the verdict */
-  signal?: ShipSignal;
-}
-
-export interface ShipStatus {
-  phase: ShipPhase;
-  signal?: ShipSignal;
-  pr_number?: number;
-}
-
 // --- Rally Config Types ---
 
 export interface SetupConfig {
@@ -198,16 +152,6 @@ export interface ProductSession {
 export interface ShellPanel {
   ptyId: string;
   visible: boolean;
-}
-
-// --- Rally Script Editor Types ---
-
-export interface RallyScriptInfo {
-  name: string;
-  path: string;
-  category: "script" | "command";
-  is_modified: boolean;
-  description: string;
 }
 
 // --- PTY Info Types ---

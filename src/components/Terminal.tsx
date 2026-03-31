@@ -4,7 +4,7 @@ import { FitAddon } from "@xterm/addon-fit";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { api } from "../lib/tauri";
 import { TerminalLinkProvider, type OnFileOpen } from "../lib/terminalLinkProvider";
-import { useWorkspaceStore, shipOutputBuffer, scriptOutputBuffers, appendPtyBuffer, clearPtyBuffer, ptyOutputBuffers } from "../stores/workspaceStore";
+import { useWorkspaceStore, scriptOutputBuffers, appendPtyBuffer, clearPtyBuffer, ptyOutputBuffers } from "../stores/workspaceStore";
 import { showContextMenu } from "../lib/contextMenu";
 import type { ThemeName, DetectedPort } from "../lib/types";
 import { detectPorts } from "../lib/portDetection";
@@ -16,9 +16,6 @@ interface TerminalProps {
   command?: string;
   initialInput?: string;
   ptyId?: string;  // Connect to existing PTY instead of spawning
-  /** Lock columns to 80 — only for ship dock terminals where SIGWINCH
-   *  col changes cause rich TUI garble. Regular terminals should NOT lock. */
-  lockCols?: boolean;
   /** Key into scriptOutputBuffers to replay buffered output on attach */
   scriptBufferKey?: string;
   /** Workspace ID for port detection — detected localhost URLs are registered here */
@@ -167,26 +164,7 @@ function safeFit(term: XTerminal, fitAddon: FitAddon, zoom = 1): boolean {
   return true;
 }
 
-function fitRowsWithLockedCols(term: XTerminal, fitAddon: FitAddon, lockedCols: number, zoom = 1): boolean {
-  // Always use our custom dimension calculator so scrollbar width is
-  // consistent (8px from CSS). FitAddon assumes 15px native scrollbar.
-  const dims = zoomProposeDimensions(term, zoom)
-    ?? (zoom === 1 ? fitAddon.proposeDimensions() : null);
-  if (!dims || !Number.isFinite(dims.rows)) return false;
-  const rows = Math.max(MIN_ROWS, Math.round(dims.rows));
-  if (rows === term.rows && term.cols === lockedCols) return false;
-  const buf = term.buffer.active;
-  const distFromBottom = buf.baseY - buf.viewportY;
-  term.resize(lockedCols, rows);
-  const newBuf = term.buffer.active;
-  const targetViewport = Math.max(0, newBuf.baseY - distFromBottom);
-  if (newBuf.viewportY !== targetViewport) {
-    term.scrollToLine(targetViewport);
-  }
-  return true;
-}
-
-export function Terminal({ cwd, command, initialInput, ptyId: existingPtyId, lockCols: lockColsProp, scriptBufferKey, workspaceId, onPtySpawned, onCwdChanged, onTitleChange, onFileOpen, onKill }: TerminalProps) {
+export function Terminal({ cwd, command, initialInput, ptyId: existingPtyId, scriptBufferKey, workspaceId, onPtySpawned, onCwdChanged, onTitleChange, onFileOpen, onKill }: TerminalProps) {
   const theme = useWorkspaceStore((s) => s.theme);
   const themeRef = useRef<ThemeName>(theme);
   themeRef.current = theme;
@@ -581,18 +559,9 @@ export function Terminal({ cwd, command, initialInput, ptyId: existingPtyId, loc
 
     // Track whether this terminal owns the PTY (should kill on unmount)
     const ownsPty = !existingPtyId;
-    // Only lock cols when explicitly requested (ship dock terminals).
-    // Regular PTY reconnections after layout changes must resize freely.
-    const lockCols = !!lockColsProp;
-    const LOCKED_COLS = 80; // Must match ship PTY spawn size
     let ptySpawned = false;
     let rafId: number | null = null;
     const outputDecoder = new TextDecoder();
-
-    /** Fit rows to container, keeping cols locked at LOCKED_COLS. */
-    function fitRowsOnly(): boolean {
-      return fitRowsWithLockedCols(term, fitAddon, LOCKED_COLS, uiZoomRef.current);
-    }
 
     async function connectToPty(ptyId: string) {
       ptyIdRef.current = ptyId;
@@ -691,29 +660,28 @@ export function Terminal({ cwd, command, initialInput, ptyId: existingPtyId, loc
         if (!ptyIdRef.current || cols < MIN_COLS || rows < MIN_ROWS) return;
         // Skip during split drag — PTY gets resized on drag end
         if (document.documentElement.hasAttribute("data-rally-split-drag")) return;
-        const effectiveCols = lockCols ? LOCKED_COLS : cols;
 
         // Row change: send immediately
         if (rows !== lastSentRows) {
           lastSentRows = rows;
-          lastSentCols = effectiveCols;
+          lastSentCols = cols;
           if (colResizeTimer !== null) {
             clearTimeout(colResizeTimer);
             colResizeTimer = null;
           }
-          api.resizePty(ptyIdRef.current!, effectiveCols, rows);
+          api.resizePty(ptyIdRef.current!, cols, rows);
           return;
         }
 
         // Col-only change: debounce 100ms
-        if (effectiveCols !== lastSentCols) {
+        if (cols !== lastSentCols) {
           if (colResizeTimer !== null) clearTimeout(colResizeTimer);
           colResizeTimer = setTimeout(() => {
             colResizeTimer = null;
             if (ptyIdRef.current) {
-              lastSentCols = effectiveCols;
+              lastSentCols = cols;
               lastSentRows = rows;
-              api.resizePty(ptyIdRef.current, effectiveCols, rows);
+              api.resizePty(ptyIdRef.current, cols, rows);
             }
           }, 100);
         }
@@ -733,21 +701,8 @@ export function Terminal({ cwd, command, initialInput, ptyId: existingPtyId, loc
           syncForegroundProcess(proc);
         } catch { /* PTY might be dead — proceed anyway */ }
 
-        if (lockCols) {
-          fitRowsOnly();
-        } else {
-          safeFit(term, fitAddon, uiZoomRef.current);
-        }
+        safeFit(term, fitAddon, uiZoomRef.current);
 
-        // Replay buffered output from ship session or script run
-        if (lockCols) {
-          const session = useWorkspaceStore.getState().shipSession;
-          if (session && session.ptyId === existingPtyId) {
-            for (const chunk of shipOutputBuffer) {
-              term.write(chunk);
-            }
-          }
-        }
         if (scriptBufferKey) {
           const buf = scriptOutputBuffers.get(scriptBufferKey);
           if (buf) {
@@ -758,7 +713,7 @@ export function Terminal({ cwd, command, initialInput, ptyId: existingPtyId, loc
         }
 
         // Replay general PTY output buffer (for regular terminals after layout changes)
-        if (!lockCols && !scriptBufferKey) {
+        if (!scriptBufferKey) {
           const buf = ptyOutputBuffers.get(existingPtyId);
           if (buf) {
             for (const chunk of buf) {
@@ -776,16 +731,9 @@ export function Terminal({ cwd, command, initialInput, ptyId: existingPtyId, loc
         if (core?._renderService) core._renderService.clear();
 
         // Sync PTY dimensions — this sends SIGWINCH which makes TUI apps redraw
-        if (lockCols) {
-          fitRowsOnly();
-          if (term.rows >= MIN_ROWS) {
-            api.resizePty(existingPtyId, LOCKED_COLS, term.rows);
-          }
-        } else {
-          safeFit(term, fitAddon, uiZoomRef.current);
-          if (term.cols >= MIN_COLS && term.rows >= MIN_ROWS) {
-            api.resizePty(existingPtyId, term.cols, term.rows);
-          }
+        safeFit(term, fitAddon, uiZoomRef.current);
+        if (term.cols >= MIN_COLS && term.rows >= MIN_ROWS) {
+          api.resizePty(existingPtyId, term.cols, term.rows);
         }
       } catch (e) {
         term.writeln(`\x1b[31mFailed to attach to terminal: ${e}\x1b[0m`);
@@ -872,7 +820,7 @@ export function Terminal({ cwd, command, initialInput, ptyId: existingPtyId, loc
         if (!ptySpawned) {
           initFn();
         } else {
-          lockCols ? fitRowsOnly() : safeFit(term, fitAddon, uiZoomRef.current);
+          safeFit(term, fitAddon, uiZoomRef.current);
           // After being hidden (display:none), xterm's canvas is stale — force repaint
           if (justBecameVisible) term.refresh(0, term.rows - 1);
         }
@@ -884,8 +832,7 @@ export function Terminal({ cwd, command, initialInput, ptyId: existingPtyId, loc
     const onDragEnd = () => {
       if (el.clientWidth < 100 || el.clientHeight < 50) return;
       if (ptyIdRef.current) {
-        const cols = lockCols ? LOCKED_COLS : term.cols;
-        api.resizePty(ptyIdRef.current, cols, term.rows);
+          api.resizePty(ptyIdRef.current, term.cols, term.rows);
       }
     };
     document.addEventListener("rally:split-resize-end", onDragEnd);

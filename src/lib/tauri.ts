@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import type { Workspace, GitStatus, PrStatus, PrDetails, PushResult, ChangesSummary, CommitEntry, ScriptEntry, ShipSignal, RallyScriptInfo, SearchMatch, ReplaceOp, ReplaceResult, PtyInfo, RallyConfig, WorkspaceReadiness, BranchInfo } from "./types";
+import type { Workspace, GitStatus, PrStatus, PrDetails, PushResult, ChangesSummary, CommitEntry, ScriptEntry, SearchMatch, ReplaceOp, ReplaceResult, PtyInfo, RallyConfig, WorkspaceReadiness, BranchInfo } from "./types";
 
 /** Open a URL in the user's default browser via Tauri shell plugin. */
 export function openUrl(url: string) {
@@ -189,19 +189,6 @@ export const api = {
   killPort: (port: number) =>
     invoke<void>("kill_port", { port }),
 
-  // Ship operations
-  checkShipSignal: (repoPath: string) =>
-    invoke<ShipSignal | null>("check_ship_signal", { repoPath }),
-
-  clearShipSignal: (repoPath: string) =>
-    invoke<void>("clear_ship_signal", { repoPath }),
-
-  checkShipTrigger: () =>
-    invoke<string | null>("check_ship_trigger"),
-
-  postMergeSync: (cwd: string, mainBranch: string, mergedBranch: string) =>
-    invoke<string>("post_merge_sync", { cwd, mainBranch, mergedBranch }),
-
   // PTY operations
   spawnPty: (cwd: string, command: string | null, cols: number, rows: number, exitOnComplete?: boolean) =>
     invoke<string>("spawn_pty", { cwd, command, cols, rows, exitOnComplete }),
@@ -226,13 +213,6 @@ export const api = {
 
   getPtyForegroundProcess: (ptyId: string) =>
     invoke<string | null>("get_pty_foreground_process", { ptyId }),
-
-  // Rally script editor
-  listRallyScripts: () =>
-    invoke<RallyScriptInfo[]>("list_rally_scripts"),
-
-  restoreRallyScript: (name: string) =>
-    invoke<void>("restore_rally_script", { name }),
 
   // Search operations
   searchInFiles: (paths: string[], query: string, caseSensitive: boolean, wholeWord: boolean, useRegex: boolean) =>

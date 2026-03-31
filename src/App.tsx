@@ -5,7 +5,6 @@ import { open } from "@tauri-apps/plugin-dialog";
 import { openWindow } from "./lib/windowUtils";
 import { FileExplorer } from "./components/FileExplorer";
 import { GlobalConfigExplorer } from "./components/SettingsPanel";
-import { ScriptEditor } from "./components/ScriptEditor";
 import { PaneLayout } from "./components/PaneLayout";
 import { FlightCanvas } from "./components/FlightCanvas";
 import { lastFocusedFlightPodId } from "./components/FlightPod";
@@ -36,7 +35,6 @@ import {
   type RequestNewTerminalCwdDetail,
 } from "./lib/events";
 import { ToastContainer, addToast } from "./components/ToastContainer";
-import { ShipStatusPill } from "./components/ShipStatusPill";
 import { UnifiedGitPanel } from "./components/UnifiedGitPanel";
 import { SearchPanel } from "./components/SearchPanel";
 import { ProductChatPanel } from "./components/ProductChatPanel";
@@ -460,7 +458,6 @@ export function App() {
   const refreshPrStatusForPath = useWorkspaceStore(
     (s) => s.refreshPrStatusForPath,
   );
-  const pollShipSignals = useWorkspaceStore((s) => s.pollShipSignals);
   const fetchAllRepos = useWorkspaceStore((s) => s.fetchAllRepos);
   const activeWorkspaceName = useWorkspaceStore((s) => {
     const ws = s.workspaces.find((w) => w.id === s.activeWorkspaceId);
@@ -554,7 +551,6 @@ export function App() {
   const resizingRef = useRef(false);
   const gitRefreshInFlightRef = useRef(false);
   const prRefreshInFlightRef = useRef(false);
-  const shipPollInFlightRef = useRef(false);
   const fetchInFlightRef = useRef(false);
   const lastInteractionAtRef = useRef(Date.now());
   const explorerRef = useRef<HTMLDivElement>(null);
@@ -702,17 +698,6 @@ export function App() {
     [refreshAllPrStatuses, shouldDeferBackgroundWork],
   );
 
-  const runShipPoll = useCallback(async () => {
-    if (shipPollInFlightRef.current) return;
-    if (shouldDeferBackgroundWork()) return;
-    shipPollInFlightRef.current = true;
-    try {
-      await pollShipSignals();
-    } finally {
-      shipPollInFlightRef.current = false;
-    }
-  }, [pollShipSignals, shouldDeferBackgroundWork]);
-
   const runFetchAll = useCallback(async () => {
     if (fetchInFlightRef.current) return;
     if (shouldDeferBackgroundWork()) return;
@@ -752,7 +737,6 @@ export function App() {
       .getState()
       .workspaces.reduce((n, ws) => n + ws.paths.length, 0);
     const gitMs = pathCount > 6 ? 20000 : 10000;
-    const shipMs = pathCount > 6 ? 10000 : 5000;
     const fetchMs = pathCount > 6 ? 120000 : 60000;
 
     const gitInterval = setInterval(() => {
@@ -761,9 +745,6 @@ export function App() {
     const prInterval = setInterval(() => {
       void runPrRefresh();
     }, 30000);
-    const shipInterval = setInterval(() => {
-      void runShipPoll();
-    }, shipMs);
     const fetchInterval = setInterval(() => {
       void runFetchAll();
     }, fetchMs);
@@ -772,14 +753,12 @@ export function App() {
       cancelled = true;
       clearInterval(gitInterval);
       clearInterval(prInterval);
-      clearInterval(shipInterval);
       clearInterval(fetchInterval);
     };
   }, [
     loadWorkspaces,
     runGitRefresh,
     runPrRefresh,
-    runShipPoll,
     runFetchAll,
     forceNoWorkspaceSelection,
   ]);
@@ -2127,7 +2106,6 @@ export function App() {
               />
             </div>
             {explorerView === "claude" && <GlobalConfigExplorer />}
-            {explorerView === "scripts" && <ScriptEditor />}
             <div
               style={{
                 display: explorerView === "files" ? undefined : "none",
@@ -2224,7 +2202,6 @@ export function App() {
         onSelectCwd={handleSelectTerminalCwd}
         placeholder="Select current working directory for new terminal"
       />
-      <ShipStatusPill />
       <ToastContainer />
       {showAddWorkspaceModal && (
         <AddWorkspaceModal onClose={() => setShowAddWorkspaceModal(false)} />

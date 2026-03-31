@@ -249,7 +249,6 @@ export function PrReviewContent({
   const refreshGitStatusForPath = useWorkspaceStore((s) => s.refreshGitStatusForPath);
   const refreshPrStatusForPath = useWorkspaceStore((s) => s.refreshPrStatusForPath);
   const fetchAllRepos = useWorkspaceStore((s) => s.fetchAllRepos);
-  const openClaudeCommand = useWorkspaceStore((s) => s.openClaudeCommand);
   const activeWorkspaceId = useWorkspaceStore((s) => s.activeWorkspaceId);
   const mainBranch = useWorkspaceStore((s) => {
     const ws = s.workspaces.find((w) => w.paths.includes(rootPath));
@@ -266,22 +265,10 @@ export function PrReviewContent({
     try {
       await api.gitMergePr(rootPath, "squash");
       const prNum = details?.number ?? cachedPr?.number;
-      const branch = details?.head_branch ?? "";
       addToast({ type: "success", title: "PR merged", message: `PR #${prNum} merged via squash` });
       onClose?.();
 
-      // Post-merge sync: sync the feature branch back to main
-      // Must complete BEFORE refreshing git status to avoid concurrent git lock conflicts
-      if (branch) {
-        try {
-          await api.postMergeSync(rootPath, mainBranch, branch);
-        } catch (e) {
-          console.error("Post-merge sync failed:", e);
-          addToast({ type: "warning", title: "Sync failed", message: `Branch sync failed: ${String(e).slice(0, 120)}` });
-        }
-      }
-
-      // Refresh statuses only after sync completes (avoids git index.lock races)
+      // Refresh statuses after merge
       refreshGitStatusForPath(rootPath, mainBranch).catch(() => {});
       refreshPrStatusForPath(rootPath).catch(() => {});
       // Fetch all repos so other checkouts see the behind count
@@ -330,12 +317,6 @@ export function PrReviewContent({
   const cancelEditTitle = useCallback(() => {
     setEditingTitle(false);
   }, []);
-
-  const handleShip = useCallback(() => {
-    if (!activeWorkspaceId) return;
-    onClose?.();
-    openClaudeCommand(activeWorkspaceId, rootPath, "/rally-ship", "Ship");
-  }, [activeWorkspaceId, rootPath, onClose, openClaudeCommand]);
 
   const handleClosePr = useCallback(async () => {
     if (!closeArmed) {
