@@ -3020,7 +3020,7 @@ export function FileExplorer({ onCollapse, flushLeft }: FileExplorerProps) {
   const addPathToWorkspace = useWorkspaceStore((s) => s.addPathToWorkspace);
   const reorderWorkspacePath = useWorkspaceStore((s) => s.reorderWorkspacePath);
   const openUnifiedGitPanel = useWorkspaceStore((s) => s.openUnifiedGitPanel);
-  const workspaceMode = useWorkspaceStore((s) => activeWorkspaceId ? s.workspaceModes[activeWorkspaceId] ?? "dev" : "dev");
+  const workspaceMode = useWorkspaceStore((s) => activeWorkspaceId ? s.workspaceModes[activeWorkspaceId] ?? "flight" : "flight");
   const isProductMode = workspaceMode === "product";
   const unifiedGitPanelOpen = useWorkspaceStore((s) => s.unifiedGitPanelOpen);
   const unifiedGitPanelPath = useWorkspaceStore((s) => s.unifiedGitPanelPath);

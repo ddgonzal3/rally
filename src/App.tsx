@@ -862,7 +862,7 @@ export function App() {
       // Only auto-set mode from config if the user hasn't explicitly chosen one
       if (config?.mode && !s.workspaceModes[activeWorkspaceId]) {
         const mode =
-          config.mode === "product" ? ("product" as const) : ("dev" as const);
+          config.mode === "product" ? ("product" as const) : config.mode === "dev" ? ("dev" as const) : ("flight" as const);
         s.setWorkspaceMode(activeWorkspaceId, mode);
       }
     });
