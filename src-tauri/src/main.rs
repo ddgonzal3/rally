@@ -206,6 +206,8 @@ fn main() {
         pty_manager::list_ptys,
         pty_manager::kill_all_ptys,
         pty_manager::get_pty_foreground_process,
+        pty_manager::pause_pty_monitor,
+        pty_manager::resume_pty_monitor,
         config_ops::get_home_dir,
         config_ops::read_file_content,
         config_ops::read_file_base64,

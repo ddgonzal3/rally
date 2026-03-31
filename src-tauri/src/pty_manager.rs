@@ -41,6 +41,7 @@ struct PtySession {
     child: Arc<Mutex<Box<dyn portable_pty::Child + Send + Sync>>>,
     foreground: Arc<Mutex<Option<String>>>,
     monitor_stop: Arc<AtomicBool>,
+    monitor_paused: Arc<AtomicBool>,
     cwd: String,
     command: Option<String>,
 }
@@ -60,6 +61,7 @@ fn spawn_foreground_monitor(
     shell_pid: Option<u32>,
     foreground: Arc<Mutex<Option<String>>>,
     monitor_stop: Arc<AtomicBool>,
+    monitor_paused: Arc<AtomicBool>,
 ) {
     thread::spawn(move || {
         const STARTUP_POLL_INTERVAL: Duration = Duration::from_millis(150);
@@ -75,6 +77,12 @@ fn spawn_foreground_monitor(
         loop {
             if monitor_stop.load(Ordering::Relaxed) {
                 break;
+            }
+
+            // Skip polling when paused (PTY not visible to user)
+            if monitor_paused.load(Ordering::Relaxed) {
+                thread::sleep(STEADY_POLL_INTERVAL);
+                continue;
             }
 
             let sampled = match shell_pid {
@@ -240,12 +248,14 @@ impl PtyManager {
         let pty_id = uuid::Uuid::new_v4().to_string();
         let foreground = Arc::new(Mutex::new(None));
         let monitor_stop = Arc::new(AtomicBool::new(false));
+        let monitor_paused = Arc::new(AtomicBool::new(true));
         spawn_foreground_monitor(
             app_handle.clone(),
             pty_id.clone(),
             shell_pid,
             foreground.clone(),
             monitor_stop.clone(),
+            monitor_paused.clone(),
         );
 
         // Spawn reader thread
@@ -378,6 +388,7 @@ impl PtyManager {
                 child,
                 foreground,
                 monitor_stop,
+                monitor_paused,
                 cwd: effective_cwd,
                 command,
             },
@@ -450,6 +461,24 @@ impl PtyManager {
             .lock()
             .map_err(|e| e.to_string())
             .map(|cached| cached.clone())
+    }
+
+    pub fn pause_monitor(&self, pty_id: &str) -> Result<(), String> {
+        let session = self
+            .sessions
+            .get(pty_id)
+            .ok_or_else(|| format!("PTY session not found: {}", pty_id))?;
+        session.monitor_paused.store(true, Ordering::Relaxed);
+        Ok(())
+    }
+
+    pub fn resume_monitor(&self, pty_id: &str) -> Result<(), String> {
+        let session = self
+            .sessions
+            .get(pty_id)
+            .ok_or_else(|| format!("PTY session not found: {}", pty_id))?;
+        session.monitor_paused.store(false, Ordering::Relaxed);
+        Ok(())
     }
 
     pub fn kill_all(&mut self) {
@@ -542,6 +571,24 @@ pub fn get_pty_foreground_process(
 ) -> Result<Option<String>, String> {
     let manager = state.lock().map_err(|e| e.to_string())?;
     manager.foreground_process(&pty_id)
+}
+
+#[tauri::command]
+pub fn pause_pty_monitor(
+    state: tauri::State<'_, PtyState>,
+    pty_id: String,
+) -> Result<(), String> {
+    let manager = state.lock().map_err(|e| e.to_string())?;
+    manager.pause_monitor(&pty_id)
+}
+
+#[tauri::command]
+pub fn resume_pty_monitor(
+    state: tauri::State<'_, PtyState>,
+    pty_id: String,
+) -> Result<(), String> {
+    let manager = state.lock().map_err(|e| e.to_string())?;
+    manager.resume_monitor(&pty_id)
 }
 
 /// Check if a single PID is a Claude Code process (by name or node args).
