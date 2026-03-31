@@ -21,6 +21,7 @@ import {
   type LayoutNode,
   type NavigationDirection,
   type Pane,
+  type PaneGroup,
   type PrStatus,
   type ThemeName,
 } from "./lib/types";
@@ -80,6 +81,60 @@ function wsInsertIndex(
     if (pointerY > r.top + r.height / 2) idx++;
   }
   return wsClamp(idx, 0, ids.length - 1);
+}
+
+/** Walk a layout tree and collect all PTY IDs from its pane groups. */
+function collectPtyIdsFromLayout(
+  layoutKey: string,
+  state: ReturnType<typeof useWorkspaceStore.getState>,
+  ids: string[],
+) {
+  const layout = state.layouts[layoutKey];
+  if (!layout?.root) return;
+  const walk = (node: LayoutNode) => {
+    if (node.type === "group") {
+      const group = layout.groups[(node as { groupId: string }).groupId];
+      if (group) {
+        for (const pane of group.panes) {
+          if (pane.ptyId) ids.push(pane.ptyId);
+        }
+      }
+    } else if (node.type === "split" && node.children) {
+      for (const child of node.children) walk(child);
+    }
+  };
+  walk(layout.root);
+}
+
+/** Collect all PTY IDs from a workspace's dev-mode layout and flight pods. */
+function collectWorkspacePtyIds(
+  workspaceId: string,
+  state: ReturnType<typeof useWorkspaceStore.getState>,
+): string[] {
+  const ids: string[] = [];
+
+  // Dev mode layout
+  collectPtyIdsFromLayout(workspaceId, state, ids);
+
+  // Flight pods
+  const flightLayout = state.flightLayouts[workspaceId];
+  if (flightLayout?.pods) {
+    for (const pod of flightLayout.pods) {
+      // Pod layout (uses shared layout system with "flight:{podId}" key)
+      collectPtyIdsFromLayout(`flight:${pod.id}`, state, ids);
+      // Shell tabs
+      if ("shellTabs" in pod && pod.shellTabs) {
+        for (const tab of pod.shellTabs) {
+          if (tab.ptyId) ids.push(tab.ptyId);
+        }
+      }
+      if ("shellPtyId" in pod && pod.shellPtyId) {
+        ids.push(pod.shellPtyId);
+      }
+    }
+  }
+
+  return ids;
 }
 
 function WorkspacePicker({ onSelect }: { onSelect: (id: string) => void }) {
@@ -534,6 +589,28 @@ export function App() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeWorkspaceId]);
+  // Batch pause/resume PTY monitors on workspace switch — only active workspace
+  // terminals need foreground monitoring (pgrep/ps every second).
+  useEffect(() => {
+    if (!activeWorkspaceId) return;
+    const state = useWorkspaceStore.getState();
+
+    // Resume monitors for active workspace
+    const activePtyIds = collectWorkspacePtyIds(activeWorkspaceId, state);
+    for (const id of activePtyIds) {
+      api.resumePtyMonitor(id).catch(() => {});
+    }
+
+    // Pause monitors for inactive workspaces
+    for (const ws of state.workspaces) {
+      if (ws.id === activeWorkspaceId) continue;
+      const inactivePtyIds = collectWorkspacePtyIds(ws.id, state);
+      for (const id of inactivePtyIds) {
+        api.pausePtyMonitor(id).catch(() => {});
+      }
+    }
+  }, [activeWorkspaceId]);
+
   const [quickOpenVisible, setQuickOpenVisible] = useState(false);
   const [newTerminalCwdRequest, setNewTerminalCwdRequest] =
     useState<RequestNewTerminalCwdDetail | null>(null);

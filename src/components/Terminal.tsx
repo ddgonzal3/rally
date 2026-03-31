@@ -686,6 +686,9 @@ export function Terminal({ cwd, command, initialInput, ptyId: existingPtyId, scr
           }, 100);
         }
       });
+
+      // Resume foreground monitoring — this terminal is now visible
+      api.resumePtyMonitor(ptyId).catch(() => {});
     }
 
     async function attachExistingPty() {
@@ -839,6 +842,10 @@ export function Terminal({ cwd, command, initialInput, ptyId: existingPtyId, scr
 
     return () => {
       if (rafId !== null) cancelAnimationFrame(rafId);
+      // Pause foreground monitoring — this terminal is no longer visible
+      if (ptyIdRef.current) {
+        api.pausePtyMonitor(ptyIdRef.current).catch(() => {});
+      }
       observer.disconnect();
       document.removeEventListener("rally:split-resize-end", onDragEnd);
       linkDisposable.dispose();

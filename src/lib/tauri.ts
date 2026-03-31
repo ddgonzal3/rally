@@ -214,6 +214,12 @@ export const api = {
   getPtyForegroundProcess: (ptyId: string) =>
     invoke<string | null>("get_pty_foreground_process", { ptyId }),
 
+  pausePtyMonitor: (ptyId: string) =>
+    invoke<void>("pause_pty_monitor", { ptyId }),
+
+  resumePtyMonitor: (ptyId: string) =>
+    invoke<void>("resume_pty_monitor", { ptyId }),
+
   // Search operations
   searchInFiles: (paths: string[], query: string, caseSensitive: boolean, wholeWord: boolean, useRegex: boolean) =>
     invoke<SearchMatch[]>("search_in_files", { paths, query, caseSensitive, wholeWord, useRegex }),
