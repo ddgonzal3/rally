@@ -16,6 +16,7 @@ interface TerminalProps {
   cwd: string;
   command?: string;
   initialInput?: string;
+  exitOnComplete?: boolean;
   ptyId?: string;  // Connect to existing PTY instead of spawning
   /** Key into scriptOutputBuffers to replay buffered output on attach */
   scriptBufferKey?: string;
@@ -165,7 +166,7 @@ function safeFit(term: XTerminal, fitAddon: FitAddon, zoom = 1): boolean {
   return true;
 }
 
-export function Terminal({ cwd, command, initialInput, ptyId: existingPtyId, scriptBufferKey, workspaceId, onPtySpawned, onCwdChanged, onTitleChange, onFileOpen, onKill }: TerminalProps) {
+export function Terminal({ cwd, command, initialInput, exitOnComplete, ptyId: existingPtyId, scriptBufferKey, workspaceId, onPtySpawned, onCwdChanged, onTitleChange, onFileOpen, onKill }: TerminalProps) {
   const theme = useWorkspaceStore((s) => s.theme);
   const themeRef = useRef<ThemeName>(theme);
   themeRef.current = theme;
@@ -767,7 +768,7 @@ export function Terminal({ cwd, command, initialInput, ptyId: existingPtyId, scr
         // a tiny container during initial layout settling
         const spawnCols = Math.max(term.cols, 80);
         const spawnRows = Math.max(term.rows, 24);
-        const ptyId = await api.spawnPty(cwd, command ?? null, spawnCols, spawnRows);
+        const ptyId = await api.spawnPty(cwd, command ?? null, spawnCols, spawnRows, exitOnComplete);
 
         // Persist ptyId so it survives layout-induced remounts
         onPtySpawned?.(ptyId);

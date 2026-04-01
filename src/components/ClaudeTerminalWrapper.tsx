@@ -63,7 +63,7 @@ export function ClaudeTerminalWrapper({ cwd, command, initialInput, ptyId, works
 
   return (
     <div ref={containerRef} style={styles.container}>
-      <Terminal cwd={cwd} command={cleanCommand} initialInput={initialInput} ptyId={ptyId} workspaceId={workspaceId} onPtySpawned={onPtySpawned} onCwdChanged={onCwdChanged} onFileOpen={onFileOpen} />
+      <Terminal cwd={cwd} command={cleanCommand} exitOnComplete initialInput={initialInput} ptyId={ptyId} workspaceId={workspaceId} onPtySpawned={onPtySpawned} onCwdChanged={onCwdChanged} onFileOpen={onFileOpen} />
       {!ready && (
         <div style={styles.overlay}>
           <div style={styles.content}>
