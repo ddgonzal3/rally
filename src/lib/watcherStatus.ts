@@ -184,7 +184,7 @@ export function inferScriptCompletionStatus(
 
 export function getWatcherDisplayStatus(run: ScriptRun | undefined): WatcherBuildStatus {
   if (!run) return "idle";
-  if (run.status === "running") return run.watcherBuildStatus ?? "building";
+  if (run.status === "running" || run.status === "spawning") return run.watcherBuildStatus ?? "building";
   if (run.watcherBuildStatus === "error" || run.status === "error") return "error";
   return "idle";
 }

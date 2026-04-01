@@ -74,7 +74,7 @@ function PodScriptDot({
 
   const key = `${repoPath}:${scriptName}`;
   const run = scriptRuns[key];
-  const isRunning = run?.status === "running";
+  const isRunning = run?.status === "running" || run?.status === "spawning";
   const isWatcher = isWatcherScript(scriptName);
   const command = scriptEntry?.command ?? scriptName;
   const displayName = getDisplayName(scriptName);

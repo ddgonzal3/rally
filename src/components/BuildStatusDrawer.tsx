@@ -279,7 +279,7 @@ export function BuildStatusDrawer() {
 
   const bufferKey = `${activeDrawer.repoPath}:${activeDrawer.scriptName}`;
   const currentRun = scriptRuns[bufferKey];
-  const isRunning = currentRun?.status === "running";
+  const isRunning = currentRun?.status === "running" || currentRun?.status === "spawning";
 
   const isSliding = animState !== "visible";
 

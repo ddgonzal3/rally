@@ -1598,6 +1598,28 @@ export const useWorkspaceStore = create<WorkspaceState>()(
     if (existing && existing.status === "running") {
       await api.killPty(existing.ptyId);
     }
+    // Guard against duplicate spawns: if another runScript() call is already
+    // in-flight (between spawnPty request and state update), bail out.
+    // We check again after the kill since state may have changed.
+    const afterKill = get().scriptRuns[key];
+    if (afterKill && afterKill.status === "spawning") {
+      return; // Another call is already spawning
+    }
+
+    // Mark as "spawning" synchronously BEFORE the async spawnPty call.
+    // This prevents concurrent runScript() calls from spawning duplicates.
+    set((s) => ({
+      scriptRuns: {
+        ...s.scriptRuns,
+        [key]: {
+          scriptName,
+          ptyId: "",
+          status: "spawning",
+          exitCode: null,
+          watcherBuildStatus: isWatcher ? "building" : undefined,
+        },
+      },
+    }));
 
     // Don't use exitOnComplete — the shell must stay alive so the user
     // can Ctrl+C a watcher and continue typing in the terminal.
@@ -1711,7 +1733,7 @@ export const useWorkspaceStore = create<WorkspaceState>()(
 
     const finalizeRun = () => {
       const current = get().scriptRuns[key];
-      if (!current || current.status !== "running") return;
+      if (!current || (current.status !== "running" && current.status !== "spawning")) return;
       get().removePortsByScript(rootPath, scriptName);
       const finalStatus = inferScriptCompletionStatus(key, scriptName);
       set((s) => ({
@@ -1793,8 +1815,8 @@ export const useWorkspaceStore = create<WorkspaceState>()(
         clearTimeout(startupFallbackTimer);
         const code = event.payload.code;
         const current = get().scriptRuns[key];
-        // Only update if still running (poll may have already marked it)
-        if (current && current.status === "running") {
+        // Only update if still active (poll may have already marked it)
+        if (current && (current.status === "running" || current.status === "spawning")) {
           const finalStatus = isWatcher
             ? inferScriptCompletionStatus(key, scriptName)
             : code === 0 ? "success" : "error";

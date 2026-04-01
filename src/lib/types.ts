@@ -176,7 +176,7 @@ export interface ScriptEntry {
 export interface ScriptRun {
   scriptName: string;
   ptyId: string;
-  status: "running" | "success" | "error" | "stopped";
+  status: "running" | "spawning" | "success" | "error" | "stopped";
   exitCode: number | null;
   watcherBuildStatus?: "idle" | "building" | "success" | "error";
   buildCompletionCount?: number;
