@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useCallback } from "react";
 import { Terminal as XTerminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
+import { WebglAddon } from "@xterm/addon-webgl";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { api } from "../lib/tauri";
 import { TerminalLinkProvider, type OnFileOpen } from "../lib/terminalLinkProvider";
@@ -349,6 +350,17 @@ export function Terminal({ cwd, command, initialInput, ptyId: existingPtyId, scr
 
     term.open(containerRef.current);
 
+    // GPU-accelerated rendering — significantly reduces scroll jank with
+    // multiple terminals. Falls back to default DOM renderer on failure.
+    try {
+      const webglAddon = new WebglAddon();
+      webglAddon.onContextLoss(() => {
+        webglAddon.dispose();
+      });
+      term.loadAddon(webglAddon);
+    } catch {
+      // WebGL not available — DOM renderer is fine
+    }
 
     // Neutralize body CSS zoom on the terminal so xterm's coordinate
     // math (selection, mouse reporting, auto-scroll) works correctly.
@@ -575,9 +587,11 @@ export function Terminal({ cwd, command, initialInput, ptyId: existingPtyId, scr
           term.write(chunk);
           // Buffer for replay (cheap — just array push)
           appendPtyBuffer(ptyId, chunk);
-          // Defer heavier parsing to avoid blocking the render
+          // Defer heavier parsing to a macrotask so it yields to the
+          // renderer. queueMicrotask runs before paint — with 6 terminals
+          // firing simultaneously, that blocks frames and causes scroll jank.
           if (onCwdChanged) {
-            queueMicrotask(() => {
+            setTimeout(() => {
               const text = outputDecoder.decode(chunk, { stream: true });
               const combined = osc7TailRef.current + text;
               osc7TailRef.current = combined.slice(-OSC7_TAIL_MAX);
@@ -805,11 +819,23 @@ export function Terminal({ cwd, command, initialInput, ptyId: existingPtyId, scr
     // xterm fit runs normally during drag (content must render in real-time).
     // The expensive PTY resize IPC is already skipped in term.onResize during drag.
     let wasHidden = el.clientWidth < 100 || el.clientHeight < 50;
+    let lastObservedW = 0;
+    let lastObservedH = 0;
     const observer = new ResizeObserver(() => {
       if (el.clientWidth < 100 || el.clientHeight < 50) { wasHidden = true; return; }
 
       const justBecameVisible = wasHidden;
       wasHidden = false;
+
+      // Skip if dimensions haven't actually changed — viewport transforms
+      // can trigger ResizeObserver without a real size change, and running
+      // safeFit + zoom sync on 6 terminals per frame causes jank.
+      const w = el.clientWidth;
+      const h = el.clientHeight;
+      const zoomChanged = getStoredZoomLevel() !== uiZoomRef.current;
+      if (!justBecameVisible && !zoomChanged && w === lastObservedW && h === lastObservedH) return;
+      lastObservedW = w;
+      lastObservedH = h;
 
       if (rafId !== null) cancelAnimationFrame(rafId);
       rafId = requestAnimationFrame(() => {

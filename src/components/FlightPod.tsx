@@ -168,28 +168,26 @@ export const FlightPod = React.memo(function FlightPod({
   const bringPodToFront = useWorkspaceStore((s) => s.bringPodToFront);
   const togglePodShell = useWorkspaceStore((s) => s.togglePodShell);
 
-  // Stable selectors — avoid returning new objects
-  const podX = useWorkspaceStore((s) => s.flightLayouts[workspaceId]?.pods.find((p) => p.id === podId)?.x ?? 0);
-  const podY = useWorkspaceStore((s) => s.flightLayouts[workspaceId]?.pods.find((p) => p.id === podId)?.y ?? 0);
-  const podWidth = useWorkspaceStore((s) => s.flightLayouts[workspaceId]?.pods.find((p) => p.id === podId)?.width ?? 700);
-  const podHeight = useWorkspaceStore((s) => s.flightLayouts[workspaceId]?.pods.find((p) => p.id === podId)?.height ?? 500);
-  const podZIndex = useWorkspaceStore((s) => s.flightLayouts[workspaceId]?.pods.find((p) => p.id === podId)?.zIndex ?? 1);
-  const podType = useWorkspaceStore((s) => s.flightLayouts[workspaceId]?.pods.find((p) => p.id === podId)?.type);
-  const podCwd = useWorkspaceStore((s) => s.flightLayouts[workspaceId]?.pods.find((p) => p.id === podId)?.cwd ?? "");
-  const shellExpanded = useWorkspaceStore((s) => {
+  // Single selector — one .find() instead of 12. Returns a flat tuple so
+  // Zustand's default Object.is comparison triggers re-renders only when a
+  // value actually changes. The selector itself is cheap (one array scan).
+  const podData = useWorkspaceStore((s) => {
     const pod = s.flightLayouts[workspaceId]?.pods.find((p) => p.id === podId);
-    return pod?.type === "claude" ? pod.shellExpanded : false;
+    if (!pod) return null;
+    return pod;
   });
-  const shellHeight = useWorkspaceStore((s) => {
-    const pod = s.flightLayouts[workspaceId]?.pods.find((p) => p.id === podId);
-    return pod?.type === "claude" ? pod.shellHeight : 200;
-  });
-  const shellPtyId = useWorkspaceStore((s) => {
-    const pod = s.flightLayouts[workspaceId]?.pods.find((p) => p.id === podId);
-    return pod?.type === "claude" ? pod.shellPtyId : undefined;
-  });
-  const shellTabs = useWorkspaceStore((s) => s.flightLayouts[workspaceId]?.pods.find((p) => p.id === podId)?.shellTabs);
-  const activeShellTabId = useWorkspaceStore((s) => s.flightLayouts[workspaceId]?.pods.find((p) => p.id === podId)?.activeShellTabId);
+  const podX = podData?.x ?? 0;
+  const podY = podData?.y ?? 0;
+  const podWidth = podData?.width ?? 700;
+  const podHeight = podData?.height ?? 500;
+  const podZIndex = podData?.zIndex ?? 1;
+  const podType = podData?.type;
+  const podCwd = podData?.cwd ?? "";
+  const shellExpanded = podData?.type === "claude" ? podData.shellExpanded : false;
+  const shellHeight = podData?.type === "claude" ? podData.shellHeight : 200;
+  const shellPtyId = podData?.type === "claude" ? podData.shellPtyId : undefined;
+  const shellTabs = podData?.shellTabs;
+  const activeShellTabId = podData?.activeShellTabId;
   const addFlightShellTab = useWorkspaceStore((s) => s.addFlightShellTab);
   const removeFlightShellTab = useWorkspaceStore((s) => s.removeFlightShellTab);
   const setActiveFlightShellTab = useWorkspaceStore((s) => s.setActiveFlightShellTab);
@@ -427,6 +425,8 @@ export const FlightPod = React.memo(function FlightPod({
         overflow: "hidden",
         userSelect: "none",
         cursor: zoom < ZOOM_TO_FIT_THRESHOLD ? "zoom-in" : undefined,
+        contain: "layout style paint",
+        willChange: "transform",
       }}
     >
       {/* Main terminal body — uses shared layout system */}

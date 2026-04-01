@@ -493,7 +493,7 @@ export function App() {
   );
   const forceNoWorkspaceSelection =
     new URLSearchParams(window.location.search).get("blankWorkspace") === "1";
-  const BACKGROUND_WORK_DEFER_MS = 2500;
+  const BACKGROUND_WORK_DEFER_MS = 5000;
   const fileExplorerCollapsedKey = `rally:fileExplorerCollapsed:${windowLabel}`;
   const fileExplorerWidthKey = `rally:fileExplorerWidth:${windowLabel}`;
 

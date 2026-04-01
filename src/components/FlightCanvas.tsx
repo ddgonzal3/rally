@@ -181,6 +181,24 @@ const WorkspaceFlightView = React.memo(function WorkspaceFlightView({
     let navFiredInGesture = false;
     let lastDelta = 0;
 
+    // RAF-throttled viewport updates — coalesce rapid wheel events into one
+    // store update per frame to avoid re-rendering 6 pods on every wheel tick.
+    let pendingViewport: { panX?: number; panY?: number; zoom?: number } | null = null;
+    let viewportRafId: number | null = null;
+    const flushViewport = () => {
+      viewportRafId = null;
+      if (pendingViewport) {
+        useWorkspaceStore.getState().setFlightViewport(workspaceId, pendingViewport);
+        pendingViewport = null;
+      }
+    };
+    const scheduleViewportUpdate = (vp: { panX?: number; panY?: number; zoom?: number }) => {
+      pendingViewport = vp;
+      if (viewportRafId === null) {
+        viewportRafId = requestAnimationFrame(flushViewport);
+      }
+    };
+
     const wheelHandler = (e: WheelEvent) => {
       // Focus mode: intercept horizontal scroll only, navigate one pod at a time
       // Vertical scroll passes through to terminals for scrollback
@@ -280,9 +298,7 @@ const WorkspaceFlightView = React.memo(function WorkspaceFlightView({
           newPanY = cy - pointY * newZoom;
         }
 
-        store.setFlightViewport(workspaceId, {
-          panX: newPanX, panY: newPanY, zoom: newZoom,
-        });
+        scheduleViewportUpdate({ panX: newPanX, panY: newPanY, zoom: newZoom });
         return;
       }
 
@@ -293,9 +309,13 @@ const WorkspaceFlightView = React.memo(function WorkspaceFlightView({
         const store = useWorkspaceStore.getState();
         const vp = store.flightLayouts[workspaceId]?.viewport;
         if (vp) {
-          store.setFlightViewport(workspaceId, {
-            panX: vp.panX - e.deltaX * 2,
-            panY: vp.panY - e.deltaY * 2,
+          // Accumulate deltas if a pending update exists, so rapid wheel
+          // events don't lose distance when coalesced into one RAF.
+          const basePanX = pendingViewport?.panX ?? vp.panX;
+          const basePanY = pendingViewport?.panY ?? vp.panY;
+          scheduleViewportUpdate({
+            panX: basePanX - e.deltaX * 2,
+            panY: basePanY - e.deltaY * 2,
           });
         }
         return;
@@ -861,6 +881,7 @@ const WorkspaceFlightView = React.memo(function WorkspaceFlightView({
       document.removeEventListener("keydown", deleteHandler);
       document.removeEventListener("keydown", navHandler, true);
       if (freeScrollTimer) clearTimeout(freeScrollTimer);
+      if (viewportRafId !== null) cancelAnimationFrame(viewportRafId);
     };
   }, [workspaceId, setFlightViewport]);
 
