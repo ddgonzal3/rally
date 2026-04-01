@@ -504,11 +504,14 @@ function VirtualFileTree({
     const bump = () => setVersion((v) => v + 1);
     document.addEventListener("rally:expanded-paths-changed", bump);
     document.addEventListener("rally:dir-refresh", bump);
-    document.addEventListener("rally:fs-changed", bump);
+    // NOTE: Do NOT listen to rally:fs-changed here. RootSection and FileTreeNode
+    // already handle that event by re-fetching their entries and updating local state,
+    // which triggers re-renders naturally. Bumping version here forces an immediate
+    // synchronous re-flatten before async data arrives, causing the tree to visually
+    // collapse and flicker on every file watcher event.
     return () => {
       document.removeEventListener("rally:expanded-paths-changed", bump);
       document.removeEventListener("rally:dir-refresh", bump);
-      document.removeEventListener("rally:fs-changed", bump);
     };
   }, []);
 
@@ -955,7 +958,15 @@ const FileTreeNode = React.memo(
         .then((entries) => {
           directoryCache.set(entry.path, entries);
           fetchGitIgnored(entry.path);
-          setChildren(entries);
+          // Only update state if entries actually changed to avoid unnecessary re-renders
+          setChildren((prev) => {
+            if (prev.length !== entries.length) return entries;
+            for (let i = 0; i < entries.length; i++) {
+              if (entries[i].path !== prev[i].path || entries[i].is_dir !== prev[i].is_dir)
+                return entries;
+            }
+            return prev;
+          });
           setLoaded(true);
         })
         .catch((e) => console.error("Failed to refresh directory:", e));
@@ -1680,7 +1691,14 @@ function RootSection({
       .then((r) => {
         directoryCache.set(rootPath, r);
         fetchGitIgnored(rootPath);
-        setFsEntries(r);
+        // Only update state if entries actually changed to avoid unnecessary re-renders
+        setFsEntries((prev) => {
+          if (prev.length !== r.length) return r;
+          for (let i = 0; i < r.length; i++) {
+            if (r[i].path !== prev[i].path || r[i].is_dir !== prev[i].is_dir) return r;
+          }
+          return prev; // Same entries — keep old reference
+        });
         setFsLoaded(true);
       })
       .catch((e) => console.error("Failed to refresh root:", e));
@@ -3186,14 +3204,13 @@ export function FileExplorer({ onCollapse, flushLeft }: FileExplorerProps) {
             detail: { rootPath },
           }),
         );
-        // Invalidate directory cache for expanded paths under this root
-        // so the file tree picks up new/deleted files created by Claude Code
-        for (const cachedPath of directoryCache.keys()) {
-          if (cachedPath === rootPath || cachedPath.startsWith(rootPath + "/")) {
-            directoryCache.delete(cachedPath);
-          }
-        }
-        // Notify RootSection + FileTreeNode to re-fetch their listings
+        // Notify RootSection + FileTreeNode to re-fetch their listings.
+        // Don't eagerly clear directoryCache here — the re-fetch callbacks
+        // (refreshRootEntries, refreshChildren) will overwrite cache entries
+        // with fresh data when they complete. Clearing the cache before
+        // re-fetch causes flattenVisibleEntries to see empty children for
+        // expanded directories, making the tree visually collapse until the
+        // async re-fetch finishes (~300ms later).
         document.dispatchEvent(
           new CustomEvent<{ rootPath: string }>(FS_CHANGED_EVENT, {
             detail: { rootPath },
