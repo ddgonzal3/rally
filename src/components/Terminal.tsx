@@ -525,7 +525,9 @@ export function Terminal({ cwd, command, initialInput, exitOnComplete, ptyId: ex
           navigator.clipboard.writeText(sel);
           return false; // prevent xterm from handling
         }
-        // No selection → let it pass through as Ctrl+C (SIGINT)
+        // No selection → send as Ctrl+C (SIGINT). Still preventDefault
+        // to stop macOS from playing the alert beep.
+        ev.preventDefault();
         return true;
       }
       if (ev.key === "v") {
