@@ -44,6 +44,7 @@ struct PtySession {
     monitor_paused: Arc<AtomicBool>,
     cwd: String,
     command: Option<String>,
+    shell_pid: Option<u32>,
 }
 
 pub struct PtyManager {
@@ -391,6 +392,7 @@ impl PtyManager {
                 monitor_paused,
                 cwd: effective_cwd,
                 command,
+                shell_pid,
             },
         );
 
@@ -430,6 +432,17 @@ impl PtyManager {
     pub fn kill(&mut self, pty_id: &str) -> Result<(), String> {
         if let Some(session) = self.sessions.remove(pty_id) {
             session.monitor_stop.store(true, Ordering::Relaxed);
+            // Kill the entire process group so child processes (watchers, build
+            // tools, etc.) are cleaned up, not just the shell itself.
+            // In a PTY the shell is the session/process-group leader, so
+            // kill(-pid, SIGHUP) reaches all descendants in the group.
+            if let Some(pid) = session.shell_pid {
+                unsafe {
+                    libc::killpg(pid as libc::pid_t, libc::SIGHUP);
+                    libc::killpg(pid as libc::pid_t, libc::SIGTERM);
+                }
+            }
+            // Also kill the direct child as a fallback
             if let Ok(mut child) = session.child.lock() {
                 let _ = child.kill();
             }

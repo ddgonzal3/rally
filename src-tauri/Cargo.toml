@@ -26,6 +26,7 @@ objc2-foundation = { version = "0.3", features = ["NSString", "NSValue"] }
 objc2-app-kit = { version = "0.3", features = ["NSColor", "NSWindow", "NSView", "NSVisualEffectView", "NSResponder"] }
 objc2-web-kit = { version = "0.3", features = ["WKWebView"] }
 notify = "6"
+libc = "0.2"
 tiny_http = { version = "0.12", optional = true }
 
 [build-dependencies]
