@@ -7,6 +7,36 @@ import { TerminalPromptIcon } from "./FileIcons";
 import { getXtermTheme } from "../lib/xtermTheme";
 import { showContextMenu } from "../lib/contextMenu";
 
+/**
+ * Zoom-aware terminal fit.  The .xterm element has `zoom: 1/Z` to
+ * neutralize the body's CSS zoom, so FitAddon.fit() miscalculates the
+ * available rows (it doesn't know about the counter-zoom).  We measure
+ * the parent in CSS pixels then multiply by Z to get the *real* space
+ * the terminal occupies, and compute cols/rows ourselves.
+ */
+function zoomFit(term: XTerminal, fitAddon: FitAddon, zoom: number) {
+  const el = term.element;
+  const parent = el?.parentElement;
+  const dims = (term as any)._core?._renderService?.dimensions;
+  if (!el || !parent || !dims) {
+    try { fitAddon.fit(); } catch {}
+    return;
+  }
+  const cw = dims.css.cell.width;
+  const ch = dims.css.cell.height;
+  if (!cw || !ch || cw <= 0 || ch <= 0) {
+    try { fitAddon.fit(); } catch {}
+    return;
+  }
+  const scrollbarWidth = term.options.scrollback === 0 ? 0 : 8;
+  const availW = Math.max(0, parent.clientWidth * zoom - scrollbarWidth);
+  const availH = Math.max(0, parent.clientHeight * zoom);
+  const cols = Math.max(2, Math.floor(availW / cw));
+  const rows = Math.max(1, Math.floor(availH / ch));
+  if (cols === term.cols && rows === term.rows) return;
+  try { term.resize(cols, rows); } catch {}
+}
+
 export function BuildStatusDrawer() {
   const drawer = useWorkspaceStore((s) => s.statusBarDrawer);
   const closeStatusBarDrawer = useWorkspaceStore((s) => s.closeStatusBarDrawer);
@@ -139,10 +169,10 @@ export function BuildStatusDrawer() {
       xtermEl.style.left = "0";
     }
 
-    try { fitAddon.fit(); } catch {}
-
     xtermRef.current = term;
     fitAddonRef.current = fitAddon;
+
+    zoomFit(term, fitAddon, zoom);
 
     // Wire input to PTY (Ctrl+C, typing, etc.)
     // Read ptyId from store at send-time so it's always fresh
@@ -205,12 +235,13 @@ export function BuildStatusDrawer() {
     if (!termRef.current || !fitAddonRef.current) return;
     const fitAddon = fitAddonRef.current;
     const term = xtermRef.current;
+    const zoom = parseFloat(localStorage.getItem("rally:zoomLevel") || "1");
     let timer: ReturnType<typeof setTimeout>;
     const doFit = () => {
-      try {
-        fitAddon.fit();
-        term?.scrollToBottom();
-      } catch {}
+      if (term) {
+        zoomFit(term, fitAddon, zoom);
+        term.scrollToBottom();
+      }
     };
     const ro = new ResizeObserver(() => {
       if (dragging.current) {
