@@ -163,6 +163,8 @@ export function clearWatcherStatusCache(bufferKey: string): void {
   watcherStatusCache.delete(bufferKey);
 }
 
+const EXIT_SENTINEL = /\[rally:exit:(\d+)\]/;
+
 export function inferScriptCompletionStatus(
   bufferKey: string,
   scriptName: string,
@@ -175,7 +177,19 @@ export function inferScriptCompletionStatus(
   }
 
   const text = decodeChunks(buf);
-  for (const raw of text.split("\n")) {
+
+  // Check for exit code sentinel (injected by wrappedCommand)
+  // Scan from the end since the sentinel is the last thing printed
+  const lines = text.split("\n");
+  for (let i = lines.length - 1; i >= 0; i--) {
+    const match = EXIT_SENTINEL.exec(normalizeLine(lines[i]));
+    if (match) {
+      return match[1] === "0" ? "success" : "error";
+    }
+  }
+
+  // Fallback: text-pattern matching
+  for (const raw of lines) {
     const line = normalizeLine(raw);
     if (hasScriptError(line)) return "error";
   }

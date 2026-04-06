@@ -1623,7 +1623,13 @@ export const useWorkspaceStore = create<WorkspaceState>()(
 
     // Don't use exitOnComplete — the shell must stay alive so the user
     // can Ctrl+C a watcher and continue typing in the terminal.
-    const ptyId = await api.spawnPty(rootPath, command, 120, 40, false);
+    // For non-watcher scripts, wrap the command to emit a sentinel with the
+    // exit code so we can detect success/failure without relying on fragile
+    // text-pattern matching of script output.
+    const wrappedCommand = isWatcher
+      ? command
+      : `${command}; echo "\\n[rally:exit:$?]"`;
+    const ptyId = await api.spawnPty(rootPath, wrappedCommand, 120, 40, false);
 
     // Reset module-level output buffer (outside Zustand to avoid
     // O(n) array copies and React re-renders on every PTY chunk)
@@ -1776,10 +1782,11 @@ export const useWorkspaceStore = create<WorkspaceState>()(
       }
       if (!sawForegroundProcess) return;
       sawForegroundProcess = false;
-      // Don't finalize on foreground-null — the PTY exit event has the real
-      // exit code which is the authoritative success/error signal. Finalizing
-      // here races ahead of PTY exit and uses text-pattern matching which
-      // misses non-zero exit codes that don't print recognizable error text.
+      // Watcher scripts spawn child processes (e.g. bash → node/nx) causing
+      // brief foreground=null transitions that don't mean the watcher stopped.
+      // Only finalize on the real PTY exit event.
+      if (isWatcher) return;
+      finalizeRun();
     };
 
     const unlistenForeground = await listen<{ process: string | null }>(
@@ -1796,14 +1803,18 @@ export const useWorkspaceStore = create<WorkspaceState>()(
       });
 
     // Startup fallback: if no foreground process detected after 2.5s,
-    // check once and mark running if a process is found. We never call
-    // finalizeRun here — PTY exit is the authoritative completion signal
-    // (it carries the real exit code).
-    const startupFallbackTimer = setTimeout(() => {
+    // check once. For watchers, just mark running; for non-watchers,
+    // finalize if process already exited.
+    const startupFallbackTimer = isWatcher ? null : setTimeout(() => {
       if (sawForegroundProcess) return;
       api.getPtyForegroundProcess(ptyId)
         .then((proc) => {
-          if (proc !== null) syncForegroundProcess(proc);
+          if (proc !== null) {
+            syncForegroundProcess(proc);
+            return;
+          }
+          const buf = scriptOutputBuffers.get(key);
+          if (buf && buf.length > 0) finalizeRun();
         })
         .catch(() => {});
     }, 2500);
@@ -1812,7 +1823,7 @@ export const useWorkspaceStore = create<WorkspaceState>()(
     const unlistenExit = await listen<{ code: number | null }>(
       `pty-exit-${ptyId}`,
       (event) => {
-        clearTimeout(startupFallbackTimer);
+        if (startupFallbackTimer !== null) clearTimeout(startupFallbackTimer);
         const code = event.payload.code;
         const current = get().scriptRuns[key];
         // Only update if still active (poll may have already marked it)
