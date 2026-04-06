@@ -9,8 +9,8 @@ interface BranchSwitcherProps {
   branchName: string;
   mainBranch: string;
   onBranchChanged: () => void;
-  /** Style variant: "pill" for git panel header, "inline" for product view info bar */
-  variant?: "pill" | "inline";
+  /** Style variant: "pill" for git panel header, "inline" for product view info bar, "footer" for pod footer */
+  variant?: "pill" | "inline" | "footer";
 }
 
 export function BranchSwitcher({
@@ -23,6 +23,12 @@ export function BranchSwitcher({
   const [open, setOpen] = useState(false);
   const [branches, setBranches] = useState<BranchInfo[]>([]);
   const [filter, setFilter] = useState("");
+  const [favorites, setFavorites] = useState<Set<string>>(() => {
+    try {
+      const raw = localStorage.getItem("rally:branchFavorites");
+      return raw ? new Set(JSON.parse(raw)) : new Set();
+    } catch { return new Set(); }
+  });
   const [creatingBranch, setCreatingBranch] = useState(false);
   const [newBranchName, setNewBranchName] = useState("");
   const [switching, setSwitching] = useState(false);
@@ -37,14 +43,26 @@ export function BranchSwitcher({
     // Calculate position from button before opening
     if (buttonRef.current) {
       const rect = buttonRef.current.getBoundingClientRect();
-      setDropdownPos({
-        top: rect.bottom + 4,
-        left: rect.left,
-        right: window.innerWidth - rect.right,
-      });
+      const zoom = parseFloat(localStorage.getItem("rally:zoomLevel") || "1");
+      if (variant === "footer") {
+        // Open upward from footer — account for CSS zoom on coordinates
+        setDropdownPos({
+          top: rect.top * zoom,
+          left: rect.left * zoom,
+          right: (window.innerWidth - rect.right) * zoom,
+        });
+      } else {
+        setDropdownPos({
+          top: rect.bottom + 4,
+          left: rect.left,
+          right: window.innerWidth - rect.right,
+        });
+      }
     }
     setOpen(true);
-    setFilter("");
+    // Restore saved filter prefix (e.g. "danny/")
+    const saved = localStorage.getItem("rally:branchFilter") ?? "";
+    setFilter(saved);
     setCreatingBranch(false);
     setNewBranchName("");
     setConfirmingDelete(null);
@@ -55,8 +73,12 @@ export function BranchSwitcher({
     } catch {
       setBranches([]);
     }
-    requestAnimationFrame(() => searchRef.current?.focus());
-  }, [rootPath]);
+    requestAnimationFrame(() => {
+      searchRef.current?.focus();
+      // Select all so typing replaces the saved filter
+      searchRef.current?.select();
+    });
+  }, [rootPath, variant]);
 
   const handleCheckout = useCallback(
     async (branch: string) => {
@@ -156,59 +178,97 @@ export function BranchSwitcher({
     return () => document.removeEventListener("keydown", handler, true);
   }, [open, creatingBranch, confirmingDelete]);
 
-  const filtered = useMemo(
-    () => branches.filter((b) => b.name.toLowerCase().includes(filter.toLowerCase())),
-    [branches, filter],
-  );
+  const toggleFavorite = useCallback((name: string) => {
+    setFavorites((prev) => {
+      const next = new Set(prev);
+      if (next.has(name)) next.delete(name); else next.add(name);
+      localStorage.setItem("rally:branchFavorites", JSON.stringify([...next]));
+      return next;
+    });
+  }, []);
+
+  const filtered = useMemo(() => {
+    const matched = branches.filter((b) => b.name.toLowerCase().includes(filter.toLowerCase()));
+    // Sort: current first, then favorites, then the rest
+    return matched.sort((a, b) => {
+      if (a.is_current !== b.is_current) return a.is_current ? -1 : 1;
+      const aFav = favorites.has(a.name);
+      const bFav = favorites.has(b.name);
+      if (aFav !== bFav) return aFav ? -1 : 1;
+      return 0;
+    });
+  }, [branches, filter, favorites]);
 
   const isPill = variant === "pill";
+  const isFooter = variant === "footer";
+
+  const buttonStyle: React.CSSProperties = isPill
+    ? {
+        display: "inline-flex",
+        alignItems: "center",
+        gap: 5,
+        fontSize: 13,
+        color: "var(--text-primary)",
+        fontWeight: 600,
+        cursor: "pointer",
+        border: "none",
+        borderRadius: 6,
+        padding: "2px 8px",
+        lineHeight: "16px",
+        minWidth: 0,
+        overflow: "hidden",
+        whiteSpace: "nowrap",
+        textOverflow: "ellipsis",
+        background: open ? "var(--bg-active)" : "none",
+      }
+    : isFooter
+      ? {
+          display: "inline-flex",
+          alignItems: "center",
+          gap: 3,
+          fontSize: 12,
+          color: "var(--text-primary)",
+          opacity: open ? 1 : 0.7,
+          cursor: "pointer",
+          border: "none",
+          borderRadius: 4,
+          padding: "1px 4px",
+          lineHeight: 1,
+          whiteSpace: "nowrap",
+          background: open ? "var(--bg-hover)" : "none",
+          flexShrink: 0,
+        }
+      : {
+          display: "inline-flex",
+          alignItems: "center",
+          gap: 4,
+          fontSize: 12,
+          color: "var(--text-secondary)",
+          fontWeight: 600,
+          cursor: "pointer",
+          border: "none",
+          borderRadius: 4,
+          padding: "1px 4px",
+          background: open ? "var(--bg-hover)" : "none",
+        };
 
   return (
     <>
       <button
         ref={buttonRef}
-        onClick={() => (open ? setOpen(false) : openDropdown())}
-        style={
-          isPill
-            ? {
-                display: "inline-flex",
-                alignItems: "center",
-                gap: 5,
-                fontSize: 13,
-                color: "var(--text-primary)",
-                fontWeight: 600,
-                cursor: "pointer",
-                border: "none",
-                borderRadius: 6,
-                padding: "2px 8px",
-                lineHeight: "16px",
-                minWidth: 0,
-                overflow: "hidden",
-                whiteSpace: "nowrap",
-                textOverflow: "ellipsis",
-                background: open ? "var(--bg-active)" : "none",
-              }
-            : {
-                display: "inline-flex",
-                alignItems: "center",
-                gap: 4,
-                fontSize: 12,
-                color: "var(--text-secondary)",
-                fontWeight: 600,
-                cursor: "pointer",
-                border: "none",
-                borderRadius: 4,
-                padding: "1px 4px",
-                background: open ? "var(--bg-hover)" : "none",
-              }
-        }
+        onClick={(e) => { e.stopPropagation(); open ? setOpen(false) : openDropdown(); }}
+        style={buttonStyle}
         onMouseEnter={(e) => {
-          if (!open)
+          if (!open) {
             (e.currentTarget as HTMLElement).style.background = "var(--bg-hover)";
+            if (isFooter) (e.currentTarget as HTMLElement).style.opacity = "1";
+          }
         }}
         onMouseLeave={(e) => {
-          if (!open)
+          if (!open) {
             (e.currentTarget as HTMLElement).style.background = "none";
+            if (isFooter) (e.currentTarget as HTMLElement).style.opacity = "0.7";
+          }
         }}
       >
         {isPill && (
@@ -228,7 +288,7 @@ export function BranchSwitcher({
             <path d="M5 5.5v5M12 6.5c0-2-1.5-2.5-3.5-2.5" />
           </svg>
         )}
-        {!isPill && (
+        {!isPill && !isFooter && (
           <svg width="12" height="12" viewBox="0 0 16 16" fill="none" style={{ flexShrink: 0, position: "relative", top: 1, left: 1 }}>
             <path
               d="M5 3v6.5a2.5 2.5 0 005 0V3"
@@ -242,19 +302,21 @@ export function BranchSwitcher({
           </svg>
         )}
         {branchName}
-        <svg
-          width={isPill ? 10 : 8}
-          height={isPill ? 10 : 8}
-          viewBox="0 0 10 10"
-          fill="none"
-          stroke="var(--text-dim)"
-          strokeWidth="1.5"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          style={{ marginLeft: isPill ? 2 : 0, flexShrink: 0 }}
-        >
-          <path d="M2.5 4L5 6.5L7.5 4" />
-        </svg>
+        {!isFooter && (
+          <svg
+            width={isPill ? 10 : 8}
+            height={isPill ? 10 : 8}
+            viewBox="0 0 10 10"
+            fill="none"
+            stroke="var(--text-dim)"
+            strokeWidth="1.5"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            style={{ marginLeft: isPill ? 2 : 0, flexShrink: 0 }}
+          >
+            <path d="M2.5 4L5 6.5L7.5 4" />
+          </svg>
+        )}
       </button>
 
       {open && dropdownPos && createPortal(
@@ -262,8 +324,9 @@ export function BranchSwitcher({
           ref={dropdownRef}
           style={{
             position: "fixed",
-            top: dropdownPos.top,
-            right: dropdownPos.right,
+            ...(variant === "footer"
+              ? { bottom: window.innerHeight - dropdownPos.top + 4, left: dropdownPos.left }
+              : { top: dropdownPos.top, right: dropdownPos.right }),
             minWidth: 240,
             maxWidth: 360,
             background: "var(--frosted-bg)",
@@ -285,7 +348,10 @@ export function BranchSwitcher({
               type="text"
               placeholder="Filter branches..."
               value={filter}
-              onChange={(e) => setFilter(e.target.value)}
+              onChange={(e) => {
+                setFilter(e.target.value);
+                localStorage.setItem("rally:branchFilter", e.target.value);
+              }}
               onKeyDown={(e) => {
                 if (e.key === "Enter" && filtered.length > 0) {
                   const first = filtered.find((b) => !b.is_current);
@@ -423,6 +489,38 @@ export function BranchSwitcher({
                         {b.name}
                       </span>
                     </button>
+                    {/* Fixed-width action buttons so alignment is consistent */}
+                    <div style={{ display: "flex", alignItems: "center", flexShrink: 0, width: 56, justifyContent: "flex-end", marginRight: 8 }}>
+                    {/* Favorite toggle */}
+                    <button
+                      onClick={(e) => { e.stopPropagation(); toggleFavorite(b.name); }}
+                      title={favorites.has(b.name) ? "Remove from favorites" : "Add to favorites"}
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        width: 24,
+                        height: 24,
+                        background: "none",
+                        border: "none",
+                        cursor: "pointer",
+                        borderRadius: 4,
+                        opacity: favorites.has(b.name) ? 0.9 : 0.3,
+                        flexShrink: 0,
+                        padding: 0,
+                      }}
+                      onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.opacity = "1"; }}
+                      onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.opacity = favorites.has(b.name) ? "0.9" : "0.3"; }}
+                    >
+                      <svg width="13" height="13" viewBox="0 0 16 16" fill={favorites.has(b.name) ? "var(--text-secondary)" : "none"}>
+                        <path
+                          d="M8 1.5l2 4.1 4.5.6-3.25 3.2.77 4.5L8 11.7l-4.02 2.2.77-4.5L1.5 6.2l4.5-.6z"
+                          stroke="var(--text-secondary)"
+                          strokeWidth="1.1"
+                          strokeLinejoin="round"
+                        />
+                      </svg>
+                    </button>
                     {/* Delete button — hidden for current branch and main branch */}
                     {!b.is_current && b.name !== mainBranch && (
                       <button
@@ -435,34 +533,33 @@ export function BranchSwitcher({
                           display: "flex",
                           alignItems: "center",
                           justifyContent: "center",
-                          width: 22,
-                          height: 22,
-                          marginRight: 8,
+                          width: 24,
+                          height: 24,
                           background: "none",
                           border: "none",
                           cursor: "pointer",
                           borderRadius: 4,
-                          opacity: 0.4,
-                          flexShrink: 0,
+                          opacity: 0.6,
                         }}
                         onMouseEnter={(e) => {
                           (e.currentTarget as HTMLElement).style.opacity = "1";
                         }}
                         onMouseLeave={(e) => {
-                          (e.currentTarget as HTMLElement).style.opacity = "0.4";
+                          (e.currentTarget as HTMLElement).style.opacity = "0.6";
                         }}
                       >
-                        <svg width="12" height="12" viewBox="0 0 16 16" fill="none">
+                        <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
                           <path
                             d="M4.5 3V2.5a1 1 0 011-1h5a1 1 0 011 1V3M3 3.5h10M6 6.5v4M10 6.5v4M3.5 3.5l.5 9a1 1 0 001 1h6a1 1 0 001-1l.5-9"
-                            stroke="var(--text-dim)"
-                            strokeWidth="1.1"
+                            stroke="var(--text-secondary)"
+                            strokeWidth="1.2"
                             strokeLinecap="round"
                             strokeLinejoin="round"
                           />
                         </svg>
                       </button>
                     )}
+                    </div>
                   </>
                 )}
               </div>

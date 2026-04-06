@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import {
   useWorkspaceStore,
   cancelDrawerHoverClose,
@@ -14,6 +14,7 @@ import {
   type WatcherBuildStatus,
 } from "../lib/watcherStatus";
 import { showContextMenu, type MenuAction } from "../lib/contextMenu";
+import { BranchSwitcher } from "./BranchSwitcher";
 
 const podActionButtonStyle: React.CSSProperties = {
   display: "flex",
@@ -340,6 +341,12 @@ export function FlightPodFooter({ repoPath, onOpenTerminal }: { repoPath: string
   const rallyConfig = useWorkspaceStore((s) => s.rallyConfigs[repoPath]);
   const loadRallyConfig = useWorkspaceStore((s) => s.loadRallyConfig);
   const branch = useWorkspaceStore((s) => s.gitStatuses[repoPath]?.branch);
+  const mainBranch = useWorkspaceStore((s) => {
+    const ws = s.workspaces.find((w) => w.paths.includes(repoPath));
+    return ws?.main_branch ?? "main";
+  });
+  const refreshGitStatusForPath = useWorkspaceStore((s) => s.refreshGitStatusForPath);
+  const refreshPrStatusForPath = useWorkspaceStore((s) => s.refreshPrStatusForPath);
   const [scriptCache, setScriptCache] = useState<ScriptEntry[]>([]);
 
   useEffect(() => {
@@ -384,19 +391,16 @@ export function FlightPodFooter({ repoPath, onOpenTerminal }: { repoPath: string
         {repoName}
       </span>
       {branch && (
-        <span
-          style={{
-            fontSize: 12,
-            color: "var(--text-primary)",
-            whiteSpace: "nowrap",
-            lineHeight: 1,
-            flexShrink: 0,
-            marginRight: 6,
-            opacity: 0.7,
+        <BranchSwitcher
+          rootPath={repoPath}
+          branchName={branch.length > 24 ? branch.slice(0, 22) + "…" : branch}
+          mainBranch={mainBranch}
+          onBranchChanged={() => {
+            refreshGitStatusForPath(repoPath, mainBranch).catch(() => {});
+            refreshPrStatusForPath(repoPath).catch(() => {});
           }}
-        >
-          {branch.length > 24 ? branch.slice(0, 22) + "…" : branch}
-        </span>
+          variant="footer"
+        />
       )}
       {scripts.map((scriptName) => (
         <PodScriptDot
