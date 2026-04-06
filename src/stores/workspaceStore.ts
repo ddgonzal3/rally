@@ -1776,6 +1776,10 @@ export const useWorkspaceStore = create<WorkspaceState>()(
       }
       if (!sawForegroundProcess) return;
       sawForegroundProcess = false;
+      // Watcher scripts spawn child processes (e.g. bash → node/nx) causing
+      // brief foreground=null transitions that don't mean the watcher stopped.
+      // Only finalize on the real PTY exit event.
+      if (isWatcher) return;
       finalizeRun();
     };
 
@@ -1792,7 +1796,9 @@ export const useWorkspaceStore = create<WorkspaceState>()(
         /* PTY might be gone */
       });
 
-    const startupFallbackTimer = setTimeout(() => {
+    // Watchers rely on PTY exit for completion — skip the startup fallback
+    // which can falsely finalize during bash→node process handoffs.
+    const startupFallbackTimer = isWatcher ? null : setTimeout(() => {
       if (sawForegroundProcess) return;
       api.getPtyForegroundProcess(ptyId)
         .then((proc) => {
@@ -1812,7 +1818,7 @@ export const useWorkspaceStore = create<WorkspaceState>()(
     const unlistenExit = await listen<{ code: number | null }>(
       `pty-exit-${ptyId}`,
       (event) => {
-        clearTimeout(startupFallbackTimer);
+        if (startupFallbackTimer !== null) clearTimeout(startupFallbackTimer);
         const code = event.payload.code;
         const current = get().scriptRuns[key];
         // Only update if still active (poll may have already marked it)
