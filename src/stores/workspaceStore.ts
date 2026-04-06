@@ -1776,11 +1776,10 @@ export const useWorkspaceStore = create<WorkspaceState>()(
       }
       if (!sawForegroundProcess) return;
       sawForegroundProcess = false;
-      // Watcher scripts spawn child processes (e.g. bash → node/nx) causing
-      // brief foreground=null transitions that don't mean the watcher stopped.
-      // Only finalize on the real PTY exit event.
-      if (isWatcher) return;
-      finalizeRun();
+      // Don't finalize on foreground-null — the PTY exit event has the real
+      // exit code which is the authoritative success/error signal. Finalizing
+      // here races ahead of PTY exit and uses text-pattern matching which
+      // misses non-zero exit codes that don't print recognizable error text.
     };
 
     const unlistenForeground = await listen<{ process: string | null }>(
@@ -1796,29 +1795,24 @@ export const useWorkspaceStore = create<WorkspaceState>()(
         /* PTY might be gone */
       });
 
-    // Watchers rely on PTY exit for completion — skip the startup fallback
-    // which can falsely finalize during bash→node process handoffs.
-    const startupFallbackTimer = isWatcher ? null : setTimeout(() => {
+    // Startup fallback: if no foreground process detected after 2.5s,
+    // check once and mark running if a process is found. We never call
+    // finalizeRun here — PTY exit is the authoritative completion signal
+    // (it carries the real exit code).
+    const startupFallbackTimer = setTimeout(() => {
       if (sawForegroundProcess) return;
       api.getPtyForegroundProcess(ptyId)
         .then((proc) => {
-          if (proc !== null) {
-            syncForegroundProcess(proc);
-            return;
-          }
-          const buf = scriptOutputBuffers.get(key);
-          if (buf && buf.length > 0) finalizeRun();
+          if (proc !== null) syncForegroundProcess(proc);
         })
-        .catch(() => {
-          /* PTY might be gone */
-        });
+        .catch(() => {});
     }, 2500);
 
     // Listen for PTY exit (shell itself exits — e.g. user types `exit`)
     const unlistenExit = await listen<{ code: number | null }>(
       `pty-exit-${ptyId}`,
       (event) => {
-        if (startupFallbackTimer !== null) clearTimeout(startupFallbackTimer);
+        clearTimeout(startupFallbackTimer);
         const code = event.payload.code;
         const current = get().scriptRuns[key];
         // Only update if still active (poll may have already marked it)
