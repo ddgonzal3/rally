@@ -61,6 +61,12 @@ import {
 export const scriptOutputBuffers = new Map<string, Uint8Array[]>();
 
 /**
+ * Cleanup functions for script PTY listeners, keyed by "rootPath:scriptName".
+ * Called when a script is stopped, cleared, or re-run to prevent listener leaks.
+ */
+const scriptListenerCleanups = new Map<string, () => void>();
+
+/**
  * Module-level buffer for ALL PTY output, keyed by ptyId.
  * Allows replaying output when a terminal remounts (e.g. after a split).
  * Limited to MAX_PTY_BUFFER_CHUNKS to prevent unbounded memory growth.
@@ -1362,9 +1368,10 @@ export const useWorkspaceStore = create<WorkspaceState>()(
         prStatuses: { ...s.prStatuses, [path]: prStatus },
         prStatusFetchedAt: { ...s.prStatusFetchedAt, [path]: Date.now() },
       }));
-    } catch {
+    } catch (e) {
       // Keep existing PR status on error (e.g. rate limit, network blip).
       // Only clear if there was no previous status at all.
+      console.warn(`[rally] PR status failed for ${path}:`, e);
       const prev = get().prStatuses[path];
       if (prev !== undefined) return;
       set((s) => ({ prStatuses: { ...s.prStatuses, [path]: null } }));
@@ -1593,9 +1600,10 @@ export const useWorkspaceStore = create<WorkspaceState>()(
     const key = `${rootPath}:${scriptName}`;
     const isWatcher = isWatcherScript(scriptName);
 
-    // Kill existing run if any
+    // Kill existing run if any — also clean up its listeners
     const existing = get().scriptRuns[key];
     if (existing && existing.status === "running") {
+      scriptListenerCleanups.get(key)?.();
       await api.killPty(existing.ptyId);
     }
     // Guard against duplicate spawns: if another runScript() call is already
@@ -1845,17 +1853,25 @@ export const useWorkspaceStore = create<WorkspaceState>()(
             },
           }));
         }
-        unlistenForeground();
-        unlistenOutput();
-        unlistenExit();
+        scriptListenerCleanups.get(key)?.();
       }
     );
+
+    // Register cleanup so stopScript/clearScript/re-run can release listeners
+    scriptListenerCleanups.set(key, () => {
+      scriptListenerCleanups.delete(key);
+      if (startupFallbackTimer !== null) clearTimeout(startupFallbackTimer);
+      unlistenForeground();
+      unlistenOutput();
+      unlistenExit();
+    });
   },
 
   stopScript: async (rootPath, scriptName) => {
     const key = `${rootPath}:${scriptName}`;
     const run = get().scriptRuns[key];
     if (!run) return;
+    scriptListenerCleanups.get(key)?.();
     await api.killPty(run.ptyId);
 
     // Close any open terminal panes connected to this PTY
@@ -1886,6 +1902,7 @@ export const useWorkspaceStore = create<WorkspaceState>()(
 
   clearScript: (rootPath, scriptName) => {
     const key = `${rootPath}:${scriptName}`;
+    scriptListenerCleanups.get(key)?.();
     clearWatcherStatusCache(key);
     scriptOutputBuffers.delete(key);
     set((s) => {
