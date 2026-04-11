@@ -388,7 +388,7 @@ export const FlightPod = React.memo(function FlightPod({
 
   const hasScriptFooter = useWorkspaceStore((s) => {
     const config = s.rallyConfigs[podCwd];
-    return !!(config?.statusBar && config.statusBar.length > 0);
+    return !!((config?.statusBar && config.statusBar.length > 0) || (config?.statusBarRight && config.statusBarRight.length > 0));
   });
 
   if (!podType) return null;

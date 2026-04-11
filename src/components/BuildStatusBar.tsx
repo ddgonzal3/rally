@@ -527,10 +527,11 @@ export function BuildStatusBar() {
       [];
     for (const repoPath of workspacePaths) {
       const config = rallyConfigs[repoPath];
-      if (!config || !config.statusBar || config.statusBar.length === 0)
-        continue;
+      const left = config?.statusBar ?? [];
+      const right = config?.statusBarRight ?? [];
+      if (left.length === 0 && right.length === 0) continue;
       const repoName = repoPath.split("/").pop() ?? repoPath;
-      result.push({ repoPath, repoName, scripts: config.statusBar });
+      result.push({ repoPath, repoName, scripts: [...left, ...right] });
     }
     return result;
   }, [workspacePaths, rallyConfigs]);

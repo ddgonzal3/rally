@@ -355,7 +355,8 @@ export function FlightPodFooter({ repoPath, onOpenTerminal }: { repoPath: string
   }, [repoPath, loadRallyConfig, rallyConfig]);
 
   const scripts = rallyConfig?.statusBar ?? [];
-  if (scripts.length === 0 && !branch) return null;
+  const scriptsRight = rallyConfig?.statusBarRight ?? [];
+  if (scripts.length === 0 && scriptsRight.length === 0 && !branch) return null;
 
   const repoName = repoPath.split("/").pop() ?? repoPath;
 
@@ -410,9 +411,17 @@ export function FlightPodFooter({ repoPath, onOpenTerminal }: { repoPath: string
           scriptEntry={scriptCache.find((e) => e.name === scriptName)}
         />
       ))}
+      <div style={{ flex: 1 }} />
+      {scriptsRight.map((scriptName) => (
+        <PodScriptDot
+          key={scriptName}
+          repoPath={repoPath}
+          scriptName={scriptName}
+          scriptEntry={scriptCache.find((e) => e.name === scriptName)}
+        />
+      ))}
       {onOpenTerminal && (
         <>
-          <div style={{ flex: 1 }} />
           <button
             className="tab-action"
             onClick={(e) => { e.stopPropagation(); onOpenTerminal(); }}

@@ -609,6 +609,8 @@ pub struct RallyConfig {
     pub setup: Option<SetupConfig>,
     #[serde(default, rename = "statusBar")]
     pub status_bar: Vec<String>,
+    #[serde(default, rename = "statusBarRight")]
+    pub status_bar_right: Vec<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -626,6 +628,7 @@ pub fn read_rally_config(root_path: String) -> Result<RallyConfig, String> {
             mode: None,
             setup: None,
             status_bar: Vec::new(),
+            status_bar_right: Vec::new(),
         });
     }
     let content = fs::read_to_string(&rally_json)

@@ -130,6 +130,7 @@ export interface RallyConfig {
   mode: string | null;
   setup?: SetupConfig;
   statusBar: string[];
+  statusBarRight: string[];
 }
 
 export interface WorkspaceReadiness {
