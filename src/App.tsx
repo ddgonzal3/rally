@@ -1134,17 +1134,6 @@ export function App() {
     };
   }, []);
 
-  // Ensure file explorer is visible when a file is opened (e.g. Cmd+click in terminal)
-  useEffect(() => {
-    const handler = () => {
-      setFileExplorerCollapsed(false);
-      // Keep search panel open when clicking search results
-      setExplorerView((prev) => (prev === "search" ? prev : "files"));
-    };
-    document.addEventListener("rally-ensure-explorer-visible", handler);
-    return () =>
-      document.removeEventListener("rally-ensure-explorer-visible", handler);
-  }, []);
 
   // Finder drag-and-drop: bridge Tauri file drop events into the drag context
   // so each PaneGroup's DropZoneTarget shows the same overlay as tab drags.

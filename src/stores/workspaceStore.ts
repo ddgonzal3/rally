@@ -2760,10 +2760,9 @@ export const useWorkspaceStore = create<WorkspaceState>()(
     get().addPaneToGroup(layoutId, targetGroupId, pane);
 
     // Reveal the file in the explorer (expand ancestors, scroll into view)
-    // and ensure the explorer panel is visible — skip when opened directly from the explorer
+    // but don't force the explorer panel open — skip when opened directly from the explorer
     if (!options?.skipReveal) {
       get().revealFileInExplorer(filePath);
-      document.dispatchEvent(new Event("rally-ensure-explorer-visible"));
     }
   },
 
