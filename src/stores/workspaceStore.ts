@@ -1698,6 +1698,15 @@ export const useWorkspaceStore = create<WorkspaceState>()(
     let outputEventRafId = 0;
     let pendingChunksForEvent: Uint8Array[] = [];
 
+    // Track listeners as they resolve so cleanup can release them even
+    // if runScript is interrupted mid-await by a re-run or stop.
+    const activeListeners: (() => void)[] = [];
+    scriptListenerCleanups.set(key, () => {
+      scriptListenerCleanups.delete(key);
+      for (const fn of activeListeners) fn();
+      activeListeners.length = 0;
+    });
+
     const unlistenOutput = await listen<{ data: number[] }>(
       `pty-output-${ptyId}`,
       (event) => {
@@ -1744,6 +1753,7 @@ export const useWorkspaceStore = create<WorkspaceState>()(
         }
       }
     );
+    activeListeners.push(unlistenOutput);
 
     const finalizeRun = () => {
       const current = get().scriptRuns[key];
@@ -1803,6 +1813,7 @@ export const useWorkspaceStore = create<WorkspaceState>()(
         syncForegroundProcess(event.payload.process);
       }
     );
+    activeListeners.push(unlistenForeground);
 
     api.getPtyForegroundProcess(ptyId)
       .then((proc) => syncForegroundProcess(proc))
@@ -1856,14 +1867,14 @@ export const useWorkspaceStore = create<WorkspaceState>()(
         scriptListenerCleanups.get(key)?.();
       }
     );
+    activeListeners.push(unlistenExit);
 
-    // Register cleanup so stopScript/clearScript/re-run can release listeners
+    // Update cleanup to also clear the fallback timer
     scriptListenerCleanups.set(key, () => {
       scriptListenerCleanups.delete(key);
       if (startupFallbackTimer !== null) clearTimeout(startupFallbackTimer);
-      unlistenForeground();
-      unlistenOutput();
-      unlistenExit();
+      for (const fn of activeListeners) fn();
+      activeListeners.length = 0;
     });
   },
 

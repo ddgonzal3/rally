@@ -576,13 +576,14 @@ export function Terminal({ cwd, command, initialInput, exitOnComplete, ptyId: ex
     const ownsPty = !existingPtyId;
     let ptySpawned = false;
     let rafId: number | null = null;
+    let unmounted = false;
     const outputDecoder = new TextDecoder();
 
     async function connectToPty(ptyId: string) {
       ptyIdRef.current = ptyId;
       osc7TailRef.current = "";
 
-      unlistenOutputRef.current = await listen<{ data: number[] }>(
+      const unlistenOutput = await listen<{ data: number[] }>(
         `pty-output-${ptyId}`,
         (event) => {
           const chunk = new Uint8Array(event.payload.data);
@@ -630,8 +631,10 @@ export function Terminal({ cwd, command, initialInput, exitOnComplete, ptyId: ex
           }
         }
       );
+      if (unmounted) { unlistenOutput(); return; }
+      unlistenOutputRef.current = unlistenOutput;
 
-      unlistenExitRef.current = await listen<{ code: number | null }>(
+      const unlistenExit = await listen<{ code: number | null }>(
         `pty-exit-${ptyId}`,
         (event) => {
           const code = event.payload.code;
@@ -643,13 +646,17 @@ export function Terminal({ cwd, command, initialInput, exitOnComplete, ptyId: ex
           useWorkspaceStore.getState().removePortsByPty(ptyId);
         }
       );
+      if (unmounted) { unlistenOutput(); unlistenExit(); return; }
+      unlistenExitRef.current = unlistenExit;
 
-      unlistenForegroundRef.current = await listen<{ process: string | null }>(
+      const unlistenForeground = await listen<{ process: string | null }>(
         `pty-foreground-${ptyId}`,
         (event) => {
           syncForegroundProcess(event.payload.process);
         }
       );
+      if (unmounted) { unlistenOutput(); unlistenExit(); unlistenForeground(); return; }
+      unlistenForegroundRef.current = unlistenForeground;
 
       api.getPtyForegroundProcess(ptyId)
         .then((proc) => {
@@ -870,6 +877,7 @@ export function Terminal({ cwd, command, initialInput, exitOnComplete, ptyId: ex
     document.addEventListener("rally:split-resize-end", onDragEnd);
 
     return () => {
+      unmounted = true;
       if (rafId !== null) cancelAnimationFrame(rafId);
       // Pause foreground monitoring — this terminal is no longer visible
       if (ptyIdRef.current) {
