@@ -459,17 +459,66 @@ fn main() {
             // Tauri's built-in vibrancy doesn't properly make WKWebView transparent.
             // We directly access the NSWindow and WKWebView to:
             // 1. Make the window non-opaque with clear background
-            // 2. Disable WKWebView's opaque background drawing
+            // 2. Recursively find the WKWebView and disable its opaque background
             // 3. Add an NSVisualEffectView behind the webview for frosted blur
+            //
+            // If transparency setup fails (e.g. "Reduce transparency" enabled, or
+            // WKWebView not found), the CSS body fallback is --bg-app (dark grey).
             {
-                use objc2::runtime::AnyObject;
+                use objc2::runtime::{AnyClass, AnyObject};
                 use objc2::{msg_send, MainThreadMarker};
                 use objc2_app_kit::{
-                    NSColor, NSVisualEffectBlendingMode, NSVisualEffectMaterial,
+                    NSColor, NSView, NSVisualEffectBlendingMode, NSVisualEffectMaterial,
                     NSVisualEffectState, NSVisualEffectView, NSWindow,
                     NSAutoresizingMaskOptions, NSWindowOrderingMode,
                 };
                 use objc2_foundation::NSString;
+
+                /// Recursively walk the view tree and set drawsBackground=false
+                /// on every WKWebView found. Returns number of webviews patched.
+                unsafe fn patch_webviews(view: &NSView) -> usize {
+                    let wk_cls = AnyClass::get(c"WKWebView");
+                    let mut count = 0;
+
+                    // Check if this view is a WKWebView
+                    if let Some(cls) = wk_cls {
+                        let is_wk: bool = msg_send![view, isKindOfClass: cls];
+                        if is_wk {
+                            // Primary: disable the webview's opaque background
+                            let key = NSString::from_str("drawsBackground");
+                            let ns_number_cls = AnyClass::get(c"NSNumber").unwrap();
+                            let no_val: *mut AnyObject =
+                                msg_send![ns_number_cls, numberWithBool: false];
+                            let _: () = msg_send![view, setValue: no_val, forKey: &*key];
+
+                            // Fallback: set underPageBackgroundColor to dark grey
+                            // (macOS 12+). If drawsBackground doesn't take effect,
+                            // this ensures the page background is dark, not white.
+                            let fallback_cls = AnyClass::get(c"NSColor").unwrap();
+                            let fallback: *mut AnyObject = msg_send![
+                                fallback_cls,
+                                colorWithSRGBRed: 0.1_f64,
+                                green: 0.1_f64,
+                                blue: 0.1_f64,
+                                alpha: 1.0_f64
+                            ];
+                            let _: () = msg_send![
+                                view,
+                                setUnderPageBackgroundColor: fallback
+                            ];
+
+                            count += 1;
+                        }
+                    }
+
+                    // Recurse into subviews
+                    let subviews = view.subviews();
+                    for i in 0..subviews.len() {
+                        let child = &*subviews.objectAtIndex(i);
+                        count += patch_webviews(child);
+                    }
+                    count
+                }
 
                 // We're in the setup callback which runs on the main thread
                 let mtm = MainThreadMarker::new().unwrap();
@@ -483,17 +532,14 @@ fn main() {
                     let clear = NSColor::clearColor();
                     ns_window.setBackgroundColor(Some(&clear));
 
-                    // Get the content view and make the WKWebView non-opaque
                     if let Some(content_view) = ns_window.contentView() {
-                        let subviews = content_view.subviews();
-                        for i in 0..subviews.len() {
-                            let subview = &*subviews.objectAtIndex(i);
-                            // Set drawsBackground = false via KVC on WKWebView
-                            let key = NSString::from_str("drawsBackground");
-                            // Create NSNumber(false) via msg_send
-                            let cls = objc2::runtime::AnyClass::get(c"NSNumber").unwrap();
-                            let no_val: *mut AnyObject = msg_send![cls, numberWithBool: false];
-                            let _: () = msg_send![subview, setValue: no_val, forKey: &*key];
+                        // Recursively find and patch all WKWebViews
+                        let patched = patch_webviews(&content_view);
+                        if patched == 0 {
+                            eprintln!(
+                                "[rally] warning: no WKWebView found in view hierarchy — \
+                                 transparency may not work, falling back to solid background"
+                            );
                         }
 
                         // Add NSVisualEffectView behind everything for frosted glass
@@ -508,8 +554,9 @@ fn main() {
                         effect_view.setFrame(content_view.frame());
 
                         // Insert the effect view at the back (behind webview)
-                        let first_subview = if subviews.len() > 0 {
-                            Some(&*subviews.objectAtIndex(0))
+                        let cv_subviews = content_view.subviews();
+                        let first_subview = if cv_subviews.len() > 0 {
+                            Some(&*cv_subviews.objectAtIndex(0))
                         } else {
                             None
                         };
