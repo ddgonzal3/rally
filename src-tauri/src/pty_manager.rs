@@ -40,7 +40,9 @@ struct PtySession {
     pair: portable_pty::PtyPair,
     child: Arc<Mutex<Box<dyn portable_pty::Child + Send + Sync>>>,
     foreground: Arc<Mutex<Option<String>>>,
-    monitor_stop: Arc<AtomicBool>,
+    /// Shared flag — set to true to stop ALL threads for this session
+    /// (monitor, reader, flusher, writer). Threads check this and exit.
+    shutdown: Arc<AtomicBool>,
     monitor_paused: Arc<AtomicBool>,
     cwd: String,
     command: Option<String>,
@@ -61,7 +63,7 @@ fn spawn_foreground_monitor(
     pty_id: String,
     shell_pid: Option<u32>,
     foreground: Arc<Mutex<Option<String>>>,
-    monitor_stop: Arc<AtomicBool>,
+    shutdown: Arc<AtomicBool>,
     monitor_paused: Arc<AtomicBool>,
 ) {
     thread::spawn(move || {
@@ -76,7 +78,7 @@ fn spawn_foreground_monitor(
         let foreground_event = format!("pty-foreground-{}", pty_id);
 
         loop {
-            if monitor_stop.load(Ordering::Relaxed) {
+            if shutdown.load(Ordering::Relaxed) {
                 break;
             }
 
@@ -248,14 +250,14 @@ impl PtyManager {
 
         let pty_id = uuid::Uuid::new_v4().to_string();
         let foreground = Arc::new(Mutex::new(None));
-        let monitor_stop = Arc::new(AtomicBool::new(false));
+        let shutdown = Arc::new(AtomicBool::new(false));
         let monitor_paused = Arc::new(AtomicBool::new(true));
         spawn_foreground_monitor(
             app_handle.clone(),
             pty_id.clone(),
             shell_pid,
             foreground.clone(),
-            monitor_stop.clone(),
+            shutdown.clone(),
             monitor_paused.clone(),
         );
 
@@ -275,7 +277,7 @@ impl PtyManager {
         let child_clone = child.clone();
         let reader_id_for_reader = reader_id.clone();
         let tx_exit = tx.clone();
-        let monitor_stop_for_reader = monitor_stop.clone();
+        let shutdown_for_reader = shutdown.clone();
         thread::spawn(move || {
             let mut buf = [0u8; 4096];
             loop {
@@ -294,7 +296,8 @@ impl PtyManager {
             }
             // Signal EOF to flusher by dropping tx (receiver will get Disconnected)
             drop(tx);
-            monitor_stop_for_reader.store(true, Ordering::Relaxed);
+            // Signal all sibling threads (monitor, writer) that this PTY is done
+            shutdown_for_reader.store(true, Ordering::Relaxed);
             let _ = tx_exit; // ensure tx_exit is moved but unused — drop both senders
         });
 
@@ -369,15 +372,26 @@ impl PtyManager {
         // Spawn a dedicated writer thread so write_pty doesn't hold the
         // global mutex during blocking I/O (write_all + flush).
         let (write_tx, write_rx) = mpsc::channel::<Vec<u8>>();
+        let shutdown_for_writer = shutdown.clone();
         thread::spawn(move || {
             let mut writer = writer;
-            while let Ok(data) = write_rx.recv() {
-                let _ = writer.write_all(&data);
-                // Drain any queued writes before flushing
-                while let Ok(more) = write_rx.try_recv() {
-                    let _ = writer.write_all(&more);
+            loop {
+                match write_rx.recv_timeout(Duration::from_secs(1)) {
+                    Ok(data) => {
+                        let _ = writer.write_all(&data);
+                        // Drain any queued writes before flushing
+                        while let Ok(more) = write_rx.try_recv() {
+                            let _ = writer.write_all(&more);
+                        }
+                        let _ = writer.flush();
+                    }
+                    Err(mpsc::RecvTimeoutError::Timeout) => {
+                        if shutdown_for_writer.load(Ordering::Relaxed) {
+                            break;
+                        }
+                    }
+                    Err(mpsc::RecvTimeoutError::Disconnected) => break,
                 }
-                let _ = writer.flush();
             }
         });
 
@@ -388,7 +402,7 @@ impl PtyManager {
                 pair,
                 child,
                 foreground,
-                monitor_stop,
+                shutdown,
                 monitor_paused,
                 cwd: effective_cwd,
                 command,
@@ -431,7 +445,7 @@ impl PtyManager {
 
     pub fn kill(&mut self, pty_id: &str) -> Result<(), String> {
         if let Some(session) = self.sessions.remove(pty_id) {
-            session.monitor_stop.store(true, Ordering::Relaxed);
+            session.shutdown.store(true, Ordering::Relaxed);
             // Kill the entire process group so child processes (watchers, build
             // tools, etc.) are cleaned up, not just the shell itself.
             // In a PTY the shell is the session/process-group leader, so
