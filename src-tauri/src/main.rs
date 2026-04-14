@@ -117,6 +117,124 @@ fn emit_to_focused_window(app: &tauri::AppHandle, event: &str) {
     }
 }
 
+/// Apply native macOS frosted glass vibrancy to a Tauri webview window.
+/// Idempotent — safe to call multiple times (checks for existing effect view).
+/// Must be called on the main thread.
+fn apply_vibrancy(win: &tauri::WebviewWindow) {
+    use objc2::runtime::{AnyClass, AnyObject};
+    use objc2::{msg_send, MainThreadMarker};
+    use objc2_app_kit::{
+        NSColor, NSView, NSVisualEffectBlendingMode, NSVisualEffectMaterial,
+        NSVisualEffectState, NSVisualEffectView, NSWindow,
+        NSAutoresizingMaskOptions, NSWindowOrderingMode,
+    };
+    use objc2_foundation::NSString;
+
+    /// Recursively walk the view tree and set drawsBackground=false
+    /// on every WKWebView found. Returns number of webviews patched.
+    unsafe fn patch_webviews(view: &NSView) -> usize {
+        let wk_cls = AnyClass::get(c"WKWebView");
+        let mut count = 0;
+
+        if let Some(cls) = wk_cls {
+            let is_wk: bool = msg_send![view, isKindOfClass: cls];
+            if is_wk {
+                let key = NSString::from_str("drawsBackground");
+                let ns_number_cls = AnyClass::get(c"NSNumber").unwrap();
+                let no_val: *mut AnyObject =
+                    msg_send![ns_number_cls, numberWithBool: false];
+                let _: () = msg_send![view, setValue: no_val, forKey: &*key];
+
+                let fallback_cls = AnyClass::get(c"NSColor").unwrap();
+                let fallback: *mut AnyObject = msg_send![
+                    fallback_cls,
+                    colorWithSRGBRed: 0.1_f64,
+                    green: 0.1_f64,
+                    blue: 0.1_f64,
+                    alpha: 1.0_f64
+                ];
+                let _: () = msg_send![
+                    view,
+                    setUnderPageBackgroundColor: fallback
+                ];
+
+                count += 1;
+            }
+        }
+
+        let subviews = view.subviews();
+        for i in 0..subviews.len() {
+            let child = &*subviews.objectAtIndex(i);
+            count += patch_webviews(child);
+        }
+        count
+    }
+
+    let Some(mtm) = MainThreadMarker::new() else {
+        eprintln!("[rally] apply_vibrancy: not on main thread — skipping");
+        return;
+    };
+
+    let Ok(ns_win_ptr) = win.ns_window() else {
+        eprintln!("[rally] apply_vibrancy: failed to get NSWindow for '{}'", win.label());
+        return;
+    };
+
+    unsafe {
+        let ns_win_ptr = ns_win_ptr as *mut AnyObject;
+        let ns_window: &NSWindow = &*(ns_win_ptr as *const NSWindow);
+
+        ns_window.setOpaque(false);
+        let clear = NSColor::clearColor();
+        ns_window.setBackgroundColor(Some(&clear));
+
+        if let Some(content_view) = ns_window.contentView() {
+            let patched = patch_webviews(&content_view);
+            if patched == 0 {
+                eprintln!(
+                    "[rally] warning: no WKWebView found in '{}' — \
+                     transparency may not work",
+                    win.label()
+                );
+            }
+
+            // Idempotency: skip adding NSVisualEffectView if one already exists
+            if let Some(cls) = AnyClass::get(c"NSVisualEffectView") {
+                let subviews = content_view.subviews();
+                for i in 0..subviews.len() {
+                    let subview = &*subviews.objectAtIndex(i);
+                    let is_effect: bool = msg_send![subview, isKindOfClass: cls];
+                    if is_effect {
+                        return;
+                    }
+                }
+            }
+
+            let effect_view = NSVisualEffectView::new(mtm);
+            effect_view.setMaterial(NSVisualEffectMaterial::UnderWindowBackground);
+            effect_view.setBlendingMode(NSVisualEffectBlendingMode::BehindWindow);
+            effect_view.setState(NSVisualEffectState::Active);
+            effect_view.setAutoresizingMask(
+                NSAutoresizingMaskOptions::ViewWidthSizable
+                    | NSAutoresizingMaskOptions::ViewHeightSizable,
+            );
+            effect_view.setFrame(content_view.frame());
+
+            let cv_subviews = content_view.subviews();
+            let first_subview = if cv_subviews.len() > 0 {
+                Some(&*cv_subviews.objectAtIndex(0))
+            } else {
+                None
+            };
+            content_view.addSubview_positioned_relativeTo(
+                &effect_view,
+                NSWindowOrderingMode::Below,
+                first_subview,
+            );
+        }
+    }
+}
+
 fn main() {
     let pty_state: pty_manager::PtyState = Arc::new(Mutex::new(PtyManager::new()));
     let pty_exit = pty_state.clone();
@@ -310,6 +428,23 @@ fn main() {
                 }
             }
         })
+        // Apply vibrancy to every window after its page loads. This handles
+        // dynamically created windows (Open in New Window) and also acts as a
+        // safety net for the main window if the WKWebView wasn't ready during setup.
+        .on_page_load(|webview, payload| {
+            use tauri::webview::PageLoadEvent;
+            use tauri::Manager;
+            if matches!(payload.event(), PageLoadEvent::Finished) {
+                let app = webview.app_handle().clone();
+                let label = webview.label().to_string();
+                let app2 = app.clone();
+                let _ = app.run_on_main_thread(move || {
+                    if let Some(win) = app2.get_webview_window(&label) {
+                        apply_vibrancy(&win);
+                    }
+                });
+            }
+        })
         .setup({
             #[cfg(feature = "test-bridge")]
             let test_pending = test_bridge_pending.clone();
@@ -455,119 +590,11 @@ fn main() {
 
             let win = app.get_webview_window("main").unwrap();
 
-            // --- Native macOS frosted glass via raw Objective-C ---
-            // Tauri's built-in vibrancy doesn't properly make WKWebView transparent.
-            // We directly access the NSWindow and WKWebView to:
-            // 1. Make the window non-opaque with clear background
-            // 2. Recursively find the WKWebView and disable its opaque background
-            // 3. Add an NSVisualEffectView behind the webview for frosted blur
-            //
-            // If transparency setup fails (e.g. "Reduce transparency" enabled, or
-            // WKWebView not found), the CSS body fallback is --bg-app (dark grey).
-            {
-                use objc2::runtime::{AnyClass, AnyObject};
-                use objc2::{msg_send, MainThreadMarker};
-                use objc2_app_kit::{
-                    NSColor, NSView, NSVisualEffectBlendingMode, NSVisualEffectMaterial,
-                    NSVisualEffectState, NSVisualEffectView, NSWindow,
-                    NSAutoresizingMaskOptions, NSWindowOrderingMode,
-                };
-                use objc2_foundation::NSString;
-
-                /// Recursively walk the view tree and set drawsBackground=false
-                /// on every WKWebView found. Returns number of webviews patched.
-                unsafe fn patch_webviews(view: &NSView) -> usize {
-                    let wk_cls = AnyClass::get(c"WKWebView");
-                    let mut count = 0;
-
-                    // Check if this view is a WKWebView
-                    if let Some(cls) = wk_cls {
-                        let is_wk: bool = msg_send![view, isKindOfClass: cls];
-                        if is_wk {
-                            // Primary: disable the webview's opaque background
-                            let key = NSString::from_str("drawsBackground");
-                            let ns_number_cls = AnyClass::get(c"NSNumber").unwrap();
-                            let no_val: *mut AnyObject =
-                                msg_send![ns_number_cls, numberWithBool: false];
-                            let _: () = msg_send![view, setValue: no_val, forKey: &*key];
-
-                            // Fallback: set underPageBackgroundColor to dark grey
-                            // (macOS 12+). If drawsBackground doesn't take effect,
-                            // this ensures the page background is dark, not white.
-                            let fallback_cls = AnyClass::get(c"NSColor").unwrap();
-                            let fallback: *mut AnyObject = msg_send![
-                                fallback_cls,
-                                colorWithSRGBRed: 0.1_f64,
-                                green: 0.1_f64,
-                                blue: 0.1_f64,
-                                alpha: 1.0_f64
-                            ];
-                            let _: () = msg_send![
-                                view,
-                                setUnderPageBackgroundColor: fallback
-                            ];
-
-                            count += 1;
-                        }
-                    }
-
-                    // Recurse into subviews
-                    let subviews = view.subviews();
-                    for i in 0..subviews.len() {
-                        let child = &*subviews.objectAtIndex(i);
-                        count += patch_webviews(child);
-                    }
-                    count
-                }
-
-                // We're in the setup callback which runs on the main thread
-                let mtm = MainThreadMarker::new().unwrap();
-
-                let ns_win_ptr = win.ns_window().unwrap() as *mut AnyObject;
-                let ns_window: &NSWindow = unsafe { &*(ns_win_ptr as *const NSWindow) };
-
-                unsafe {
-                    // Make the window transparent
-                    ns_window.setOpaque(false);
-                    let clear = NSColor::clearColor();
-                    ns_window.setBackgroundColor(Some(&clear));
-
-                    if let Some(content_view) = ns_window.contentView() {
-                        // Recursively find and patch all WKWebViews
-                        let patched = patch_webviews(&content_view);
-                        if patched == 0 {
-                            eprintln!(
-                                "[rally] warning: no WKWebView found in view hierarchy — \
-                                 transparency may not work, falling back to solid background"
-                            );
-                        }
-
-                        // Add NSVisualEffectView behind everything for frosted glass
-                        let effect_view = NSVisualEffectView::new(mtm);
-                        effect_view.setMaterial(NSVisualEffectMaterial::UnderWindowBackground);
-                        effect_view.setBlendingMode(NSVisualEffectBlendingMode::BehindWindow);
-                        effect_view.setState(NSVisualEffectState::Active);
-                        effect_view.setAutoresizingMask(
-                            NSAutoresizingMaskOptions::ViewWidthSizable
-                                | NSAutoresizingMaskOptions::ViewHeightSizable,
-                        );
-                        effect_view.setFrame(content_view.frame());
-
-                        // Insert the effect view at the back (behind webview)
-                        let cv_subviews = content_view.subviews();
-                        let first_subview = if cv_subviews.len() > 0 {
-                            Some(&*cv_subviews.objectAtIndex(0))
-                        } else {
-                            None
-                        };
-                        content_view.addSubview_positioned_relativeTo(
-                            &effect_view,
-                            NSWindowOrderingMode::Below,
-                            first_subview,
-                        );
-                    }
-                }
-            }
+            // Apply native macOS frosted glass vibrancy to the main window.
+            // The on_page_load hook also applies this to all windows (including
+            // dynamically created ones), but doing it here in setup gives the
+            // main window vibrancy before the first paint.
+            apply_vibrancy(&win);
             // Only position on largest monitor's left half on first launch.
             // On subsequent launches, tauri_plugin_window_state restores the
             // saved position/size before setup runs — we must not override it.

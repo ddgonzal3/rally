@@ -75,6 +75,7 @@ export function openWindow(opts?: {
     decorations: true,
     titleBarStyle: "overlay",
     hiddenTitle: true,
+    transparent: true,
   });
 
   attachWindowErrorHandler(w, "a new window");
