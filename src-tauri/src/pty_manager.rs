@@ -1,10 +1,9 @@
 use std::collections::HashMap;
 use std::io::{Read, Write};
+use std::os::unix::io::{FromRawFd, IntoRawFd};
+use std::sync::atomic::{AtomicBool, AtomicI32, Ordering};
 use std::sync::mpsc;
-use std::sync::{
-    atomic::{AtomicBool, Ordering},
-    Arc, Mutex,
-};
+use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -43,6 +42,9 @@ struct PtySession {
     /// Shared flag — set to true to stop ALL threads for this session
     /// (monitor, reader, flusher, writer). Threads check this and exit.
     shutdown: Arc<AtomicBool>,
+    /// Raw fd of the cloned PTY reader. Closed on kill() to unblock the
+    /// reader thread's blocking read() call. -1 means already closed.
+    reader_fd: Arc<AtomicI32>,
     monitor_paused: Arc<AtomicBool>,
     cwd: String,
     command: Option<String>,
@@ -261,12 +263,20 @@ impl PtyManager {
             monitor_paused.clone(),
         );
 
-        // Spawn reader thread
+        // Spawn reader thread.
+        // We dup() the master fd to create our own reader fd that we can
+        // close on kill() to unblock the reader thread's blocking read().
+        // portable-pty's try_clone_reader() does the same thing internally
+        // but returns Box<dyn Read> which hides the fd from us.
         let reader_id = pty_id.clone();
-        let mut reader = pair
-            .master
-            .try_clone_reader()
-            .map_err(|e| format!("Failed to clone PTY reader: {}", e))?;
+        let master_raw = pair.master.as_raw_fd()
+            .ok_or_else(|| "Failed to get master fd".to_string())?;
+        let dup_fd = unsafe { libc::dup(master_raw) };
+        if dup_fd < 0 {
+            return Err(format!("Failed to dup master fd: {}", std::io::Error::last_os_error()));
+        }
+        let reader_fd = Arc::new(AtomicI32::new(dup_fd));
+        let mut reader = unsafe { std::fs::File::from_raw_fd(dup_fd) };
 
         // Buffered PTY output: reader thread pushes raw data into a channel,
         // flusher thread drains it every ~16ms and emits a single batched IPC event.
@@ -275,9 +285,9 @@ impl PtyManager {
 
         // Reader thread — pushes raw chunks into channel
         let child_clone = child.clone();
-        let reader_id_for_reader = reader_id.clone();
         let tx_exit = tx.clone();
         let shutdown_for_reader = shutdown.clone();
+        let reader_fd_for_reader = reader_fd.clone();
         thread::spawn(move || {
             let mut buf = [0u8; 4096];
             loop {
@@ -288,11 +298,17 @@ impl PtyManager {
                             break;
                         }
                     }
-                    Err(e) => {
-                        eprintln!("PTY read error for {}: {}", reader_id_for_reader, e);
-                        break;
-                    }
+                    Err(_) => break,
                 }
+            }
+            // Prevent File::drop from closing the fd — kill() may have
+            // already closed it, and we track ownership via reader_fd.
+            let _ = reader.into_raw_fd();
+            // Close fd if we still own it (natural exit, not killed).
+            // swap ensures only one thread closes it.
+            let fd = reader_fd_for_reader.swap(-1, Ordering::SeqCst);
+            if fd >= 0 {
+                unsafe { libc::close(fd); }
             }
             // Signal EOF to flusher by dropping tx (receiver will get Disconnected)
             drop(tx);
@@ -403,6 +419,7 @@ impl PtyManager {
                 child,
                 foreground,
                 shutdown,
+                reader_fd,
                 monitor_paused,
                 cwd: effective_cwd,
                 command,
@@ -445,7 +462,7 @@ impl PtyManager {
 
     pub fn kill(&mut self, pty_id: &str) -> Result<(), String> {
         if let Some(session) = self.sessions.remove(pty_id) {
-            session.shutdown.store(true, Ordering::Relaxed);
+            session.shutdown.store(true, Ordering::SeqCst);
             // Kill the entire process group so child processes (watchers, build
             // tools, etc.) are cleaned up, not just the shell itself.
             // In a PTY the shell is the session/process-group leader, so
@@ -459,6 +476,12 @@ impl PtyManager {
             // Also kill the direct child as a fallback
             if let Ok(mut child) = session.child.lock() {
                 let _ = child.kill();
+            }
+            // Close the reader fd to unblock the reader thread's read() call.
+            // The atomic swap ensures only one thread (kill or reader) closes it.
+            let fd = session.reader_fd.swap(-1, Ordering::SeqCst);
+            if fd >= 0 {
+                unsafe { libc::close(fd); }
             }
         }
         Ok(())
