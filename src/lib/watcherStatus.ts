@@ -30,7 +30,7 @@ const SCRIPT_ERROR_PATTERNS = [
   /^error:/i,
   /^error\s/i,
 ] as const;
-const SUCCESS_PATTERNS = /\b(built in|compiled successfully|successfully compiled|ready in|bundle complete|build complete|build synced|safe to reload|compiled in)\b/i;
+const SUCCESS_PATTERNS = /\b(built in|compiled successfully|successfully compiled|ready in|bundle complete|build complete|build synced|safe to reload|compiled in|Finished .* target\(s\) in)\b/i;
 const BUILDING_PATTERNS = /\b(rebuilding|compiling|bundling|transforming|generating\b|building|starting incremental watcher|nx run .*--watch|phase:\s*(setup|build|emit)|bundle generation complete|generation complete)\b/i;
 
 interface CachedWatcherStatus {
