@@ -1,0 +1,73 @@
+name: Release
+
+# Builds Rally .app + .dmg bundles for macOS (arm64 + x64) and publishes
+# a draft GitHub Release with the artifacts attached.
+#
+# Triggers:
+#   - Pushing a tag matching `v*` (e.g. `v0.2.0`) — picks tag from ref.
+#   - Manual `workflow_dispatch` — prompts for a tag name.
+#
+# The release is created as a DRAFT. Review and publish manually in the
+# GitHub UI after verifying artifacts.
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      tag_name:
+        description: "Tag name (e.g. v0.2.0)"
+        required: true
+        type: string
+
+jobs:
+  build:
+    permissions:
+      contents: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: macos-14
+            rust_target: aarch64-apple-darwin
+            arch_label: arm64
+          - platform: macos-13
+            rust_target: x86_64-apple-darwin
+            arch_label: x64
+    runs-on: ${{ matrix.platform }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.rust_target }}
+
+      - name: Rust cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: "./src-tauri -> target"
+          key: ${{ matrix.rust_target }}
+
+      - name: Install npm dependencies
+        run: npm ci
+
+      - name: Build + release
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tagName: ${{ github.event.inputs.tag_name || github.ref_name }}
+          releaseName: "Rally ${{ github.event.inputs.tag_name || github.ref_name }}"
+          releaseBody: "Draft release — Rally macOS (${{ matrix.arch_label }})."
+          releaseDraft: true
+          prerelease: false
+          args: --target ${{ matrix.rust_target }} --bundles app,dmg
