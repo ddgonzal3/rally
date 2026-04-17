@@ -34,6 +34,33 @@ pub struct PtyInfo {
     pub alive: bool,
 }
 
+#[derive(Serialize, Clone)]
+pub struct PtyInventoryEntry {
+    pub id: String,
+    pub cwd: String,
+    pub command: Option<String>,
+    pub shell_pid: Option<u32>,
+    pub rss_kb: u64,
+    pub cpu_pct: f32,
+    pub descendant_count: u32,
+    pub foreground: Option<String>,
+    pub uptime_s: u64,
+}
+
+#[derive(Serialize, Clone)]
+pub struct AppStats {
+    pub rss_kb: u64,
+    pub threads: u32,
+    pub fds: u32,
+    pub uptime_s: u64,
+}
+
+#[derive(Serialize, Clone)]
+pub struct ProcessInventory {
+    pub rally: AppStats,
+    pub ptys: Vec<PtyInventoryEntry>,
+}
+
 struct PtySession {
     write_tx: Option<mpsc::Sender<Vec<u8>>>,
     pair: portable_pty::PtyPair,
@@ -49,6 +76,7 @@ struct PtySession {
     cwd: String,
     command: Option<String>,
     shell_pid: Option<u32>,
+    spawned_at: Instant,
 }
 
 pub struct PtyManager {
@@ -424,6 +452,7 @@ impl PtyManager {
                 cwd: effective_cwd,
                 command,
                 shell_pid,
+                spawned_at: Instant::now(),
             },
         );
 
@@ -537,6 +566,164 @@ impl PtyManager {
             let _ = self.kill(&id);
         }
     }
+
+    pub fn kill_many(&mut self, ids: &[String]) {
+        for id in ids {
+            let _ = self.kill(id);
+        }
+    }
+
+    pub fn inventory(&self) -> ProcessInventory {
+        let self_pid = std::process::id();
+
+        // One ps pass for all processes, build pid -> (ppid, rss_kb, cpu, etime_s) map
+        let proc_map = read_proc_map();
+
+        // Build parent -> children map for subtree walking
+        let mut children: HashMap<u32, Vec<u32>> = HashMap::new();
+        for (&pid, proc_stat) in &proc_map {
+            children.entry(proc_stat.ppid).or_default().push(pid);
+        }
+
+        let rally = AppStats {
+            rss_kb: proc_map.get(&self_pid).map(|p| p.rss_kb).unwrap_or(0),
+            threads: count_own_threads(self_pid),
+            fds: count_own_fds(),
+            uptime_s: proc_map.get(&self_pid).map(|p| p.etime_s).unwrap_or(0),
+        };
+
+        let ptys = self
+            .sessions
+            .iter()
+            .map(|(id, session)| {
+                let (rss_kb, cpu_pct, descendant_count) = match session.shell_pid {
+                    Some(pid) => {
+                        let stat = proc_map.get(&pid);
+                        let rss = stat.map(|s| s.rss_kb).unwrap_or(0);
+                        let cpu = stat.map(|s| s.cpu_pct).unwrap_or(0.0);
+                        let count = count_descendants(pid, &children);
+                        (rss, cpu, count)
+                    }
+                    None => (0, 0.0, 0),
+                };
+                let foreground = session
+                    .foreground
+                    .lock()
+                    .ok()
+                    .and_then(|guard| guard.clone());
+                PtyInventoryEntry {
+                    id: id.clone(),
+                    cwd: session.cwd.clone(),
+                    command: session.command.clone(),
+                    shell_pid: session.shell_pid,
+                    rss_kb,
+                    cpu_pct,
+                    descendant_count,
+                    foreground,
+                    uptime_s: session.spawned_at.elapsed().as_secs(),
+                }
+            })
+            .collect();
+
+        ProcessInventory { rally, ptys }
+    }
+}
+
+#[derive(Default)]
+struct ProcStat {
+    ppid: u32,
+    rss_kb: u64,
+    cpu_pct: f32,
+    etime_s: u64,
+}
+
+/// Run `ps -axo pid,ppid,rss,%cpu,etime` once and parse into a map.
+/// Avoids spawning N `ps` processes when inventorying many PTYs.
+fn read_proc_map() -> HashMap<u32, ProcStat> {
+    let mut map = HashMap::new();
+    let output = match std::process::Command::new("ps")
+        .args(["-axo", "pid=,ppid=,rss=,%cpu=,etime="])
+        .output()
+    {
+        Ok(o) => o,
+        Err(_) => return map,
+    };
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    for line in stdout.lines() {
+        let parts: Vec<&str> = line.split_whitespace().collect();
+        if parts.len() < 5 {
+            continue;
+        }
+        let Ok(pid) = parts[0].parse::<u32>() else { continue };
+        let ppid = parts[1].parse::<u32>().unwrap_or(0);
+        let rss_kb = parts[2].parse::<u64>().unwrap_or(0);
+        let cpu_pct = parts[3].parse::<f32>().unwrap_or(0.0);
+        let etime_s = parse_etime(parts[4]);
+        map.insert(pid, ProcStat { ppid, rss_kb, cpu_pct, etime_s });
+    }
+    map
+}
+
+/// Parse ps etime format: `[[DD-]HH:]MM:SS` into seconds.
+fn parse_etime(s: &str) -> u64 {
+    let (days, rest) = match s.split_once('-') {
+        Some((d, r)) => (d.parse::<u64>().unwrap_or(0), r),
+        None => (0, s),
+    };
+    let parts: Vec<&str> = rest.split(':').collect();
+    let (h, m, sec) = match parts.len() {
+        3 => (
+            parts[0].parse::<u64>().unwrap_or(0),
+            parts[1].parse::<u64>().unwrap_or(0),
+            parts[2].parse::<u64>().unwrap_or(0),
+        ),
+        2 => (
+            0,
+            parts[0].parse::<u64>().unwrap_or(0),
+            parts[1].parse::<u64>().unwrap_or(0),
+        ),
+        _ => (0, 0, 0),
+    };
+    days * 86400 + h * 3600 + m * 60 + sec
+}
+
+/// Count descendants of `root` by walking the children map.
+fn count_descendants(root: u32, children: &HashMap<u32, Vec<u32>>) -> u32 {
+    let mut count = 0u32;
+    let mut stack = vec![root];
+    while let Some(pid) = stack.pop() {
+        if let Some(kids) = children.get(&pid) {
+            for &kid in kids {
+                count += 1;
+                stack.push(kid);
+            }
+        }
+    }
+    count
+}
+
+/// Count threads of this Rally process via `ps -M`.
+/// `ps -M -p PID` prints a header + one row per thread.
+fn count_own_threads(pid: u32) -> u32 {
+    let output = match std::process::Command::new("ps")
+        .args(["-M", "-p", &pid.to_string()])
+        .output()
+    {
+        Ok(o) => o,
+        Err(_) => return 0,
+    };
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    // Subtract header row
+    let lines: Vec<&str> = stdout.lines().collect();
+    if lines.len() <= 1 { 0 } else { (lines.len() - 1) as u32 }
+}
+
+/// Count open file descriptors of this Rally process by reading /dev/fd.
+/// This only works for the current process on macOS.
+fn count_own_fds() -> u32 {
+    std::fs::read_dir("/dev/fd")
+        .map(|rd| rd.filter_map(|e| e.ok()).count() as u32)
+        .unwrap_or(0)
 }
 
 // Tauri commands
@@ -639,6 +826,24 @@ pub fn resume_pty_monitor(
 ) -> Result<(), String> {
     let manager = state.lock().map_err(|e| e.to_string())?;
     manager.resume_monitor(&pty_id)
+}
+
+#[tauri::command]
+pub fn get_process_inventory(
+    state: tauri::State<'_, PtyState>,
+) -> Result<ProcessInventory, String> {
+    let manager = state.lock().map_err(|e| e.to_string())?;
+    Ok(manager.inventory())
+}
+
+#[tauri::command]
+pub fn kill_ptys(
+    state: tauri::State<'_, PtyState>,
+    pty_ids: Vec<String>,
+) -> Result<(), String> {
+    let mut manager = state.lock().map_err(|e| e.to_string())?;
+    manager.kill_many(&pty_ids);
+    Ok(())
 }
 
 /// Check if a single PID is a Claude Code process (by name or node args).

@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import type { Workspace, GitStatus, PrStatus, PrDetails, PushResult, ChangesSummary, CommitEntry, ScriptEntry, SearchMatch, ReplaceOp, ReplaceResult, PtyInfo, RallyConfig, WorkspaceReadiness, BranchInfo } from "./types";
+import type { Workspace, GitStatus, PrStatus, PrDetails, PushResult, ChangesSummary, CommitEntry, ScriptEntry, SearchMatch, ReplaceOp, ReplaceResult, PtyInfo, ProcessInventory, RallyConfig, WorkspaceReadiness, BranchInfo } from "./types";
 
 /** Open a URL in the user's default browser via Tauri shell plugin. */
 export function openUrl(url: string) {
@@ -210,6 +210,12 @@ export const api = {
 
   killAllPtys: () =>
     invoke<void>("kill_all_ptys"),
+
+  killPtys: (ptyIds: string[]) =>
+    invoke<void>("kill_ptys", { ptyIds }),
+
+  getProcessInventory: () =>
+    invoke<ProcessInventory>("get_process_inventory"),
 
   getPtyForegroundProcess: (ptyId: string) =>
     invoke<string | null>("get_pty_foreground_process", { ptyId }),

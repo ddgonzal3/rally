@@ -39,6 +39,7 @@ import { ToastContainer, addToast } from "./components/ToastContainer";
 import { UnifiedGitPanel } from "./components/UnifiedGitPanel";
 import { SearchPanel } from "./components/SearchPanel";
 import { ProductChatPanel } from "./components/ProductChatPanel";
+import { TaskManagerPanel } from "./components/TaskManagerPanel";
 import { BuildStatusBar } from "./components/BuildStatusBar";
 import { BuildStatusDrawer } from "./components/BuildStatusDrawer";
 import QuickOpen from "./components/QuickOpen";
@@ -568,7 +569,7 @@ export function App() {
     const saved = localStorage.getItem("rally:zoomLevel");
     return saved ? Number(saved) : 1.0;
   });
-  type ExplorerView = "files" | "search" | "claude" | "workspaces";
+  type ExplorerView = "files" | "search" | "claude" | "workspaces" | "tasks";
   const explorerViewPerWorkspaceRef = useRef<Map<string, ExplorerView>>(
     new Map(),
   );
@@ -2060,6 +2061,50 @@ export function App() {
                   </svg>
                 ),
               },
+              {
+                view: "tasks" as const,
+                title: "Processes",
+                icon: (active: boolean) => (
+                  <svg
+                    width="18"
+                    height="18"
+                    viewBox="0 0 16 16"
+                    fill="none"
+                    aria-hidden="true"
+                  >
+                    <rect
+                      x="3.5"
+                      y="3.5"
+                      width="9"
+                      height="9"
+                      rx="1.2"
+                      stroke={
+                        active ? "var(--text-primary)" : "var(--text-secondary)"
+                      }
+                      strokeWidth="1.0"
+                    />
+                    <rect
+                      x="6"
+                      y="6"
+                      width="4"
+                      height="4"
+                      rx="0.5"
+                      stroke={
+                        active ? "var(--text-primary)" : "var(--text-secondary)"
+                      }
+                      strokeWidth="1.0"
+                    />
+                    <path
+                      d="M6 1.5V3.5M10 1.5V3.5M6 12.5V14.5M10 12.5V14.5M1.5 6H3.5M1.5 10H3.5M12.5 6H14.5M12.5 10H14.5"
+                      stroke={
+                        active ? "var(--text-primary)" : "var(--text-secondary)"
+                      }
+                      strokeWidth="1.0"
+                      strokeLinecap="round"
+                    />
+                  </svg>
+                ),
+              },
             ] as {
               view: typeof explorerView;
               title: string;
@@ -2131,6 +2176,7 @@ export function App() {
               />
             </div>
             {explorerView === "claude" && <GlobalConfigExplorer />}
+            {explorerView === "tasks" && <TaskManagerPanel />}
             <div
               style={{
                 display: explorerView === "files" ? undefined : "none",

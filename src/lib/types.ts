@@ -164,6 +164,30 @@ export interface PtyInfo {
   alive: boolean;
 }
 
+export interface PtyInventoryEntry {
+  id: string;
+  cwd: string;
+  command: string | null;
+  shell_pid: number | null;
+  rss_kb: number;
+  cpu_pct: number;
+  descendant_count: number;
+  foreground: string | null;
+  uptime_s: number;
+}
+
+export interface AppStats {
+  rss_kb: number;
+  threads: number;
+  fds: number;
+  uptime_s: number;
+}
+
+export interface ProcessInventory {
+  rally: AppStats;
+  ptys: PtyInventoryEntry[];
+}
+
 // --- Script Runner Types ---
 
 export interface ScriptEntry {
