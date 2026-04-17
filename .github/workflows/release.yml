@@ -1,7 +1,7 @@
 name: Release
 
-# Builds Rally .app + .dmg bundles for macOS (arm64 + x64) and publishes
-# a draft GitHub Release with the artifacts attached.
+# Builds a universal (Intel + Apple Silicon) Rally .app + .dmg on macOS
+# and publishes a draft GitHub Release with the artifacts attached.
 #
 # Triggers:
 #   - Pushing a tag matching `v*` (e.g. `v0.2.0`) — picks tag from ref.
@@ -25,17 +25,7 @@ jobs:
   build:
     permissions:
       contents: write
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - platform: macos-14
-            rust_target: aarch64-apple-darwin
-            arch_label: arm64
-          - platform: macos-13
-            rust_target: x86_64-apple-darwin
-            arch_label: x64
-    runs-on: ${{ matrix.platform }}
+    runs-on: macos-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -49,13 +39,13 @@ jobs:
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
         with:
-          targets: ${{ matrix.rust_target }}
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
 
       - name: Rust cache
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: "./src-tauri -> target"
-          key: ${{ matrix.rust_target }}
+          key: universal-apple-darwin
 
       - name: Install npm dependencies
         run: npm ci
@@ -67,7 +57,7 @@ jobs:
         with:
           tagName: ${{ github.event.inputs.tag_name || github.ref_name }}
           releaseName: "Rally ${{ github.event.inputs.tag_name || github.ref_name }}"
-          releaseBody: "Draft release — Rally macOS (${{ matrix.arch_label }})."
+          releaseBody: "Draft release — Rally macOS (universal)."
           releaseDraft: true
           prerelease: false
-          args: --target ${{ matrix.rust_target }} --bundles app,dmg
+          args: --target universal-apple-darwin --bundles app,dmg
