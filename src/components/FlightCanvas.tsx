@@ -25,6 +25,7 @@ const WorkspaceFlightView = React.memo(function WorkspaceFlightView({
   const focusModeRef = useRef(focusMode);
   focusModeRef.current = focusMode;
   const navigateToRef = useRef<((podId: string) => void) | null>(null);
+  const focusedPodIdRef = useRef<string | null>(null);
   const [autoFocus, setAutoFocus] = useState(true);
   const autoFocusRef = useRef(autoFocus);
   autoFocusRef.current = autoFocus;
@@ -80,13 +81,17 @@ const WorkspaceFlightView = React.memo(function WorkspaceFlightView({
         w: containerRef.current?.clientWidth ?? 0,
         h: containerRef.current?.clientHeight ?? 0,
       });
-      // In focus mode, relayout pods to fit new container size
+      // In focus mode, relayout pods to fit new container size.
+      // Preserve the currently focused pod so width changes (e.g. opening
+      // the activity bar) don't snap back to the first pod.
       if (focusModeRef.current) {
         setTimeout(() => {
           const pods = useWorkspaceStore.getState().flightLayouts[workspaceId]?.pods ?? [];
-          if (pods.length > 0) {
-            navigateToRef.current?.(pods[0].id);
-          }
+          if (pods.length === 0) return;
+          const current = focusedPodIdRef.current;
+          const target =
+            current && pods.some((p) => p.id === current) ? current : pods[0].id;
+          navigateToRef.current?.(target);
         }, 0);
       }
     };
@@ -154,8 +159,8 @@ const WorkspaceFlightView = React.memo(function WorkspaceFlightView({
     // - Clicked on empty canvas → scroll pans
     // - Clicked inside a terminal → scroll goes to terminal
     let canvasFocused = true; // Start with canvas focused (no terminal active)
-    // Track current pod for focus mode column nav (scroll, Shift+Arrow, Cmd+N, clicks)
-    let focusScrollCurrentPodId: string | null = null;
+    // Focused pod tracked on a component ref so resize handlers in other
+    // effects can read it.
 
     // Track clicks to determine scroll target + active pod for column nav
     const clickTracker = (e: MouseEvent) => {
@@ -165,7 +170,7 @@ const WorkspaceFlightView = React.memo(function WorkspaceFlightView({
         el.classList.remove("flight-panning");
         // Track clicked pod as the active pod for Cmd+N / Shift+Arrow nav
         const podId = podEl.getAttribute("data-flight-pod");
-        if (podId) focusScrollCurrentPodId = podId;
+        if (podId) focusedPodIdRef.current = podId;
       } else {
         canvasFocused = true;
         el.classList.add("flight-panning");
@@ -237,9 +242,9 @@ const WorkspaceFlightView = React.memo(function WorkspaceFlightView({
 
           // Find current column
           let currentColIdx = 0;
-          if (focusScrollCurrentPodId) {
+          if (focusedPodIdRef.current) {
             currentColIdx = columns.findIndex(([, colPods]) =>
-              colPods.some(p => p.id === focusScrollCurrentPodId)
+              colPods.some(p => p.id === focusedPodIdRef.current)
             );
             if (currentColIdx < 0) currentColIdx = 0;
           }
@@ -253,7 +258,7 @@ const WorkspaceFlightView = React.memo(function WorkspaceFlightView({
           if (nextColIdx === currentColIdx) return;
 
           const targetPod = columns[nextColIdx][1][0]; // first pod in target column
-          focusScrollCurrentPodId = targetPod.id;
+          focusedPodIdRef.current = targetPod.id;
           navFiredInGesture = true;
           lastDelta = absDeltaX; // start tracking decay from this peak
           navigateToRef.current?.(targetPod.id);
@@ -475,7 +480,7 @@ const WorkspaceFlightView = React.memo(function WorkspaceFlightView({
     // --- Navigate to a pod: animate viewport to show it ---
     const navigateToPod = (podId: string) => {
       // Track active pod for column-based navigation (scroll, Shift+Arrow, Cmd+N)
-      focusScrollCurrentPodId = podId;
+      focusedPodIdRef.current = podId;
       const store = useWorkspaceStore.getState();
       const pod = store.flightLayouts[workspaceId]?.pods.find((p) => p.id === podId);
       if (!pod) return;
@@ -719,9 +724,9 @@ const WorkspaceFlightView = React.memo(function WorkspaceFlightView({
         const columns = [...colMap.entries()].sort((a, b) => a[0] - b[0]);
 
         let currentColIdx = 0;
-        if (focusScrollCurrentPodId) {
+        if (focusedPodIdRef.current) {
           currentColIdx = columns.findIndex(([, colPods]) =>
-            colPods.some(p => p.id === focusScrollCurrentPodId)
+            colPods.some(p => p.id === focusedPodIdRef.current)
           );
           if (currentColIdx < 0) currentColIdx = 0;
         }
@@ -732,7 +737,7 @@ const WorkspaceFlightView = React.memo(function WorkspaceFlightView({
 
         if (nextColIdx !== currentColIdx) {
           const targetPod = columns[nextColIdx][1][0];
-          focusScrollCurrentPodId = targetPod.id;
+          focusedPodIdRef.current = targetPod.id;
           navigateToPod(targetPod.id);
         }
         return;
@@ -804,8 +809,8 @@ const WorkspaceFlightView = React.memo(function WorkspaceFlightView({
             if (pods.length === 0) return;
 
             // Determine which pod to focus — use current tracked pod if valid
-            const activePod = focusScrollCurrentPodId
-              ? pods.find(p => p.id === focusScrollCurrentPodId)
+            const activePod = focusedPodIdRef.current
+              ? pods.find(p => p.id === focusedPodIdRef.current)
               : null;
             const targetPodId = activePod ? activePod.id : pods[0].id;
 

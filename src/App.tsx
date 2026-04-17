@@ -2160,7 +2160,7 @@ export function App() {
               <WorkspacePicker
                 onSelect={(id) => {
                   setActiveWorkspace(id);
-                  setExplorerView("files");
+                  setFileExplorerCollapsed(true);
                 }}
               />
             )}
