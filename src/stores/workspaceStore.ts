@@ -48,6 +48,7 @@ import { api } from "../lib/tauri";
 import { getExpandedPaths, setExpandedPaths } from "../components/FileExplorer";
 import {
   clearWatcherStatusCache,
+  hasExitSentinel,
   inferScriptCompletionStatus,
   isWatcherScript,
   observeWatcherOutput,
@@ -1733,6 +1734,11 @@ export const useWorkspaceStore = create<WorkspaceState>()(
           if (!watcherStatusRafId) {
             watcherStatusRafId = requestAnimationFrame(flushWatcherStatus);
           }
+        } else if (/\[rally:exit:\d+\]/.test(text)) {
+          // Sentinel arrived in this chunk — the wrapped command has fully
+          // exited. Finalize now (may have been deferred by syncForegroundProcess
+          // if foreground=null fired between sub-processes earlier).
+          finalizeRun();
         }
         // Detect localhost ports in script output
         if (text.includes("localhost") || text.includes("127.0.0.1") || /\bport\s+\d/i.test(text)) {
@@ -1802,8 +1808,13 @@ export const useWorkspaceStore = create<WorkspaceState>()(
       sawForegroundProcess = false;
       // Watcher scripts spawn child processes (e.g. bash → node/nx) causing
       // brief foreground=null transitions that don't mean the watcher stopped.
-      // Only finalize on the real PTY exit event.
       if (isWatcher) return;
+      // Non-watcher scripts can also emit foreground=null between sub-processes
+      // (e.g. build-cpp.sh running `cmake --preset` then `cmake --build`). The
+      // wrapped command's `[rally:exit:N]` sentinel is the authoritative "done"
+      // signal — only finalize here if it's already in the buffer. Otherwise
+      // the sentinel-arrival path in unlistenOutput will finalize later.
+      if (!hasExitSentinel(key)) return;
       finalizeRun();
     };
 
@@ -1823,7 +1834,9 @@ export const useWorkspaceStore = create<WorkspaceState>()(
 
     // Startup fallback: if no foreground process detected after 2.5s,
     // check once. For watchers, just mark running; for non-watchers,
-    // finalize if process already exited.
+    // finalize only if the exit-sentinel is already in the buffer (script
+    // truly completed). A buffer with content but no sentinel means the
+    // script is still running between sub-processes — don't false-finalize.
     const startupFallbackTimer = isWatcher ? null : setTimeout(() => {
       if (sawForegroundProcess) return;
       api.getPtyForegroundProcess(ptyId)
@@ -1832,8 +1845,7 @@ export const useWorkspaceStore = create<WorkspaceState>()(
             syncForegroundProcess(proc);
             return;
           }
-          const buf = scriptOutputBuffers.get(key);
-          if (buf && buf.length > 0) finalizeRun();
+          if (hasExitSentinel(key)) finalizeRun();
         })
         .catch(() => {});
     }, 2500);

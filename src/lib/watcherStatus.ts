@@ -165,6 +165,21 @@ export function clearWatcherStatusCache(bufferKey: string): void {
 
 const EXIT_SENTINEL = /\[rally:exit:(\d+)\]/;
 
+/**
+ * True if the exit-code sentinel is present in the script's output buffer.
+ * Used to gate completion finalization: a non-watcher script's wrapped command
+ * echoes `[rally:exit:$?]` only after the inner command fully exits, so its
+ * presence is the authoritative "script is done" signal. Foreground=null
+ * transitions between sub-processes (e.g. bash → cmake configure → cmake build)
+ * do NOT mean completion, and finalizing there races ahead of the real exit.
+ */
+export function hasExitSentinel(bufferKey: string): boolean {
+  const buf = scriptOutputBuffers.get(bufferKey);
+  if (!buf || buf.length === 0) return false;
+  const text = decodeChunks(buf);
+  return EXIT_SENTINEL.test(text);
+}
+
 export function inferScriptCompletionStatus(
   bufferKey: string,
   scriptName: string,
