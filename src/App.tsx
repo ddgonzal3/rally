@@ -4,7 +4,6 @@ import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { open } from "@tauri-apps/plugin-dialog";
 import { openWindow } from "./lib/windowUtils";
 import { FileExplorer } from "./components/FileExplorer";
-import { GlobalConfigExplorer } from "./components/SettingsPanel";
 import { PaneLayout } from "./components/PaneLayout";
 import { FlightCanvas } from "./components/FlightCanvas";
 import { lastFocusedFlightPodId } from "./components/FlightPod";
@@ -40,6 +39,7 @@ import { UnifiedGitPanel } from "./components/UnifiedGitPanel";
 import { SearchPanel } from "./components/SearchPanel";
 import { ProductChatPanel } from "./components/ProductChatPanel";
 import { TaskManagerPanel } from "./components/TaskManagerPanel";
+import { RallySettingsPanel } from "./components/RallySettingsPanel";
 import { BuildStatusBar } from "./components/BuildStatusBar";
 import { BuildStatusDrawer } from "./components/BuildStatusDrawer";
 import QuickOpen from "./components/QuickOpen";
@@ -569,7 +569,7 @@ export function App() {
     const saved = localStorage.getItem("rally:zoomLevel");
     return saved ? Number(saved) : 1.0;
   });
-  type ExplorerView = "files" | "search" | "claude" | "workspaces" | "tasks";
+  type ExplorerView = "files" | "search" | "rally" | "workspaces" | "tasks";
   const explorerViewPerWorkspaceRef = useRef<Map<string, ExplorerView>>(
     new Map(),
   );
@@ -803,10 +803,21 @@ export function App() {
         .catch((e: unknown) => console.error("Failed to kill orphaned PTYs:", e));
     }
 
+    // Read minimal-mode flag via ref so interval handlers always see the
+    // latest value without tearing down the effect on toggle.
+    const isMinimal = () => useWorkspaceStore.getState().gitMinimalMode;
+
     loadWorkspaces({ keepNullActive: forceNoWorkspaceSelection }).then(
       async () => {
         if (cancelled) return;
-        await Promise.all([runGitRefresh(true), runPrRefresh(true)]);
+        if (isMinimal()) {
+          await Promise.all([
+            useWorkspaceStore.getState().refreshAllBranches(),
+            runPrRefresh(true),
+          ]);
+        } else {
+          await Promise.all([runGitRefresh(true), runPrRefresh(true)]);
+        }
       },
     );
 
@@ -816,22 +827,33 @@ export function App() {
       .workspaces.reduce((n, ws) => n + ws.paths.length, 0);
     const gitMs = pathCount > 6 ? 20000 : 10000;
     const fetchMs = pathCount > 6 ? 120000 : 60000;
+    const branchMs = 30000;
 
+    // Full git status + fetch only run when minimal mode is OFF.
     const gitInterval = setInterval(() => {
+      if (isMinimal()) return;
       void runGitRefresh();
     }, gitMs);
     const prInterval = setInterval(() => {
       void runPrRefresh();
     }, 30000);
     const fetchInterval = setInterval(() => {
+      if (isMinimal()) return;
       void runFetchAll();
     }, fetchMs);
+    // Branch-only poll always runs but only performs work when minimal
+    // mode is ON (full git status already supplies branch otherwise).
+    const branchInterval = setInterval(() => {
+      if (!isMinimal()) return;
+      void useWorkspaceStore.getState().refreshAllBranches();
+    }, branchMs);
 
     return () => {
       cancelled = true;
       clearInterval(gitInterval);
       clearInterval(prInterval);
       clearInterval(fetchInterval);
+      clearInterval(branchInterval);
     };
   }, [
     loadWorkspaces,
@@ -881,6 +903,9 @@ export function App() {
 
     listen<{ rootPath: string }>("git-changes-updated", (event) => {
       if (cancelled) return;
+      // Skip status refresh when minimal mode is on — the full git_status
+      // scan is precisely what we're trying to avoid.
+      if (useWorkspaceStore.getState().gitMinimalMode) return;
       const rootPath = event.payload?.rootPath;
       if (!rootPath) return;
       const existing = refreshTimers.get(rootPath);
@@ -918,14 +943,29 @@ export function App() {
   // Keep git file watcher roots in sync with workspace paths.
   // Must live here (not in FileExplorer) because the explorer can be unmounted
   // when collapsed, which would leave the watcher unregistered.
+  // In minimal git mode the watcher is unregistered entirely — the main cost
+  // of status polling is the per-file-change refresh it triggers.
   const activeWs = workspaces.find((w) => w.id === activeWorkspaceId);
   const activeWsPaths = activeWs?.paths;
+  const gitMinimalMode = useWorkspaceStore((s) => s.gitMinimalMode);
   useEffect(() => {
-    const roots = activeWsPaths ?? [];
+    const roots = gitMinimalMode ? [] : (activeWsPaths ?? []);
     api.updateGitWatchRoots(roots).catch((e) => {
       console.error("Failed to update git watch roots:", e);
     });
-  }, [activeWsPaths]);
+  }, [activeWsPaths, gitMinimalMode]);
+
+  // When minimal mode toggles on, refresh branches immediately so Claude
+  // panels show the right branch without waiting 30s. When it toggles off,
+  // pull a full status snapshot immediately.
+  useEffect(() => {
+    const s = useWorkspaceStore.getState();
+    if (gitMinimalMode) {
+      void s.refreshAllBranches();
+    } else {
+      void s.refreshAllGitStatuses();
+    }
+  }, [gitMinimalMode]);
 
   // Native File menu actions (always handled here so they work even when
   // sidebar/explorer panels are collapsed).
@@ -2044,20 +2084,45 @@ export function App() {
                 ),
               },
               {
-                view: "claude" as const,
-                title: "Claude config",
+                view: "rally" as const,
+                title: "Rally settings",
                 icon: (active: boolean) => (
                   <svg
-                    width="17"
-                    height="17"
-                    viewBox="0 0 24 24"
-                    fill={
-                      active ? "var(--text-primary)" : "var(--text-secondary)"
-                    }
-                    style={{ opacity: active ? 1 : 0.85 }}
+                    width="20"
+                    height="20"
+                    viewBox="0 0 16 16"
+                    fill="none"
                     aria-hidden="true"
                   >
-                    <path d="M4.709 15.955l4.72-2.647.08-.23-.08-.128H9.2l-.79-.048-2.698-.073-2.339-.097-2.266-.122-.571-.121L0 11.784l.055-.352.48-.321.686.06 1.52.103 2.278.158 1.652.097 2.449.255h.389l.055-.157-.134-.098-.103-.097-2.358-1.596-2.552-1.688-1.336-.972-.724-.491-.364-.462-.158-1.008.656-.722.881.06.225.061.893.686 1.908 1.476 2.491 1.833.365.304.145-.103.019-.073-.164-.274-1.355-2.446-1.446-2.49-.644-1.032-.17-.619a2.97 2.97 0 01-.104-.729L6.283.134 6.696 0l.996.134.42.364.62 1.414 1.002 2.229 1.555 3.03.456.898.243.832.091.255h.158V9.01l.128-1.706.237-2.095.23-2.695.08-.76.376-.91.747-.492.584.28.48.685-.067.444-.286 1.851-.559 2.903-.364 1.942h.212l.243-.242.985-1.306 1.652-2.064.73-.82.85-.904.547-.431h1.033l.76 1.129-.34 1.166-1.064 1.347-.881 1.142-1.264 1.7-.79 1.36.073.11.188-.02 2.856-.606 1.543-.28 1.841-.315.833.388.091.395-.328.807-1.969.486-2.309.462-3.439.813-.042.03.049.061 1.549.146.662.036h1.622l3.02.225.79.522.474.638-.079.485-1.215.62-1.64-.389-3.829-.91-1.312-.329h-.182v.11l1.093 1.068 2.006 1.81 2.509 2.33.127.578-.322.455-.34-.049-2.205-1.657-.851-.747-1.926-1.62h-.128v.17l.444.649 2.345 3.521.122 1.08-.17.353-.608.213-.668-.122-1.374-1.925-1.415-2.167-1.143-1.943-.14.08-.674 7.254-.316.37-.729.28-.607-.461-.322-.747.322-1.476.389-1.924.315-1.53.286-1.9.17-.632-.012-.042-.14.018-1.434 1.967-2.18 2.945-1.726 1.845-.414.164-.717-.37.067-.662.401-.589 2.388-3.036 1.44-1.882.93-1.086-.006-.158h-.055L4.132 18.56l-1.13.146-.487-.456.061-.746.231-.243 1.908-1.312-.006.006z" />
+                    <path
+                      d="M2 3L6.5 8L2 13"
+                      stroke={
+                        active ? "var(--text-primary)" : "var(--text-secondary)"
+                      }
+                      strokeWidth="1.5"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      opacity="0.3"
+                    />
+                    <path
+                      d="M4.5 3L9 8L4.5 13"
+                      stroke={
+                        active ? "var(--text-primary)" : "var(--text-secondary)"
+                      }
+                      strokeWidth="1.5"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      opacity="0.6"
+                    />
+                    <path
+                      d="M7 3L11.5 8L7 13"
+                      stroke={
+                        active ? "var(--text-primary)" : "var(--text-secondary)"
+                      }
+                      strokeWidth="1.5"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    />
                   </svg>
                 ),
               },
@@ -2175,7 +2240,7 @@ export function App() {
                 flushLeft
               />
             </div>
-            {explorerView === "claude" && <GlobalConfigExplorer />}
+            {explorerView === "rally" && <RallySettingsPanel />}
             {explorerView === "tasks" && <TaskManagerPanel />}
             <div
               style={{

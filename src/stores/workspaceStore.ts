@@ -395,9 +395,19 @@ interface WorkspaceState {
     toIndex: number,
   ) => Promise<void>;
 
+  /** Global app preference: disable full git status/fetch polling + file
+   * watcher; keep only branch-name polling and PR status. Persisted via
+   * localStorage `rally:gitMinimalMode` so all windows share the setting. */
+  gitMinimalMode: boolean;
+  setGitMinimalMode: (enabled: boolean) => void;
+
   // Git actions (all keyed by repo path)
   refreshGitStatusForPath: (path: string, mainBranch: string) => Promise<void>;
   refreshAllGitStatuses: () => Promise<void>;
+  /** Lightweight branch-only refresh for minimal git mode. Populates
+   * gitStatuses[path].branch without running `git status --porcelain`. */
+  refreshBranchForPath: (path: string) => Promise<void>;
+  refreshAllBranches: () => Promise<void>;
   refreshPrStatusForPath: (path: string) => Promise<void>;
   refreshAllPrStatuses: () => Promise<void>;
   /** Fetch all repos in parallel (silent failures per-path) */
@@ -822,6 +832,23 @@ export const useWorkspaceStore = create<WorkspaceState>()(
   activeFlightPresetId: {},
   statusBarDrawer: null,
   detectedPorts: {},
+  gitMinimalMode:
+    typeof localStorage !== "undefined" &&
+    localStorage.getItem("rally:gitMinimalMode") === "true",
+  setGitMinimalMode: (enabled) => {
+    if (typeof localStorage !== "undefined") {
+      localStorage.setItem("rally:gitMinimalMode", enabled ? "true" : "false");
+    }
+    set({ gitMinimalMode: enabled });
+    // Notify other windows via a storage event — browsers fire this only
+    // on OTHER tabs/windows, so we also fire a same-window custom event so
+    // any listener inside THIS window picks it up immediately.
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(
+        new CustomEvent("rally:git-minimal-mode-changed", { detail: enabled }),
+      );
+    }
+  },
   addDetectedPort: (workspaceId, port) => {
     set((s) => {
       const existing = s.detectedPorts[workspaceId] ?? [];
@@ -1307,6 +1334,39 @@ export const useWorkspaceStore = create<WorkspaceState>()(
     } catch (e) {
       console.error(`Failed to get git status for ${path}:`, e);
     }
+  },
+
+  refreshBranchForPath: async (path) => {
+    try {
+      const branch = await api.gitBranch(path);
+      const prev = get().gitStatuses[path];
+      if (prev && prev.branch === branch) return;
+      const next: GitStatus = prev
+        ? { ...prev, branch }
+        : {
+            branch,
+            dirty: false,
+            ahead: 0,
+            behind: 0,
+            tracking_ahead: 0,
+            tracking_behind: 0,
+            modified_files: [],
+            untracked_files: [],
+          };
+      set((s) => ({ gitStatuses: { ...s.gitStatuses, [path]: next } }));
+    } catch (e) {
+      console.error(`Failed to get git branch for ${path}:`, e);
+    }
+  },
+
+  refreshAllBranches: async () => {
+    const workspaces = get().workspaces;
+    const paths: string[] = [];
+    for (const ws of workspaces) {
+      for (const p of ws.paths) paths.push(p);
+    }
+    if (paths.length === 0) return;
+    await Promise.all(paths.map((p) => get().refreshBranchForPath(p)));
   },
 
   refreshAllGitStatuses: async () => {

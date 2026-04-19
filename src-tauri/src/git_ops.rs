@@ -140,6 +140,15 @@ pub async fn rebase_on_main(cwd: &str, main_branch: &str) -> Result<String, Stri
     }
 }
 
+/// Return the current branch name. Fast — single `git symbolic-ref` call.
+/// Empty string if HEAD is detached.
+pub async fn current_branch(cwd: &str) -> Result<String, String> {
+    match git_cmd(cwd, &["symbolic-ref", "--short", "HEAD"]).await {
+        Ok(s) => Ok(s),
+        Err(_) => Ok(String::new()),
+    }
+}
+
 /// Smart sync: rebase onto main, with hard-reset only when safe.
 /// 1. Rejects if working tree is dirty or already on main
 /// 2. Fetches, checks out main, pulls, checks out branch

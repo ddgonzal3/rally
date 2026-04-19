@@ -51,6 +51,9 @@ export const api = {
   gitStatus: (workspacePath: string, mainBranch: string) =>
     invoke<GitStatus>("git_status", { workspacePath, mainBranch }),
 
+  gitBranch: (workspacePath: string) =>
+    invoke<string>("git_branch", { workspacePath }),
+
   gitPrStatus: (workspacePath: string) =>
     invoke<PrStatus>("git_pr_status", { workspacePath }),
 

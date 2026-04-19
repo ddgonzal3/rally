@@ -374,6 +374,15 @@ pub async fn git_status(workspace_path: String, main_branch: String) -> Result<G
     git_ops::status(&workspace_path, &main_branch).await
 }
 
+/// Lightweight branch-name lookup. Runs only `git symbolic-ref --short HEAD`
+/// so it's viable to call on a poll without the expense of a full status scan.
+/// Used by minimal git mode to keep Claude panels showing the current branch
+/// without running `git status --porcelain` on large repos.
+#[tauri::command]
+pub async fn git_branch(workspace_path: String) -> Result<String, String> {
+    git_ops::current_branch(&workspace_path).await
+}
+
 #[tauri::command]
 pub async fn git_pr_status(workspace_path: String) -> Result<PrStatus, String> {
     git_ops::pr_status(&workspace_path).await

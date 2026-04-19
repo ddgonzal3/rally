@@ -271,6 +271,7 @@ fn main() {
         commands::reorder_workspace_path,
         commands::clone_repo,
         commands::git_status,
+        commands::git_branch,
         commands::git_pr_status,
         commands::git_pr_details,
         commands::git_pr_diff,
