@@ -409,6 +409,11 @@ interface WorkspaceState {
   refreshBranchForPath: (path: string) => Promise<void>;
   refreshAllBranches: () => Promise<void>;
   refreshPrStatusForPath: (path: string) => Promise<void>;
+  /** Resolve `cwd` to the longest-prefix workspace repo path, then refresh
+   * PR status for that root. Use this when the source path might be a
+   * subdirectory (e.g. from terminal OSC7 cwd tracking) — the corner PR
+   * badges read `prStatuses[wsPath]` keyed only by workspace root. */
+  refreshPrStatusForCwd: (cwd: string) => Promise<void>;
   refreshAllPrStatuses: () => Promise<void>;
   /** Fetch all repos in parallel (silent failures per-path) */
   fetchAllRepos: () => Promise<void>;
@@ -1414,6 +1419,23 @@ export const useWorkspaceStore = create<WorkspaceState>()(
         get().refreshPrStatusForPath(path).catch(() => {});
       }
     }
+  },
+
+  refreshPrStatusForCwd: async (cwd) => {
+    if (!cwd) return;
+    const normalized = cwd.replace(/\/+$/, "");
+    const workspaces = get().workspaces;
+    let best: string | null = null;
+    for (const ws of workspaces) {
+      for (const p of ws.paths) {
+        const root = p.replace(/\/+$/, "");
+        if (normalized === root || normalized.startsWith(root + "/")) {
+          if (!best || root.length > best.length) best = root;
+        }
+      }
+    }
+    if (!best) return;
+    await get().refreshPrStatusForPath(best);
   },
 
   refreshPrStatusForPath: async (path) => {

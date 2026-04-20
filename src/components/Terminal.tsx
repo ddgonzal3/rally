@@ -594,41 +594,45 @@ export function Terminal({ cwd, command, initialInput, exitOnComplete, ptyId: ex
           // Defer heavier parsing to a macrotask so it yields to the
           // renderer. queueMicrotask runs before paint — with 6 terminals
           // firing simultaneously, that blocks frames and causes scroll jank.
-          if (onCwdChanged) {
-            setTimeout(() => {
-              const text = outputDecoder.decode(chunk, { stream: true });
-              const combined = osc7TailRef.current + text;
-              osc7TailRef.current = combined.slice(-OSC7_TAIL_MAX);
-              const newCwd = parseLatestOsc7Cwd(combined);
-              if (newCwd && newCwd !== lastCwdRef.current) {
-                lastCwdRef.current = newCwd;
-                onCwdChanged(newCwd);
-              }
-              // Detect GitHub PR URLs in terminal output
-              if (text.includes("github.com") && /\/pull\/\d+/.test(text)) {
-                if (prDetectTimerRef.current) clearTimeout(prDetectTimerRef.current);
-                prDetectTimerRef.current = setTimeout(() => {
-                  prDetectTimerRef.current = null;
-                  useWorkspaceStore.getState().refreshPrStatusForPath(cwd);
-                }, 1500);
-              }
-              // Detect localhost ports in terminal output
-              if (workspaceId && (text.includes("localhost") || text.includes("127.0.0.1") || /\bport\s+\d/i.test(text))) {
-                const ports = detectPorts(text);
-                const curPtyId = ptyIdRef.current;
-                if (ports.length > 0 && curPtyId) {
-                  const store = useWorkspaceStore.getState();
-                  for (const p of ports) {
-                    store.addDetectedPort(workspaceId, {
-                      ...p,
-                      source: { type: "pane", ptyId: curPtyId },
-                      detectedAt: Date.now(),
-                    });
-                  }
+          setTimeout(() => {
+            const text = outputDecoder.decode(chunk, { stream: true });
+            const combined = osc7TailRef.current + text;
+            osc7TailRef.current = combined.slice(-OSC7_TAIL_MAX);
+            const newCwd = parseLatestOsc7Cwd(combined);
+            if (newCwd && newCwd !== lastCwdRef.current) {
+              lastCwdRef.current = newCwd;
+              onCwdChanged?.(newCwd);
+            }
+            // Detect GitHub PR URLs or `gh pr create` in terminal output.
+            // Match against `combined` (tail + current chunk) so URLs split
+            // across PTY chunks aren't missed.
+            if (
+              /https?:\/\/github\.com\/[^\s/]+\/[^\s/]+\/pull\/\d+/.test(combined) ||
+              /\bgh\s+pr\s+create\b/.test(combined)
+            ) {
+              if (prDetectTimerRef.current) clearTimeout(prDetectTimerRef.current);
+              prDetectTimerRef.current = setTimeout(() => {
+                prDetectTimerRef.current = null;
+                const targetCwd = lastCwdRef.current || cwd;
+                useWorkspaceStore.getState().refreshPrStatusForCwd(targetCwd);
+              }, 1500);
+            }
+            // Detect localhost ports in terminal output
+            if (workspaceId && (text.includes("localhost") || text.includes("127.0.0.1") || /\bport\s+\d/i.test(text))) {
+              const ports = detectPorts(text);
+              const curPtyId = ptyIdRef.current;
+              if (ports.length > 0 && curPtyId) {
+                const store = useWorkspaceStore.getState();
+                for (const p of ports) {
+                  store.addDetectedPort(workspaceId, {
+                    ...p,
+                    source: { type: "pane", ptyId: curPtyId },
+                    detectedAt: Date.now(),
+                  });
                 }
               }
-            });
-          }
+            }
+          });
         }
       );
       if (unmounted) { unlistenOutput(); return; }
