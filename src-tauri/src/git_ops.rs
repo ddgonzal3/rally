@@ -1045,8 +1045,26 @@ pub async fn list_branches(cwd: &str) -> Result<Vec<BranchInfo>, String> {
 }
 
 /// Checkout an existing branch.
+///
+/// Tolerates post-checkout hook failures (e.g. git-lfs not on PATH) as
+/// long as the branch actually switched. Git runs the branch change
+/// before invoking hooks, so a non-zero exit from a broken hook doesn't
+/// imply the checkout failed — we verify HEAD to be sure.
 pub async fn checkout_branch(cwd: &str, branch: &str) -> Result<String, String> {
-    git_cmd(cwd, &["checkout", branch]).await
+    match git_cmd(cwd, &["checkout", branch]).await {
+        Ok(out) => Ok(out),
+        Err(err) => {
+            if let Ok(head) = git_cmd(cwd, &["symbolic-ref", "--short", "HEAD"]).await {
+                if head == branch {
+                    return Ok(format!(
+                        "Switched to '{}'. Post-checkout hook reported a warning: {}",
+                        branch, err
+                    ));
+                }
+            }
+            Err(err)
+        }
+    }
 }
 
 /// Create and checkout a new branch.
