@@ -230,7 +230,7 @@ export function TaskManagerPanel() {
               <div style={styles.sectionLabel}>PTY processes</div>
               <div style={styles.statGrid}>
                 <Stat label="Total" value={String(inventory.ptys.length)} />
-                <Stat label="Orphaned" value={String(orphans.length)} />
+                <Stat label="Idle" value={String(orphans.length)} />
                 <Stat label="Tracked" value={String(visible.length)} />
                 <Stat label="Total RSS" value={formatBytes(totalRss)} />
               </div>
@@ -248,17 +248,17 @@ export function TaskManagerPanel() {
                 onClick={() => setConfirmOpen(true)}
                 title={
                   orphans.length === 0
-                    ? "No orphaned PTYs"
-                    : `Kill ${orphans.length} orphaned PTYs`
+                    ? "No idle shells"
+                    : `Release ${orphans.length} idle shell${orphans.length === 1 ? "" : "s"}`
                 }
               >
-                Kill orphans ({orphans.length})
+                Release idle shells ({orphans.length})
               </button>
             </div>
 
             {orphans.length > 0 && (
               <PtySection
-                label="Orphaned (unreferenced)"
+                label="Idle (no pane attached)"
                 entries={orphans}
                 onKill={killOne}
                 emphasize
@@ -357,7 +357,7 @@ function PtyRow({
       <button
         className="sidebar-btn"
         style={styles.rowKill}
-        title="Kill PTY"
+        title="Release shell"
         onClick={() => onKill(entry.id)}
       >
         <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
@@ -387,10 +387,10 @@ function ConfirmPopover({
   return (
     <div style={styles.popoverHost} onMouseDown={onCancel}>
       <div style={styles.popover} onMouseDown={(e) => e.stopPropagation()}>
-        <div style={styles.popoverTitle}>Kill {count} orphaned PTY{count === 1 ? "" : "s"}?</div>
+        <div style={styles.popoverTitle}>Release {count} idle shell{count === 1 ? "" : "s"}?</div>
         <div style={styles.popoverBody}>
-          These shells aren't tied to any visible pane or tab. Killing them
-          frees memory and reaps their child processes.
+          These shells aren't tied to any visible pane or tab. Releasing
+          them frees memory and tidies up their child processes.
         </div>
         <div style={styles.popoverActions}>
           <button
@@ -407,7 +407,7 @@ function ConfirmPopover({
             onClick={onConfirm}
             disabled={busy}
           >
-            {busy ? "Killing…" : "Kill orphans"}
+            {busy ? "Releasing…" : "Release shells"}
           </button>
         </div>
       </div>
