@@ -637,6 +637,8 @@ export function App() {
   const preferredExplorerWidthRef = useRef(fileExplorerWidth);
 
   const [showAddWorkspaceModal, setShowAddWorkspaceModal] = useState(false);
+  const [prRefreshing, setPrRefreshing] = useState(false);
+  const prRefreshingRef = useRef(false);
 
   // Auto-shrink explorer (and collapse sidebar as last resort) to keep main area usable
   const MIN_MAIN_WIDTH = 600;
@@ -765,7 +767,10 @@ export function App() {
   const runPrRefresh = useCallback(
     async (force = false) => {
       if (prRefreshInFlightRef.current) return;
-      if (!force && shouldDeferBackgroundWork()) return;
+      // PR refresh is lightweight (one `gh pr view` per repo). Don't defer
+      // on user interaction — stale PR state is exactly the bug we're
+      // preventing. Only skip if tab is hidden unless forced.
+      if (!force && document.hidden) return;
       prRefreshInFlightRef.current = true;
       try {
         await refreshAllPrStatuses();
@@ -773,8 +778,20 @@ export function App() {
         prRefreshInFlightRef.current = false;
       }
     },
-    [refreshAllPrStatuses, shouldDeferBackgroundWork],
+    [refreshAllPrStatuses],
   );
+
+  const triggerManualPrRefresh = useCallback(async () => {
+    if (prRefreshingRef.current) return;
+    prRefreshingRef.current = true;
+    setPrRefreshing(true);
+    try {
+      await runPrRefresh(true);
+    } finally {
+      prRefreshingRef.current = false;
+      setPrRefreshing(false);
+    }
+  }, [runPrRefresh]);
 
   const runFetchAll = useCallback(async () => {
     if (fetchInFlightRef.current) return;
@@ -872,6 +889,21 @@ export function App() {
       refreshPrStatusForPath(path).catch(() => {});
     }
   }, [activeWorkspaceId, workspaces, refreshPrStatusForPath]);
+
+  // Force a PR refresh when the window regains focus or the tab becomes
+  // visible again. Covers "came back from browser after creating a PR".
+  useEffect(() => {
+    const onFocus = () => { void runPrRefresh(true); };
+    const onVisible = () => {
+      if (!document.hidden) void runPrRefresh(true);
+    };
+    window.addEventListener("focus", onFocus);
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      window.removeEventListener("focus", onFocus);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
+  }, [runPrRefresh]);
 
   // Load RALLY.json config when active workspace changes — sets mode from config
   useEffect(() => {
@@ -1099,6 +1131,7 @@ export function App() {
 
     let unlistenFlightMode: UnlistenFn | undefined;
     let unlistenDevMode: UnlistenFn | undefined;
+    let unlistenRefreshPrs: UnlistenFn | undefined;
     listen("rally-menu-flight-mode", () => {
       const s = useWorkspaceStore.getState();
       const wsId = s.activeWorkspaceId;
@@ -1117,6 +1150,15 @@ export function App() {
       .then((fn) => {
         if (cancelled) fn();
         else unlistenDevMode = fn;
+      })
+      .catch(() => {});
+
+    listen("rally-menu-refresh-prs", () => {
+      void triggerManualPrRefresh();
+    })
+      .then((fn) => {
+        if (cancelled) fn();
+        else unlistenRefreshPrs = fn;
       })
       .catch(() => {});
 
@@ -1141,9 +1183,10 @@ export function App() {
       unlistenOpenCurrentInNewWindow?.();
       unlistenFlightMode?.();
       unlistenDevMode?.();
+      unlistenRefreshPrs?.();
       unlistenWorkspacesUpdated?.();
     };
-  }, [loadWorkspaces, forceNoWorkspaceSelection]);
+  }, [loadWorkspaces, forceNoWorkspaceSelection, triggerManualPrRefresh]);
 
   // CLI: open files sent from `rally <file>` command
   useEffect(() => {
@@ -1890,8 +1933,36 @@ export function App() {
         <div style={{ flex: 1, minWidth: 0, display: "flex", justifyContent: "center" }}>
           <span style={styles.titleText}>{activeWorkspaceName}</span>
         </div>
-        {activePrs.length > 0 ? (
-          <div style={styles.titlebarRight}>
+        <div style={styles.titlebarRight}>
+          <button
+            className="activity-btn"
+            style={styles.prRefreshBtn}
+            disabled={prRefreshing}
+            onClick={() => { void triggerManualPrRefresh(); }}
+            title="Refresh PR status (⇧⌘R)"
+          >
+            <svg
+              width="12"
+              height="12"
+              viewBox="0 0 12 12"
+              fill="none"
+              aria-hidden="true"
+              style={{
+                animation: prRefreshing ? "spin 0.9s linear infinite" : undefined,
+              }}
+            >
+              <path
+                d="M10 6A4 4 0 1 1 8.5 3M10 2v2.5H7.5"
+                stroke="#ddd"
+                strokeWidth="1.1"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                fill="none"
+              />
+            </svg>
+          </button>
+          {activePrs.length > 0 && (
+            <>
             {activePrs.map(({ path, repoName, pr }) => (
               <div key={path} style={{ display: "flex", alignItems: "center", gap: 2 }}>
               {/* GitHub icon — opens PR on GitHub */}
@@ -1978,10 +2049,9 @@ export function App() {
               </button>
               </div>
             ))}
-          </div>
-        ) : (
-          <div style={{ width: 70 }} />
-        )}
+            </>
+          )}
+        </div>
       </div>
       <div style={{ ...styles.body, zoom: zoomLevel }}>
         <div style={styles.activityBar}>
@@ -2489,6 +2559,17 @@ const styles: Record<string, React.CSSProperties> = {
     lineHeight: 1,
     maxWidth: 200,
     overflow: "hidden",
+  },
+  prRefreshBtn: {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    background: "none",
+    border: "none",
+    cursor: "pointer",
+    padding: 4,
+    borderRadius: 4,
+    color: "var(--text-secondary)",
   },
   body: {
     flex: 1,

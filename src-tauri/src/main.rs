@@ -427,6 +427,9 @@ fn main() {
                     "view-zoom-reset" => {
                         emit_to_focused_window(app, "rally-zoom-reset");
                     }
+                    "view-refresh-prs" => {
+                        emit_to_focused_window(app, "rally-menu-refresh-prs");
+                    }
                     _ => {}
                 }
             }
@@ -574,6 +577,12 @@ fn main() {
                 .item(
                     &MenuItemBuilder::with_id("view-dev-mode", "Dev Mode")
                         .accelerator("CmdOrCtrl+Shift+D")
+                        .build(app)?,
+                )
+                .separator()
+                .item(
+                    &MenuItemBuilder::with_id("view-refresh-prs", "Refresh PR Status")
+                        .accelerator("CmdOrCtrl+Shift+R")
                         .build(app)?,
                 )
                 .separator()
