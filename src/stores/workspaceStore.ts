@@ -343,6 +343,10 @@ interface WorkspaceState {
   theme: ThemeName;
   setTheme: (theme: ThemeName) => void;
 
+  /** Auto-release idle shells every 10 minutes. Persisted to localStorage. */
+  autoReleaseIdleShells: boolean;
+  setAutoReleaseIdleShells: (enabled: boolean) => void;
+
   // Flight Mode state
   flightLayouts: Record<string, FlightLayout>;
   flightNextZIndex: Record<string, number>;
@@ -912,6 +916,13 @@ export const useWorkspaceStore = create<WorkspaceState>()(
     void document.body.offsetHeight;
     document.body.style.display = '';
     set({ theme });
+  },
+
+  autoReleaseIdleShells:
+    localStorage.getItem('rally:autoReleaseIdleShells') !== 'false',
+  setAutoReleaseIdleShells: (enabled) => {
+    localStorage.setItem('rally:autoReleaseIdleShells', enabled ? 'true' : 'false');
+    set({ autoReleaseIdleShells: enabled });
   },
 
   toggleBottomPanel: (workspaceId) => {

@@ -1,80 +1,13 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../lib/tauri";
 import { useWorkspaceStore } from "../stores/workspaceStore";
+import { collectReferencedPtyIds } from "../lib/orphanPtys";
 import type {
-  FlightPod,
-  LayoutNode,
   ProcessInventory,
   PtyInventoryEntry,
 } from "../lib/types";
 
 const POLL_INTERVAL_MS = 2000;
-
-type StoreSnapshot = ReturnType<typeof useWorkspaceStore.getState>;
-
-/** Walk a layout tree and collect all PTY IDs from its pane groups. */
-function collectPtyIdsFromLayout(
-  layoutKey: string,
-  state: StoreSnapshot,
-  ids: Set<string>,
-) {
-  const layout = state.layouts[layoutKey];
-  if (!layout?.root) return;
-  const walk = (node: LayoutNode) => {
-    if (node.type === "group") {
-      const group = layout.groups[(node as { groupId: string }).groupId];
-      if (group) {
-        for (const pane of group.panes) {
-          if (pane.ptyId) ids.add(pane.ptyId);
-        }
-      }
-    } else if (node.type === "split" && node.children) {
-      for (const child of node.children) walk(child);
-    }
-  };
-  walk(layout.root);
-}
-
-/** Collect every PTY ID currently referenced anywhere in app state. */
-function collectReferencedPtyIds(state: StoreSnapshot): Set<string> {
-  const ids = new Set<string>();
-
-  // Dev-mode layouts (one per workspace)
-  for (const ws of state.workspaces) {
-    collectPtyIdsFromLayout(ws.id, state, ids);
-  }
-
-  // Flight pods + their layouts and shell tabs
-  for (const flightLayout of Object.values(state.flightLayouts)) {
-    if (!flightLayout?.pods) continue;
-    for (const pod of flightLayout.pods as FlightPod[]) {
-      collectPtyIdsFromLayout(`flight:${pod.id}`, state, ids);
-      const anyPod = pod as FlightPod & {
-        ptyId?: string;
-        shellPtyId?: string;
-      };
-      if (anyPod.ptyId) ids.add(anyPod.ptyId);
-      if (anyPod.shellPtyId) ids.add(anyPod.shellPtyId);
-      if (pod.shellTabs) {
-        for (const tab of pod.shellTabs) {
-          if (tab.ptyId) ids.add(tab.ptyId);
-        }
-      }
-    }
-  }
-
-  // Script runs
-  for (const run of Object.values(state.scriptRuns)) {
-    if (run.ptyId) ids.add(run.ptyId);
-  }
-
-  // Shell panels (floating shell per workspace)
-  for (const panel of Object.values(state.shellPanels)) {
-    if (panel?.ptyId) ids.add(panel.ptyId);
-  }
-
-  return ids;
-}
 
 function basename(path: string): string {
   const trimmed = path.replace(/\/+$/, "");
@@ -113,6 +46,8 @@ export function TaskManagerPanel() {
   const flightLayouts = useWorkspaceStore((s) => s.flightLayouts);
   const scriptRuns = useWorkspaceStore((s) => s.scriptRuns);
   const shellPanels = useWorkspaceStore((s) => s.shellPanels);
+  const autoReleaseEnabled = useWorkspaceStore((s) => s.autoReleaseIdleShells);
+  const setAutoReleaseEnabled = useWorkspaceStore((s) => s.setAutoReleaseIdleShells);
 
   const referencedPtyIds = useMemo(() => {
     return collectReferencedPtyIds({
@@ -121,7 +56,7 @@ export function TaskManagerPanel() {
       flightLayouts,
       scriptRuns,
       shellPanels,
-    } as StoreSnapshot);
+    });
   }, [workspaces, layouts, flightLayouts, scriptRuns, shellPanels]);
 
   const refresh = useCallback(async () => {
@@ -255,6 +190,16 @@ export function TaskManagerPanel() {
                 Release idle shells ({orphans.length})
               </button>
             </div>
+
+            <label style={styles.autoRow} title="Automatically release idle shells every 10 minutes">
+              <input
+                type="checkbox"
+                checked={autoReleaseEnabled}
+                onChange={(e) => setAutoReleaseEnabled(e.target.checked)}
+                style={styles.autoCheckbox}
+              />
+              <span style={styles.autoLabel}>Auto-release idle shells every 10 min</span>
+            </label>
 
             {orphans.length > 0 && (
               <PtySection
@@ -508,6 +453,22 @@ const styles: Record<string, React.CSSProperties> = {
   },
   actionRow: {
     padding: "0 12px 8px",
+  },
+  autoRow: {
+    display: "flex",
+    alignItems: "center",
+    gap: 8,
+    padding: "0 12px 10px",
+    cursor: "pointer",
+    userSelect: "none" as const,
+  },
+  autoCheckbox: {
+    cursor: "pointer",
+    margin: 0,
+  },
+  autoLabel: {
+    fontSize: 11,
+    color: "var(--text-secondary)",
   },
   killBtn: {
     width: "100%",

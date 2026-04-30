@@ -10,6 +10,7 @@ import { lastFocusedFlightPodId } from "./components/FlightPod";
 import { useWorkspaceStore } from "./stores/workspaceStore";
 import { api, openUrl } from "./lib/tauri";
 import { showContextMenu } from "./lib/contextMenu";
+import { collectReferencedPtyIds, AUTO_RELEASE_MIN_AGE_S } from "./lib/orphanPtys";
 import { AddWorkspaceModal } from "./components/AddWorkspaceModal";
 import {
   DEFAULT_BOTTOM_RATIO,
@@ -511,6 +512,7 @@ export function App() {
     (s) => s.refreshGitStatusForPath,
   );
   const refreshAllPrStatuses = useWorkspaceStore((s) => s.refreshAllPrStatuses);
+  const autoReleaseIdleShells = useWorkspaceStore((s) => s.autoReleaseIdleShells);
   const refreshPrStatusForPath = useWorkspaceStore(
     (s) => s.refreshPrStatusForPath,
   );
@@ -889,6 +891,43 @@ export function App() {
       refreshPrStatusForPath(path).catch(() => {});
     }
   }, [activeWorkspaceId, workspaces, refreshPrStatusForPath]);
+
+  // Auto-release idle shells every 10 minutes when enabled.
+  // Same logic the Process Manager panel uses, but runs in the background
+  // so the panel doesn't have to be open. Skips PTYs younger than
+  // AUTO_RELEASE_MIN_AGE_S so we don't kill shells mid-spawn.
+  useEffect(() => {
+    if (!autoReleaseIdleShells) return;
+    let cancelled = false;
+
+    const sweep = async () => {
+      try {
+        const inv = await api.getProcessInventory();
+        if (cancelled) return;
+        const s = useWorkspaceStore.getState();
+        const referenced = collectReferencedPtyIds({
+          workspaces: s.workspaces,
+          layouts: s.layouts,
+          flightLayouts: s.flightLayouts,
+          scriptRuns: s.scriptRuns,
+          shellPanels: s.shellPanels,
+        });
+        const ids = inv.ptys
+          .filter((p) => !referenced.has(p.id) && p.uptime_s >= AUTO_RELEASE_MIN_AGE_S)
+          .map((p) => p.id);
+        if (ids.length === 0) return;
+        await api.killPtys(ids);
+      } catch (err) {
+        console.warn("[rally] auto-release sweep failed:", err);
+      }
+    };
+
+    const id = setInterval(() => { void sweep(); }, 10 * 60 * 1000);
+    return () => {
+      cancelled = true;
+      clearInterval(id);
+    };
+  }, [autoReleaseIdleShells]);
 
   // Force a PR refresh when the window regains focus or the tab becomes
   // visible again. Covers "came back from browser after creating a PR".
