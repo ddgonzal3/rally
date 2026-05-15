@@ -896,9 +896,17 @@ export function App() {
   // Same logic the Process Manager panel uses, but runs in the background
   // so the panel doesn't have to be open. Skips PTYs younger than
   // AUTO_RELEASE_MIN_AGE_S so we don't kill shells mid-spawn.
+  //
+  // Window-scoped: only sweeps PTYs spawned by THIS window. The Zustand
+  // store is per-window, so we can't see references from other Rally
+  // windows — without the scope check we'd treat their PTYs as orphans
+  // and kill live Claude sessions in those windows.
   useEffect(() => {
     if (!autoReleaseIdleShells) return;
     let cancelled = false;
+    const myWindowLabel = (() => {
+      try { return getCurrentWindow().label; } catch { return null; }
+    })();
 
     const sweep = async () => {
       try {
@@ -913,7 +921,15 @@ export function App() {
           shellPanels: s.shellPanels,
         });
         const ids = inv.ptys
-          .filter((p) => !referenced.has(p.id) && p.uptime_s >= AUTO_RELEASE_MIN_AGE_S)
+          .filter((p) =>
+            // Only sweep PTYs owned by this window. PTYs with an unknown
+            // owner (pre-fix backend, or future spawn without label) are
+            // skipped to avoid stomping on another window's session.
+            p.window_label != null &&
+            p.window_label === myWindowLabel &&
+            !referenced.has(p.id) &&
+            p.uptime_s >= AUTO_RELEASE_MIN_AGE_S
+          )
           .map((p) => p.id);
         if (ids.length === 0) return;
         await api.killPtys(ids);

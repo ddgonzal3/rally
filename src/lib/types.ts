@@ -174,6 +174,7 @@ export interface PtyInventoryEntry {
   descendant_count: number;
   foreground: string | null;
   uptime_s: number;
+  window_label: string | null;
 }
 
 export interface AppStats {

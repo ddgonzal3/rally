@@ -45,6 +45,7 @@ pub struct PtyInventoryEntry {
     pub descendant_count: u32,
     pub foreground: Option<String>,
     pub uptime_s: u64,
+    pub window_label: Option<String>,
 }
 
 #[derive(Serialize, Clone)]
@@ -77,6 +78,11 @@ struct PtySession {
     command: Option<String>,
     shell_pid: Option<u32>,
     spawned_at: Instant,
+    /// Tauri webview window label that spawned this PTY. Used by the
+    /// idle-shell sweeper to avoid killing PTYs owned by other windows
+    /// (which have their own Zustand store and references the sweeper
+    /// in *this* window cannot see).
+    window_label: Option<String>,
 }
 
 pub struct PtyManager {
@@ -182,6 +188,7 @@ impl PtyManager {
         cols: u16,
         rows: u16,
         exit_on_complete: bool,
+        window_label: Option<String>,
     ) -> Result<String, String> {
         let pty_system = native_pty_system();
         let pair = pty_system
@@ -453,6 +460,7 @@ impl PtyManager {
                 command,
                 shell_pid,
                 spawned_at: Instant::now(),
+                window_label,
             },
         );
 
@@ -621,6 +629,7 @@ impl PtyManager {
                     descendant_count,
                     foreground,
                     uptime_s: session.spawned_at.elapsed().as_secs(),
+                    window_label: session.window_label.clone(),
                 }
             })
             .collect();
@@ -739,9 +748,18 @@ pub fn spawn_pty(
     cols: u16,
     rows: u16,
     exit_on_complete: Option<bool>,
+    window_label: Option<String>,
 ) -> Result<String, String> {
     let mut manager = state.lock().map_err(|e| e.to_string())?;
-    manager.spawn(app_handle, cwd, command, cols, rows, exit_on_complete.unwrap_or(false))
+    manager.spawn(
+        app_handle,
+        cwd,
+        command,
+        cols,
+        rows,
+        exit_on_complete.unwrap_or(false),
+        window_label,
+    )
 }
 
 #[tauri::command]

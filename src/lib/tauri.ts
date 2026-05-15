@@ -1,5 +1,22 @@
 import { invoke } from "@tauri-apps/api/core";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import type { Workspace, GitStatus, PrStatus, PrDetails, PushResult, ChangesSummary, CommitEntry, ScriptEntry, SearchMatch, ReplaceOp, ReplaceResult, PtyInfo, ProcessInventory, RallyConfig, WorkspaceReadiness, BranchInfo } from "./types";
+
+/**
+ * Current Tauri webview window label. PTYs are tagged with this on spawn
+ * so the idle-shell sweeper only kills PTYs owned by this window.
+ */
+function currentWindowLabel(): string | null {
+  try {
+    return getCurrentWindow().label;
+  } catch {
+    return null;
+  }
+}
+
+export function getWindowLabel(): string | null {
+  return currentWindowLabel();
+}
 
 /** Open a URL in the user's default browser via Tauri shell plugin. */
 export function openUrl(url: string) {
@@ -194,7 +211,14 @@ export const api = {
 
   // PTY operations
   spawnPty: (cwd: string, command: string | null, cols: number, rows: number, exitOnComplete?: boolean) =>
-    invoke<string>("spawn_pty", { cwd, command, cols, rows, exitOnComplete }),
+    invoke<string>("spawn_pty", {
+      cwd,
+      command,
+      cols,
+      rows,
+      exitOnComplete,
+      windowLabel: currentWindowLabel(),
+    }),
 
   writePty: (ptyId: string, data: number[]) =>
     invoke<void>("write_pty", { ptyId, data }),

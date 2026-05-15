@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import { api } from "../lib/tauri";
 import { useWorkspaceStore } from "../stores/workspaceStore";
 import { collectReferencedPtyIds } from "../lib/orphanPtys";
@@ -6,6 +7,16 @@ import type {
   ProcessInventory,
   PtyInventoryEntry,
 } from "../lib/types";
+
+/**
+ * The Process Manager scopes to the current window's PTYs. The Zustand
+ * store can only see references from this window, so listing/killing
+ * PTYs from other Rally windows would risk releasing live sessions
+ * those windows still own.
+ */
+function currentWindowLabel(): string | null {
+  try { return getCurrentWindow().label; } catch { return null; }
+}
 
 const POLL_INTERVAL_MS = 2000;
 
@@ -83,8 +94,13 @@ export function TaskManagerPanel() {
     };
   }, [refresh]);
 
+  const myWindowLabel = useMemo(() => currentWindowLabel(), []);
+
+  // Only show PTYs owned by THIS window. Multi-window Rally setups would
+  // otherwise let one window release another window's live Claude sessions.
   const { orphans, visible, totalRss } = useMemo(() => {
-    const ptys = inventory?.ptys ?? [];
+    const all = inventory?.ptys ?? [];
+    const ptys = all.filter((p) => p.window_label === myWindowLabel);
     const orphans: PtyInventoryEntry[] = [];
     const visible: PtyInventoryEntry[] = [];
     let totalRss = 0;
@@ -94,7 +110,7 @@ export function TaskManagerPanel() {
       else visible.push(p);
     }
     return { orphans, visible, totalRss };
-  }, [inventory, referencedPtyIds]);
+  }, [inventory, referencedPtyIds, myWindowLabel]);
 
   const killOne = useCallback(
     async (ptyId: string) => {
@@ -164,7 +180,7 @@ export function TaskManagerPanel() {
             <section style={styles.section}>
               <div style={styles.sectionLabel}>PTY processes</div>
               <div style={styles.statGrid}>
-                <Stat label="Total" value={String(inventory.ptys.length)} />
+                <Stat label="Total" value={String(orphans.length + visible.length)} />
                 <Stat label="Idle" value={String(orphans.length)} />
                 <Stat label="Tracked" value={String(visible.length)} />
                 <Stat label="Total RSS" value={formatBytes(totalRss)} />
