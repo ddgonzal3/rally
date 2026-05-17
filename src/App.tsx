@@ -41,6 +41,7 @@ import { SearchPanel } from "./components/SearchPanel";
 import { ProductChatPanel } from "./components/ProductChatPanel";
 import { TaskManagerPanel } from "./components/TaskManagerPanel";
 import { RallySettingsPanel } from "./components/RallySettingsPanel";
+import { ParkedThreadsPanel } from "./components/ParkedThreadsPanel";
 import { BuildStatusBar } from "./components/BuildStatusBar";
 import { BuildStatusDrawer } from "./components/BuildStatusDrawer";
 import QuickOpen from "./components/QuickOpen";
@@ -571,7 +572,7 @@ export function App() {
     const saved = localStorage.getItem("rally:zoomLevel");
     return saved ? Number(saved) : 1.0;
   });
-  type ExplorerView = "files" | "search" | "rally" | "workspaces" | "tasks";
+  type ExplorerView = "files" | "search" | "rally" | "workspaces" | "tasks" | "threads";
   const explorerViewPerWorkspaceRef = useRef<Map<string, ExplorerView>>(
     new Map(),
   );
@@ -2181,6 +2182,53 @@ export function App() {
                 ),
               },
               {
+                view: "threads" as const,
+                title: "Parked threads",
+                icon: (active: boolean) => (
+                  <svg
+                    width="18"
+                    height="18"
+                    viewBox="0 0 16 16"
+                    fill="none"
+                    aria-hidden="true"
+                  >
+                    <rect
+                      x="2"
+                      y="3"
+                      width="12"
+                      height="2"
+                      rx="0.6"
+                      stroke={
+                        active ? "var(--text-primary)" : "var(--text-secondary)"
+                      }
+                      strokeWidth="1.0"
+                    />
+                    <rect
+                      x="2"
+                      y="7"
+                      width="12"
+                      height="2"
+                      rx="0.6"
+                      stroke={
+                        active ? "var(--text-primary)" : "var(--text-secondary)"
+                      }
+                      strokeWidth="1.0"
+                    />
+                    <rect
+                      x="2"
+                      y="11"
+                      width="12"
+                      height="2"
+                      rx="0.6"
+                      stroke={
+                        active ? "var(--text-primary)" : "var(--text-secondary)"
+                      }
+                      strokeWidth="1.0"
+                    />
+                  </svg>
+                ),
+              },
+              {
                 view: "search" as const,
                 title: "Search",
                 icon: (active: boolean) => (
@@ -2367,6 +2415,7 @@ export function App() {
             </div>
             {explorerView === "rally" && <RallySettingsPanel />}
             {explorerView === "tasks" && <TaskManagerPanel />}
+            {explorerView === "threads" && <ParkedThreadsPanel />}
             <div
               style={{
                 display: explorerView === "files" ? undefined : "none",

@@ -1,6 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import type { Workspace, GitStatus, PrStatus, PrDetails, PushResult, ChangesSummary, CommitEntry, ScriptEntry, SearchMatch, ReplaceOp, ReplaceResult, PtyInfo, ProcessInventory, RallyConfig, WorkspaceReadiness, BranchInfo } from "./types";
+import type { Workspace, GitStatus, PrStatus, PrDetails, PushResult, ChangesSummary, CommitEntry, ScriptEntry, SearchMatch, ReplaceOp, ReplaceResult, PtyInfo, ProcessInventory, RallyConfig, WorkspaceReadiness, BranchInfo, ParkedThread } from "./types";
 
 /**
  * Current Tauri webview window label. PTYs are tagged with this on spawn
@@ -276,5 +276,10 @@ export const api = {
   // Workspace readiness
   checkWorkspaceReady: (rootPath: string) =>
     invoke<WorkspaceReadiness>("check_workspace_ready", { rootPath }),
+
+  // Parked threads (rally-park skill writes via cli_server, frontend reads here)
+  listParkedThreads: () => invoke<ParkedThread[]>("list_parked_threads"),
+  removeParkedThread: (id: string) =>
+    invoke<void>("remove_parked_thread", { id }),
 
 };

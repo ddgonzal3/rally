@@ -583,6 +583,18 @@ export interface FlightLayoutPreset {
   layout: FlightLayout;
 }
 
+export interface ParkedThread {
+  id: string;
+  repo: string;
+  branch: string;
+  session_id: string | null;
+  summary: string;
+  parked_at: number;
+  /** Origin URL captured at park time. May be empty for records parked
+   *  before v3 of the rally-park skill. */
+  origin_url: string;
+}
+
 // Flight Mode constants
 // Default pod size fills most of the viewport — Focus Mode clamps to exact fit
 export const FLIGHT_DEFAULT_CLAUDE_WIDTH = 900;
