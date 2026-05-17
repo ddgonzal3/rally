@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::PathBuf;
-use std::sync::Mutex;
+use std::sync::{Mutex, MutexGuard, PoisonError};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 const PARKED_FILE: &str = "parked.json";
@@ -21,17 +21,21 @@ pub struct ParkedThread {
     pub origin_url: String,
 }
 
-fn rally_dir() -> Option<PathBuf> {
-    let home = std::env::var("HOME").ok()?;
+fn rally_dir() -> Result<PathBuf, String> {
+    let home = std::env::var("HOME").map_err(|e| format!("HOME not set: {}", e))?;
     let dir = PathBuf::from(home).join(".rally");
-    fs::create_dir_all(&dir).ok()?;
-    Some(dir)
+    fs::create_dir_all(&dir).map_err(|e| format!("create {}: {}", dir.display(), e))?;
+    Ok(dir)
 }
 
-fn parked_path() -> PathBuf {
-    rally_dir()
-        .unwrap_or_else(|| PathBuf::from("."))
-        .join(PARKED_FILE)
+fn parked_path() -> Result<PathBuf, String> {
+    Ok(rally_dir()?.join(PARKED_FILE))
+}
+
+/// Recover from poisoned-mutex state instead of silently bailing.
+/// PoisonError still hands back the inner guard; we use the data and move on.
+fn lock_store() -> MutexGuard<'static, ()> {
+    STORE_LOCK.lock().unwrap_or_else(PoisonError::into_inner)
 }
 
 fn now_secs() -> u64 {
@@ -44,8 +48,10 @@ fn now_secs() -> u64 {
 static STORE_LOCK: Mutex<()> = Mutex::new(());
 
 pub fn load_all() -> Vec<ParkedThread> {
-    let _guard = STORE_LOCK.lock().ok();
-    let path = parked_path();
+    let _guard = lock_store();
+    let Ok(path) = parked_path() else {
+        return vec![];
+    };
     if !path.exists() {
         return vec![];
     }
@@ -53,17 +59,11 @@ pub fn load_all() -> Vec<ParkedThread> {
     serde_json::from_str(&data).unwrap_or_default()
 }
 
-fn save_all(threads: &[ParkedThread]) -> Result<(), String> {
-    let path = parked_path();
-    let data = serde_json::to_string_pretty(threads).map_err(|e| e.to_string())?;
-    fs::write(&path, data).map_err(|e| e.to_string())
-}
-
 /// Append a new parked thread. Generates id + parked_at if missing.
 /// Replaces any existing entry for the same (repo, branch) pair.
 pub fn append(input: ParkInput) -> Result<ParkedThread, String> {
-    let _guard = STORE_LOCK.lock().map_err(|e| e.to_string())?;
-    let path = parked_path();
+    let _guard = lock_store();
+    let path = parked_path()?;
     let mut threads: Vec<ParkedThread> = if path.exists() {
         let data = fs::read_to_string(&path).unwrap_or_default();
         serde_json::from_str(&data).unwrap_or_default()
@@ -92,8 +92,8 @@ pub fn append(input: ParkInput) -> Result<ParkedThread, String> {
 }
 
 pub fn remove(id: &str) -> Result<(), String> {
-    let _guard = STORE_LOCK.lock().map_err(|e| e.to_string())?;
-    let path = parked_path();
+    let _guard = lock_store();
+    let path = parked_path()?;
     if !path.exists() {
         return Ok(());
     }
@@ -122,9 +122,4 @@ pub fn list_parked_threads() -> Vec<ParkedThread> {
 #[tauri::command]
 pub fn remove_parked_thread(id: String) -> Result<(), String> {
     remove(&id)
-}
-
-#[allow(dead_code)]
-fn _save_all_pub(threads: &[ParkedThread]) -> Result<(), String> {
-    save_all(threads)
 }

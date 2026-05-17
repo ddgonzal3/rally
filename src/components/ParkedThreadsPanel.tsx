@@ -23,7 +23,16 @@ export function ParkedThreadsPanel() {
   const [loading, setLoading] = useState(true);
   const [hoveredId, setHoveredId] = useState<string | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [copyFailedId, setCopyFailedId] = useState<string | null>(null);
+  const [home, setHome] = useState<string | null>(null);
   const copyClearRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const failClearRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    api.getHomeDir().then(setHome).catch((e) => {
+      console.error("[parked] getHomeDir failed", e);
+    });
+  }, []);
 
   const refresh = useCallback(async () => {
     try {
@@ -59,21 +68,28 @@ export function ParkedThreadsPanel() {
     [refresh],
   );
 
-  const handleCopy = useCallback(async (thread: ParkedThread) => {
-    try {
-      const prompt = buildResumePrompt(thread);
-      await navigator.clipboard.writeText(prompt);
-      setCopiedId(thread.id);
-      if (copyClearRef.current) clearTimeout(copyClearRef.current);
-      copyClearRef.current = setTimeout(() => setCopiedId(null), 1200);
-    } catch (e) {
-      console.error("[parked] clipboard write failed", e);
-    }
-  }, []);
+  const handleCopy = useCallback(
+    async (thread: ParkedThread) => {
+      try {
+        const prompt = buildResumePrompt(thread, home);
+        await navigator.clipboard.writeText(prompt);
+        setCopiedId(thread.id);
+        if (copyClearRef.current) clearTimeout(copyClearRef.current);
+        copyClearRef.current = setTimeout(() => setCopiedId(null), 1200);
+      } catch (e) {
+        console.error("[parked] clipboard write failed", e);
+        setCopyFailedId(thread.id);
+        if (failClearRef.current) clearTimeout(failClearRef.current);
+        failClearRef.current = setTimeout(() => setCopyFailedId(null), 1500);
+      }
+    },
+    [home],
+  );
 
   useEffect(() => {
     return () => {
       if (copyClearRef.current) clearTimeout(copyClearRef.current);
+      if (failClearRef.current) clearTimeout(failClearRef.current);
     };
   }, []);
 
@@ -102,7 +118,8 @@ export function ParkedThreadsPanel() {
           const repoName = t.repo.split("/").pop() || t.repo;
           const isHovered = hoveredId === t.id;
           const isCopied = copiedId === t.id;
-          const actionsVisible = isHovered || isCopied;
+          const isCopyFailed = copyFailedId === t.id;
+          const actionsVisible = isHovered || isCopied || isCopyFailed;
           return (
             <div
               key={t.id}
@@ -133,12 +150,18 @@ export function ParkedThreadsPanel() {
                   ...styles.iconBtn,
                   opacity: actionsVisible ? 1 : 0,
                   pointerEvents: actionsVisible ? "auto" : "none",
-                  color: isCopied
-                    ? "var(--text-primary)"
-                    : "var(--text-secondary)",
+                  color: isCopyFailed
+                    ? "rgba(220, 90, 90, 0.9)"
+                    : isCopied
+                      ? "var(--text-primary)"
+                      : "var(--text-secondary)",
                 }}
                 onClick={() => handleCopy(t)}
-                title="Copy resume prompt to clipboard"
+                title={
+                  isCopyFailed
+                    ? "Clipboard write failed — check console"
+                    : "Copy resume prompt to clipboard"
+                }
               >
                 {isCopied ? <CheckIcon /> : <CopyIcon />}
               </button>
@@ -224,13 +247,17 @@ function CheckIcon() {
 }
 
 /**
- * Encode a repo path the way Claude Code names its per-project session dir:
- * leading slash kept as leading dash, remaining slashes replaced with dashes.
+ * Encode a repo path the way Claude Code names its per-project session dir.
+ * Both `/` and `.` are replaced with `-`. Empirically Claude Code maps each
+ * path separator AND each literal dot to a dash, so
+ * `/Users/x/.config/foo` becomes `-Users-x--config-foo`.
  *
  * Example: /Users/splice/splice/flow → -Users-splice-splice-flow
+ * Example: /Users/splice/splice/flow2/.claude/worktrees/x
+ *          → -Users-splice-splice-flow2--claude-worktrees-x
  */
 function encodeProjectDir(repoPath: string): string {
-  return repoPath.replace(/\//g, "-");
+  return repoPath.replace(/[/.]/g, "-");
 }
 
 /**
@@ -238,13 +265,17 @@ function encodeProjectDir(repoPath: string): string {
  * continue a parked thread. The resuming Claude reads the JSONL by absolute
  * path so it has the full prior conversation as context. The branch checkout
  * is best-effort — works if the resuming repo shares the parked repo's origin.
+ *
+ * We pass an absolute home path rather than `~` because Claude's file tools
+ * don't always expand tildes.
  */
-function buildResumePrompt(t: ParkedThread): string {
+function buildResumePrompt(t: ParkedThread, home: string | null): string {
   const lines: string[] = [];
   lines.push(`Resume parked thread "${t.branch}".`);
   lines.push("");
   if (t.session_id) {
-    const jsonl = `~/.claude/projects/${encodeProjectDir(t.repo)}/${t.session_id}.jsonl`;
+    const homePrefix = home ?? "~";
+    const jsonl = `${homePrefix}/.claude/projects/${encodeProjectDir(t.repo)}/${t.session_id}.jsonl`;
     lines.push(`Read the full prior conversation at:`);
     lines.push(jsonl);
     lines.push("");

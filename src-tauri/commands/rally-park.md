@@ -1,4 +1,4 @@
-<!-- rally-park-v3 -->
+<!-- rally-park-v4 -->
 # Park: Stash current Claude thread
 
 You are parking the current thread so its tree slot frees up. Branch + Claude convo persist on remote + in Rally's DB. Resume later from any tree.
@@ -107,10 +107,22 @@ PAYLOAD=$(cat <<EOF
 EOF
 )
 
-curl -s -X POST http://127.0.0.1:21547/park \
+STATUS=$(curl -s -o /tmp/rally-park-resp -w "%{http_code}" \
+  -X POST http://127.0.0.1:21547/park \
   -H "Content-Type: application/json" \
-  -d "$PAYLOAD"
+  -d "$PAYLOAD")
+
+if [ "$STATUS" = "000" ]; then
+  echo "Rally not running — branch pushed, but Rally won't see it until next launch."
+elif [ "$STATUS" != "200" ]; then
+  echo "Rally rejected park (HTTP $STATUS):"
+  cat /tmp/rally-park-resp
+  echo
+  echo "Branch is pushed but not registered with Rally."
+fi
 ```
+
+Don't abort on non-200 — branch is already pushed, user shouldn't lose work. But surface the error so they know Rally is out of sync.
 
 ### 10. Free the tree
 
@@ -121,11 +133,15 @@ what makes a clean resume back into this same tree possible.
 ```bash
 DEFAULT_BRANCH=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's|^refs/remotes/origin/||')
 DEFAULT_BRANCH=${DEFAULT_BRANCH:-main}
-git checkout "$DEFAULT_BRANCH" 2>/dev/null || true
+
+if ! git checkout "$DEFAULT_BRANCH" 2>&1; then
+  echo "Warning: couldn't switch to $DEFAULT_BRANCH after park. Tree is still on $BRANCH."
+fi
 ```
 
 Best-effort — if checkout fails (uncommitted changes shouldn't be possible
 since step 3 staged everything, but just in case), don't block the park.
+Surface the failure so the user knows the tree wasn't freed.
 
 If curl fails (connection refused), tell user: "Rally not running — branch pushed, but Rally won't see it until next launch."
 
