@@ -18,6 +18,28 @@ fn is_test_mode() -> bool {
     std::env::var("RALLY_TEST_MODE").is_ok()
 }
 
+const RALLY_PARK_COMMAND: &str = include_str!("../commands/rally-park.md");
+
+/// Install Rally-owned Claude slash commands to ~/.claude/commands/. Idempotent
+/// overwrite — Rally treats these as managed infra, version-locked to the
+/// running binary's IPC protocol. Matches the existing rally-ship /
+/// rally-review-pr install pattern.
+fn install_rally_commands() {
+    let Ok(home) = std::env::var("HOME") else {
+        eprintln!("[rally] HOME not set, skipping command install");
+        return;
+    };
+    let cmd_dir = std::path::PathBuf::from(home).join(".claude").join("commands");
+    if let Err(e) = std::fs::create_dir_all(&cmd_dir) {
+        eprintln!("[rally] failed to create {}: {}", cmd_dir.display(), e);
+        return;
+    }
+    let park_path = cmd_dir.join("rally-park.md");
+    if let Err(e) = std::fs::write(&park_path, RALLY_PARK_COMMAND) {
+        eprintln!("[rally] failed to write {}: {}", park_path.display(), e);
+    }
+}
+
 /// Show the native "Close Window?" confirmation dialog for secondary windows.
 fn show_close_window_dialog(
     window: tauri::Window,
@@ -341,6 +363,8 @@ fn main() {
         rally::search_ops::replace_in_files,
         rally::search_ops::list_all_files,
         rally::search_ops::list_directory_entries,
+        rally::parked_threads::list_parked_threads,
+        rally::parked_threads::remove_parked_thread,
     ]);
 
     builder
@@ -456,8 +480,12 @@ fn main() {
             let test_pending = test_bridge_pending.clone();
 
             move |app| {
-            // Start the CLI server (localhost HTTP listener for `rally` CLI)
+            // Start the CLI server (localhost HTTP listener for `rally` CLI and rally-park skill)
             rally::cli_server::start(app.handle().clone());
+
+            // Install Rally-managed Claude slash commands to ~/.claude/commands.
+            // Idempotent overwrite — Rally owns these files, version-locked to the app.
+            install_rally_commands();
 
             // --- Test mode setup ---
             #[cfg(feature = "test-bridge")]
