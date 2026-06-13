@@ -126,14 +126,14 @@ const WorkspaceFlightView = React.memo(function WorkspaceFlightView({
     return Math.floor((containerSize.w - PAD * 2 - GAP * (effectiveColumns - 1)) / effectiveColumns);
   }, [focusMode, effectiveColumns, containerSize.w]);
 
-  const hasSStashedPods = stashedPodIdList.length > 0;
+  const hasStashedPods = stashedPodIdList.length > 0;
   const focusPodHeight = useMemo(() => {
     if (!focusMode || containerSize.h === 0) return undefined;
     const GAP = 8;
     const PAD = 12;
     const HUD_HEIGHT = 35;
-    return Math.floor(containerSize.h - HUD_HEIGHT - PAD * 2 - (hasSStashedPods ? DOCK_HEIGHT : 0));
-  }, [focusMode, containerSize.h, hasSStashedPods]);
+    return Math.floor(containerSize.h - HUD_HEIGHT - PAD * 2 - (hasStashedPods ? DOCK_HEIGHT : 0));
+  }, [focusMode, containerSize.h, hasStashedPods]);
 
   useEffect(() => {
     getOrCreateFlightLayout(workspaceId);
