@@ -5,6 +5,7 @@ import { FlightPod, snapToNeighbors, preventOverlap } from "./FlightPod";
 import { FlightHUD } from "./FlightHUD";
 import { FLIGHT_ZOOM_MIN, FLIGHT_ZOOM_MAX, FLIGHT_DEFAULT_CLAUDE_WIDTH, FLIGHT_DEFAULT_CLAUDE_HEIGHT, FLIGHT_DEFAULT_TERMINAL_WIDTH, FLIGHT_DEFAULT_TERMINAL_HEIGHT } from "../lib/types";
 import { CLAUDE_PATH } from "./FileIcons";
+import { StashDock } from "./StashDock";
 
 /** Renders a single workspace's flight canvas. Hidden via display:none when inactive. */
 const WorkspaceFlightView = React.memo(function WorkspaceFlightView({
@@ -49,11 +50,22 @@ const WorkspaceFlightView = React.memo(function WorkspaceFlightView({
   const podIds = useWorkspaceStore((s) => {
     const pods = s.flightLayouts[workspaceId]?.pods;
     if (!pods) return "";
-    return pods.map((p) => p.id).join("\n");
+    return pods.filter((p) => !p.stashed).map((p) => p.id).join("\n");
   });
   const podIdList = useMemo(
     () => (podIds ? podIds.split("\n") : []),
     [podIds]
+  );
+
+  // Stashed pods — separate selector for dock rendering
+  const stashedPodIds = useWorkspaceStore((s) => {
+    const pods = s.flightLayouts[workspaceId]?.pods;
+    if (!pods) return "";
+    return pods.filter((p) => p.stashed).map((p) => p.id).join("\n");
+  });
+  const stashedPodIdList = useMemo(
+    () => (stashedPodIds ? stashedPodIds.split("\n") : []),
+    [stashedPodIds],
   );
 
   // Focus mode: sorted pod order and computed width per snap item
@@ -74,6 +86,9 @@ const WorkspaceFlightView = React.memo(function WorkspaceFlightView({
 
   // Width of each snap item: divide container by focusColumns
   const [containerSize, setContainerSize] = useState({ w: 0, h: 0 });
+  const DOCK_HEIGHT = 40;
+  const dockHeightRef = useRef(0);
+  dockHeightRef.current = stashedPodIdList.length > 0 ? DOCK_HEIGHT : 0;
   useEffect(() => {
     if (!containerRef.current) return;
     const measure = () => {
@@ -111,13 +126,14 @@ const WorkspaceFlightView = React.memo(function WorkspaceFlightView({
     return Math.floor((containerSize.w - PAD * 2 - GAP * (effectiveColumns - 1)) / effectiveColumns);
   }, [focusMode, effectiveColumns, containerSize.w]);
 
+  const hasSStashedPods = stashedPodIdList.length > 0;
   const focusPodHeight = useMemo(() => {
     if (!focusMode || containerSize.h === 0) return undefined;
     const GAP = 8;
     const PAD = 12;
     const HUD_HEIGHT = 35;
-    return Math.floor(containerSize.h - HUD_HEIGHT - PAD * 2);
-  }, [focusMode, containerSize.h]);
+    return Math.floor(containerSize.h - HUD_HEIGHT - PAD * 2 - (hasSStashedPods ? DOCK_HEIGHT : 0));
+  }, [focusMode, containerSize.h, hasSStashedPods]);
 
   useEffect(() => {
     getOrCreateFlightLayout(workspaceId);
@@ -527,7 +543,7 @@ const WorkspaceFlightView = React.memo(function WorkspaceFlightView({
           : totalColumns;
 
         const availW = containerW - PAD * 2;
-        const availH = containerH - HUD_HEIGHT - PAD * 2;
+        const availH = containerH - HUD_HEIGHT - PAD * 2 - dockHeightRef.current;
 
         // Grid wrapping: arrange visible columns in a balanced grid
         let gridCols: number;
@@ -1085,6 +1101,9 @@ const WorkspaceFlightView = React.memo(function WorkspaceFlightView({
         }} />,
         document.body,
       )}
+
+      {/* Stash dock — rendered when pods are stashed */}
+      <StashDock workspaceId={workspaceId} />
 
       {/* Frosted glass context menu — rendered as portal to avoid CSS zoom offset */}
       {contextMenu && ReactDOM.createPortal(
