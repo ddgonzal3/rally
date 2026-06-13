@@ -139,6 +139,15 @@ const WorkspaceFlightView = React.memo(function WorkspaceFlightView({
     getOrCreateFlightLayout(workspaceId);
   }, [workspaceId, getOrCreateFlightLayout]);
 
+  // Relayout whenever the visible pod list changes (stash or unstash)
+  useEffect(() => {
+    if (!focusModeRef.current) return;
+    setTimeout(() => {
+      const pods = (useWorkspaceStore.getState().flightLayouts[workspaceId]?.pods ?? []).filter((p) => !p.stashed);
+      if (pods.length > 0 && navigateToRef.current) navigateToRef.current(pods[0].id);
+    }, 0);
+  }, [podIdList, workspaceId]);
+
   // Listen for zoom-click on pods to enter focus mode
   useEffect(() => {
     const handler = (e: Event) => {
