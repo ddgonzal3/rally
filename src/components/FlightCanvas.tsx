@@ -189,6 +189,7 @@ const WorkspaceFlightView = React.memo(function WorkspaceFlightView({
             e.preventDefault();
             e.stopPropagation();
             useWorkspaceStore.getState().stashPod(workspaceId, stashId);
+            focusedPodIdRef.current = null;
           }
           return;
         }
