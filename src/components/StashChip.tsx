@@ -5,11 +5,12 @@ import type { LayoutNode } from "../lib/types";
 
 const ACTIVE_THRESHOLD_MS = 3000;
 
+type ChipState = "idle" | "active" | "ready";
+
 function getPodPtyIds(podId: string): string[] {
   const state = useWorkspaceStore.getState();
   const ids: string[] = [];
 
-  // Inner layout panes (where Claude Code actually lives)
   const podLayout = state.layouts[`flight:${podId}`];
   if (podLayout?.root) {
     const walk = (node: LayoutNode) => {
@@ -25,7 +26,6 @@ function getPodPtyIds(podId: string): string[] {
     walk(podLayout.root);
   }
 
-  // Shell PTYs — find the pod across all flight layouts
   for (const layout of Object.values(state.flightLayouts)) {
     const pod = layout?.pods?.find((p) => p.id === podId);
     if (!pod) continue;
@@ -40,6 +40,12 @@ function getPodPtyIds(podId: string): string[] {
   return ids;
 }
 
+const DOT_COLOR: Record<ChipState, string> = {
+  idle: "#444",
+  active: "#c8952a",
+  ready: "#4a9e6b",
+};
+
 interface StashChipProps {
   podId: string;
   workspaceId: string;
@@ -53,22 +59,36 @@ export function StashChip({ podId, workspaceId }: StashChipProps) {
     return pod.cwd ? pod.cwd.split("/").pop() || pod.cwd : pod.title || podId;
   });
 
-  const [isActive, setIsActive] = useState(false);
+  const [chipState, setChipState] = useState<ChipState>("idle");
 
   useEffect(() => {
     const tick = () => {
+      const pod = useWorkspaceStore.getState().flightLayouts[workspaceId]?.pods.find((p) => p.id === podId);
+      const stashedAt = pod?.stashedAt;
+
       const ids = getPodPtyIds(podId);
+      const lastOutput = ids.reduce<number | undefined>((max, id) => {
+        const t = ptyLastOutputAt.get(id);
+        return t !== undefined ? (max === undefined ? t : Math.max(max, t)) : max;
+      }, undefined);
+
+      if (lastOutput === undefined || (stashedAt !== undefined && lastOutput < stashedAt)) {
+        setChipState("idle");
+        return;
+      }
+
       const now = Date.now();
-      const active = ids.some((id) => {
-        const last = ptyLastOutputAt.get(id);
-        return last !== undefined && now - last < ACTIVE_THRESHOLD_MS;
-      });
-      setIsActive(active);
+      if (now - lastOutput < ACTIVE_THRESHOLD_MS) {
+        setChipState("active");
+      } else {
+        setChipState("ready");
+      }
     };
+
     tick();
     const timer = setInterval(tick, 1000);
     return () => clearInterval(timer);
-  }, [podId]);
+  }, [podId, workspaceId]);
 
   const handleRestore = useCallback(
     (e: React.MouseEvent) => {
@@ -80,43 +100,41 @@ export function StashChip({ podId, workspaceId }: StashChipProps) {
 
   return (
     <div
-      className="sidebar-btn"
       onClick={handleRestore}
       style={{
         display: "flex",
         alignItems: "center",
-        gap: 5,
-        padding: "0 8px",
-        height: 24,
-        borderRadius: 5,
+        gap: 6,
+        padding: "0 10px",
+        height: 22,
+        borderRadius: 6,
         cursor: "pointer",
-        background: "rgba(255,255,255,0.04)",
-        border: "1px solid rgba(255,255,255,0.1)",
+        background: "none",
+        border: "1px solid rgba(255, 255, 255, 0.25)",
         flexShrink: 0,
         userSelect: "none",
       }}
     >
-      {/* Activity dot */}
       <span
         style={{
           width: 6,
           height: 6,
           borderRadius: "50%",
-          background: isActive ? "#ddd" : "#555",
+          background: DOT_COLOR[chipState],
           flexShrink: 0,
           transition: "background 0.4s",
         }}
       />
-      {/* Name */}
       <span
         style={{
-          fontSize: 11,
+          fontSize: 13,
+          fontWeight: 600,
           color: "var(--text-primary)",
-          fontWeight: 500,
-          maxWidth: 80,
+          maxWidth: 120,
           overflow: "hidden",
           textOverflow: "ellipsis",
           whiteSpace: "nowrap",
+          lineHeight: 1,
         }}
       >
         {title}

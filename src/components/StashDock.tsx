@@ -22,8 +22,6 @@ export function StashDock({ workspaceId }: StashDockProps) {
     [stashedIds],
   );
 
-  if (stashedPodIds.length === 0) return null;
-
   return (
     <div
       style={{
@@ -31,34 +29,21 @@ export function StashDock({ workspaceId }: StashDockProps) {
         bottom: 0,
         left: 0,
         right: 0,
-        height: 40,
+        height: 35,
         zIndex: 9000,
         display: "flex",
         alignItems: "center",
         paddingLeft: 12,
         paddingRight: 12,
         gap: 6,
-        background: "rgba(36, 36, 36, 0.78)",
+        background: "rgba(28, 28, 28, 0.82)",
         backdropFilter: "blur(20px) saturate(180%)",
         WebkitBackdropFilter: "blur(20px) saturate(180%)",
-        borderTop: "1px solid rgba(255, 255, 255, 0.10)",
+        borderTop: "1px solid rgba(255, 255, 255, 0.08)",
         overflowX: "auto",
         overflowY: "hidden",
       }}
     >
-      <span
-        style={{
-          fontSize: 10,
-          color: "var(--text-dim)",
-          fontWeight: 600,
-          textTransform: "uppercase",
-          letterSpacing: "0.05em",
-          flexShrink: 0,
-          marginRight: 4,
-        }}
-      >
-        Stashed
-      </span>
       {stashedPodIds.map((podId) => (
         <StashChip key={podId} podId={podId} workspaceId={workspaceId} />
       ))}

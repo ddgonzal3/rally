@@ -2,7 +2,6 @@ import React, { useEffect, useRef, useMemo, useCallback, useState } from "react"
 import ReactDOM from "react-dom";
 import { useWorkspaceStore } from "../stores/workspaceStore";
 import { FlightPod, snapToNeighbors, preventOverlap } from "./FlightPod";
-import { FlightHUD } from "./FlightHUD";
 import { FLIGHT_ZOOM_MIN, FLIGHT_ZOOM_MAX, FLIGHT_DEFAULT_CLAUDE_WIDTH, FLIGHT_DEFAULT_CLAUDE_HEIGHT, FLIGHT_DEFAULT_TERMINAL_WIDTH, FLIGHT_DEFAULT_TERMINAL_HEIGHT } from "../lib/types";
 import { CLAUDE_PATH } from "./FileIcons";
 import { StashDock } from "./StashDock";
@@ -86,9 +85,9 @@ const WorkspaceFlightView = React.memo(function WorkspaceFlightView({
 
   // Width of each snap item: divide container by focusColumns
   const [containerSize, setContainerSize] = useState({ w: 0, h: 0 });
-  const DOCK_HEIGHT = 40;
-  const dockHeightRef = useRef(0);
-  dockHeightRef.current = stashedPodIdList.length > 0 ? DOCK_HEIGHT : 0;
+  const DOCK_HEIGHT = 35;
+  const dockHeightRef = useRef(DOCK_HEIGHT);
+  dockHeightRef.current = DOCK_HEIGHT;
   useEffect(() => {
     if (!containerRef.current) return;
     const measure = () => {
@@ -126,14 +125,12 @@ const WorkspaceFlightView = React.memo(function WorkspaceFlightView({
     return Math.floor((containerSize.w - PAD * 2 - GAP * (effectiveColumns - 1)) / effectiveColumns);
   }, [focusMode, effectiveColumns, containerSize.w]);
 
-  const hasStashedPods = stashedPodIdList.length > 0;
   const focusPodHeight = useMemo(() => {
     if (!focusMode || containerSize.h === 0) return undefined;
     const GAP = 8;
     const PAD = 12;
-    const HUD_HEIGHT = 35;
-    return Math.floor(containerSize.h - HUD_HEIGHT - PAD * 2 - (hasStashedPods ? DOCK_HEIGHT : 0));
-  }, [focusMode, containerSize.h, hasStashedPods]);
+    return Math.floor(containerSize.h - PAD * 2 - DOCK_HEIGHT);
+  }, [focusMode, containerSize.h]);
 
   useEffect(() => {
     getOrCreateFlightLayout(workspaceId);
@@ -534,7 +531,6 @@ const WorkspaceFlightView = React.memo(function WorkspaceFlightView({
         // Focus mode: lay out pods in repo columns
         // Each column = one repo (ordered by workspace.paths)
         // Within a column, multiple pods for the same repo stack vertically
-        const HUD_HEIGHT = 35;
         const GAP = 8;
         const PAD = 12;
 
@@ -568,7 +564,7 @@ const WorkspaceFlightView = React.memo(function WorkspaceFlightView({
           : totalColumns;
 
         const availW = containerW - PAD * 2;
-        const availH = containerH - HUD_HEIGHT - PAD * 2 - dockHeightRef.current;
+        const availH = containerH - PAD * 2 - dockHeightRef.current;
 
         // Grid wrapping: arrange visible columns in a balanced grid
         let gridCols: number;
@@ -1095,20 +1091,6 @@ const WorkspaceFlightView = React.memo(function WorkspaceFlightView({
           <FlightPod key={podId} podId={podId} workspaceId={workspaceId} zoom={zoom} isSelected={selectedPods.has(podId)} />
         ))}
       </div>
-      {isActive && <FlightHUD workspaceId={workspaceId} zoom={zoom} focusMode={focusMode} autoFocus={autoFocus} onToggleAutoFocus={() => setAutoFocus((v) => !v)} onToggleFocus={() => {
-        const next = !focusMode;
-        setFocusMode(next);
-        if (next) {
-          // Enter focus mode: navigate to the highest-zIndex pod
-          const s = useWorkspaceStore.getState();
-          const pods = (s.flightLayouts[workspaceId]?.pods ?? []).filter((p) => !p.stashed);
-          if (pods.length > 0) {
-            const top = [...pods].sort((a, b) => b.zIndex - a.zIndex)[0];
-            // Need to wait one tick for focusModeRef to update
-            setTimeout(() => navigateToRef.current?.(top.id), 0);
-          }
-        }
-      }} />}
 
       {/* Marquee selection rectangle — portal to avoid CSS zoom offset */}
       {marquee && ReactDOM.createPortal(
