@@ -539,6 +539,8 @@ interface WorkspaceState {
   addFlightPodAt: (workspaceId: string, type: "claude" | "terminal", x: number, y: number, width: number, height: number, cwd: string) => void;
   removeFlightPod: (workspaceId: string, podId: string) => void;
   updateFlightPod: (workspaceId: string, podId: string, updates: Partial<FlightPod>) => void;
+  stashPod: (workspaceId: string, podId: string) => void;
+  unstashPod: (workspaceId: string, podId: string) => void;
   setFlightViewport: (workspaceId: string, viewport: Partial<FlightViewport>) => void;
   bringPodToFront: (workspaceId: string, podId: string) => void;
   togglePodShell: (workspaceId: string, podId: string) => void;
@@ -3292,6 +3294,14 @@ export const useWorkspaceStore = create<WorkspaceState>()(
     set((s) => ({
       flightLayouts: { ...s.flightLayouts, [workspaceId]: { ...layout, pods: layout.pods.map((p) => p.id === podId ? { ...p, ...updates } as FlightPod : p) } },
     }));
+  },
+
+  stashPod: (workspaceId: string, podId: string) => {
+    get().updateFlightPod(workspaceId, podId, { stashed: true } as Partial<FlightPod>);
+  },
+
+  unstashPod: (workspaceId: string, podId: string) => {
+    get().updateFlightPod(workspaceId, podId, { stashed: false } as Partial<FlightPod>);
   },
 
   setFlightViewport: (workspaceId: string, viewport: Partial<FlightViewport>) => {
