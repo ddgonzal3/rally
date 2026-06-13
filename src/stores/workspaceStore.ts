@@ -75,6 +75,7 @@ const scriptListenerCleanups = new Map<string, () => void>();
 const MAX_PTY_BUFFER_CHUNKS = 500;
 const MAX_SCRIPT_BUFFER_CHUNKS = 500;
 export const ptyOutputBuffers = new Map<string, Uint8Array[]>();
+export const ptyLastOutputAt = new Map<string, number>();
 
 function pushLimitedChunk(
   buffer: Uint8Array[],
@@ -94,6 +95,7 @@ export function appendPtyBuffer(ptyId: string, chunk: Uint8Array) {
     ptyOutputBuffers.set(ptyId, buf);
   }
   pushLimitedChunk(buf, chunk, MAX_PTY_BUFFER_CHUNKS);
+  ptyLastOutputAt.set(ptyId, Date.now());
 }
 
 export function clearPtyBuffer(ptyId: string) {
