@@ -1,5 +1,5 @@
 // src/components/StashChip.tsx
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import { useWorkspaceStore, ptyLastOutputAt } from "../stores/workspaceStore";
 import type { LayoutNode } from "../lib/types";
 
@@ -53,13 +53,22 @@ interface StashChipProps {
 
 export function StashChip({ podId, workspaceId }: StashChipProps) {
   const unstashPod = useWorkspaceStore((s) => s.unstashPod);
-  const title = useWorkspaceStore((s) => {
+  const updateFlightPod = useWorkspaceStore((s) => s.updateFlightPod);
+
+  // label > branch basename > cwd basename
+  const displayName = useWorkspaceStore((s) => {
     const pod = s.flightLayouts[workspaceId]?.pods.find((p) => p.id === podId);
     if (!pod) return podId;
+    if (pod.label) return pod.label;
+    const branch = s.gitStatuses[pod.cwd]?.branch;
+    if (branch) return branch;
     return pod.cwd ? pod.cwd.split("/").pop() || pod.cwd : pod.title || podId;
   });
 
   const [chipState, setChipState] = useState<ChipState>("idle");
+  const [isEditing, setIsEditing] = useState(false);
+  const [editValue, setEditValue] = useState("");
+  const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     const tick = () => {
@@ -76,13 +85,7 @@ export function StashChip({ podId, workspaceId }: StashChipProps) {
         setChipState("idle");
         return;
       }
-
-      const now = Date.now();
-      if (now - lastOutput < ACTIVE_THRESHOLD_MS) {
-        setChipState("active");
-      } else {
-        setChipState("ready");
-      }
+      setChipState(Date.now() - lastOutput < ACTIVE_THRESHOLD_MS ? "active" : "ready");
     };
 
     tick();
@@ -90,25 +93,54 @@ export function StashChip({ podId, workspaceId }: StashChipProps) {
     return () => clearInterval(timer);
   }, [podId, workspaceId]);
 
-  const handleRestore = useCallback(
+  useEffect(() => {
+    if (isEditing) inputRef.current?.focus();
+  }, [isEditing]);
+
+  const handleChipClick = useCallback(
     (e: React.MouseEvent) => {
+      if (isEditing) return;
       e.stopPropagation();
       unstashPod(workspaceId, podId);
     },
-    [unstashPod, workspaceId, podId],
+    [isEditing, unstashPod, workspaceId, podId],
+  );
+
+  const handleLabelDoubleClick = useCallback(
+    (e: React.MouseEvent) => {
+      e.stopPropagation();
+      setEditValue(displayName);
+      setIsEditing(true);
+    },
+    [displayName],
+  );
+
+  const commitEdit = useCallback(() => {
+    const trimmed = editValue.trim();
+    updateFlightPod(workspaceId, podId, { label: trimmed || undefined } as any);
+    setIsEditing(false);
+  }, [editValue, updateFlightPod, workspaceId, podId]);
+
+  const handleInputKeyDown = useCallback(
+    (e: React.KeyboardEvent<HTMLInputElement>) => {
+      if (e.key === "Enter") commitEdit();
+      if (e.key === "Escape") setIsEditing(false);
+      e.stopPropagation();
+    },
+    [commitEdit],
   );
 
   return (
     <div
-      onClick={handleRestore}
+      onClick={handleChipClick}
       style={{
         display: "flex",
         alignItems: "center",
         gap: 6,
         padding: "0 10px",
         height: 22,
-        borderRadius: 6,
-        cursor: "pointer",
+        borderRadius: 4,
+        cursor: isEditing ? "default" : "pointer",
         background: "none",
         border: "1px solid rgba(255, 255, 255, 0.25)",
         flexShrink: 0,
@@ -125,20 +157,43 @@ export function StashChip({ podId, workspaceId }: StashChipProps) {
           transition: "background 0.4s",
         }}
       />
-      <span
-        style={{
-          fontSize: 13,
-          fontWeight: 600,
-          color: "var(--text-primary)",
-          maxWidth: 120,
-          overflow: "hidden",
-          textOverflow: "ellipsis",
-          whiteSpace: "nowrap",
-          lineHeight: 1,
-        }}
-      >
-        {title}
-      </span>
+      {isEditing ? (
+        <input
+          ref={inputRef}
+          value={editValue}
+          onChange={(e) => setEditValue(e.target.value)}
+          onKeyDown={handleInputKeyDown}
+          onBlur={commitEdit}
+          style={{
+            background: "none",
+            border: "none",
+            outline: "none",
+            fontSize: 13,
+            fontWeight: 600,
+            color: "var(--text-primary)",
+            fontFamily: "inherit",
+            lineHeight: 1,
+            width: 100,
+            padding: 0,
+          }}
+        />
+      ) : (
+        <span
+          onDoubleClick={handleLabelDoubleClick}
+          style={{
+            fontSize: 13,
+            fontWeight: 600,
+            color: "var(--text-primary)",
+            maxWidth: 120,
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            whiteSpace: "nowrap",
+            lineHeight: 1,
+          }}
+        >
+          {displayName}
+        </span>
+      )}
     </div>
   );
 }
