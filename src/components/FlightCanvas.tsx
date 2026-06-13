@@ -190,6 +190,11 @@ const WorkspaceFlightView = React.memo(function WorkspaceFlightView({
             e.stopPropagation();
             useWorkspaceStore.getState().stashPod(workspaceId, stashId);
             focusedPodIdRef.current = null;
+            // Relayout remaining pods to fill freed space
+            setTimeout(() => {
+              const remaining = (useWorkspaceStore.getState().flightLayouts[workspaceId]?.pods ?? []).filter((p) => !p.stashed);
+              if (remaining.length > 0) navigateToRef.current?.(remaining[0].id);
+            }, 0);
           }
           return;
         }
