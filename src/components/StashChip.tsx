@@ -47,7 +47,6 @@ interface StashChipProps {
 
 export function StashChip({ podId, workspaceId }: StashChipProps) {
   const unstashPod = useWorkspaceStore((s) => s.unstashPod);
-  const removeFlightPod = useWorkspaceStore((s) => s.removeFlightPod);
   const title = useWorkspaceStore((s) => {
     const pod = s.flightLayouts[workspaceId]?.pods.find((p) => p.id === podId);
     if (!pod) return podId;
@@ -55,7 +54,6 @@ export function StashChip({ podId, workspaceId }: StashChipProps) {
   });
 
   const [isActive, setIsActive] = useState(false);
-  const [hovered, setHovered] = useState(false);
 
   useEffect(() => {
     const tick = () => {
@@ -80,19 +78,9 @@ export function StashChip({ podId, workspaceId }: StashChipProps) {
     [unstashPod, workspaceId, podId],
   );
 
-  const handleClose = useCallback(
-    (e: React.MouseEvent) => {
-      e.stopPropagation();
-      removeFlightPod(workspaceId, podId);
-    },
-    [removeFlightPod, workspaceId, podId],
-  );
-
   return (
     <div
       className="sidebar-btn"
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
       onClick={handleRestore}
       style={{
         display: "flex",
@@ -133,33 +121,6 @@ export function StashChip({ podId, workspaceId }: StashChipProps) {
       >
         {title}
       </span>
-      {/* Close button — visible on hover */}
-      {hovered && (
-        <button
-          onClick={handleClose}
-          style={{
-            marginLeft: 2,
-            width: 14,
-            height: 14,
-            padding: 0,
-            background: "none",
-            border: "none",
-            color: "var(--text-dim)",
-            cursor: "pointer",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            borderRadius: 3,
-            flexShrink: 0,
-          }}
-          title="Close"
-        >
-          <svg width="8" height="8" viewBox="0 0 8 8" fill="none">
-            <line x1="1" y1="1" x2="7" y2="7" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
-            <line x1="7" y1="1" x2="1" y2="7" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
-          </svg>
-        </button>
-      )}
     </div>
   );
 }
