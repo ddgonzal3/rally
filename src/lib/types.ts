@@ -546,6 +546,7 @@ export interface FlightPodBase {
   title: string;
   ptyId?: string;
   zIndex: number;
+  stashed?: boolean;
   /** Tabs for the shell panel (bottom terminal area). */
   shellTabs?: FlightTab[];
   activeShellTabId?: string;
