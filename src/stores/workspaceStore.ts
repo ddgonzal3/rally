@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
-import { listen } from "@tauri-apps/api/event";
+import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { addToast } from "../components/ToastContainer";
@@ -75,6 +75,7 @@ const scriptListenerCleanups = new Map<string, () => void>();
 const MAX_PTY_BUFFER_CHUNKS = 500;
 const MAX_SCRIPT_BUFFER_CHUNKS = 500;
 export const ptyOutputBuffers = new Map<string, Uint8Array[]>();
+export const ptyLastOutputAt = new Map<string, number>();
 
 function pushLimitedChunk(
   buffer: Uint8Array[],
@@ -94,10 +95,69 @@ export function appendPtyBuffer(ptyId: string, chunk: Uint8Array) {
     ptyOutputBuffers.set(ptyId, buf);
   }
   pushLimitedChunk(buf, chunk, MAX_PTY_BUFFER_CHUNKS);
+  ptyLastOutputAt.set(ptyId, Date.now());
 }
 
 export function clearPtyBuffer(ptyId: string) {
   ptyOutputBuffers.delete(ptyId);
+  ptyLastOutputAt.delete(ptyId);
+}
+
+// --- Stash background PTY listeners ---
+// When a pod is stashed, its Terminal unmounts and pauses the PTY monitor.
+// These listeners restart the monitor and buffer output so that:
+// (a) ptyLastOutputAt stays current for the activity dot in StashChip
+// (b) ptyOutputBuffers accumulate output so Terminal replays correctly on restore
+const stashListeners = new Map<string, UnlistenFn[]>();
+
+function getPtyIdsForPod(podId: string): string[] {
+  const state = useWorkspaceStore.getState();
+  const ids: string[] = [];
+  const podLayout = state.layouts[`flight:${podId}`];
+  if (podLayout?.root) {
+    const walk = (node: LayoutNode) => {
+      if (node.type === "group") {
+        const group = podLayout.groups[node.groupId];
+        group?.panes.forEach((p) => { if (p.ptyId) ids.push(p.ptyId); });
+      } else if (node.type === "split") {
+        node.children.forEach(walk);
+      }
+    };
+    walk(podLayout.root);
+  }
+  for (const layout of Object.values(state.flightLayouts)) {
+    const pod = layout?.pods?.find((p) => p.id === podId);
+    if (!pod) continue;
+    if (pod.ptyId) ids.push(pod.ptyId);
+    if ("shellPtyId" in pod && pod.shellPtyId) ids.push(pod.shellPtyId as string);
+    (pod.shellTabs ?? []).forEach((t: { ptyId?: string }) => { if (t.ptyId) ids.push(t.ptyId); });
+    break;
+  }
+  return ids;
+}
+
+async function setupStashListeners(podId: string): Promise<void> {
+  // Tear down any prior listeners for this pod before setting up new ones
+  teardownStashListeners(podId);
+  const ptyIds = getPtyIdsForPod(podId);
+  const unlistenFns: UnlistenFn[] = [];
+  for (const ptyId of ptyIds) {
+    // Restart the Rust monitor (Terminal's unmount will have paused it)
+    api.resumePtyMonitor(ptyId).catch(() => {});
+    const unlisten = await listen<{ data: number[] }>(`pty-output-${ptyId}`, (event) => {
+      appendPtyBuffer(ptyId, new Uint8Array(event.payload.data));
+    });
+    unlistenFns.push(unlisten);
+  }
+  stashListeners.set(podId, unlistenFns);
+}
+
+function teardownStashListeners(podId: string): void {
+  const fns = stashListeners.get(podId);
+  if (fns) {
+    fns.forEach((fn) => fn());
+    stashListeners.delete(podId);
+  }
 }
 
 // --- Drawer hover-close timer ---
@@ -537,6 +597,8 @@ interface WorkspaceState {
   addFlightPodAt: (workspaceId: string, type: "claude" | "terminal", x: number, y: number, width: number, height: number, cwd: string) => void;
   removeFlightPod: (workspaceId: string, podId: string) => void;
   updateFlightPod: (workspaceId: string, podId: string, updates: Partial<FlightPod>) => void;
+  stashPod: (workspaceId: string, podId: string) => void;
+  unstashPod: (workspaceId: string, podId: string) => void;
   setFlightViewport: (workspaceId: string, viewport: Partial<FlightViewport>) => void;
   bringPodToFront: (workspaceId: string, podId: string) => void;
   togglePodShell: (workspaceId: string, podId: string) => void;
@@ -3290,6 +3352,21 @@ export const useWorkspaceStore = create<WorkspaceState>()(
     set((s) => ({
       flightLayouts: { ...s.flightLayouts, [workspaceId]: { ...layout, pods: layout.pods.map((p) => p.id === podId ? { ...p, ...updates } as FlightPod : p) } },
     }));
+  },
+
+  stashPod: (workspaceId: string, podId: string) => {
+    get().updateFlightPod(workspaceId, podId, { stashed: true, stashedAt: Date.now() } as Partial<FlightPod>);
+    // Wait for Terminal to unmount and call pausePtyMonitor, then restart the
+    // monitor and install a lightweight buffer-only listener so ptyLastOutputAt
+    // and ptyOutputBuffers stay live while the pod is hidden.
+    setTimeout(() => { setupStashListeners(podId); }, 150);
+  },
+
+  unstashPod: (workspaceId: string, podId: string) => {
+    // Tear down background listeners before Terminal remounts so they don't
+    // double-buffer the same output.
+    teardownStashListeners(podId);
+    get().updateFlightPod(workspaceId, podId, { stashed: false, stashedAt: undefined } as Partial<FlightPod>);
   },
 
   setFlightViewport: (workspaceId: string, viewport: Partial<FlightViewport>) => {
