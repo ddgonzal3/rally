@@ -182,6 +182,16 @@ const WorkspaceFlightView = React.memo(function WorkspaceFlightView({
     const clickTracker = (e: MouseEvent) => {
       const podEl = (e.target as HTMLElement).closest("[data-flight-pod]");
       if (podEl) {
+        // Shift+click: stash the pod
+        if (e.shiftKey) {
+          const stashId = podEl.getAttribute("data-flight-pod");
+          if (stashId) {
+            e.preventDefault();
+            e.stopPropagation();
+            useWorkspaceStore.getState().stashPod(workspaceId, stashId);
+          }
+          return;
+        }
         canvasFocused = false;
         el.classList.remove("flight-panning");
         // Track clicked pod as the active pod for Cmd+N / Shift+Arrow nav
@@ -513,7 +523,7 @@ const WorkspaceFlightView = React.memo(function WorkspaceFlightView({
         const GAP = 8;
         const PAD = 12;
 
-        const allPods = store.flightLayouts[workspaceId]?.pods ?? [];
+        const allPods = (store.flightLayouts[workspaceId]?.pods ?? []).filter((p) => !p.stashed);
         const ws = store.workspaces.find((w) => w.id === workspaceId);
         const repoPaths = ws?.paths ?? [];
 
