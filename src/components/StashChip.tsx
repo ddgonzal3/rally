@@ -102,7 +102,7 @@ export function StashChip({ podId, workspaceId }: StashChipProps) {
         height: 24,
         borderRadius: 5,
         cursor: "pointer",
-        background: hovered ? "rgba(255,255,255,0.07)" : "rgba(255,255,255,0.04)",
+        background: "rgba(255,255,255,0.04)",
         border: "1px solid rgba(255,255,255,0.1)",
         flexShrink: 0,
         userSelect: "none",
@@ -114,7 +114,7 @@ export function StashChip({ podId, workspaceId }: StashChipProps) {
           width: 6,
           height: 6,
           borderRadius: "50%",
-          background: isActive ? "#ddd" : "#444",
+          background: isActive ? "#ddd" : "#555",
           flexShrink: 0,
           transition: "background 0.4s",
         }}
