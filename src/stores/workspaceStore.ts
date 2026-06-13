@@ -100,6 +100,7 @@ export function appendPtyBuffer(ptyId: string, chunk: Uint8Array) {
 
 export function clearPtyBuffer(ptyId: string) {
   ptyOutputBuffers.delete(ptyId);
+  ptyLastOutputAt.delete(ptyId);
 }
 
 // --- Drawer hover-close timer ---

@@ -72,7 +72,7 @@ const WorkspaceFlightView = React.memo(function WorkspaceFlightView({
   const focusPodOrder = useMemo(() => {
     if (!focusMode) return podIdList;
     const store = useWorkspaceStore.getState();
-    const pods = store.flightLayouts[workspaceId]?.pods ?? [];
+    const pods = (store.flightLayouts[workspaceId]?.pods ?? []).filter((p) => !p.stashed);
     // Sort by x then y to get stable left-to-right order
     return [...pods]
       .sort((a, b) => {
@@ -738,7 +738,7 @@ const WorkspaceFlightView = React.memo(function WorkspaceFlightView({
           focusModeRef.current) {
         e.preventDefault();
         const store = useWorkspaceStore.getState();
-        const pods = store.flightLayouts[workspaceId]?.pods ?? [];
+        const pods = (store.flightLayouts[workspaceId]?.pods ?? []).filter((p) => !p.stashed);
         if (pods.length < 2) return;
 
         // Group pods into columns by x position, sorted left-to-right
@@ -1087,7 +1087,7 @@ const WorkspaceFlightView = React.memo(function WorkspaceFlightView({
         if (next) {
           // Enter focus mode: navigate to the highest-zIndex pod
           const s = useWorkspaceStore.getState();
-          const pods = s.flightLayouts[workspaceId]?.pods ?? [];
+          const pods = (s.flightLayouts[workspaceId]?.pods ?? []).filter((p) => !p.stashed);
           if (pods.length > 0) {
             const top = [...pods].sort((a, b) => b.zIndex - a.zIndex)[0];
             // Need to wait one tick for focusModeRef to update
