@@ -112,9 +112,14 @@
       * { margin: 0; padding: 0; box-sizing: border-box; }
       ::placeholder { color: var(--text-dim); opacity: 1; }
       html, body, #root { height: 100%; width: 100%; overflow: hidden; }
+      html {
+        /* Force dark rendering in WKWebView regardless of system appearance */
+        color-scheme: dark;
+        background: #1a1a1a;
+      }
       body {
         font-family: -apple-system, BlinkMacSystemFont, sans-serif;
-        background: transparent;
+        background: var(--bg-app);
         color: var(--text-primary);
         -webkit-font-smoothing: antialiased;
       }
