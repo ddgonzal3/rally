@@ -33,6 +33,7 @@ export function StashDock({ workspaceId }: StashDockProps) {
         zIndex: 9000,
         display: "flex",
         alignItems: "center",
+        justifyContent: "flex-end",
         paddingLeft: 12,
         paddingRight: 12,
         gap: 6,
