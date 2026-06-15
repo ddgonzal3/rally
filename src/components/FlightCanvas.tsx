@@ -85,7 +85,7 @@ const WorkspaceFlightView = React.memo(function WorkspaceFlightView({
 
   // Width of each snap item: divide container by focusColumns
   const [containerSize, setContainerSize] = useState({ w: 0, h: 0 });
-  const DOCK_HEIGHT = 35;
+  const DOCK_HEIGHT = 28;
   const dockHeightRef = useRef(DOCK_HEIGHT);
   dockHeightRef.current = DOCK_HEIGHT;
   useEffect(() => {

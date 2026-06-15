@@ -349,7 +349,7 @@ export function BuildStatusDrawer() {
       right: 0,
       height,
       background: "var(--terminal-popup-bg)",
-      zIndex: 100,
+      zIndex: 10000,
       transform: isSliding ? "translateY(100%)" : "translateY(0)",
       opacity: isSliding ? 0 : 1,
       transition: "transform 0.1s ease-out, opacity 0.1s ease-out",
