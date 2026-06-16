@@ -1,6 +1,7 @@
 // src/components/StashChip.tsx
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import { useWorkspaceStore, ptyLastOutputAt } from "../stores/workspaceStore";
+import { showContextMenu } from "../lib/contextMenu";
 import type { LayoutNode } from "../lib/types";
 
 const ACTIVE_THRESHOLD_MS = 3000;
@@ -106,13 +107,32 @@ export function StashChip({ podId, workspaceId }: StashChipProps) {
     [isEditing, unstashPod, workspaceId, podId],
   );
 
+  const startRename = useCallback(() => {
+    setEditValue(displayName);
+    setIsEditing(true);
+  }, [displayName]);
+
   const handleLabelDoubleClick = useCallback(
     (e: React.MouseEvent) => {
       e.stopPropagation();
-      setEditValue(displayName);
-      setIsEditing(true);
+      startRename();
     },
-    [displayName],
+    [startRename],
+  );
+
+  const handleContextMenu = useCallback(
+    (e: React.MouseEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      showContextMenu(
+        [
+          { label: "Rename", action: startRename },
+          { label: "Restore", action: () => unstashPod(workspaceId, podId) },
+        ],
+        { x: e.clientX, y: e.clientY },
+      );
+    },
+    [startRename, unstashPod, workspaceId, podId],
   );
 
   const commitEdit = useCallback(() => {
@@ -133,6 +153,7 @@ export function StashChip({ podId, workspaceId }: StashChipProps) {
   return (
     <div
       onClick={handleChipClick}
+      onContextMenu={handleContextMenu}
       style={{
         display: "flex",
         alignItems: "center",

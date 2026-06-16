@@ -24,6 +24,7 @@ export function StashDock({ workspaceId }: StashDockProps) {
 
   return (
     <div
+      onContextMenu={(e) => e.stopPropagation()}
       style={{
         position: "absolute",
         bottom: 0,
