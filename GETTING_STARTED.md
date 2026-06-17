@@ -150,7 +150,7 @@ Git status auto-refreshes every 10 seconds.
 
 ## 7. Scripts & Watchers
 
-Rally auto-discovers shell scripts from your repo's `scripts/` directory and lets you pin them to the **bottom status bar** for one-click access with live status feedback.
+Rally auto-discovers shell scripts from your repo's `scripts/` directory and lets you pin them to the **bottom status bar** for one-click access with live status feedback. You can also pin scripts that live **anywhere in the repo** by referencing them with a relative path.
 
 ### How to set it up
 
@@ -173,14 +173,21 @@ my-repo/
 
 To show scripts in the **status bar** (the bar at the bottom of the app), you need to explicitly add them. Two ways:
 
-1. **Right-click** any `.sh` file in the file explorer and select **Add to Status Bar**
+1. **Right-click** any `.sh` file in the file explorer and select **Add to Status Bar** (works for scripts anywhere in the repo, not just `scripts/`)
 2. **Manually** add a `statusBar` array to your repo's `RALLY.json`:
 
 ```json
 {
-  "statusBar": ["watch.sh", "build.sh"]
+  "statusBar": ["watch.sh", "tools/ci/build.sh"]
 }
 ```
+
+**How each entry is resolved:**
+
+1. **Relative path from the repo root** — `"tools/ci/build.sh"` or `"scripts/check.sh"` points directly at a file anywhere in the repo.
+2. **`scripts/` fallback** — a bare filename like `"watch.sh"` (or a path that no longer exists) falls back to `scripts/<filename>`. This keeps older configs working without changes.
+
+The name shown in the footer is always the **basename without its extension** — `tools/ci/build.sh` displays as `build`.
 
 Once in the status bar, scripts show a play/stop button and live output. Click the script name to expand a terminal drawer with full output.
 
@@ -269,7 +276,7 @@ Rally lets you edit:
 ### RALLY.json
 
 An optional config file in your repo root. Supports:
-- `"statusBar": ["watch.sh", "build.sh"]` -- pin scripts to the bottom status bar (see [Scripts & Watchers](#7-scripts--watchers))
+- `"statusBar": ["watch.sh", "tools/ci/build.sh"]` -- pin scripts to the bottom status bar; entries are resolved as relative paths from the repo root, falling back to `scripts/<filename>` (see [Scripts & Watchers](#7-scripts--watchers))
 - `"excludeScripts": ["test.sh"]` -- hide scripts from discovery
 - `"excludeBuiltins": ["ship"]` -- hide built-in Claude commands
 

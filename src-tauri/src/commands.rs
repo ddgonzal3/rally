@@ -791,6 +791,47 @@ pub struct ScriptEntry {
     pub file_path: Option<String>,
 }
 
+/// Whether a filename looks like a runnable shell script.
+fn is_script_file(name: &str) -> bool {
+    let lower = name.to_lowercase();
+    SCRIPT_EXTENSIONS.iter().any(|ext| lower.ends_with(ext))
+}
+
+/// Strip the directory and script extension to produce a display label
+/// (e.g. `tools/ci/check.sh` → `check`).
+fn script_label(name: &str) -> String {
+    let base = Path::new(name)
+        .file_name()
+        .map(|s| s.to_string_lossy().to_string())
+        .unwrap_or_else(|| name.to_string());
+    base.trim_end_matches(".bash")
+        .trim_end_matches(".zsh")
+        .trim_end_matches(".sh")
+        .to_string()
+}
+
+/// Build a `ScriptEntry` for a resolved script file.
+///
+/// `name` is the identity the UI matches against config entries: the basename
+/// for scripts auto-discovered from `scripts/`, or the verbatim config string
+/// (often a relative path) for entries declared in RALLY.json.
+fn make_script_entry(abs_path: &Path, name: String) -> ScriptEntry {
+    let full_path = abs_path.to_string_lossy().to_string();
+    let interpreter = if full_path.to_lowercase().ends_with(".zsh") {
+        "zsh"
+    } else {
+        "bash"
+    };
+    let label = script_label(&name);
+    ScriptEntry {
+        command: format!("{} \"{}\"", interpreter, full_path),
+        name,
+        label,
+        builtin: false,
+        file_path: Some(full_path),
+    }
+}
+
 /// Discover script files from the `scripts/` directory at the repo root.
 fn discover_scripts(root_path: &str, exclude: &[String]) -> Vec<ScriptEntry> {
     let scripts_dir = Path::new(root_path).join("scripts");
@@ -804,10 +845,9 @@ fn discover_scripts(root_path: &str, exclude: &[String]) -> Vec<ScriptEntry> {
         .flatten() // DirEntry results
         .filter_map(|entry| {
             let name = entry.file_name().to_string_lossy().to_string();
-            let lower = name.to_lowercase();
 
             // Only include script files
-            if !SCRIPT_EXTENSIONS.iter().any(|ext| lower.ends_with(ext)) {
+            if !is_script_file(&name) {
                 return None;
             }
             // Skip excluded scripts
@@ -815,22 +855,42 @@ fn discover_scripts(root_path: &str, exclude: &[String]) -> Vec<ScriptEntry> {
                 return None;
             }
 
-            let full_path = entry.path().to_string_lossy().to_string();
-            let interpreter = if lower.ends_with(".zsh") { "zsh" } else { "bash" };
-            let command = format!("{} \"{}\"", interpreter, full_path);
-
-            Some(ScriptEntry {
-                name: name.clone(),
-                label: name,
-                command,
-                builtin: false,
-                file_path: Some(full_path),
-            })
+            Some(make_script_entry(&entry.path(), name))
         })
         .collect();
 
     scripts.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
     scripts
+}
+
+/// Resolve a RALLY.json script reference to a concrete file.
+///
+/// Resolution order:
+///   1. As a path relative to the repo root (`tools/build.sh`, `scripts/check.sh`).
+///   2. Fallback to `scripts/<basename>` — keeps bare filenames (and stale
+///      paths) working against the conventional `scripts/` directory.
+///
+/// The returned entry's `name` is the verbatim config string so the frontend
+/// can match it back to the RALLY.json `statusBar` entry.
+fn resolve_config_script(root: &Path, reference: &str) -> Option<ScriptEntry> {
+    if !is_script_file(reference) {
+        return None;
+    }
+
+    // 1. Relative path from the repo root.
+    let direct = root.join(reference);
+    if direct.is_file() {
+        return Some(make_script_entry(&direct, reference.to_string()));
+    }
+
+    // 2. Fallback: scripts/<basename>.
+    let basename = Path::new(reference).file_name()?.to_string_lossy().to_string();
+    let in_scripts = root.join("scripts").join(&basename);
+    if in_scripts.is_file() {
+        return Some(make_script_entry(&in_scripts, reference.to_string()));
+    }
+
+    None
 }
 
 #[tauri::command]
@@ -885,22 +945,44 @@ pub fn save_clipboard_image(data: String, mime_type: String) -> Result<String, S
 
 #[tauri::command]
 pub fn list_scripts(root_path: String) -> Result<Vec<ScriptEntry>, String> {
-    let rally_json = Path::new(&root_path).join("RALLY.json");
+    let root = Path::new(&root_path);
+    let rally_json = root.join("RALLY.json");
 
-    let exclude_scripts = if rally_json.exists() {
+    let config: RallyConfig = if rally_json.exists() {
         let content = fs::read_to_string(&rally_json)
             .map_err(|e| format!("Failed to read RALLY.json: {}", e))?;
-        let config: RallyConfig = serde_json::from_str(&content)
-            .map_err(|e| format!("Failed to parse RALLY.json: {}", e))?;
-        config.exclude_scripts
+        serde_json::from_str(&content)
+            .map_err(|e| format!("Failed to parse RALLY.json: {}", e))?
     } else {
-        Vec::new()
+        RallyConfig {
+            exclude_scripts: Vec::new(),
+            mode: None,
+            setup: None,
+            status_bar: Vec::new(),
+            status_bar_right: Vec::new(),
+        }
     };
 
     let mut entries: Vec<ScriptEntry> = Vec::new();
+    let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
 
-    // Add discovered scripts (filtered)
-    entries.extend(discover_scripts(&root_path, &exclude_scripts));
+    // 1. Scripts auto-discovered from the `scripts/` directory (keyed by basename).
+    for entry in discover_scripts(&root_path, &config.exclude_scripts) {
+        seen.insert(entry.name.clone());
+        entries.push(entry);
+    }
+
+    // 2. RALLY.json status-bar references resolved as relative paths (with a
+    //    `scripts/` fallback). Skip any already covered by discovery.
+    for reference in config.status_bar.iter().chain(config.status_bar_right.iter()) {
+        if seen.contains(reference) {
+            continue;
+        }
+        if let Some(entry) = resolve_config_script(root, reference) {
+            seen.insert(reference.clone());
+            entries.push(entry);
+        }
+    }
 
     Ok(entries)
 }

@@ -633,9 +633,8 @@ function VirtualFileTree({
       if (!selectedFilePaths.has(item.entry.path)) {
         toggleSelectedFilePath(item.entry.path, false);
       }
-      const scriptName = item.entry.path.split("/").pop() || "";
-      const statusBarScripts = useWorkspaceStore.getState().rallyConfigs[rootPath]?.statusBar ?? [];
-      const isInStatusBar = statusBarScripts.includes(scriptName);
+      const { relPath, existing } = statusBarMembership(item.entry.path, rootPath);
+      const isInStatusBar = !!existing;
       showContextMenu(
         fileContextMenu(item.entry.path, rootPath, item.entry.is_dir, {
           onTrash: () => {
@@ -649,11 +648,11 @@ function VirtualFileTree({
             setInlineEdit({ type: "create", parentPath: p, isDir: true }),
           onAddToStatusBar:
             !item.entry.is_dir && item.entry.path.endsWith(".sh") && !isInStatusBar
-              ? () => useWorkspaceStore.getState().addToStatusBar(rootPath, scriptName)
+              ? () => useWorkspaceStore.getState().addToStatusBar(rootPath, relPath)
               : undefined,
           onRemoveFromStatusBar:
             !item.entry.is_dir && item.entry.path.endsWith(".sh") && isInStatusBar
-              ? () => useWorkspaceStore.getState().removeFromStatusBar(rootPath, scriptName)
+              ? () => useWorkspaceStore.getState().removeFromStatusBar(rootPath, existing!)
               : undefined,
           onOpenInWebView: (fp) => {
             if (activeWorkspaceId) {
@@ -716,6 +715,24 @@ function relativePath(filePath: string, rootPath: string): string {
   return filePath.startsWith(rootPath)
     ? filePath.slice(rootPath.length).replace(/^\//, "")
     : filePath;
+}
+
+/**
+ * Resolve how a file relates to the repo's RALLY.json `statusBar`.
+ * `relPath` is the repo-relative path we write for new entries; `existing` is
+ * the verbatim config entry already present (relative path or legacy basename),
+ * so we can toggle/remove the exact string regardless of which form it uses.
+ */
+function statusBarMembership(filePath: string, rootPath: string): {
+  relPath: string;
+  existing: string | undefined;
+} {
+  const relPath = relativePath(filePath, rootPath);
+  const basename = filePath.split("/").pop() || "";
+  const statusBar =
+    useWorkspaceStore.getState().rallyConfigs[rootPath]?.statusBar ?? [];
+  const existing = statusBar.find((s) => s === relPath || s === basename);
+  return { relPath, existing };
 }
 
 function parentDir(filePath: string): string {
@@ -1220,9 +1237,8 @@ const FileTreeNode = React.memo(
               }
 
               // Single-file context menu
-              const scriptName = entry.path.split("/").pop() || "";
-              const statusBarScripts = useWorkspaceStore.getState().rallyConfigs[rootPath]?.statusBar ?? [];
-              const isInStatusBar = statusBarScripts.includes(scriptName);
+              const { relPath, existing } = statusBarMembership(entry.path, rootPath);
+              const isInStatusBar = !!existing;
               showContextMenu(
                 fileContextMenu(entry.path, rootPath, entry.is_dir, {
                   onTrash: removeChild
@@ -1243,10 +1259,10 @@ const FileTreeNode = React.memo(
                       isDir: true,
                     }),
                   onAddToStatusBar: (!entry.is_dir && entry.path.endsWith(".sh") && !isInStatusBar)
-                    ? () => useWorkspaceStore.getState().addToStatusBar(rootPath, scriptName)
+                    ? () => useWorkspaceStore.getState().addToStatusBar(rootPath, relPath)
                     : undefined,
                   onRemoveFromStatusBar: (!entry.is_dir && entry.path.endsWith(".sh") && isInStatusBar)
-                    ? () => useWorkspaceStore.getState().removeFromStatusBar(rootPath, scriptName)
+                    ? () => useWorkspaceStore.getState().removeFromStatusBar(rootPath, existing!)
                     : undefined,
                     onOpenInWebView: (fp) => {
                       const store = useWorkspaceStore.getState();

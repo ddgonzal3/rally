@@ -3,8 +3,13 @@ import type { ScriptRun } from "./types";
 
 export type WatcherBuildStatus = "idle" | "building" | "success" | "error";
 
+/** Basename of a script reference, which may be a relative path. */
+function scriptBasename(name: string): string {
+  return name.split("/").pop() ?? name;
+}
+
 export function isWatcherScript(name: string): boolean {
-  return name.toLowerCase().includes("watch");
+  return scriptBasename(name).toLowerCase().includes("watch");
 }
 
 const ANSI_REGEX = /\x1b\[[0-9;?]*[ -/]*[@-~]/g;
@@ -228,5 +233,5 @@ export function getStatusColor(status: WatcherBuildStatus): string {
 }
 
 export function getDisplayName(scriptName: string): string {
-  return scriptName.replace(/\.(sh|bash)$/, "");
+  return scriptBasename(scriptName).replace(/\.(sh|bash|zsh)$/, "");
 }
