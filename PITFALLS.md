@@ -96,3 +96,9 @@ Detect secondary windows by checking URL search params: `initialWorkspaceId` or 
 ## Context Menu: Always `stopPropagation()` in Nested Handlers
 
 When a component tree has `onContextMenu` handlers at multiple levels (e.g. a tree node AND its container), the child handler **must** call `e.stopPropagation()` in addition to `e.preventDefault()`. Without it, the event bubbles to the parent, which fires a second `showContextMenu()` call. That second call clears the ghost-event suppression flag, so when the user clicks elsewhere to dismiss, macOS dispatches a ghost `contextmenu` event that opens yet another menu. Symptom: dismissing a right-click menu by clicking elsewhere opens a new menu at the click location.
+
+## Boolean In-Flight Guards Latch Forever When an Invoke Never Settles
+
+Never guard a poll loop with a bare boolean (`if (inFlight) return; inFlight = true; try { await work() } finally { inFlight = false }`). A Tauri `invoke()` whose Rust future parks forever (e.g. an unbounded semaphore acquire, or a panicked command) means the `finally` never runs — the guard latches `true` and **every future poll silently no-ops until app restart**. This bricked PR-badge polling: one hung `git_pr_status` at startup killed the 30s interval, the focus handler, the visibilitychange handler, AND the manual refresh button, with zero errors anywhere. Use `src/lib/singleFlight.ts`, which races the work against a deadline and always settles.
+
+Corollary on the Rust side: any `await` inside a `#[tauri::command]` must be bounded. `gh()` originally acquired the per-repo semaphore *outside* its 30s process timeout — an unbounded wait. And `tokio::time::timeout` around a `Command` does NOT kill the child when it fires; without `.kill_on_drop(true)` the process leaks as an orphan (and for git, keeps holding `.git` locks).

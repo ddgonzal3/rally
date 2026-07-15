@@ -57,11 +57,15 @@ fn resolve_bin(name: &str) -> String {
 
 /// Run a git command without the per-repo lock. Used internally.
 async fn git_cmd_unlocked(cwd: &str, args: &[&str]) -> Result<String, String> {
+    // kill_on_drop: callers wrap git_cmd in timeouts (e.g. fetch); when the
+    // timeout drops this future the child must die with it, not linger as an
+    // orphan holding .git locks.
     let output = Command::new(resolve_bin("git"))
         .args(args)
         .env("PATH", full_path())
         .env("GIT_OPTIONAL_LOCKS", "0")
         .current_dir(cwd)
+        .kill_on_drop(true)
         .output()
         .await
         .map_err(|e| format!("Failed to run git: {}", e))?;
@@ -87,21 +91,30 @@ pub async fn git_cmd(cwd: &str, args: &[&str]) -> Result<String, String> {
 /// Run gh CLI command in a given directory (async, with timeout for network ops).
 /// Acquires the same per-repo semaphore as git_cmd() — `gh` internally runs
 /// git operations (rev-list, config, etc.) that conflict with concurrent git commands.
+///
+/// The timeout covers the semaphore wait too, not just the process: an
+/// unbounded acquire means one wedged git operation on a repo makes every
+/// gh call for that repo hang forever, and the invoke never resolves to the
+/// frontend. kill_on_drop ensures a timed-out gh process is killed instead
+/// of leaking as an orphan.
 async fn gh(cwd: &str, args: &[&str]) -> Result<String, String> {
-    let sem = repo_semaphore(cwd);
-    let _permit = sem.acquire().await.map_err(|_| "semaphore closed".to_string())?;
-
-    let output = tokio::time::timeout(
-        Duration::from_secs(30),
+    let output = tokio::time::timeout(Duration::from_secs(60), async {
+        let sem = repo_semaphore(cwd);
+        let _permit = sem
+            .acquire()
+            .await
+            .map_err(|_| "semaphore closed".to_string())?;
         Command::new(resolve_bin("gh"))
             .args(args)
             .env("PATH", full_path())
             .current_dir(cwd)
-            .output(),
-    )
+            .kill_on_drop(true)
+            .output()
+            .await
+            .map_err(|e| format!("Failed to run gh: {}", e))
+    })
     .await
-    .map_err(|_| format!("gh {} timed out after 30s", args.join(" ")))?
-    .map_err(|e| format!("Failed to run gh: {}", e))?;
+    .map_err(|_| format!("gh {} timed out after 60s", args.join(" ")))??;
 
     if output.status.success() {
         Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())

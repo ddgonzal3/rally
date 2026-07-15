@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef } from "react";
+import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { open } from "@tauri-apps/plugin-dialog";
@@ -10,6 +10,7 @@ import { lastFocusedFlightPodId } from "./components/FlightPod";
 import { useWorkspaceStore } from "./stores/workspaceStore";
 import { api, openUrl } from "./lib/tauri";
 import { showContextMenu } from "./lib/contextMenu";
+import { singleFlight } from "./lib/singleFlight";
 import { collectReferencedPtyIds, AUTO_RELEASE_MIN_AGE_S } from "./lib/orphanPtys";
 import { AddWorkspaceModal } from "./components/AddWorkspaceModal";
 import {
@@ -630,9 +631,6 @@ export function App() {
   }, [fileExplorerCollapsed, fileExplorerCollapsedKey]);
 
   const resizingRef = useRef(false);
-  const gitRefreshInFlightRef = useRef(false);
-  const prRefreshInFlightRef = useRef(false);
-  const fetchInFlightRef = useRef(false);
   const lastInteractionAtRef = useRef(Date.now());
   const explorerRef = useRef<HTMLDivElement>(null);
   // The user's preferred explorer width (set by drag resize or initial load).
@@ -640,8 +638,6 @@ export function App() {
   const preferredExplorerWidthRef = useRef(fileExplorerWidth);
 
   const [showAddWorkspaceModal, setShowAddWorkspaceModal] = useState(false);
-  const [prRefreshing, setPrRefreshing] = useState(false);
-  const prRefreshingRef = useRef(false);
 
   // Auto-shrink explorer (and collapse sidebar as last resort) to keep main area usable
   const MIN_MAIN_WIDTH = 600;
@@ -753,59 +749,42 @@ export function App() {
     return Date.now() - lastInteractionAtRef.current < BACKGROUND_WORK_DEFER_MS;
   }, [BACKGROUND_WORK_DEFER_MS]);
 
-  const runGitRefresh = useCallback(
-    async (force = false) => {
-      if (gitRefreshInFlightRef.current) return;
-      if (!force && shouldDeferBackgroundWork()) return;
-      gitRefreshInFlightRef.current = true;
-      try {
+  // Poll cycles run behind singleFlight so a hung Tauri invoke can never
+  // permanently latch the in-flight guard and kill polling until app restart
+  // (this happened: one startup git_pr_status invoke that never settled
+  // silently disabled all PR badge refreshes). The deadline must exceed the
+  // worst honest cycle: gh calls are capped at 60s in Rust, run per-repo.
+  const POLL_STALE_MS = 120000;
+
+  const runGitRefresh = useMemo(
+    () =>
+      singleFlight("git status refresh", POLL_STALE_MS, async (force = false) => {
+        if (!force && shouldDeferBackgroundWork()) return;
         await refreshAllGitStatuses();
-      } finally {
-        gitRefreshInFlightRef.current = false;
-      }
-    },
-    [refreshAllGitStatuses, shouldDeferBackgroundWork],
+      }),
+    [refreshAllGitStatuses, shouldDeferBackgroundWork, POLL_STALE_MS],
   );
 
-  const runPrRefresh = useCallback(
-    async (force = false) => {
-      if (prRefreshInFlightRef.current) return;
+  const runPrRefresh = useMemo(
+    () =>
       // PR refresh is lightweight (one `gh pr view` per repo). Don't defer
       // on user interaction — stale PR state is exactly the bug we're
       // preventing. Only skip if tab is hidden unless forced.
-      if (!force && document.hidden) return;
-      prRefreshInFlightRef.current = true;
-      try {
+      singleFlight("PR status refresh", POLL_STALE_MS, async (force = false) => {
+        if (!force && document.hidden) return;
         await refreshAllPrStatuses();
-      } finally {
-        prRefreshInFlightRef.current = false;
-      }
-    },
-    [refreshAllPrStatuses],
+      }),
+    [refreshAllPrStatuses, POLL_STALE_MS],
   );
 
-  const triggerManualPrRefresh = useCallback(async () => {
-    if (prRefreshingRef.current) return;
-    prRefreshingRef.current = true;
-    setPrRefreshing(true);
-    try {
-      await runPrRefresh(true);
-    } finally {
-      prRefreshingRef.current = false;
-      setPrRefreshing(false);
-    }
-  }, [runPrRefresh]);
-
-  const runFetchAll = useCallback(async () => {
-    if (fetchInFlightRef.current) return;
-    if (shouldDeferBackgroundWork()) return;
-    fetchInFlightRef.current = true;
-    try {
-      await fetchAllRepos();
-    } finally {
-      fetchInFlightRef.current = false;
-    }
-  }, [fetchAllRepos, shouldDeferBackgroundWork]);
+  const runFetchAll = useMemo(
+    () =>
+      singleFlight("repo fetch", POLL_STALE_MS, async () => {
+        if (shouldDeferBackgroundWork()) return;
+        await fetchAllRepos();
+      }),
+    [fetchAllRepos, shouldDeferBackgroundWork, POLL_STALE_MS],
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -1210,7 +1189,7 @@ export function App() {
       .catch(() => {});
 
     listen("rally-menu-refresh-prs", () => {
-      void triggerManualPrRefresh();
+      void runPrRefresh(true);
     })
       .then((fn) => {
         if (cancelled) fn();
@@ -1242,7 +1221,7 @@ export function App() {
       unlistenRefreshPrs?.();
       unlistenWorkspacesUpdated?.();
     };
-  }, [loadWorkspaces, forceNoWorkspaceSelection, triggerManualPrRefresh]);
+  }, [loadWorkspaces, forceNoWorkspaceSelection, runPrRefresh]);
 
   // CLI: open files sent from `rally <file>` command
   useEffect(() => {
@@ -1990,33 +1969,6 @@ export function App() {
           <span style={styles.titleText}>{activeWorkspaceName}</span>
         </div>
         <div style={styles.titlebarRight}>
-          <button
-            className="activity-btn"
-            style={styles.prRefreshBtn}
-            disabled={prRefreshing}
-            onClick={() => { void triggerManualPrRefresh(); }}
-            title="Refresh PR status (⇧⌘R)"
-          >
-            <svg
-              width="12"
-              height="12"
-              viewBox="0 0 12 12"
-              fill="none"
-              aria-hidden="true"
-              style={{
-                animation: prRefreshing ? "spin 0.9s linear infinite" : undefined,
-              }}
-            >
-              <path
-                d="M10 6A4 4 0 1 1 8.5 3M10 2v2.5H7.5"
-                stroke="#ddd"
-                strokeWidth="1.1"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                fill="none"
-              />
-            </svg>
-          </button>
           {activePrs.length > 0 && (
             <>
             {activePrs.map(({ path, repoName, pr }) => (
@@ -2664,17 +2616,6 @@ const styles: Record<string, React.CSSProperties> = {
     lineHeight: 1,
     maxWidth: 200,
     overflow: "hidden",
-  },
-  prRefreshBtn: {
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    background: "none",
-    border: "none",
-    cursor: "pointer",
-    padding: 4,
-    borderRadius: 4,
-    color: "var(--text-secondary)",
   },
   body: {
     flex: 1,
