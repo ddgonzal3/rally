@@ -480,6 +480,10 @@ fn main() {
             let test_pending = test_bridge_pending.clone();
 
             move |app| {
+            // Resolve the user's real shell PATH off the main thread before any
+            // git/gh/PTY work needs it — an interactive rc file can take seconds.
+            rally::shell_env::warm();
+
             // Start the CLI server (localhost HTTP listener for `rally` CLI and rally-park skill)
             rally::cli_server::start(app.handle().clone());
 

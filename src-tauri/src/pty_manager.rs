@@ -232,21 +232,14 @@ impl PtyManager {
         let rally_bin = std::env::var("HOME")
             .map(|h| format!("{}/.rally/bin", h))
             .unwrap_or_default();
-        if let Ok(output) = std::process::Command::new(&shell)
-            .args(["-lc", "echo $PATH"])
-            .output()
-        {
-            if let Ok(path) = String::from_utf8(output.stdout) {
-                let path = path.trim();
-                if !path.is_empty() {
-                    let full_path = if rally_bin.is_empty() {
-                        path.to_string()
-                    } else {
-                        format!("{}:{}", rally_bin, path)
-                    };
-                    cmd.env("PATH", full_path);
-                }
-            }
+        let resolved_path = crate::shell_env::full_path();
+        if !resolved_path.is_empty() {
+            let path = if rally_bin.is_empty() {
+                resolved_path.to_string()
+            } else {
+                format!("{}:{}", rally_bin, resolved_path)
+            };
+            cmd.env("PATH", path);
         }
         // Remove env vars that prevent Claude Code from launching inside Rally PTYs
         cmd.env_remove("CLAUDECODE");

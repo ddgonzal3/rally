@@ -6,6 +6,7 @@ pub mod git_watch;
 pub mod parked_threads;
 pub mod pty_manager;
 pub mod search_ops;
+pub mod shell_env;
 #[cfg(feature = "test-bridge")]
 pub mod test_server;
 pub mod workspace;

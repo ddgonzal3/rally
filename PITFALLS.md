@@ -102,3 +102,20 @@ When a component tree has `onContextMenu` handlers at multiple levels (e.g. a tr
 Never guard a poll loop with a bare boolean (`if (inFlight) return; inFlight = true; try { await work() } finally { inFlight = false }`). A Tauri `invoke()` whose Rust future parks forever (e.g. an unbounded semaphore acquire, or a panicked command) means the `finally` never runs — the guard latches `true` and **every future poll silently no-ops until app restart**. This bricked PR-badge polling: one hung `git_pr_status` at startup killed the 30s interval, the focus handler, the visibilitychange handler, AND the manual refresh button, with zero errors anywhere. Use `src/lib/singleFlight.ts`, which races the work against a deadline and always settles.
 
 Corollary on the Rust side: any `await` inside a `#[tauri::command]` must be bounded. `gh()` originally acquired the per-repo semaphore *outside* its 30s process timeout — an unbounded wait. And `tokio::time::timeout` around a `Command` does NOT kill the child when it fires; without `.kill_on_drop(true)` the process leaks as an orphan (and for git, keeps holding `.git` locks).
+
+## `zsh -lc` Does NOT Source `.zshrc` — Homebrew Tools Vanish in .app Builds
+
+A *login, non-interactive* shell (`zsh -lc`) sources `.zprofile`/`.zlogin` but **never `.zshrc`** — and `.zshrc` is where Homebrew's `/opt/homebrew/bin` normally lands (`eval "$(brew shellenv)"`). Rally's `full_path()` used `$SHELL -lc 'echo $PATH'`, so when launched from Finder/Dock/Spotlight it resolved a PATH with **no Homebrew**.
+
+The failure was nearly undetectable:
+- `git` still worked — `/usr/bin/git` ships with macOS and is in the minimal PATH.
+- `gh` did not resolve, `resolve_bin()` fell back to the bare name, and the spawn failed with a generic ENOENT. **No process, no network, no log** — PR badges silently stayed empty forever while every other Rally feature worked.
+- Launching from a terminal masked it entirely: the child shell inherited an already-correct PATH, so `./scripts/run.sh` builds behaved perfectly. Same binary, different launcher, different behavior.
+- In-app terminals were never affected — PTYs spawn `zsh -l` **interactively**, which does read `.zshrc`.
+
+Fix: `src-tauri/src/shell_env.rs` probes `zsh -ilc` with sentinel-delimited output (rc-file banners can't corrupt the parse), falls back to `-lc` then the process PATH, and unions in well-known dirs (`/opt/homebrew/bin`, `~/.local/bin`, `~/.cargo/bin`, …) that exist on disk. `resolve_bin()` now returns `Err` naming the binary and the resolved PATH instead of degrading to a bare-name spawn.
+
+Rules:
+- Never probe user PATH with `-lc`. Use `-ilc` plus sentinels plus a timeout (interactive rc files can hang or be slow).
+- Never let a binary-resolution miss degrade into a bare-name spawn — the resulting ENOENT is indistinguishable from a hundred other failures.
+- Never swallow a poll error with a bare `catch {}`. The PR poll's silent `catch` is the reason this survived months of debugging.
