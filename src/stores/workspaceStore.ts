@@ -1549,7 +1549,10 @@ export const useWorkspaceStore = create<WorkspaceState>()(
         try {
           const prStatus = await api.gitPrStatus(path);
           return { path, prStatus, error: false as const };
-        } catch {
+        } catch (e) {
+          // Never swallow silently: a broken `gh` (not on PATH, not logged in)
+          // makes every PR badge vanish with no other symptom.
+          console.warn(`[rally] PR status failed for ${path}:`, e);
           return { path, prStatus: null, error: true as const };
         }
       }),

@@ -5,6 +5,7 @@ use std::time::Duration;
 use tokio::process::Command;
 use tokio::sync::Semaphore;
 
+use crate::shell_env::{full_path, resolve_bin};
 use crate::workspace::{ChangedFile, ChangesSummary, CommitEntry, GitStatus, PrComment, PrCommit, PrDetails, PrReview, PrStatus, PushResult};
 
 /// Per-repo semaphore to serialize git operations.
@@ -20,47 +21,12 @@ fn repo_semaphore(cwd: &str) -> std::sync::Arc<Semaphore> {
         .clone()
 }
 
-/// Get the full login shell PATH, cached for the process lifetime.
-/// When launched as a .app bundle, macOS gives a minimal PATH (/usr/bin:/bin:/usr/sbin:/sbin).
-/// Tools like `gh` installed via Homebrew (/opt/homebrew/bin) won't be found.
-/// This resolves the full PATH from a login shell, just like pty_manager does for PTY sessions.
-fn full_path() -> &'static str {
-    static PATH: OnceLock<String> = OnceLock::new();
-    PATH.get_or_init(|| {
-        let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/zsh".to_string());
-        if let Ok(output) = std::process::Command::new(&shell)
-            .args(["-lc", "echo $PATH"])
-            .output()
-        {
-            let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
-            if !path.is_empty() {
-                return path;
-            }
-        }
-        // Fallback: current PATH (works when launched from terminal)
-        std::env::var("PATH").unwrap_or_default()
-    })
-}
-
-/// Resolve a binary name to its full path using the login shell PATH.
-/// `Command::new("gh")` only searches the current process's PATH, which is minimal
-/// when launched as a .app bundle. This explicitly searches the full login shell PATH.
-fn resolve_bin(name: &str) -> String {
-    for dir in full_path().split(':') {
-        let candidate = format!("{}/{}", dir, name);
-        if std::path::Path::new(&candidate).exists() {
-            return candidate;
-        }
-    }
-    name.to_string() // fallback: let the OS try
-}
-
 /// Run a git command without the per-repo lock. Used internally.
 async fn git_cmd_unlocked(cwd: &str, args: &[&str]) -> Result<String, String> {
     // kill_on_drop: callers wrap git_cmd in timeouts (e.g. fetch); when the
     // timeout drops this future the child must die with it, not linger as an
     // orphan holding .git locks.
-    let output = Command::new(resolve_bin("git"))
+    let output = Command::new(resolve_bin("git")?)
         .args(args)
         .env("PATH", full_path())
         .env("GIT_OPTIONAL_LOCKS", "0")
@@ -104,7 +70,7 @@ async fn gh(cwd: &str, args: &[&str]) -> Result<String, String> {
             .acquire()
             .await
             .map_err(|_| "semaphore closed".to_string())?;
-        Command::new(resolve_bin("gh"))
+        Command::new(resolve_bin("gh")?)
             .args(args)
             .env("PATH", full_path())
             .current_dir(cwd)
@@ -651,7 +617,7 @@ pub async fn merge_pr(cwd: &str, method: &str) -> Result<String, String> {
 pub async fn changes(cwd: &str) -> Result<ChangesSummary, String> {
     let sem = repo_semaphore(cwd);
     let _permit = sem.acquire().await.map_err(|_| "semaphore closed".to_string())?;
-    let raw = Command::new(resolve_bin("git"))
+    let raw = Command::new(resolve_bin("git")?)
         .args(&["status", "--porcelain"])
         .env("PATH", full_path())
         .current_dir(cwd)
@@ -758,7 +724,7 @@ pub async fn apply_patch(cwd: &str, patch: &str, reverse: bool, cached: bool) ->
     if cached {
         args.push("--cached");
     }
-    let mut child = tokio::process::Command::new(resolve_bin("git"))
+    let mut child = tokio::process::Command::new(resolve_bin("git")?)
         .args(&args)
         .env("PATH", full_path())
         .current_dir(cwd)
@@ -797,7 +763,7 @@ pub async fn diff(cwd: &str, staged: bool) -> Result<String, String> {
     if staged {
         args.push("--cached");
     }
-    let output = tokio::process::Command::new(resolve_bin("git"))
+    let output = tokio::process::Command::new(resolve_bin("git")?)
         .args(&args)
         .env("PATH", full_path())
         .current_dir(cwd)
@@ -819,7 +785,7 @@ pub async fn diff_stat(cwd: &str) -> Result<(i64, i64), String> {
     let mut total_del: i64 = 0;
 
     for args in [&["diff", "--numstat"][..], &["diff", "--cached", "--numstat"][..]] {
-        let output = Command::new(resolve_bin("git"))
+        let output = Command::new(resolve_bin("git")?)
             .args(args)
             .env("PATH", full_path())
             .current_dir(cwd)
