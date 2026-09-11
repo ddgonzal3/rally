@@ -383,7 +383,14 @@ async function runStep(workspaceId: string, podId: string, step: PrepStep): Prom
       const branch = useWorkspaceStore.getState().gitStatuses[cwd]?.branch ?? pod.task.branch ?? null;
       const prompt =
         pod.task.prompt ||
-        buildTaskPrompt({ description: pod.task.description, kind: pod.task.kind === "question" ? "question" : "work", cwd, branch, trailer: resolved.promptTrailer });
+        buildTaskPrompt({
+          description: pod.task.description,
+          kind: pod.task.kind === "question" ? "question" : "work",
+          cwd,
+          branch,
+          trailer: resolved.promptTrailer,
+          attachments: pod.task.attachments,
+        });
       patchTask(workspaceId, podId, (t) => ({ ...t, prompt, branch: branch ?? t.branch }));
       const mode = await deliverPromptToPod(workspaceId, podId, prompt, { clearFirst: true, model: pod.task.model });
       patchTask(workspaceId, podId, (t) => ({ ...t, delivered: true, deliveredAt: Date.now() }));

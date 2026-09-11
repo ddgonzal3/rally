@@ -13,6 +13,7 @@ import {
   shortDescription,
   slugify,
   taskBranchName,
+  withAttachments,
 } from "./prepare";
 import type { CheckoutHealth, ClaudeSessionInfo, PrStatus, RallyConfig } from "./types";
 
@@ -209,6 +210,21 @@ describe("buildTaskPrompt", () => {
 
   it("marks questions read-only", () => {
     expect(buildTaskPrompt({ description: "How?", kind: "question", cwd: "/r", branch: "main", trailer: null })).toMatch(/Read only/);
+  });
+
+  it("lists pasted images before the trailer", () => {
+    const p = buildTaskPrompt({
+      description: "Match this design",
+      kind: "work",
+      cwd: "/r",
+      branch: null,
+      trailer: "T.",
+      attachments: ["/tmp/a.png", "/tmp/b.png"],
+    });
+    expect(p).toBe("Match this design\n\nAttached images (open them with the Read tool):\n- /tmp/a.png\n- /tmp/b.png\n\nT.");
+    expect(withAttachments("x", ["/tmp/a.png"])).toMatch(/^x\n\nAttached image \(open it with the Read tool\):\n- \/tmp\/a.png$/);
+    expect(withAttachments("x", [])).toBe("x");
+    expect(withAttachments("", ["/tmp/a.png"])).toBe("Attached image (open it with the Read tool):\n- /tmp/a.png");
   });
 });
 

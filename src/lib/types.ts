@@ -234,6 +234,8 @@ export interface PodTask {
   kind: "work" | "question" | "reset";
   /** Model chosen in ⌘K. Absent for resets and older tasks. */
   model?: ClaudeModel;
+  /** Image files pasted into ⌘K, saved under the clipboard dir. */
+  attachments?: string[];
   createdAt: number;
   /** Branch when the task started — continuing never changes it. */
   branch?: string;

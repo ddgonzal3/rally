@@ -43,6 +43,7 @@ import {
   podClaudeState,
   buildTaskSteps,
 } from "../lib/taskPrep";
+import { withAttachments } from "../lib/prepare";
 import {
   FLIGHT_DEFAULT_CLAUDE_WIDTH,
   FLIGHT_DEFAULT_CLAUDE_HEIGHT,
@@ -654,7 +655,14 @@ interface WorkspaceState {
   setPodTask: (workspaceId: string, podId: string, task: PodTask | undefined) => void;
   /** Create (or reuse an idle) Claude pod for `cwd`, attach the task, and run
    *  automatic preparation once. Returns the pod id. */
-  startTask: (params: { workspaceId: string; cwd: string; description: string; kind: "work" | "question"; model?: ClaudeModel }) => Promise<string>;
+  startTask: (params: {
+    workspaceId: string;
+    cwd: string;
+    description: string;
+    kind: "work" | "question";
+    model?: ClaudeModel;
+    attachments?: string[];
+  }) => Promise<string>;
   /** Sync a free checkout and park it on a placeholder branch. Refuses when
    *  a Claude session is running there. */
   resetCheckout: (workspaceId: string, podId: string) => Promise<void>;
@@ -664,7 +672,7 @@ interface WorkspaceState {
   skipPrepStep: (workspaceId: string, podId: string, stepId: string) => Promise<void>;
   /** Send a follow-up message to the pod's live Claude session (or start
    *  one). Never syncs, never touches watchers. */
-  sendToPod: (workspaceId: string, podId: string, message: string) => Promise<void>;
+  sendToPod: (workspaceId: string, podId: string, message: string, attachments?: string[]) => Promise<void>;
   /** Kill the pod's Claude session(s) but keep the pod, its task and shells. */
   stopPodSession: (workspaceId: string, podId: string) => Promise<void>;
   /** Save current flight layout as a named preset */
@@ -3580,7 +3588,7 @@ export const useWorkspaceStore = create<WorkspaceState>()(
     }));
   },
 
-  startTask: async ({ workspaceId, cwd, description, kind, model }) => {
+  startTask: async ({ workspaceId, cwd, description, kind, model, attachments }) => {
     get().getOrCreateFlightLayout(workspaceId);
     const pods = get().flightLayouts[workspaceId]?.pods ?? [];
 
@@ -3615,6 +3623,7 @@ export const useWorkspaceStore = create<WorkspaceState>()(
       prompt: "", // filled at delivery once the branch is known
       kind,
       model,
+      attachments: attachments && attachments.length > 0 ? attachments : undefined,
       createdAt: Date.now(),
       branch: get().gitStatuses[cwd]?.branch,
       delivered: false,
@@ -3661,8 +3670,8 @@ export const useWorkspaceStore = create<WorkspaceState>()(
     await resumePrepStep(workspaceId, podId, stepId);
   },
 
-  sendToPod: async (workspaceId, podId, message) => {
-    await deliverPromptToPod(workspaceId, podId, message);
+  sendToPod: async (workspaceId, podId, message, attachments = []) => {
+    await deliverPromptToPod(workspaceId, podId, withAttachments(message, attachments));
   },
 
   stopPodSession: async (_workspaceId, podId) => {

@@ -263,8 +263,10 @@ export function buildTaskPrompt(input: {
   cwd: string;
   branch: string | null;
   trailer: string | null;
+  /** Image files pasted into ⌘K; Claude opens them with its Read tool. */
+  attachments?: string[];
 }): string {
-  const body = input.description.trim();
+  const body = withAttachments(input.description.trim(), input.attachments ?? []);
   const where = `${input.cwd}${input.branch ? ` (branch ${input.branch})` : ""}`;
   if (input.kind === "question") {
     return `${body}\n\nAnswer from the checkout at ${where}. Read only — do not modify files, run builds, or open a PR.`;
@@ -274,6 +276,14 @@ export function buildTaskPrompt(input: {
       ? input.trailer.trim()
       : `Work in the checkout at ${where}. Make changes there directly — never create or switch into a nested worktree.`;
   return trailer ? `${body}\n\n${trailer}` : body;
+}
+
+/** Append pasted image paths so the agent knows to look at them. */
+export function withAttachments(text: string, attachments: string[]): string {
+  if (attachments.length === 0) return text;
+  const list = attachments.map((p) => `- ${p}`).join("\n");
+  const label = attachments.length === 1 ? "Attached image (open it with the Read tool):" : "Attached images (open them with the Read tool):";
+  return text ? `${text}\n\n${label}\n${list}` : `${label}\n${list}`;
 }
 
 // --- Agent activity ----------------------------------------------------------

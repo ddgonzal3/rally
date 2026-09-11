@@ -4,6 +4,7 @@ import { useWorkspaceStore } from "../stores/workspaceStore";
 import { useAgentStore } from "../stores/agentStore";
 import { findFreeCheckout, listProjects } from "../lib/taskPrep";
 import { folderName, shortDescription } from "../lib/prepare";
+import { api } from "../lib/tauri";
 import { showContextMenu } from "../lib/contextMenu";
 import type { CheckoutPick } from "../lib/prepare";
 import type { ClaudeModel } from "../lib/types";
@@ -24,6 +25,12 @@ function lastModel(): ClaudeModel {
   return v === "opus" ? "opus" : "fable";
 }
 const EASING = "cubic-bezier(0.2, 0, 0, 1)";
+
+/** A pasted image, saved to disk, with a preview for the card. */
+interface Attachment {
+  path: string;
+  preview: string;
+}
 
 interface OpenDetail {
   /** Message an existing agent. */
@@ -48,6 +55,7 @@ export function TaskLauncher() {
   const [project, setProject] = useState<string | null>(null);
   const [question, setQuestion] = useState(false);
   const [model, setModel] = useState<ClaudeModel>(lastModel);
+  const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [pick, setPick] = useState<CheckoutPick | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -125,6 +133,7 @@ export function TaskLauncher() {
       setTargetPodId(null);
       setFixedCwd(null);
       setPick(null);
+      setAttachments([]);
     }, 140);
   }, []);
 
@@ -185,14 +194,41 @@ export function TaskLauncher() {
     };
   }, [open, targetPodId, workspaceId, project, fixedCwd]);
 
+  // Pasted images are saved to disk and listed in the prompt by path;
+  // Claude opens them with its Read tool. Text pastes stay native.
+  const onPaste = useCallback((e: React.ClipboardEvent<HTMLTextAreaElement>) => {
+    const images = Array.from(e.clipboardData.items).filter((i) => i.type.startsWith("image/"));
+    if (images.length === 0) return;
+    e.preventDefault();
+    for (const item of images) {
+      const blob = item.getAsFile();
+      if (!blob) continue;
+      const mimeType = item.type;
+      const reader = new FileReader();
+      reader.onload = async () => {
+        const dataUrl = reader.result as string;
+        const base64 = dataUrl.split(",")[1];
+        if (!base64) return;
+        try {
+          const path = await api.saveClipboardImage(base64, mimeType);
+          setAttachments((prev) => [...prev, { path, preview: dataUrl }]);
+        } catch (err) {
+          setError(`Could not save image: ${String(err)}`);
+        }
+      };
+      reader.readAsDataURL(blob);
+    }
+  }, []);
+
   const submit = useCallback(async () => {
     const description = text.trim();
-    if (!description || busy || !workspaceId) return;
+    if ((!description && attachments.length === 0) || busy || !workspaceId) return;
     setBusy(true);
     setError(null);
     try {
+      const paths = attachments.map((a) => a.path);
       if (targetPodId) {
-        await sendToPod(workspaceId, targetPodId, description);
+        await sendToPod(workspaceId, targetPodId, description, paths);
       } else {
         if (!project) throw new Error("Pick a project");
         const fresh = fixedCwd ? { cwd: fixedCwd, reasons: [] } : await findFreeCheckout(workspaceId, project);
@@ -202,7 +238,7 @@ export function TaskLauncher() {
         }
         localStorage.setItem(LAST_PROJECT_KEY, project);
         localStorage.setItem(LAST_MODEL_KEY, model);
-        await startTask({ workspaceId, cwd: fresh.cwd, description, kind: question ? "question" : "work", model });
+        await startTask({ workspaceId, cwd: fresh.cwd, description, kind: question ? "question" : "work", model, attachments: paths });
       }
       close();
     } catch (e) {
@@ -210,11 +246,11 @@ export function TaskLauncher() {
     } finally {
       setBusy(false);
     }
-  }, [text, busy, workspaceId, targetPodId, fixedCwd, sendToPod, project, startTask, question, model, close]);
+  }, [text, busy, workspaceId, targetPodId, fixedCwd, sendToPod, project, startTask, question, model, attachments, close]);
 
   if (!open) return null;
 
-  const canSubmit = text.trim().length > 0 && !busy && (targetPodId ? true : !!pick?.cwd);
+  const canSubmit = (text.trim().length > 0 || attachments.length > 0) && !busy && (targetPodId ? true : !!pick?.cwd);
   const previewText = targetPodId
     ? null
     : pick === null
@@ -244,10 +280,31 @@ export function TaskLauncher() {
           }
           e.stopPropagation();
         }}
+        onPaste={onPaste}
         placeholder={targetPod ? `Message ${targetPod.label ?? folderName(targetPod.cwd)}…` : question ? "What do you want to know?" : "What should the agent do?"}
         rows={3}
         style={styles.textarea}
       />
+
+      {attachments.length > 0 && (
+        <div style={styles.attachments}>
+          {attachments.map((a) => (
+            <div key={a.path} style={styles.thumbWrap} title={a.path}>
+              <img src={a.preview} alt="" style={styles.thumb} />
+              <button
+                className="sidebar-btn"
+                style={styles.thumbRemove}
+                onClick={() => setAttachments((prev) => prev.filter((x) => x.path !== a.path))}
+                title="Remove"
+              >
+                <svg width="8" height="8" viewBox="0 0 8 8" fill="none" aria-hidden="true" style={{ display: "block" }}>
+                  <path d="M1.5 1.5l5 5M6.5 1.5l-5 5" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
+                </svg>
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
 
       <div style={styles.row}>
         {targetPod ? (
@@ -360,6 +417,44 @@ const styles: Record<string, React.CSSProperties> = {
     padding: "2px 2px 0",
     outline: "none",
     boxSizing: "border-box",
+  },
+  attachments: {
+    display: "flex",
+    flexWrap: "wrap",
+    gap: 8,
+    padding: "0 2px",
+  },
+  thumbWrap: {
+    position: "relative",
+    width: 64,
+    height: 48,
+    borderRadius: 6,
+    overflow: "hidden",
+    border: "1px solid rgba(255, 255, 255, 0.1)",
+    background: "rgba(255, 255, 255, 0.04)",
+    flexShrink: 0,
+  },
+  thumb: {
+    width: "100%",
+    height: "100%",
+    objectFit: "cover",
+    display: "block",
+  },
+  thumbRemove: {
+    position: "absolute",
+    top: 3,
+    right: 3,
+    width: 16,
+    height: 16,
+    padding: 0,
+    border: "none",
+    borderRadius: 4,
+    background: "rgba(0, 0, 0, 0.7)",
+    color: "#ddd",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    cursor: "pointer",
   },
   row: {
     display: "flex",
