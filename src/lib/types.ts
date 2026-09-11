@@ -124,13 +124,124 @@ export interface SetupConfig {
   run?: string;
 }
 
+/** One RALLY.json `prepare` entry: a bare script name (blocking) or an
+ *  object. Background entries are ensured running and never block. */
+export type PrepareEntry =
+  | string
+  | { script: string; background?: boolean; guard?: "clean-tree" | "none" };
+
+/** Agent-related repo settings; all optional. */
+export interface AgentConfig {
+  branchPrefix?: string;
+  stayOnDefault?: boolean;
+  appBundle?: string;
+  promptTrailer?: string;
+}
+
 export interface RallyConfig {
   excludeBuiltins: string[];
   excludeScripts: string[];
   mode: string | null;
   setup?: SetupConfig;
+  prepare?: PrepareEntry[];
+  agent?: AgentConfig;
   statusBar: string[];
   statusBarRight: string[];
+}
+
+// --- Agent / task types ---
+
+/** Live Claude Code session facts read from ~/.claude/sessions/<pid>.json. */
+export interface ClaudeSessionInfo {
+  pid: number;
+  session_id: string | null;
+  cwd: string;
+  status: "idle" | "busy" | "waiting" | "unknown" | string;
+  waiting_for: string | null;
+  name: string | null;
+  kind: string | null;
+  updated_at: number;
+  started_at: number;
+  pty_id: string | null;
+}
+
+export interface WorktreeInfo {
+  path: string;
+  branch: string | null;
+  head: string;
+  nested: boolean;
+  dirty: boolean;
+  locked: string | null;
+}
+
+export interface CheckoutHealth {
+  root: string;
+  branch: string;
+  head: string;
+  default_branch: string;
+  ahead_of_default: number;
+  behind_default: number;
+  /** Tracked changes only; untracked files and `.DS_Store` never make a checkout dirty. */
+  dirty: boolean;
+  dirty_paths: string[];
+  /** Modified `.DS_Store` files — restored before a guarded sync. */
+  ignorable_paths: string[];
+  worktrees: WorktreeInfo[];
+  origin_url: string;
+  user_name: string;
+}
+
+export interface AppBundleStatus {
+  path: string;
+  exists: boolean;
+  modified_at: number | null;
+}
+
+export type PrepStepKind = "script" | "branch" | "deliver";
+export type PrepStepStatus = "pending" | "running" | "done" | "failed" | "skipped";
+
+export interface PrepStep {
+  /** Stable id within the task (script name, "branch", "deliver"). */
+  id: string;
+  kind: PrepStepKind;
+  label: string;
+  status: PrepStepStatus;
+  /** Background steps never block or fail the run. */
+  background?: boolean;
+  /** Human-readable outcome or failure reason. */
+  detail?: string;
+  /** Script this step ran (for the footer drawer). */
+  scriptName?: string;
+}
+
+export type PrepStatus = "idle" | "running" | "done" | "failed" | "interrupted";
+
+export interface PrepState {
+  status: PrepStatus;
+  steps: PrepStep[];
+  startedAt?: number;
+  finishedAt?: number;
+}
+
+/** Task attached to a Claude pod. `question` delivers only; `reset` runs the
+ *  blocking prepare steps and parks the checkout on a placeholder branch. */
+export type ClaudeModel = "fable" | "opus";
+
+export interface PodTask {
+  id: string;
+  description: string;
+  prompt: string;
+  kind: "work" | "question" | "reset";
+  /** Model chosen in ⌘K. Absent for resets and older tasks. */
+  model?: ClaudeModel;
+  createdAt: number;
+  /** Branch when the task started — continuing never changes it. */
+  branch?: string;
+  prep: PrepState;
+  /** Prompt has been handed to a Claude session. */
+  delivered: boolean;
+  /** When it was handed over (ms). Lets the sidebar tell this task's session from a later one. */
+  deliveredAt?: number;
 }
 
 export interface WorkspaceReadiness {
@@ -549,6 +660,8 @@ export interface FlightPodBase {
   stashed?: boolean;
   stashedAt?: number;
   label?: string;
+  /** Task + preparation state for this pod. Persisted with the layout. */
+  task?: PodTask;
   /** Tabs for the shell panel (bottom terminal area). */
   shellTabs?: FlightTab[];
   activeShellTabId?: string;

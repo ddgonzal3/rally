@@ -6,6 +6,7 @@ import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { api } from "../lib/tauri";
 import { TerminalLinkProvider, type OnFileOpen } from "../lib/terminalLinkProvider";
 import { useWorkspaceStore, scriptOutputBuffers, appendPtyBuffer, clearPtyBuffer, ptyOutputBuffers } from "../stores/workspaceStore";
+import { markPtyInput } from "../lib/ptyActivity";
 import { showContextMenu } from "../lib/contextMenu";
 import type { ThemeName, DetectedPort } from "../lib/types";
 import { detectPorts } from "../lib/portDetection";
@@ -324,6 +325,9 @@ export function Terminal({ cwd, command, initialInput, exitOnComplete, ptyId: ex
     };
     focusTextarea();
     requestAnimationFrame(focusTextarea);
+    // Clicking into the terminal counts as having seen its last bell, so the
+    // agent sidebar stops asking for attention once you are looking at it.
+    if (ptyIdRef.current) markPtyInput(ptyIdRef.current);
   }, []);
 
   useEffect(() => {
@@ -566,6 +570,14 @@ export function Terminal({ cwd, command, initialInput, exitOnComplete, ptyId: ex
       if (ev.key.toLowerCase() === "g") {
         return false;
       }
+      // Let Cmd+B / Cmd+Shift+B bubble for the sidebar and tool-rail toggles
+      if (ev.key.toLowerCase() === "b") {
+        return false;
+      }
+      // Let Cmd+K bubble for the task launcher
+      if (!ev.shiftKey && ev.key.toLowerCase() === "k") {
+        return false;
+      }
       return true;
     });
 
@@ -674,6 +686,7 @@ export function Terminal({ cwd, command, initialInput, exitOnComplete, ptyId: ex
       // Latency-critical: each keystroke goes directly to PTY.
       term.onData((data) => {
         if (ptyIdRef.current) {
+          markPtyInput(ptyIdRef.current);
           api.writePtyString(ptyIdRef.current, data);
         }
       });

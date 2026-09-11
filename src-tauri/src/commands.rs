@@ -608,6 +608,44 @@ pub struct SetupConfig {
     pub run: Option<String>,
 }
 
+/// One entry of the RALLY.json `prepare` list. Either a bare script name
+/// (`"sync.sh"`, blocking) or an object:
+///   `{ "script": "watch-fe.sh", "background": true }`
+/// Blocking entries run to completion and stop preparation on failure.
+/// Background entries are ensured running (never restarted) and do not
+/// block the agent. `guard` names a safety check that must pass before the
+/// entry runs; `"clean-tree"` is the sync gate (clean checkout, no local
+/// commits missing from the default branch unless their PR merged).
+#[derive(Debug, Deserialize, Serialize, Clone)]
+#[serde(untagged)]
+pub enum PrepareEntry {
+    Script(String),
+    Detailed {
+        script: String,
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        background: bool,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        guard: Option<String>,
+    },
+}
+
+/// Agent-related repo settings (all optional).
+#[derive(Debug, Deserialize, Serialize, Clone, Default)]
+pub struct AgentConfig {
+    /// Branch prefix for task branches, e.g. `danny/`. Default: git user.name.
+    #[serde(default, rename = "branchPrefix", skip_serializing_if = "Option::is_none")]
+    pub branch_prefix: Option<String>,
+    /// Keep tasks on the default branch instead of creating a task branch.
+    #[serde(default, rename = "stayOnDefault", skip_serializing_if = "std::ops::Not::not")]
+    pub stay_on_default: bool,
+    /// Repo-relative path to the launched .app bundle, for freshness checks.
+    #[serde(default, rename = "appBundle", skip_serializing_if = "Option::is_none")]
+    pub app_bundle: Option<String>,
+    /// Text appended to every delivered task prompt.
+    #[serde(default, rename = "promptTrailer", skip_serializing_if = "Option::is_none")]
+    pub prompt_trailer: Option<String>,
+}
+
 #[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct RallyConfig {
     #[serde(default, rename = "excludeScripts")]
@@ -616,6 +654,10 @@ pub struct RallyConfig {
     pub mode: Option<String>,
     #[serde(default)]
     pub setup: Option<SetupConfig>,
+    #[serde(default)]
+    pub prepare: Option<Vec<PrepareEntry>>,
+    #[serde(default)]
+    pub agent: Option<AgentConfig>,
     #[serde(default, rename = "statusBar")]
     pub status_bar: Vec<String>,
     #[serde(default, rename = "statusBarRight")]
@@ -636,6 +678,8 @@ pub fn read_rally_config(root_path: String) -> Result<RallyConfig, String> {
             exclude_scripts: Vec::new(),
             mode: None,
             setup: None,
+            prepare: None,
+            agent: None,
             status_bar: Vec::new(),
             status_bar_right: Vec::new(),
         });
@@ -958,6 +1002,8 @@ pub fn list_scripts(root_path: String) -> Result<Vec<ScriptEntry>, String> {
             exclude_scripts: Vec::new(),
             mode: None,
             setup: None,
+            prepare: None,
+            agent: None,
             status_bar: Vec::new(),
             status_bar_right: Vec::new(),
         }
@@ -985,4 +1031,59 @@ pub fn list_scripts(root_path: String) -> Result<Vec<ScriptEntry>, String> {
     }
 
     Ok(entries)
+}
+
+
+#[tauri::command]
+pub async fn git_restore_paths(workspace_path: String, paths: Vec<String>) -> Result<(), String> {
+    git_ops::restore_paths(&workspace_path, &paths).await
+}
+
+#[tauri::command]
+pub async fn git_rename_branch(workspace_path: String, new_name: String) -> Result<String, String> {
+    git_ops::rename_branch(&workspace_path, &new_name).await
+}
+
+// --- Checkout health + app bundle freshness ---
+
+#[tauri::command]
+pub async fn checkout_health(root_path: String, main_branch: String) -> Result<git_ops::CheckoutHealth, String> {
+    git_ops::checkout_health(&root_path, &main_branch).await
+}
+
+#[derive(Debug, Serialize)]
+pub struct AppBundleStatus {
+    pub path: String,
+    pub exists: bool,
+    /// Unix seconds of the executable inside `Contents/MacOS` (falls back to
+    /// the bundle directory). This is what a rebuild actually touches.
+    pub modified_at: Option<u64>,
+}
+
+/// Freshness facts about a launchable .app bundle. Deliberately separate from
+/// watcher state: a green frontend watcher says nothing about whether a
+/// native build exists or is current.
+#[tauri::command]
+pub fn app_bundle_status(root_path: String, bundle: String) -> AppBundleStatus {
+    let full = if bundle.starts_with('/') {
+        std::path::PathBuf::from(&bundle)
+    } else {
+        Path::new(&root_path).join(&bundle)
+    };
+    let path = full.to_string_lossy().to_string();
+    if !full.is_dir() {
+        return AppBundleStatus { path, exists: false, modified_at: None };
+    }
+    let mut target = full.clone();
+    if let Ok(entries) = fs::read_dir(full.join("Contents").join("MacOS")) {
+        if let Some(exe) = entries.flatten().find(|e| e.path().is_file()) {
+            target = exe.path();
+        }
+    }
+    let modified_at = fs::metadata(&target)
+        .ok()
+        .and_then(|m| m.modified().ok())
+        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+        .map(|d| d.as_secs());
+    AppBundleStatus { path, exists: true, modified_at }
 }

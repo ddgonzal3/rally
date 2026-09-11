@@ -119,3 +119,29 @@ Rules:
 - Never probe user PATH with `-lc`. Use `-ilc` plus sentinels plus a timeout (interactive rc files can hang or be slow).
 - Never let a binary-resolution miss degrade into a bare-name spawn — the resulting ENOENT is indistinguishable from a hundred other failures.
 - Never swallow a poll error with a bare `catch {}`. The PR poll's silent `catch` is the reason this survived months of debugging.
+
+## Terminal Silence Is Not Task Completion
+
+A quiet Claude terminal means nothing: Claude may be waiting for approval, sitting at its prompt, or thinking. Claude Code writes `~/.claude/sessions/<pid>.json` with `status: idle | busy | waiting` and `waitingFor`; `src-tauri/src/claude_sessions.rs` reads it and walks the parent-PID chain to the Rally PTY. Use `useAgentStore().sessionsByPty` for activity. The terminal-title fallback (`✳ topic` at rest, `⠂`/`⠐ topic` while a turn runs) and BEL detection in `src/lib/ptyActivity.ts` exist only for sessions without a file. Never label a pod "done" from output timing.
+
+## Repo Sync Scripts Can Be Destructive — Gate Them
+
+Flow's `scripts/sync.sh` hard-resets the branch to `origin/<default>` and force-pushes. Automatic preparation must run it only through `assessSyncSafety()` (clean tree, no local commits missing from the default branch unless the PR is merged). The default branch is detected the same way the script does it (`rally.syncBranch` → `origin/HEAD` → staging/main/master), NOT from the workspace's `main_branch`, which for Flow says `main` while the repo syncs to `staging`.
+
+## `runScript` Restarts; Use `ensureScriptRunning` for Watchers
+
+`runScript` kills an existing run before spawning. Anything automatic (task preparation, future Ship buttons) must call `ensureScriptRunning`, which returns `"already-running"` for a live watcher. A watcher whose last build failed is still "running" — restarting it fixes nothing and loses its output.
+
+## Nested `.claude/worktrees` Break the Watcher ⇄ Agent Link
+
+Claude Code agents may create `.claude/worktrees/agent-*` inside a checkout and edit there while the watcher, native build and Run all use the checkout root. `checkout_health` lists nested worktrees (locked/dirty), the session file gives Claude's real cwd, and `checkoutMismatches()` turns both into the footer's `mismatch` warning. The delivered task prompt also tells the agent to stay in the checkout.
+
+## Claude Code Env Leaks Into PTYs When Rally Is Launched From Inside Claude
+
+`open Rally.app` (and `./scripts/run.sh`) from a terminal that lives inside a Claude Code session passes that session's environment to Rally, and Rally's PTYs inherit it. `CLAUDE_CODE_CHILD_SESSION`, `CLAUDE_CODE_MESSAGING_SOCKET`, `CLAUDE_PID`, … make any Claude started in a pod behave as a nested child: it never writes `~/.claude/sessions/<pid>.json`, so the agent sidebar sees "No session" while the process is clearly running. Stripping a fixed list (`CLAUDECODE`, `CLAUDE_CODE_ENTRYPOINT`) rotted as Claude added variables. `pty_manager.rs` now drops the whole `CLAUDE_CODE_*` namespace plus `CLAUDECODE` / `CLAUDE_PID` via `is_claude_session_env()`. Keep it namespace-based.
+
+## Rebuilds Can Launch With the Old UI (Stale Instance Never Killed)
+
+Symptom: "I rebuilt and it's still the old sidebar." The bundle and binary are new, but the window shows old code. Cause: `scripts/run.sh` killed by full binary path `.../Contents/MacOS/Rally`, while Tauri names the binary after the crate, `.../Contents/MacOS/rally`. `pgrep -f` is case-sensitive, so nothing matched, the old process survived, and `open Rally.app` just brought it to the front. The WebKit cache was blamed earlier; clearing `~/Library/Caches/com.rally.app/WebKit` did nothing because that directory is empty.
+
+`run.sh` now matches on the `Contents/MacOS/` directory of this checkout's bundle. Before trusting any "rebuilt but unchanged" report, compare `ps -o lstart= -p <pid>` of the running `rally` process with the binary's mtime.

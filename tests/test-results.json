@@ -1,80 +1,62 @@
 [
   {
-    "name": "app is ready and bridge is injected",
-    "file": "tests/e2e/smoke.test.ts",
+    "name": "fixture: repo with origin one commit ahead",
+    "file": "tests/e2e/agent-tasks.test.ts",
     "status": "pass",
-    "durationMs": 41
+    "durationMs": 389
   },
   {
-    "name": "document has a title",
-    "file": "tests/e2e/smoke.test.ts",
+    "name": "workspace added and shown in flight mode",
+    "file": "tests/e2e/agent-tasks.test.ts",
     "status": "pass",
-    "durationMs": 3
+    "durationMs": 908
   },
   {
-    "name": "app root is mounted",
-    "file": "tests/e2e/smoke.test.ts",
+    "name": "startTask (work): sync runs, watcher starts, Claude launched",
+    "file": "tests/e2e/agent-tasks.test.ts",
     "status": "pass",
-    "durationMs": 3
+    "durationMs": 1152
   },
   {
-    "name": "store is accessible",
-    "file": "tests/e2e/smoke.test.ts",
+    "name": "Claude session file is attributed to the pod's PTY",
+    "file": "tests/e2e/agent-tasks.test.ts",
     "status": "pass",
-    "durationMs": 7
+    "durationMs": 2072
   },
   {
-    "name": "capture initial screenshot",
-    "file": "tests/e2e/smoke.test.ts",
+    "name": "sendToPod: no re-preparation, watcher untouched",
+    "file": "tests/e2e/agent-tasks.test.ts",
     "status": "pass",
-    "durationMs": 892
+    "durationMs": 1640
   },
   {
-    "name": "list workspaces returns empty array initially",
-    "file": "tests/e2e/workspace.test.ts",
+    "name": "startTask (question): idle REPL is reused with /clear, deliver only, watcher untouched",
+    "file": "tests/e2e/agent-tasks.test.ts",
     "status": "pass",
-    "durationMs": 7
+    "durationMs": 4657
   },
   {
-    "name": "create workspace via invoke",
-    "file": "tests/e2e/workspace.test.ts",
+    "name": "hide + reveal keeps the session PTYs alive",
+    "file": "tests/e2e/agent-tasks.test.ts",
     "status": "pass",
-    "durationMs": 11
+    "durationMs": 1497
   },
   {
-    "name": "workspace appears in store state",
-    "file": "tests/e2e/workspace.test.ts",
+    "name": "dirty tree: sync refuses, nothing is reset, retry works after cleanup",
+    "file": "tests/e2e/agent-tasks.test.ts",
     "status": "pass",
-    "durationMs": 3
+    "durationMs": 1598
   },
   {
-    "name": "capture workspace view",
-    "file": "tests/e2e/workspace.test.ts",
+    "name": "reset checkout: refused while Claude runs, then parks on a placeholder branch",
+    "file": "tests/e2e/agent-tasks.test.ts",
     "status": "pass",
-    "durationMs": 909
+    "durationMs": 1261
   },
   {
-    "name": "remove workspace via invoke",
-    "file": "tests/e2e/workspace.test.ts",
+    "name": "cleanup: stop sessions, watcher, remove workspace and fixture",
+    "file": "tests/e2e/agent-tasks.test.ts",
     "status": "pass",
-    "durationMs": 9
-  },
-  {
-    "name": "capture and evaluate overall layout",
-    "file": "tests/visual/layout.test.ts",
-    "status": "pass",
-    "durationMs": 863
-  },
-  {
-    "name": "capture sidebar view for evaluation",
-    "file": "tests/visual/layout.test.ts",
-    "status": "pass",
-    "durationMs": 668
-  },
-  {
-    "name": "verify color values via computed styles",
-    "file": "tests/visual/layout.test.ts",
-    "status": "pass",
-    "durationMs": 4
+    "durationMs": 788
   }
 ]

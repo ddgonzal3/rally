@@ -1,16 +1,10 @@
 import { scriptOutputBuffers } from "../stores/workspaceStore";
 import type { ScriptRun } from "./types";
+import { isWatcherScript, getDisplayName } from "./scriptNames";
+
+export { isWatcherScript, getDisplayName };
 
 export type WatcherBuildStatus = "idle" | "building" | "success" | "error";
-
-/** Basename of a script reference, which may be a relative path. */
-function scriptBasename(name: string): string {
-  return name.split("/").pop() ?? name;
-}
-
-export function isWatcherScript(name: string): boolean {
-  return scriptBasename(name).toLowerCase().includes("watch");
-}
 
 const ANSI_REGEX = /\x1b\[[0-9;?]*[ -/]*[@-~]/g;
 const WATCHER_ERROR_PATTERNS = [
@@ -230,8 +224,4 @@ export function getStatusColor(status: WatcherBuildStatus): string {
     case "building": return "var(--status-amber)";
     case "idle": return "var(--text-dim)";
   }
-}
-
-export function getDisplayName(scriptName: string): string {
-  return scriptBasename(scriptName).replace(/\.(sh|bash|zsh)$/, "");
 }

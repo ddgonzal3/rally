@@ -212,6 +212,7 @@ export const FlightPod = React.memo(function FlightPod({
 
   const podRef = useRef<HTMLDivElement>(null);
   const dragState = useRef<{ startX: number; startY: number; origX: number; origY: number } | null>(null);
+
   const suppressClickRef = useRef(false);
 
   // Ensure pod layout exists
@@ -577,7 +578,7 @@ export const FlightPod = React.memo(function FlightPod({
       )}
 
       {/* Script footer — shows rally.json statusBar scripts for this pod's repo */}
-      {isClaudePod && <FlightPodFooter repoPath={podCwd} onOpenTerminal={!shellExpanded ? () => togglePodShell(workspaceId, podId) : undefined} />}
+      {isClaudePod && <FlightPodFooter repoPath={podCwd} podId={podId} workspaceId={workspaceId} onOpenTerminal={!shellExpanded ? () => togglePodShell(workspaceId, podId) : undefined} />}
 
       {/* Invisible resize edges and corners */}
       {([

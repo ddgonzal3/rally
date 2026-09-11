@@ -1,8 +1,8 @@
-# CLAUDE.md — Rally
+# AGENTS.md — Rally
 
 ## What Is This?
 
-Rally is a **Tauri v2 macOS app** (Rust backend + React frontend) for orchestrating multiple Claude Code sessions, git workflows, and dev processes across repo workspaces.
+Rally is a **Tauri v2 macOS app** (Rust backend + React frontend) for orchestrating multiple Codex sessions, git workflows, and dev processes across repo workspaces.
 
 ## Build Commands
 
@@ -55,7 +55,7 @@ Rust Backend (src-tauri/src/)
   ├── pty_manager.rs — PTY lifecycle (spawn, write, resize, kill)
   ├── git_ops.rs — Git CLI wrapper
   ├── commands.rs — Workspace CRUD, file listing
-  ├── config_ops.rs — CLAUDE.md/skills file read/write
+  ├── config_ops.rs — AGENTS.md/skills file read/write
   └── workspace.rs — Data model + JSON persistence
 ```
 
@@ -79,9 +79,8 @@ Rust Backend (src-tauri/src/)
 | `src-tauri/src/pty_manager.rs` | PTY spawn/write/resize/kill + event emission |
 | `src-tauri/src/git_ops.rs` | `git_cmd()` helper + status/sync/rebase/commit/push/PR |
 | `src-tauri/src/commands.rs` | Tauri command handlers for workspace CRUD + file listing + git info detection |
-| `src-tauri/src/config_ops.rs` | Read/write CLAUDE.md files, list configs + skills |
+| `src-tauri/src/config_ops.rs` | Read/write AGENTS.md files, list configs + skills |
 | `src-tauri/src/workspace.rs` | Workspace/ProcessConfig/GitStatus structs + JSON persistence |
-| `src-tauri/src/claude_sessions.rs` | Reads `~/.claude/sessions/*.json`, maps each Claude PID to its Rally PTY |
 | `src-tauri/tauri.conf.json` | Window config, bundle targets, plugin permissions |
 | `src-tauri/capabilities/default.json` | Tauri v2 permission grants |
 
@@ -98,16 +97,7 @@ Rust Backend (src-tauri/src/)
 | `src/components/BuildStatusBar.tsx` | Script status bar items with watcher build status |
 | `src/components/BuildStatusDrawer.tsx` | Expandable terminal drawer for script output |
 | `src/components/AddWorkspaceModal.tsx` | New workspace form with folder picker + git auto-detect |
-| `src/components/SettingsPanel.tsx` | Monaco editor for CLAUDE.md/skills files |
-| `src/components/AgentSidebar.tsx` | Leftmost collapsible sidebar (⌘B, half-screen auto-collapse) hosting `AgentsPanel` |
-| `src/components/AgentsPanel.tsx` | Project rows (free-checkout count, checkout menu) + agent rows (working/needs-you dot, PR pill, problem mark, hide/stop/clear/reset menu) |
-| `src/lib/sidebarModel.ts` | Pure sidebar row model: which checkouts are free, which agents earn a row, merged single-checkout rows |
-| `src/lib/useSidebarModel.ts` | Hook feeding `buildSidebarModel` from the stores + 1s activity tick |
-| `src/components/TaskLauncher.tsx` | ⌘K launcher: prompt, project pills, free-checkout pick, message an agent |
-| `src/lib/prepare.ts` | Pure logic: `prepare` list resolution, sync safety gate, project/free-checkout pick, branch names, prompt, activity, mismatches |
-| `src/lib/taskPrep.ts` | Preparation runner (scripts → branch → deliver), reset, prompt delivery |
-| `src/lib/ptyActivity.ts` | OSC title + bell parser fed from raw PTY output (works for hidden pods) |
-| `src/stores/agentStore.ts` | Live Claude session files, checkout health, app-bundle freshness |
+| `src/components/SettingsPanel.tsx` | Monaco editor for AGENTS.md/skills files |
 | `src/stores/workspaceStore.ts` | Zustand store: workspaces, git statuses, panes, all actions |
 | `src/lib/tauri.ts` | Typed wrappers for all Tauri invoke() calls |
 | `src/lib/types.ts` | Workspace, GitStatus, Pane, ProcessConfig types |

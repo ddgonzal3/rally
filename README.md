@@ -90,6 +90,9 @@ This starts a Vite dev server on port 5173 with hot module replacement. Rust cha
 | `Shift+Arrow` | Navigate between pane groups |
 | `Cmd+Shift+F` | Search panel (workspace-wide find/replace) |
 | `Cmd+P` | Quick open (file picker) |
+| `Cmd+K` | Start an agent / message one |
+| `Cmd+B` | Toggle agents sidebar |
+| `Cmd+Shift+B` | Toggle the tool rail (workspaces, files, search, …); hidden by default |
 | `Cmd+E` | Toggle file explorer |
 | `Cmd+N` | New file |
 | `Cmd+Shift+O` | Add folder to workspace |
@@ -206,3 +209,83 @@ rally/
 Workspace configs persist at `~/.rally/workspaces.json`. Each workspace stores:
 - Name, paths, repo URLs, branches, main branch
 - Process configs (auto-start commands)
+
+## Agents Sidebar & ⌘K
+
+The leftmost column lists every panel in the active workspace, named by its
+checkout folder (`flow`, `flow3`, `atlantis`, …). Toggle it with the titlebar
+button or **⌘B**; it collapses on its own when the window snaps to half
+screen. The icon rail (files, search, threads, …) is hidden by default —
+**⌘⇧B** shows it. Each row shows the task (or Claude's own topic title),
+live status, the open PR if any, and checkout warnings. Clicking a row
+reveals and focuses the panel; hidden panels keep running. **Stop Claude
+session**, **Clear task**, **Reset checkout** and **Remove panel** are
+separate right-click actions.
+
+Status comes from Claude Code's own session files (`~/.claude/sessions/`),
+not from terminal silence: `Working`, `Needs input`, `Idle`, `Quiet`
+(no session data) or `No session`. Quiet never means done.
+
+### Starting an agent
+
+**⌘K**, type the task, pick a project, Enter. Projects are derived from each
+checkout's origin (`splice/flow` → `flow`), so five Flow checkouts are one
+project. Rally picks a free checkout — no Claude mid-turn, clean tree, no open
+PR — and shows which one before you start. Each row's second line says
+`Available`, `PR #n open` or `Uncommitted changes`; branch names live in the
+hover tooltip. Nothing free → it tells you who
+is busy and why. Toggle **Read-only question** for a question that must not
+sync, build, branch or open a PR. **Message…** on a row opens the same
+launcher aimed at that agent; follow-ups never re-run preparation.
+
+### Preparation
+
+For a new task Rally runs the repo's `prepare` list once, then a branch
+step, then hands the prompt to Claude. Progress and failures show on the
+sidebar row and in the existing footer dots — there is no second status
+bar. Failures keep Retry / Skip / Show output in the row's menu.
+
+```json
+{
+  "prepare": ["sync.sh", { "script": "watch-fe.sh", "background": true }],
+  "agent": {
+    "branchPrefix": "danny/",
+    "stayOnDefault": false,
+    "appBundle": "core/build/flow/SpliceFlow_artefacts/RelWithDebInfo/Standalone/Flow.app",
+    "promptTrailer": "Optional text appended to every delivered prompt."
+  }
+}
+```
+
+- Delivery comes first: the prompt reaches Claude immediately, and the
+  prepare list runs behind it. An idle Claude REPL on the picked checkout is
+  reused (`/clear`, then the prompt) instead of spawning a new process.
+- A bare string is a blocking step: it runs to completion and stops
+  preparation on failure. `background: true` means ensure-running — a live
+  watcher is reused, never restarted, and the agent does not wait for it.
+- The first blocking step carries the `clean-tree` guard: it only runs when
+  the tree is clean and no local commit is missing from the default branch
+  (or its PR merged). Flow's `sync.sh` hard-resets, so this matters. On the
+  default branch Rally fast-forwards instead of running the script.
+  Override with `{ "script": "x.sh", "guard": "none" }`. Untracked files and
+  committed `.DS_Store` files never count as dirty; the latter are restored
+  before the script runs so the repo's own dirty check passes.
+- Without a `prepare` list, `statusBarRight` scripts become blocking steps
+  and watcher-named `statusBar` scripts become background steps. Nothing
+  else is inferred.
+- Branching: from the default branch, tasks get `<prefix><task-slug>`
+  (prefix defaults to your git first name, e.g. `danny/`). **Reset
+  checkout** parks a free checkout on `<prefix><agent>-<MMDD>`; the next
+  task renames that placeholder. A branch with commits or an open PR is
+  never touched. `stayOnDefault: true` disables branching for a repo.
+- `appBundle` shows the launched app's real build age in the footer
+  (`app 2h ago` / `no app build`). A green watcher never implies a fresh
+  native build.
+
+### Checkout mismatch detection
+
+The footer shows a `mismatch` warning (and the sidebar row explains it) when
+the Claude session runs somewhere other than the panel's checkout — for
+example inside a nested `.claude/worktrees/...` — or when a nested worktree
+is locked by an agent or has uncommitted changes. In those cases the watcher
+and Run are not building what the agent edited.
