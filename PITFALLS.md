@@ -119,3 +119,9 @@ Rules:
 - Never probe user PATH with `-lc`. Use `-ilc` plus sentinels plus a timeout (interactive rc files can hang or be slow).
 - Never let a binary-resolution miss degrade into a bare-name spawn — the resulting ENOENT is indistinguishable from a hundred other failures.
 - Never swallow a poll error with a bare `catch {}`. The PR poll's silent `catch` is the reason this survived months of debugging.
+
+## Accessibility / Screen Recording Grants Silently Die On Every Rebuild
+
+Claude Code computer use inside a Rally terminal failed with "no permission" while Rally showed as enabled in System Settings > Accessibility. macOS attributes a PTY child (zsh, claude) to Rally, so Rally's grant is the one that counts. TCC keys a grant on the app's code-signing requirement. An ad-hoc signed bundle has no identity, so the requirement is the raw code hash (`cdhash`), which changes on every build. The toggle stays on but points at a dead hash. The user TCC db showed five `com.rally.app` rows, each with a different hash.
+
+`tauri.conf.json` now sets `bundle.macOS.signingIdentity` to the local Apple Development certificate. The requirement becomes `identifier "com.rally.app"` plus the certificate name, which survives rebuilds (and renewal, as long as the certificate keeps the same name). After changing the identity once, reset the stale rows (`tccutil reset Accessibility com.rally.app`, same for `ScreenCapture`) and re-add Rally. Never go back to ad-hoc signing for a bundle that gets TCC grants.
