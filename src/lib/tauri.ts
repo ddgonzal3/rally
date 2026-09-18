@@ -1,6 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import type { Workspace, GitStatus, PrStatus, PrDetails, PushResult, ChangesSummary, CommitEntry, ScriptEntry, SearchMatch, ReplaceOp, ReplaceResult, PtyInfo, ProcessInventory, RallyConfig, WorkspaceReadiness, BranchInfo, ParkedThread } from "./types";
+import type { Workspace, GitStatus, PrStatus, PrDetails, PushResult, ChangesSummary, CommitEntry, ScriptEntry, SearchMatch, ReplaceOp, ReplaceResult, PtyInfo, ProcessInventory, RallyConfig, WorkspaceReadiness, BranchInfo, ParkedThread, ClaudeSessionInfo, CheckoutHealth, AppBundleStatus } from "./types";
 
 /**
  * Current Tauri webview window label. PTYs are tagged with this on spawn
@@ -161,6 +161,12 @@ export const api = {
   gitCreateBranch: (workspacePath: string, branch: string) =>
     invoke<string>("git_create_branch", { workspacePath, branch }),
 
+  gitRestorePaths: (workspacePath: string, paths: string[]) =>
+    invoke<void>("git_restore_paths", { workspacePath, paths }),
+
+  gitRenameBranch: (workspacePath: string, newName: string) =>
+    invoke<string>("git_rename_branch", { workspacePath, newName }),
+
   gitDeleteBranch: (workspacePath: string, branch: string, force: boolean = false) =>
     invoke<string>("git_delete_branch", { workspacePath, branch, force }),
 
@@ -279,6 +285,13 @@ export const api = {
   // Workspace readiness
   checkWorkspaceReady: (rootPath: string) =>
     invoke<WorkspaceReadiness>("check_workspace_ready", { rootPath }),
+
+  // Agent status + checkout health
+  listClaudeSessions: () => invoke<ClaudeSessionInfo[]>("list_claude_sessions"),
+  checkoutHealth: (rootPath: string, mainBranch: string) =>
+    invoke<CheckoutHealth>("checkout_health", { rootPath, mainBranch }),
+  appBundleStatus: (rootPath: string, bundle: string) =>
+    invoke<AppBundleStatus>("app_bundle_status", { rootPath, bundle }),
 
   // Parked threads (rally-park skill writes via cli_server, frontend reads here)
   listParkedThreads: () => invoke<ParkedThread[]>("list_parked_threads"),

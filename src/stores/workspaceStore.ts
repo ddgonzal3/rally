@@ -1,3 +1,4 @@
+import { assertCheckoutAvailable } from "./checkoutStore";
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
@@ -29,7 +30,21 @@ import type {
   FlightLayout,
   FlightViewport,
   FlightLayoutPreset,
+  PodTask,
+  ClaudeModel,
 } from "../lib/types";
+import { observePtyOutput, clearPtyActivity } from "../lib/ptyActivity";
+import { useAgentStore } from "./agentStore";
+import {
+  runTaskPreparation,
+  deliverPromptToPod,
+  stopPodClaude,
+  resumePrepStep,
+  findLiveClaudePty,
+  podClaudeState,
+  buildTaskSteps,
+} from "../lib/taskPrep";
+import { withAttachments } from "../lib/prepare";
 import {
   FLIGHT_DEFAULT_CLAUDE_WIDTH,
   FLIGHT_DEFAULT_CLAUDE_HEIGHT,
@@ -96,17 +111,21 @@ export function appendPtyBuffer(ptyId: string, chunk: Uint8Array) {
   }
   pushLimitedChunk(buf, chunk, MAX_PTY_BUFFER_CHUNKS);
   ptyLastOutputAt.set(ptyId, Date.now());
+  // Titles + bells for agent status — runs for hidden pods too, since the
+  // stash listeners route through here.
+  observePtyOutput(ptyId, chunk);
 }
 
 export function clearPtyBuffer(ptyId: string) {
   ptyOutputBuffers.delete(ptyId);
   ptyLastOutputAt.delete(ptyId);
+  clearPtyActivity(ptyId);
 }
 
 // --- Stash background PTY listeners ---
 // When a pod is stashed, its Terminal unmounts and pauses the PTY monitor.
 // These listeners restart the monitor and buffer output so that:
-// (a) ptyLastOutputAt stays current for the activity dot in StashChip
+// (a) ptyLastOutputAt stays current for the activity dot in the agents sidebar
 // (b) ptyOutputBuffers accumulate output so Terminal replays correctly on restore
 const stashListeners = new Map<string, UnlistenFn[]>();
 
@@ -133,6 +152,29 @@ function getPtyIdsForPod(podId: string): string[] {
     (pod.shellTabs ?? []).forEach((t: { ptyId?: string }) => { if (t.ptyId) ids.push(t.ptyId); });
     break;
   }
+  return ids;
+}
+
+/**
+ * PTY ids of a pod's main (Claude) panes only — excludes the shell tabs.
+ * Used to attribute Claude session files and activity to a pod.
+ */
+export function getPodMainPtyIds(podId: string): string[] {
+  const state = useWorkspaceStore.getState();
+  const ids: string[] = [];
+  const podLayout = state.layouts[`flight:${podId}`];
+  if (!podLayout?.root) return ids;
+  const walk = (node: LayoutNode) => {
+    if (node.type === "group") {
+      const group = podLayout.groups[node.groupId];
+      group?.panes.forEach((p) => {
+        if (p.ptyId && p.type === "claude") ids.push(p.ptyId);
+      });
+    } else if (node.type === "split") {
+      node.children.forEach(walk);
+    }
+  };
+  walk(podLayout.root);
   return ids;
 }
 
@@ -569,6 +611,9 @@ interface WorkspaceState {
 
   // Script runner actions
   runScript: (rootPath: string, scriptName: string, command: string) => Promise<void>;
+  /** Start a script only if it is not already running or spawning. Never
+   *  restarts a healthy watcher — the "ensure" half of automatic preparation. */
+  ensureScriptRunning: (rootPath: string, scriptName: string, command: string) => Promise<"already-running" | "started">;
   stopScript: (rootPath: string, scriptName: string) => Promise<void>;
   clearScript: (rootPath: string, scriptName: string) => void;
   /** Open a terminal pane connected to a running script's PTY */
@@ -606,6 +651,31 @@ interface WorkspaceState {
   removeFlightShellTab: (workspaceId: string, podId: string, tabId: string) => void;
   setActiveFlightShellTab: (workspaceId: string, podId: string, tabId: string) => void;
   setFlightShellTabPtyId: (workspaceId: string, podId: string, tabId: string, ptyId: string) => void;
+  // Agent task actions (flight pods)
+  /** Attach or replace the task on a pod. `undefined` clears it. */
+  setPodTask: (workspaceId: string, podId: string, task: PodTask | undefined) => void;
+  /** Create (or reuse an idle) Claude pod for `cwd`, attach the task, and run
+   *  automatic preparation once. Returns the pod id. */
+  startTask: (params: {
+    workspaceId: string;
+    cwd: string;
+    description: string;
+    kind: "work" | "question";
+    model?: ClaudeModel;
+    attachments?: string[];
+  }) => Promise<string>;
+  /** Sync a free checkout and park it on a placeholder branch. Refuses when
+   *  a Claude session is running there. */
+  resetCheckout: (workspaceId: string, podId: string) => Promise<void>;
+  /** Re-run preparation from the first non-done step (after a failure). */
+  retryTaskPrep: (workspaceId: string, podId: string) => Promise<void>;
+  /** Mark a failed step skipped and continue with the rest. */
+  skipPrepStep: (workspaceId: string, podId: string, stepId: string) => Promise<void>;
+  /** Send a follow-up message to the pod's live Claude session (or start
+   *  one). Never syncs, never touches watchers. */
+  sendToPod: (workspaceId: string, podId: string, message: string, attachments?: string[]) => Promise<void>;
+  /** Kill the pod's Claude session(s) but keep the pod, its task and shells. */
+  stopPodSession: (workspaceId: string, podId: string) => Promise<void>;
   /** Save current flight layout as a named preset */
   saveFlightLayoutPreset: (workspaceId: string, name: string) => void;
   /** Restore a saved flight layout preset (kills existing PTYs, respawned on mount) */
@@ -2048,6 +2118,16 @@ export const useWorkspaceStore = create<WorkspaceState>()(
     });
   },
 
+  ensureScriptRunning: async (rootPath, scriptName, command) => {
+    const key = `${rootPath}:${scriptName}`;
+    const run = get().scriptRuns[key];
+    if (run && (run.status === "running" || run.status === "spawning")) {
+      return "already-running";
+    }
+    await get().runScript(rootPath, scriptName, command);
+    return "started";
+  },
+
   stopScript: async (rootPath, scriptName) => {
     const key = `${rootPath}:${scriptName}`;
     const run = get().scriptRuns[key];
@@ -3486,6 +3566,121 @@ export const useWorkspaceStore = create<WorkspaceState>()(
     }));
   },
 
+  // --- Agent task actions ---
+
+  setPodTask: (workspaceId, podId, task) => {
+    const layout = get().flightLayouts[workspaceId];
+    if (!layout) return;
+    set((s) => ({
+      flightLayouts: {
+        ...s.flightLayouts,
+        [workspaceId]: {
+          ...layout,
+          pods: layout.pods.map((p) => {
+            if (p.id !== podId) return p;
+            if (task === undefined) {
+              const { task: _dropped, ...rest } = p;
+              return rest as FlightPod;
+            }
+            return { ...p, task } as FlightPod;
+          }),
+        },
+      },
+    }));
+  },
+
+  startTask: async ({ workspaceId, cwd, description, kind, model, attachments }) => {
+    assertCheckoutAvailable(cwd);
+    get().getOrCreateFlightLayout(workspaceId);
+    const pods = get().flightLayouts[workspaceId]?.pods ?? [];
+
+    // Reuse a pod for this checkout when Claude there is idle or absent and
+    // it isn't mid-preparation. New tasks launch a fresh conversation;
+    // a working one is left alone and the task gets its own pod.
+    await useAgentStore.getState().refreshSessions();
+    let reusable: FlightPod | undefined;
+    for (const p of pods) {
+      if (p.type !== "claude" || p.cwd !== cwd) continue;
+      const prep = p.task?.prep.status;
+      if (p.task && prep === "running") continue;
+      if ((await podClaudeState(p.id)).state === "working") continue;
+      reusable = p;
+      break;
+    }
+
+    let podId: string;
+    if (reusable) {
+      podId = reusable.id;
+      if (reusable.stashed) get().unstashPod(workspaceId, podId);
+    } else {
+      get().addFlightPodAt(workspaceId, "claude", 0, 0, FLIGHT_DEFAULT_CLAUDE_WIDTH, FLIGHT_DEFAULT_CLAUDE_HEIGHT, cwd);
+      const created = get().flightLayouts[workspaceId]?.pods ?? [];
+      podId = created[created.length - 1].id;
+    }
+
+    const steps = await buildTaskSteps(cwd, kind);
+    const task: PodTask = {
+      id: crypto.randomUUID(),
+      description: description.trim(),
+      prompt: "", // filled at delivery once the branch is known
+      kind,
+      model,
+      attachments: attachments && attachments.length > 0 ? attachments : undefined,
+      createdAt: Date.now(),
+      branch: get().gitStatuses[cwd]?.branch,
+      delivered: false,
+      prep: { status: "idle", steps },
+    };
+    get().setPodTask(workspaceId, podId, task);
+    get().bringPodToFront(workspaceId, podId);
+    if ((get().workspaceModes[workspaceId] ?? "flight") !== "flight") {
+      get().setWorkspaceMode(workspaceId, "flight");
+    }
+    setTimeout(() => {
+      window.dispatchEvent(new CustomEvent("flight-focus-pod", { detail: { workspaceId, podId } }));
+    }, 60);
+
+    void runTaskPreparation(workspaceId, podId);
+    return podId;
+  },
+
+  resetCheckout: async (workspaceId, podId) => {
+    const pod = get().flightLayouts[workspaceId]?.pods.find((p) => p.id === podId);
+    if (!pod) return;
+    assertCheckoutAvailable(pod.cwd);
+    if (await findLiveClaudePty(podId)) {
+      throw new Error("A Claude session is running here. Stop it first.");
+    }
+    const steps = (await buildTaskSteps(pod.cwd, "reset")).filter((s) => s.kind !== "script" || !s.background);
+    get().setPodTask(workspaceId, podId, {
+      id: crypto.randomUUID(),
+      description: "Reset checkout",
+      prompt: "",
+      kind: "reset",
+      createdAt: Date.now(),
+      branch: get().gitStatuses[pod.cwd]?.branch,
+      delivered: false,
+      prep: { status: "idle", steps },
+    });
+    await runTaskPreparation(workspaceId, podId);
+  },
+
+  retryTaskPrep: async (workspaceId, podId) => {
+    await runTaskPreparation(workspaceId, podId);
+  },
+
+  skipPrepStep: async (workspaceId, podId, stepId) => {
+    await resumePrepStep(workspaceId, podId, stepId);
+  },
+
+  sendToPod: async (workspaceId, podId, message, attachments = []) => {
+    await deliverPromptToPod(workspaceId, podId, withAttachments(message, attachments));
+  },
+
+  stopPodSession: async (_workspaceId, podId) => {
+    await stopPodClaude(podId);
+  },
+
   saveFlightLayoutPreset: (workspaceId, name) => {
     const layout = get().flightLayouts[workspaceId];
     if (!layout) return;
@@ -3666,6 +3861,21 @@ export const useWorkspaceStore = create<WorkspaceState>()(
                 ...layout,
                 pods: layout.pods.map((pod) => {
                   const { ptyId: _, ...rest } = pod;
+                  // A preparation that was mid-flight when Rally quit cannot
+                  // resume — its PTYs are gone. Surface that instead of
+                  // showing a spinner forever.
+                  if (rest.task?.prep.status === "running") {
+                    rest.task = {
+                      ...rest.task,
+                      prep: {
+                        ...rest.task.prep,
+                        status: "interrupted",
+                        steps: rest.task.prep.steps.map((st) =>
+                          st.status === "running" ? { ...st, status: "failed", detail: "Interrupted by Rally restart" } : st,
+                        ),
+                      },
+                    };
+                  }
                   if (rest.type === "claude") {
                     const { shellPtyId: _2, ...claudeRest } = rest;
                     return claudeRest as typeof pod;

@@ -439,7 +439,17 @@ pub async fn pr_status(cwd: &str) -> Result<PrStatus, String> {
             "pr", "view", "--json",
             "number,title,url,state,isDraft,mergeable,reviewDecision",
         ],
-    ).await?;
+    ).await;
+    let json_str = match json_str {
+        Ok(json) => json,
+        Err(error) if error.to_lowercase().contains("rate limit") => {
+            return tokio::time::timeout(Duration::from_secs(60), pr_status_rest(cwd))
+                .await
+                .map_err(|_| "REST PR fallback timed out after 60s".to_string())?
+                .map_err(|fallback| format!("{}; REST fallback: {}", error, fallback));
+        }
+        Err(error) => return Err(error),
+    };
 
     let v: serde_json::Value =
         serde_json::from_str(&json_str).map_err(|e| format!("Failed to parse PR JSON: {}", e))?;
@@ -455,6 +465,46 @@ pub async fn pr_status(cwd: &str) -> Result<PrStatus, String> {
         mergeable: v["mergeable"].as_str().unwrap_or("UNKNOWN").to_string(),
         review_decision: v["reviewDecision"].as_str().map(|s| s.to_string()),
         checks_status,
+    })
+}
+
+/// GraphQL and REST have separate quotas. Keep basic PR badges working when
+/// GraphQL is exhausted; unavailable review/check facts stay unknown.
+async fn pr_status_rest(cwd: &str) -> Result<PrStatus, String> {
+    let branch = git_cmd(cwd, &["branch", "--show-current"]).await?;
+    if branch.is_empty() { return Err("No PR for a detached HEAD".to_string()); }
+    let remote = git_cmd(cwd, &["remote", "get-url", "origin"]).await?;
+    let owner = remote.trim_end_matches('/').trim_end_matches(".git")
+        .rsplit('/').nth(1).unwrap_or("").rsplit(':').next().unwrap_or("");
+    if owner.is_empty() { return Err("Cannot determine branch owner from origin".to_string()); }
+    let head = format!("head={}:{}", owner, branch);
+    // Let gh resolve the repository and GitHub host exactly as it does for
+    // `pr view`. -f query arguments handle slashes and other branch characters.
+    let json = gh(cwd, &[
+        "api", "repos/{owner}/{repo}/pulls", "--method", "GET",
+        "-f", "state=all", "-f", &head, "-f", "per_page=100",
+        "-f", "sort=created", "-f", "direction=desc", "--cache", "60s",
+    ]).await?;
+    let value: serde_json::Value = serde_json::from_str(&json)
+        .map_err(|e| format!("Failed to parse REST PR JSON: {}", e))?;
+    parse_rest_pr_status(&value)
+}
+
+fn parse_rest_pr_status(value: &serde_json::Value) -> Result<PrStatus, String> {
+    let pulls = value.as_array().ok_or("Invalid REST PR response")?;
+    let pr = pulls.iter().find(|p| p["state"] == "open").or_else(|| pulls.first())
+        .ok_or("No pull requests found for the current branch")?;
+    let number = pr["number"].as_u64().ok_or("PR number missing")? as u32;
+    let url = pr["html_url"].as_str().ok_or("PR URL missing")?.to_string();
+    Ok(PrStatus {
+        number,
+        url,
+        title: pr["title"].as_str().unwrap_or("").to_string(),
+        state: if pr["state"] == "open" { "OPEN" } else if !pr["merged_at"].is_null() { "MERGED" } else { "CLOSED" }.to_string(),
+        is_draft: pr["draft"].as_bool().unwrap_or(false),
+        mergeable: "UNKNOWN".to_string(),
+        review_decision: None,
+        checks_status: None,
     })
 }
 
@@ -1059,6 +1109,16 @@ pub async fn create_branch(cwd: &str, branch: &str) -> Result<String, String> {
 }
 
 /// Delete a local branch. Refuses to delete the currently checked-out branch.
+/// Rename the current branch in place (`git branch -m`). Used to turn a
+/// placeholder branch into a task branch once the task is known.
+pub async fn rename_branch(cwd: &str, new_name: &str) -> Result<String, String> {
+    if new_name.is_empty() || new_name.contains(' ') || new_name.contains("..") || new_name.starts_with('-') {
+        return Err("Invalid branch name".to_string());
+    }
+    git_cmd(cwd, &["branch", "-m", new_name]).await?;
+    Ok(new_name.to_string())
+}
+
 pub async fn delete_branch(cwd: &str, branch: &str, force: bool) -> Result<String, String> {
     if branch.is_empty() {
         return Err("Branch name cannot be empty".to_string());
@@ -1096,4 +1156,277 @@ pub async fn sync_branch_after_merge(cwd: &str, branch: &str, main_branch: &str)
     }
 
     Ok(())
+}
+
+// --- Checkout health (default branch, divergence, nested worktrees) ---
+
+/// A git worktree attached to a checkout's repository.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct WorktreeInfo {
+    pub path: String,
+    pub branch: Option<String>,
+    pub head: String,
+    /// Path lives *inside* the checkout (e.g. `.claude/worktrees/agent-…`).
+    /// An agent editing there while the watcher builds the checkout root is
+    /// exactly the mismatch that made testing misleading before.
+    pub nested: bool,
+    pub dirty: bool,
+    /// `git worktree lock` reason, e.g. "claude agent agent-… (pid 1234 …)".
+    pub locked: Option<String>,
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct CheckoutHealth {
+    pub root: String,
+    pub branch: String,
+    pub head: String,
+    /// The branch the repo's own sync procedure targets: `rally.syncBranch`
+    /// git config, else `origin/HEAD`, else the first of staging/main/master
+    /// that exists on origin, else the workspace's configured main branch.
+    pub default_branch: String,
+    pub ahead_of_default: u32,
+    pub behind_default: u32,
+    pub dirty: bool,
+    /// Modified tracked files that count (everything except Finder metadata).
+    pub dirty_paths: Vec<String>,
+    /// Modified `.DS_Store` files: safe to restore, never a reason to block.
+    pub ignorable_paths: Vec<String>,
+    pub worktrees: Vec<WorktreeInfo>,
+    /// `origin` URL — the project identity shared by every checkout of a repo.
+    pub origin_url: String,
+    /// `git config user.name`, used to derive the default task-branch prefix.
+    pub user_name: String,
+}
+
+/// Path from one `git status --porcelain` line, tolerant of a trimmed
+/// leading status column. Renames yield the new name.
+fn porcelain_path(line: &str) -> Option<String> {
+    let trimmed = line.trim_start();
+    let mut parts = trimmed.splitn(2, char::is_whitespace);
+    let _status = parts.next()?;
+    let rest = parts.next()?.trim();
+    if rest.is_empty() {
+        return None;
+    }
+    let path = match rest.rsplit_once(" -> ") {
+        Some((_, new)) => new,
+        None => rest,
+    };
+    Some(path.trim_matches('"').to_string())
+}
+
+/// Finder metadata that some repos have committed by accident. Finder
+/// rewrites it constantly, so it would make every checkout "dirty" forever.
+pub fn is_ignorable_dirt(path: &str) -> bool {
+    path.rsplit('/').next().map(|b| b == ".DS_Store").unwrap_or(false)
+}
+
+/// `git checkout -- <paths>`: drop local modifications to the given tracked files.
+pub async fn restore_paths(cwd: &str, paths: &[String]) -> Result<(), String> {
+    if paths.is_empty() {
+        return Ok(());
+    }
+    let mut args: Vec<&str> = vec!["checkout", "--"];
+    args.extend(paths.iter().map(|p| p.as_str()));
+    git_cmd(cwd, &args).await.map(|_| ())
+}
+
+/// Resolve the branch a repo's sync procedure resets to. Mirrors the
+/// detection order Flow's `scripts/sync.sh` uses so Rally's safety gate and
+/// the script agree on what "main" means.
+pub async fn default_branch(cwd: &str, fallback: &str) -> String {
+    if let Ok(b) = git_cmd(cwd, &["config", "rally.syncBranch"]).await {
+        if !b.is_empty() {
+            return b;
+        }
+    }
+    if let Ok(r) = git_cmd(cwd, &["symbolic-ref", "refs/remotes/origin/HEAD"]).await {
+        if let Some(b) = r.strip_prefix("refs/remotes/origin/") {
+            if !b.is_empty() {
+                return b.to_string();
+            }
+        }
+    }
+    for candidate in ["staging", "main", "master"] {
+        let r = format!("origin/{}", candidate);
+        if git_cmd(cwd, &["rev-parse", "--verify", "--quiet", &r]).await.is_ok() {
+            return candidate.to_string();
+        }
+    }
+    fallback.to_string()
+}
+
+fn parse_worktree_list(porcelain: &str) -> Vec<(String, Option<String>, String, Option<String>)> {
+    let mut out = Vec::new();
+    let mut path: Option<String> = None;
+    let mut branch: Option<String> = None;
+    let mut head = String::new();
+    let mut locked: Option<String> = None;
+    let flush = |path: &mut Option<String>, branch: &mut Option<String>, head: &mut String, locked: &mut Option<String>, out: &mut Vec<(String, Option<String>, String, Option<String>)>| {
+        if let Some(p) = path.take() {
+            out.push((p, branch.take(), std::mem::take(head), locked.take()));
+        }
+        *branch = None;
+        *locked = None;
+    };
+    for line in porcelain.lines() {
+        if line.is_empty() {
+            flush(&mut path, &mut branch, &mut head, &mut locked, &mut out);
+            continue;
+        }
+        if let Some(p) = line.strip_prefix("worktree ") {
+            flush(&mut path, &mut branch, &mut head, &mut locked, &mut out);
+            path = Some(p.to_string());
+        } else if let Some(h) = line.strip_prefix("HEAD ") {
+            head = h.to_string();
+        } else if let Some(b) = line.strip_prefix("branch ") {
+            branch = Some(b.strip_prefix("refs/heads/").unwrap_or(b).to_string());
+        } else if line == "locked" {
+            locked = Some(String::new());
+        } else if let Some(reason) = line.strip_prefix("locked ") {
+            locked = Some(reason.to_string());
+        }
+    }
+    flush(&mut path, &mut branch, &mut head, &mut locked, &mut out);
+    out
+}
+
+pub async fn checkout_health(cwd: &str, main_branch: &str) -> Result<CheckoutHealth, String> {
+    let branch = git_cmd(cwd, &["symbolic-ref", "--short", "HEAD"]).await.unwrap_or_else(|_| "HEAD".to_string());
+    let head = git_cmd(cwd, &["rev-parse", "HEAD"]).await.unwrap_or_default();
+    let default = default_branch(cwd, main_branch).await;
+    let range = format!("HEAD...origin/{}", default);
+    let (ahead, behind) = match git_cmd(cwd, &["rev-list", "--left-right", "--count", &range]).await {
+        Ok(counts) => {
+            let parts: Vec<&str> = counts.split_whitespace().collect();
+            if parts.len() == 2 {
+                (parts[0].parse().unwrap_or(0), parts[1].parse().unwrap_or(0))
+            } else {
+                (0, 0)
+            }
+        }
+        Err(_) => (0, 0),
+    };
+    // Tracked changes only (`-uno`): untracked files are neither destroyed by
+    // a sync reset nor a reason to call a checkout busy. Finder metadata
+    // (`.DS_Store`) that happens to be committed is reported separately and
+    // never counts as dirty — Rally restores it before a guarded sync.
+    // Nested worktrees below still count untracked files, because new files
+    // there are exactly the edits that go missing.
+    let status_lines = git_cmd(cwd, &["status", "--porcelain", "-uno"]).await.unwrap_or_default();
+    let mut dirty_paths: Vec<String> = Vec::new();
+    let mut ignorable_paths: Vec<String> = Vec::new();
+    for line in status_lines.lines() {
+        // `git_cmd` trims stdout, so the first line may have lost its leading
+        // status column (" M x" → "M x"). Parse by whitespace, not offset.
+        let Some(path) = porcelain_path(line) else { continue };
+        if is_ignorable_dirt(&path) {
+            ignorable_paths.push(path);
+        } else {
+            dirty_paths.push(path);
+        }
+    }
+    let dirty = !dirty_paths.is_empty();
+
+    let root_norm = cwd.trim_end_matches('/').to_string();
+    let porcelain = git_cmd(cwd, &["worktree", "list", "--porcelain"]).await.unwrap_or_default();
+    let mut worktrees = Vec::new();
+    for (path, wt_branch, wt_head, locked) in parse_worktree_list(&porcelain) {
+        let path_norm = path.trim_end_matches('/').to_string();
+        if path_norm == root_norm {
+            continue; // the checkout itself
+        }
+        let nested = path_norm.starts_with(&format!("{}/", root_norm));
+        // Only nested worktrees get a status probe — they're the ones that
+        // can silently absorb an agent's edits. Skip missing dirs (prunable).
+        let dirty = if nested && std::path::Path::new(&path_norm).is_dir() {
+            !git_cmd(&path_norm, &["status", "--porcelain"]).await.unwrap_or_default().is_empty()
+        } else {
+            false
+        };
+        worktrees.push(WorktreeInfo { path: path_norm, branch: wt_branch, head: wt_head, nested, dirty, locked });
+    }
+
+    let origin_url = git_cmd(cwd, &["remote", "get-url", "origin"]).await.unwrap_or_default();
+    let user_name = git_cmd(cwd, &["config", "user.name"]).await.unwrap_or_default();
+
+    Ok(CheckoutHealth {
+        root: root_norm,
+        branch,
+        head,
+        default_branch: default,
+        ahead_of_default: ahead,
+        behind_default: behind,
+        dirty,
+        dirty_paths,
+        ignorable_paths,
+        worktrees,
+        origin_url,
+        user_name,
+    })
+}
+
+#[cfg(test)]
+mod checkout_health_tests {
+    use super::parse_worktree_list;
+
+    #[test]
+    fn porcelain_path_survives_trimmed_first_line() {
+        use super::porcelain_path;
+        assert_eq!(porcelain_path("M .DS_Store").as_deref(), Some(".DS_Store"));
+        assert_eq!(porcelain_path(" M README.md").as_deref(), Some("README.md"));
+        assert_eq!(porcelain_path("MM src/a.rs").as_deref(), Some("src/a.rs"));
+        assert_eq!(porcelain_path("R  old.txt -> new.txt").as_deref(), Some("new.txt"));
+        assert_eq!(porcelain_path(""), None);
+    }
+
+    #[test]
+    fn ds_store_is_ignorable_dirt() {
+        assert!(super::is_ignorable_dirt(".DS_Store"));
+        assert!(super::is_ignorable_dirt("core/flow/.DS_Store"));
+        assert!(!super::is_ignorable_dirt("core/flow/main.cpp"));
+        assert!(!super::is_ignorable_dirt("notes/.DS_Store.bak"));
+    }
+
+    #[test]
+    fn parses_nested_locked_worktree() {
+        let porcelain = "worktree /repo\nHEAD aaa\nbranch refs/heads/main\n\nworktree /repo/.claude/worktrees/agent-1\nHEAD bbb\nbranch refs/heads/scan/x\nlocked claude agent agent-1 (pid 5)\n\nworktree /elsewhere\nHEAD ccc\ndetached\n\n";
+        let list = parse_worktree_list(porcelain);
+        assert_eq!(list.len(), 3);
+        assert_eq!(list[0].0, "/repo");
+        assert_eq!(list[0].1.as_deref(), Some("main"));
+        assert_eq!(list[1].1.as_deref(), Some("scan/x"));
+        assert_eq!(list[1].3.as_deref(), Some("claude agent agent-1 (pid 5)"));
+        assert_eq!(list[2].1, None);
+        assert_eq!(list[2].2, "ccc");
+    }
+}
+
+#[cfg(test)]
+mod pr_rest_tests {
+    use super::parse_rest_pr_status;
+    use serde_json::json;
+
+    #[test]
+    fn open_pr_wins_over_old_closed_pr_and_unknown_checks_stay_unknown() {
+        let result = parse_rest_pr_status(&json!([
+            {"number": 1, "html_url": "https://github.com/o/r/pull/1", "state": "closed", "merged_at": "2026-01-01"},
+            {"number": 2, "html_url": "https://github.com/o/r/pull/2", "title": "Work", "state": "open", "draft": true}
+        ])).unwrap();
+        assert_eq!(result.number, 2);
+        assert_eq!(result.state, "OPEN");
+        assert!(result.is_draft);
+        assert!(result.checks_status.is_none());
+        assert!(result.review_decision.is_none());
+    }
+
+    #[test]
+    fn merged_and_closed_prs_do_not_become_open_badges() {
+        for (merged, expected) in [(json!("2026-01-01"), "MERGED"), (json!(null), "CLOSED")] {
+            let result = parse_rest_pr_status(&json!([{"number": 1, "html_url": "https://github.com/o/r/pull/1", "state": "closed", "merged_at": merged}])).unwrap();
+            assert_eq!(result.state, expected);
+        }
+        assert!(parse_rest_pr_status(&json!([])).is_err());
+        assert!(parse_rest_pr_status(&json!({"message": "rate limit"})).is_err());
+    }
 }

@@ -115,11 +115,12 @@
       html {
         /* Force dark rendering in WKWebView regardless of system appearance */
         color-scheme: dark;
-        background: #1a1a1a;
+        /* Expose native macOS vibrancy beneath translucent surfaces. */
+        background: transparent;
       }
       body {
         font-family: -apple-system, BlinkMacSystemFont, sans-serif;
-        background: var(--bg-app);
+        background: transparent;
         color: var(--text-primary);
         -webkit-font-smoothing: antialiased;
       }

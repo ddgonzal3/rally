@@ -1,3 +1,4 @@
+pub mod claude_sessions;
 pub mod cli_server;
 pub mod commands;
 pub mod config_ops;

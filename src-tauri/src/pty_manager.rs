@@ -223,9 +223,22 @@ impl PtyManager {
         cmd.arg("-l");
         cmd.cwd(&effective_cwd);
 
-        // Inherit environment
+        // Inherit environment — except Claude Code's own session variables.
+        // If Rally was launched from a terminal inside a Claude Code session
+        // (e.g. `./scripts/run.sh` typed into Claude), those leak into every
+        // PTY and make a Claude started here think it is a child session:
+        // it then skips registration (`~/.claude/sessions/<pid>.json`) and
+        // refuses interactive features. The exact set of variables changes
+        // between releases, so strip the whole namespace, not a fixed list.
+        // CommandBuilder::new() already captured the process env, so the
+        // offending keys must be removed explicitly — skipping them here
+        // would silently leave them in place.
         for (key, value) in std::env::vars() {
-            cmd.env(key, value);
+            if is_claude_session_env(&key) {
+                cmd.env_remove(&key);
+            } else {
+                cmd.env(key, value);
+            }
         }
         // When launched as .app, PATH is minimal. Grab full PATH from a login shell.
         // Prepend ~/.rally/bin so Rally CLI tools are available.
@@ -241,11 +254,7 @@ impl PtyManager {
             };
             cmd.env("PATH", path);
         }
-        // Remove env vars that prevent Claude Code from launching inside Rally PTYs
-        cmd.env_remove("CLAUDECODE");
-        cmd.env_remove("CLAUDE_CODE_ENTRYPOINT");
-        // Set TERM for proper terminal behavior
-        cmd.env("TERM", "xterm-256color");
+        configure_terminal_colors(&mut cmd);
         // Identify as Rally terminal for app-specific checks, while preserving
         // macOS zsh OSC 7 cwd reporting (gated behind TERM_PROGRAM=Apple_Terminal).
         // This keeps cwd tracking working for restore after relaunch.
@@ -574,6 +583,16 @@ impl PtyManager {
         }
     }
 
+    /// Map of shell PID -> PTY id for every live session. Used to attribute
+    /// Claude Code session files (keyed by Claude's PID) back to the PTY
+    /// whose shell spawned them.
+    pub fn shell_pid_map(&self) -> HashMap<u32, String> {
+        self.sessions
+            .iter()
+            .filter_map(|(id, session)| session.shell_pid.map(|pid| (pid, id.clone())))
+            .collect()
+    }
+
     pub fn inventory(&self) -> ProcessInventory {
         let self_pid = std::process::id();
 
@@ -666,6 +685,27 @@ fn read_proc_map() -> HashMap<u32, ProcStat> {
     map
 }
 
+/// One `ps -axo pid,ppid` pass -> pid -> ppid. Cheaper than `read_proc_map`
+/// when only the parent chain matters (Claude session attribution).
+pub fn read_ppid_map() -> HashMap<u32, u32> {
+    let mut map = HashMap::new();
+    let output = match std::process::Command::new("ps")
+        .args(["-axo", "pid=,ppid="])
+        .output()
+    {
+        Ok(o) => o,
+        Err(_) => return map,
+    };
+    for line in String::from_utf8_lossy(&output.stdout).lines() {
+        let mut parts = line.split_whitespace();
+        let (Some(pid), Some(ppid)) = (parts.next(), parts.next()) else { continue };
+        if let (Ok(pid), Ok(ppid)) = (pid.parse::<u32>(), ppid.parse::<u32>()) {
+            map.insert(pid, ppid);
+        }
+    }
+    map
+}
+
 /// Parse ps etime format: `[[DD-]HH:]MM:SS` into seconds.
 fn parse_etime(s: &str) -> u64 {
     let (days, rest) = match s.split_once('-') {
@@ -729,6 +769,23 @@ fn count_own_fds() -> u32 {
 }
 
 // Tauri commands
+
+/// Environment variables a running Claude Code session exports to its
+/// children. None of them may reach a PTY, or a Claude launched there
+/// behaves as a nested child session.
+pub(crate) fn is_claude_session_env(key: &str) -> bool {
+    key == "CLAUDECODE" || key == "CLAUDE_PID" || key.starts_with("CLAUDE_CODE_")
+}
+
+/// Describe Rally's interactive xterm, not the non-interactive process that
+/// happened to launch the app. Shell profiles can still set user preferences.
+fn configure_terminal_colors(cmd: &mut CommandBuilder) {
+    for key in ["NO_COLOR", "FORCE_COLOR", "CLICOLOR", "CLICOLOR_FORCE"] {
+        cmd.env_remove(key);
+    }
+    cmd.env("TERM", "xterm-256color");
+    cmd.env("COLORTERM", "truecolor");
+}
 
 pub type PtyState = Arc<Mutex<PtyManager>>;
 
@@ -958,4 +1015,40 @@ fn foreground_child_name(shell_pid: u32) -> Option<String> {
 
     let basename = comm.rsplit('/').next().unwrap_or(&comm).to_string();
     if basename.is_empty() { None } else { Some(basename) }
+}
+
+#[cfg(test)]
+mod env_tests {
+    use super::{configure_terminal_colors, is_claude_session_env};
+    use portable_pty::CommandBuilder;
+    use std::ffi::OsStr;
+
+    #[test]
+    fn terminal_colors_do_not_inherit_launcher_overrides() {
+        let mut cmd = CommandBuilder::new("/bin/zsh");
+        for key in ["NO_COLOR", "FORCE_COLOR", "CLICOLOR", "CLICOLOR_FORCE"] {
+            cmd.env(key, "0");
+        }
+        cmd.env("TERM", "dumb");
+        cmd.env("COLORTERM", "");
+        cmd.env("RALLY_TEST_UNRELATED", "preserved");
+        configure_terminal_colors(&mut cmd);
+        for key in ["NO_COLOR", "FORCE_COLOR", "CLICOLOR", "CLICOLOR_FORCE"] {
+            assert_eq!(cmd.get_env(key), None);
+        }
+        assert_eq!(cmd.get_env("TERM"), Some(OsStr::new("xterm-256color")));
+        assert_eq!(cmd.get_env("COLORTERM"), Some(OsStr::new("truecolor")));
+        assert_eq!(cmd.get_env("RALLY_TEST_UNRELATED"), Some(OsStr::new("preserved")));
+    }
+
+    #[test]
+    fn strips_claude_session_namespace_only() {
+        assert!(is_claude_session_env("CLAUDECODE"));
+        assert!(is_claude_session_env("CLAUDE_PID"));
+        assert!(is_claude_session_env("CLAUDE_CODE_CHILD_SESSION"));
+        assert!(is_claude_session_env("CLAUDE_CODE_MESSAGING_SOCKET"));
+        assert!(!is_claude_session_env("CLAUDE_EFFORT"));
+        assert!(!is_claude_session_env("ANTHROPIC_API_KEY"));
+        assert!(!is_claude_session_env("PATH"));
+    }
 }

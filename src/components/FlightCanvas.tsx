@@ -4,7 +4,6 @@ import { useWorkspaceStore } from "../stores/workspaceStore";
 import { FlightPod, snapToNeighbors, preventOverlap } from "./FlightPod";
 import { FLIGHT_ZOOM_MIN, FLIGHT_ZOOM_MAX, FLIGHT_DEFAULT_CLAUDE_WIDTH, FLIGHT_DEFAULT_CLAUDE_HEIGHT, FLIGHT_DEFAULT_TERMINAL_WIDTH, FLIGHT_DEFAULT_TERMINAL_HEIGHT } from "../lib/types";
 import { CLAUDE_PATH } from "./FileIcons";
-import { StashDock } from "./StashDock";
 
 /** Renders a single workspace's flight canvas. Hidden via display:none when inactive. */
 const WorkspaceFlightView = React.memo(function WorkspaceFlightView({
@@ -85,9 +84,6 @@ const WorkspaceFlightView = React.memo(function WorkspaceFlightView({
 
   // Width of each snap item: divide container by focusColumns
   const [containerSize, setContainerSize] = useState({ w: 0, h: 0 });
-  const DOCK_HEIGHT = 28;
-  const dockHeightRef = useRef(DOCK_HEIGHT);
-  dockHeightRef.current = DOCK_HEIGHT;
   useEffect(() => {
     if (!containerRef.current) return;
     const measure = () => {
@@ -129,7 +125,7 @@ const WorkspaceFlightView = React.memo(function WorkspaceFlightView({
     if (!focusMode || containerSize.h === 0) return undefined;
     const GAP = 8;
     const PAD = 12;
-    return Math.floor(containerSize.h - PAD * 2 - DOCK_HEIGHT);
+    return Math.floor(containerSize.h - PAD * 2);
   }, [focusMode, containerSize.h]);
 
   useEffect(() => {
@@ -152,22 +148,13 @@ const WorkspaceFlightView = React.memo(function WorkspaceFlightView({
       if (wsId !== workspaceId) return;
       setFocusMode(true);
       focusModeRef.current = true;
-      // Pods are already positioned from the last focus layout —
-      // just snap viewport to show the clicked pod. No relayout needed.
+      // Run the focus layout, not a bare pan: a pod that was just added
+      // (⌘K) or unhidden has not been placed in its repo column yet, and
+      // panning to its raw x left the other columns off-screen.
       // Suppress the CSS transition so it's an instant snap, not an animated slide.
       skipTransitionRef.current = true;
       requestAnimationFrame(() => { skipTransitionRef.current = false; });
-      const store = useWorkspaceStore.getState();
-      const pod = store.flightLayouts[workspaceId]?.pods.find((p) => p.id === podId);
-      if (pod) {
-        const PAD = 12;
-        store.setFlightViewport(workspaceId, {
-          panX: PAD - pod.x,
-          panY: 0,
-          zoom: 1.0,
-        });
-        store.bringPodToFront(workspaceId, podId);
-      }
+      navigateToRef.current?.(podId);
     };
     window.addEventListener("flight-focus-pod", handler);
     return () => window.removeEventListener("flight-focus-pod", handler);
@@ -564,7 +551,7 @@ const WorkspaceFlightView = React.memo(function WorkspaceFlightView({
           : totalColumns;
 
         const availW = containerW - PAD * 2;
-        const availH = containerH - PAD * 2 - dockHeightRef.current;
+        const availH = containerH - PAD * 2;
 
         // Grid wrapping: arrange visible columns in a balanced grid
         let gridCols: number;
@@ -1108,9 +1095,6 @@ const WorkspaceFlightView = React.memo(function WorkspaceFlightView({
         }} />,
         document.body,
       )}
-
-      {/* Stash dock — rendered when pods are stashed */}
-      <StashDock workspaceId={workspaceId} />
 
       {/* Frosted glass context menu — rendered as portal to avoid CSS zoom offset */}
       {contextMenu && ReactDOM.createPortal(

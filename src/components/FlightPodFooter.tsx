@@ -15,6 +15,10 @@ import {
 } from "../lib/watcherStatus";
 import { showContextMenu, type MenuAction } from "../lib/contextMenu";
 import { BranchSwitcher } from "./BranchSwitcher";
+import { useAgentStore, bundleKey } from "../stores/agentStore";
+import { usePodMismatches } from "../lib/usePodActivity";
+import { resolvePrepareConfig, formatAge } from "../lib/prepare";
+import { addToast } from "./ToastContainer";
 
 const podActionButtonStyle: React.CSSProperties = {
   display: "flex",
@@ -296,7 +300,19 @@ function PodScriptDot({
           {isWatcher ? "built" : "ran"} {builtAt}
         </span>
       )}
-
+      {!isWatcher && !isRunning && buildStatus === "error" && (
+        <span
+          style={{
+            fontSize: 11,
+            color: "var(--text-secondary)",
+            whiteSpace: "nowrap",
+            lineHeight: 1,
+          }}
+          title="Exited with an error — click to open its output"
+        >
+          failed
+        </span>
+      )}
       {/* Action icons — fade in on hover (matches dev mode BuildStatusBar) */}
       <div
         style={{
@@ -337,7 +353,17 @@ function PodScriptDot({
 }
 
 /** Script footer bar for a flight pod — shows statusBar scripts for the pod's repo. */
-export function FlightPodFooter({ repoPath, onOpenTerminal }: { repoPath: string; onOpenTerminal?: () => void }) {
+export function FlightPodFooter({
+  repoPath,
+  podId,
+  workspaceId,
+  onOpenTerminal,
+}: {
+  repoPath: string;
+  podId: string;
+  workspaceId: string;
+  onOpenTerminal?: () => void;
+}) {
   const rallyConfig = useWorkspaceStore((s) => s.rallyConfigs[repoPath]);
   const loadRallyConfig = useWorkspaceStore((s) => s.loadRallyConfig);
   const branch = useWorkspaceStore((s) => s.gitStatuses[repoPath]?.branch);
@@ -356,9 +382,33 @@ export function FlightPodFooter({ repoPath, onOpenTerminal }: { repoPath: string
 
   const scripts = rallyConfig?.statusBar ?? [];
   const scriptsRight = rallyConfig?.statusBarRight ?? [];
+
+  // Checkout facts for this pod: nested-worktree / session cwd mismatches.
+  const mismatches = usePodMismatches(workspaceId, podId);
+
+  // App bundle freshness (only when the repo declares `agent.appBundle`;
+  // otherwise we say nothing rather than guess). Independent of every
+  // script dot: a green watcher never implies a fresh native build.
+  const prepare = resolvePrepareConfig(rallyConfig);
+  const bundle = useAgentStore((s) => (prepare.appBundle ? s.bundles[bundleKey(repoPath, prepare.appBundle)] : undefined));
+  const refreshBundle = useAgentStore((s) => s.refreshBundle);
+  useEffect(() => {
+    if (!prepare.appBundle) return;
+    const path = prepare.appBundle;
+    refreshBundle(repoPath, path);
+    const t = setInterval(() => refreshBundle(repoPath, path), 30000);
+    return () => clearInterval(t);
+  }, [repoPath, prepare.appBundle, refreshBundle]);
+
   if (scripts.length === 0 && scriptsRight.length === 0 && !branch) return null;
 
   const repoName = repoPath.split("/").pop() ?? repoPath;
+  const appAnnotation =
+    prepare.appBundle && bundle
+      ? bundle.exists
+        ? { text: `app ${formatAge(bundle.modified_at)}`, title: `${bundle.path}\nBuilt ${formatAge(bundle.modified_at)}. Only the native build updates this.` }
+        : { text: "no app build", title: `${bundle.path} not found. Run the native build first.` }
+      : null;
 
   return (
     <div
@@ -403,6 +453,46 @@ export function FlightPodFooter({ repoPath, onOpenTerminal }: { repoPath: string
           variant="footer"
         />
       )}
+      {mismatches.length > 0 && (
+        <button
+          className="tab-action"
+          onMouseDown={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            addToast({
+              type: "warning",
+              title: `${repoName}: checkout mismatch`,
+              message: mismatches.map((m) => m.detail).join("\n"),
+              duration: 12000,
+            });
+          }}
+          title={mismatches.map((m) => m.detail).join("\n")}
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 4,
+            height: 18,
+            padding: "0 5px",
+            marginRight: 4,
+            background: "none",
+            border: "none",
+            borderRadius: 3,
+            color: "var(--status-amber)",
+            fontSize: 11,
+            fontWeight: 600,
+            cursor: "pointer",
+            whiteSpace: "nowrap",
+            lineHeight: 1,
+            flexShrink: 0,
+          }}
+        >
+          <svg width="11" height="11" viewBox="0 0 12 12" fill="none" aria-hidden="true" style={{ display: "block" }}>
+            <path d="M6 1.5L11 10.5H1L6 1.5z" stroke="currentColor" strokeWidth="1.1" strokeLinejoin="round" />
+            <path d="M6 5v2.5M6 9v.5" stroke="currentColor" strokeWidth="1.1" strokeLinecap="round" />
+          </svg>
+          mismatch
+        </button>
+      )}
       {scripts.map((scriptName) => (
         <PodScriptDot
           key={scriptName}
@@ -411,6 +501,14 @@ export function FlightPodFooter({ repoPath, onOpenTerminal }: { repoPath: string
           scriptEntry={scriptCache.find((e) => e.name === scriptName)}
         />
       ))}
+      {appAnnotation && (
+        <span
+          style={{ fontSize: 11, color: "var(--text-dim)", whiteSpace: "nowrap", lineHeight: 1, marginLeft: 6, flexShrink: 0 }}
+          title={appAnnotation.title}
+        >
+          {appAnnotation.text}
+        </span>
+      )}
       <div style={{ flex: 1 }} />
       {scriptsRight.map((scriptName) => (
         <PodScriptDot
