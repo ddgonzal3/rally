@@ -8,6 +8,7 @@ import { TerminalLinkProvider, type OnFileOpen } from "../lib/terminalLinkProvid
 import { useWorkspaceStore, scriptOutputBuffers, appendPtyBuffer, clearPtyBuffer, ptyOutputBuffers } from "../stores/workspaceStore";
 import { markPtyInput } from "../lib/ptyActivity";
 import { showContextMenu } from "../lib/contextMenu";
+import { installCopyOnSelect } from "../lib/copyOnSelect";
 import type { ThemeName, DetectedPort } from "../lib/types";
 import { detectPorts } from "../lib/portDetection";
 import { getXtermTheme, getCssVar } from "../lib/xtermTheme";
@@ -354,6 +355,7 @@ export function Terminal({ cwd, command, initialInput, exitOnComplete, ptyId: ex
     term.loadAddon(fitAddon);
 
     term.open(containerRef.current);
+    const copyOnSelect = installCopyOnSelect(term);
 
     // GPU-accelerated rendering — significantly reduces scroll jank with
     // multiple terminals. Falls back to default DOM renderer on failure.
@@ -904,6 +906,7 @@ export function Terminal({ cwd, command, initialInput, exitOnComplete, ptyId: ex
       document.removeEventListener("rally:split-resize-end", onDragEnd);
       linkDisposable.dispose();
       titleDisposable.dispose();
+      copyOnSelect.dispose();
       window.removeEventListener("keydown", handleKeyDown);
       window.removeEventListener("keyup", handleKeyUp);
       window.removeEventListener("blur", handleBlur);

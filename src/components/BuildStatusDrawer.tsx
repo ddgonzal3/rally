@@ -6,6 +6,7 @@ import { api } from "../lib/tauri";
 import { TerminalPromptIcon } from "./FileIcons";
 import { getXtermTheme } from "../lib/xtermTheme";
 import { showContextMenu } from "../lib/contextMenu";
+import { installCopyOnSelect } from "../lib/copyOnSelect";
 
 /**
  * Zoom-aware terminal fit.  The .xterm element has `zoom: 1/Z` to
@@ -185,15 +186,7 @@ export function BuildStatusDrawer() {
       }
     });
 
-    // Auto-copy on selection change (debounced to fire on mouseup, not mid-drag)
-    let selTimer: ReturnType<typeof setTimeout> | undefined;
-    const onSelDisposable = term.onSelectionChange(() => {
-      clearTimeout(selTimer);
-      selTimer = setTimeout(() => {
-        const sel = term.getSelection();
-        if (sel) navigator.clipboard.writeText(sel).catch(() => {});
-      }, 50);
-    });
+    const copyOnSelect = installCopyOnSelect(term);
 
     // Focus the terminal so it captures keyboard input (Ctrl+C, etc.)
     requestAnimationFrame(() => term.focus());
@@ -226,8 +219,7 @@ export function BuildStatusDrawer() {
 
     return () => {
       onDataDisposable.dispose();
-      onSelDisposable.dispose();
-      clearTimeout(selTimer);
+      copyOnSelect.dispose();
       document.removeEventListener("rally:watcher-output", handler);
       term.dispose();
       xtermRef.current = null;
