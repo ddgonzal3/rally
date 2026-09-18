@@ -319,7 +319,7 @@ function AgentRow({ workspaceId, entry, project, indent, selected }: { workspace
           {!indent && <FolderIcon />}
           <span style={styles.identity}>
             <span style={styles.name}>{entry.name}</span>
-            {entry.label && <span style={styles.workLabel}>· {entry.label}</span>}
+            {entry.label && <span style={styles.workLabel}>{entry.label}</span>}
           </span>
           <span style={styles.right}>
             {entry.problem && (
