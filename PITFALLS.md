@@ -145,3 +145,25 @@ Claude Code agents may create `.claude/worktrees/agent-*` inside a checkout and 
 Symptom: "I rebuilt and it's still the old sidebar." The bundle and binary are new, but the window shows old code. Cause: `scripts/run.sh` killed by full binary path `.../Contents/MacOS/Rally`, while Tauri names the binary after the crate, `.../Contents/MacOS/rally`. `pgrep -f` is case-sensitive, so nothing matched, the old process survived, and `open Rally.app` just brought it to the front. The WebKit cache was blamed earlier; clearing `~/Library/Caches/com.rally.app/WebKit` did nothing because that directory is empty.
 
 `run.sh` now matches on the `Contents/MacOS/` directory of this checkout's bundle. Before trusting any "rebuilt but unchanged" report, compare `ps -o lstart= -p <pid>` of the running `rally` process with the binary's mtime.
+
+## Task Delivery Must Not Depend on a Panel Mount
+
+Changing a pane's command is not evidence that its PTY started: hidden/unmounted panels may never execute the Terminal effect. Task delivery now starts the PTY explicitly, stores its ID, selects the tab, and reveals the pod; spawn failures fail the delivery step. New tasks pass their prompt and model at process launch instead of sending `/clear` and `/model` with fixed delays. Follow-ups still use the existing conversation with bracketed paste followed by a separate Enter.
+
+## Launcher Color Overrides Leak Into Interactive Terminals
+
+Launching Rally from an automation environment can inherit `NO_COLOR=1`, `TERM=dumb`, and an empty `COLORTERM`. Passing `NO_COLOR` through to a PTY makes Claude Code monochrome even though xterm's palette is correct. `configure_terminal_colors` removes inherited color overrides and advertises `xterm-256color` / `truecolor` before the interactive shell starts. User shell profiles can still set their own preferences.
+
+## Native Frost Requires Transparent Webview and Page Backgrounds
+
+An `NSVisualEffectView` behind the webview cannot show through opaque `html`, `body`, or WKWebView under-page backgrounds. Keep those clear, paint the main workspace explicitly with `--bg-app`, and tint the sidebar with a translucent flat color. CSS `backdrop-filter` alone cannot blur the desktop behind a native window.
+
+## GitHub GraphQL Limits Can Hide PR Badges After Relaunch
+
+`gh pr view --json` uses GraphQL. If that quota is exhausted, a newly launched Rally has no cached PR and previously showed no pill despite an open PR. The basic status lookup now falls back to the REST pulls endpoint on rate-limit errors, which has a separate quota. Keep unavailable review/check facts unknown and preserve open/closed/merged distinctions.
+
+## Accessibility / Screen Recording Grants Silently Die On Every Rebuild
+
+Claude Code computer use inside a Rally terminal failed with "no permission" while Rally showed as enabled in System Settings > Accessibility. macOS attributes a PTY child (zsh, claude) to Rally, so Rally's grant is the one that counts. TCC keys a grant on the app's code-signing requirement. An ad-hoc signed bundle has no identity, so the requirement is the raw code hash (`cdhash`), which changes on every build. The toggle stays on but points at a dead hash. The user TCC db showed five `com.rally.app` rows, each with a different hash.
+
+`tauri.conf.json` now sets `bundle.macOS.signingIdentity` to the local Apple Development certificate. The requirement becomes `identifier "com.rally.app"` plus the certificate name, which survives rebuilds (and renewal, as long as the certificate keeps the same name). After changing the identity once, reset the stale rows (`tccutil reset Accessibility com.rally.app`, same for `ScreenCapture`) and re-add Rally. Never go back to ad-hoc signing for a bundle that gets TCC grants.
