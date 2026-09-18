@@ -254,8 +254,7 @@ impl PtyManager {
             };
             cmd.env("PATH", path);
         }
-        // Set TERM for proper terminal behavior
-        cmd.env("TERM", "xterm-256color");
+        configure_terminal_colors(&mut cmd);
         // Identify as Rally terminal for app-specific checks, while preserving
         // macOS zsh OSC 7 cwd reporting (gated behind TERM_PROGRAM=Apple_Terminal).
         // This keeps cwd tracking working for restore after relaunch.
@@ -778,6 +777,16 @@ pub(crate) fn is_claude_session_env(key: &str) -> bool {
     key == "CLAUDECODE" || key == "CLAUDE_PID" || key.starts_with("CLAUDE_CODE_")
 }
 
+/// Describe Rally's interactive xterm, not the non-interactive process that
+/// happened to launch the app. Shell profiles can still set user preferences.
+fn configure_terminal_colors(cmd: &mut CommandBuilder) {
+    for key in ["NO_COLOR", "FORCE_COLOR", "CLICOLOR", "CLICOLOR_FORCE"] {
+        cmd.env_remove(key);
+    }
+    cmd.env("TERM", "xterm-256color");
+    cmd.env("COLORTERM", "truecolor");
+}
+
 pub type PtyState = Arc<Mutex<PtyManager>>;
 
 #[tauri::command]
@@ -1010,7 +1019,27 @@ fn foreground_child_name(shell_pid: u32) -> Option<String> {
 
 #[cfg(test)]
 mod env_tests {
-    use super::is_claude_session_env;
+    use super::{configure_terminal_colors, is_claude_session_env};
+    use portable_pty::CommandBuilder;
+    use std::ffi::OsStr;
+
+    #[test]
+    fn terminal_colors_do_not_inherit_launcher_overrides() {
+        let mut cmd = CommandBuilder::new("/bin/zsh");
+        for key in ["NO_COLOR", "FORCE_COLOR", "CLICOLOR", "CLICOLOR_FORCE"] {
+            cmd.env(key, "0");
+        }
+        cmd.env("TERM", "dumb");
+        cmd.env("COLORTERM", "");
+        cmd.env("RALLY_TEST_UNRELATED", "preserved");
+        configure_terminal_colors(&mut cmd);
+        for key in ["NO_COLOR", "FORCE_COLOR", "CLICOLOR", "CLICOLOR_FORCE"] {
+            assert_eq!(cmd.get_env(key), None);
+        }
+        assert_eq!(cmd.get_env("TERM"), Some(OsStr::new("xterm-256color")));
+        assert_eq!(cmd.get_env("COLORTERM"), Some(OsStr::new("truecolor")));
+        assert_eq!(cmd.get_env("RALLY_TEST_UNRELATED"), Some(OsStr::new("preserved")));
+    }
 
     #[test]
     fn strips_claude_session_namespace_only() {

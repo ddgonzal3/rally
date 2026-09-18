@@ -1,3 +1,4 @@
+import { assertCheckoutAvailable } from "./checkoutStore";
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
@@ -3589,11 +3590,12 @@ export const useWorkspaceStore = create<WorkspaceState>()(
   },
 
   startTask: async ({ workspaceId, cwd, description, kind, model, attachments }) => {
+    assertCheckoutAvailable(cwd);
     get().getOrCreateFlightLayout(workspaceId);
     const pods = get().flightLayouts[workspaceId]?.pods ?? [];
 
     // Reuse a pod for this checkout when Claude there is idle or absent and
-    // it isn't mid-preparation. An idle REPL gets `/clear` + the new prompt;
+    // it isn't mid-preparation. New tasks launch a fresh conversation;
     // a working one is left alone and the task gets its own pod.
     await useAgentStore.getState().refreshSessions();
     let reusable: FlightPod | undefined;
@@ -3645,6 +3647,7 @@ export const useWorkspaceStore = create<WorkspaceState>()(
   resetCheckout: async (workspaceId, podId) => {
     const pod = get().flightLayouts[workspaceId]?.pods.find((p) => p.id === podId);
     if (!pod) return;
+    assertCheckoutAvailable(pod.cwd);
     if (await findLiveClaudePty(podId)) {
       throw new Error("A Claude session is running here. Stop it first.");
     }

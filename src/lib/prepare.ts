@@ -162,6 +162,7 @@ export interface CheckoutCandidate {
   cwd: string;
   /** A Claude session is running in a pod for this checkout. */
   busy: boolean;
+  manualBusy?: boolean;
   dirty: boolean;
   pr: PrStatus | null;
   /** An idle pod already exists for this checkout (preferred: no new panel). */
@@ -183,7 +184,8 @@ export function pickFreeCheckout(candidates: CheckoutCandidate[]): CheckoutPick 
   const reasons: { cwd: string; reason: string }[] = [];
   const free: CheckoutCandidate[] = [];
   for (const c of candidates) {
-    if (c.busy) reasons.push({ cwd: c.cwd, reason: "agent running" });
+    if (c.manualBusy) reasons.push({ cwd: c.cwd, reason: "marked busy outside Rally" });
+    else if (c.busy) reasons.push({ cwd: c.cwd, reason: "agent running" });
     else if (c.pr?.state === "OPEN") reasons.push({ cwd: c.cwd, reason: `PR #${c.pr.number} open` });
     else if (c.dirty) reasons.push({ cwd: c.cwd, reason: "uncommitted changes" });
     else free.push(c);
@@ -213,8 +215,9 @@ export function defaultBranchPrefix(userName: string): string {
   return `${slug === "task" ? "agent" : slug}/`;
 }
 
-export function taskBranchName(prefix: string, description: string, taken: string[]): string {
-  const base = `${prefix}${slugify(shortDescription(description, 60))}`;
+export function taskBranchName(prefix: string, taken: string[], date = new Date()): string {
+  const stamp = `${String(date.getMonth() + 1).padStart(2, "0")}${String(date.getDate()).padStart(2, "0")}`;
+  const base = `${prefix}task-${stamp}`;
   return uniqueBranch(base, taken);
 }
 

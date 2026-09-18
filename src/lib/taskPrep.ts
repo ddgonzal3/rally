@@ -15,6 +15,7 @@
  *    unmerged work can be lost.
  *  - Follow-up messages (`deliverPromptToPod`) never trigger preparation.
  */
+import { useCheckoutStore, assertCheckoutAvailable } from "../stores/checkoutStore";
 import { api } from "./tauri";
 import type { ClaudeModel, FlightPod, PodTask, PrepStep, PrepStepStatus, PrStatus } from "./types";
 import {
@@ -194,7 +195,7 @@ export async function checkoutCandidates(workspaceId: string, cwds: string[]): P
   const out: CheckoutCandidate[] = [];
   for (const cwd of cwds) {
     const podsHere = pods.filter((p) => p.type === "claude" && p.cwd === cwd);
-    let busy = false;
+    let busy = !!useCheckoutStore.getState().notes[cwd]?.busy;
     for (const p of podsHere) {
       if ((await podClaudeState(p.id)).state === "working") {
         busy = true;
@@ -203,7 +204,7 @@ export async function checkoutCandidates(workspaceId: string, cwds: string[]): P
     }
     const health = agent.health[cwd];
     const dirty = health?.dirty ?? store.gitStatuses[cwd]?.dirty ?? false;
-    out.push({ cwd, busy, dirty, pr: store.prStatuses[cwd] ?? null, hasPod: podsHere.length > 0 });
+    out.push({ cwd, busy, manualBusy: !!useCheckoutStore.getState().notes[cwd]?.busy, dirty, pr: store.prStatuses[cwd] ?? null, hasPod: podsHere.length > 0 });
   }
   return out;
 }
@@ -239,21 +240,28 @@ export async function deliverPromptToPod(
   const pod = getPod(workspaceId, podId);
   if (!pod) throw new Error("Pod no longer exists");
 
-  const livePty = await findLiveClaudePty(podId);
+  // Delivery must work even when the destination was minimized or its tab hidden.
+  if (pod.stashed) store.unstashPod(workspaceId, podId);
+  store.setWorkspaceMode(workspaceId, "flight");
+  store.bringPodToFront(workspaceId, podId);
+  setTimeout(() => window.dispatchEvent(new CustomEvent("flight-focus-pod", { detail: { workspaceId, podId } })), 60);
+  await useAgentStore.getState().refreshSessions();
+  const live = await podClaudeState(podId);
+  if (options.clearFirst && live.state === "working") {
+    throw new Error("Claude is busy. Wait for the current turn before starting a new task.");
+  }
+  // A new task already requests a fresh conversation. Launch with its prompt
+  // and model as arguments instead of racing slash commands against the REPL.
+  if (options.clearFirst && live.ptyId) await stopPodClaude(podId);
+  const livePty = options.clearFirst ? null : live.ptyId;
   if (livePty) {
-    if (options.clearFirst) {
-      // New task into an idle REPL: start a fresh conversation instead of
-      // paying for a new process. `/clear` is Claude Code's own reset.
-      await api.writePtyString(livePty, "/clear\r");
-      await new Promise((r) => setTimeout(r, 700));
-    }
-    if (options.model) {
-      // A reused REPL keeps its previous model; switch before the prompt.
-      await api.writePtyString(livePty, `/model ${CLAUDE_MODEL_IDS[options.model]}\r`);
-      await new Promise((r) => setTimeout(r, 700));
+    const layoutId = `flight:${podId}`;
+    for (const [groupId, group] of Object.entries(store.layouts[layoutId]?.groups ?? {})) {
+      const pane = group.panes.find((p) => p.ptyId === livePty);
+      if (pane) store.setActivePane(layoutId, groupId, pane.id);
     }
     await api.writePtyString(livePty, BRACKETED_PASTE_START + prompt + BRACKETED_PASTE_END);
-    await new Promise((r) => setTimeout(r, 120));
+    await new Promise((r) => setTimeout(r, 500));
     await api.writePtyString(livePty, "\r");
     return "typed";
   }
@@ -265,27 +273,36 @@ export async function deliverPromptToPod(
   const modelFlag = options.model ? ` --model ${CLAUDE_MODEL_IDS[options.model]}` : "";
   const command = `claude --dangerously-skip-permissions${modelFlag} ${shellQuote(prompt)}`;
 
+  // Start here, not as a side effect of mounting a visible Terminal component.
+  // A failed spawn rejects delivery and leaves the preparation step retryable.
+  const ptyId = await api.spawnPty(pod.cwd, command, 100, 30);
+  if (!getPod(workspaceId, podId)) {
+    await api.killPty(ptyId);
+    throw new Error("Panel was removed before Claude could start");
+  }
   const active = group.panes.find((p) => p.id === group.activePaneId) ?? group.panes[0];
   const replaceable = active && (active.type === "claude-launcher" || active.type === "claude");
   if (replaceable) {
     if (active.type === "claude" && active.ptyId) {
       // The old shell is at a prompt (Claude exited). Retire it rather than
       // typing into a shell we cannot see the state of.
-      api.killPty(active.ptyId).catch(() => {});
+      await api.killPty(active.ptyId).catch(() => {});
     }
     store.transformPane(layoutId, groupId, active.id, {
       type: "claude",
       title: "Claude Code",
       command,
-      ptyId: undefined,
+      ptyId,
       initialInput: undefined,
     });
+    store.setActivePane(layoutId, groupId, active.id);
   } else {
     store.addPaneToGroup(layoutId, groupId, {
       id: crypto.randomUUID(),
       type: "claude",
       title: "Claude Code",
       command,
+      ptyId,
       cwd: pod.cwd,
     });
   }
@@ -372,6 +389,7 @@ async function runStep(workspaceId: string, podId: string, step: PrepStep): Prom
   const mainBranch = ws?.main_branch ?? "main";
   const resolved = await loadResolved(cwd);
 
+  assertCheckoutAvailable(cwd);
   switch (step.kind) {
     case "script": {
       const cfg = resolved.steps.find((s) => s.script === step.scriptName);
@@ -480,7 +498,7 @@ async function runBranchStep(cwd: string, mainBranch: string, resolved: Resolved
   const task = pod.task!;
   const agentName = pod.label ?? folderName(cwd);
   const wanted =
-    task.kind === "reset" ? placeholderBranchName(prefix, agentName, new Date(), taken) : taskBranchName(prefix, task.description, taken);
+    task.kind === "reset" ? placeholderBranchName(prefix, agentName, new Date(), taken) : taskBranchName(prefix, taken);
 
   const finish = async (detail: string) => {
     await useWorkspaceStore.getState().refreshGitStatusForPath(cwd, mainBranch).catch(() => {});

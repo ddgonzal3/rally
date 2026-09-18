@@ -1,3 +1,4 @@
+import { useCheckoutStore } from "../stores/checkoutStore";
 import { useMemo } from "react";
 import { useWorkspaceStore } from "../stores/workspaceStore";
 import { useAgentStore } from "../stores/agentStore";
@@ -28,6 +29,7 @@ export function useSidebarModel(workspaceId: string | null): ProjectEntry[] {
       .map((cwd) => `${cwd}\t${s.gitStatuses[cwd]?.branch ?? ""}\t${s.gitStatuses[cwd]?.dirty ? 1 : 0}`)
       .join("\n"),
   );
+  const notes = useCheckoutStore((s) => s.notes);
   const prStatuses = useWorkspaceStore((s) => s.prStatuses);
   const sessionsByPty = useAgentStore((s) => s.sessionsByPty);
   const health = useAgentStore((s) => s.health);
@@ -45,6 +47,8 @@ export function useSidebarModel(workspaceId: string | null): ProjectEntry[] {
       const h = health[cwd];
       checkouts[cwd] = {
         cwd,
+        manualBusy: notes[cwd]?.busy,
+        label: notes[cwd]?.label,
         origin: h?.origin_url ?? "",
         branch: store.gitStatuses[cwd]?.branch ?? h?.branch ?? null,
         dirty: h?.dirty ?? store.gitStatuses[cwd]?.dirty ?? false,
@@ -72,5 +76,5 @@ export function useSidebarModel(workspaceId: string | null): ProjectEntry[] {
     return buildSidebarModel({ paths, checkouts, pods: podInputs });
     // podsKey/branchesKey/tick are change signals; their content is re-read from the store.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [workspaceId, pathsKey, podsKey, branchesKey, prStatuses, sessionsByPty, health, tick]);
+  }, [workspaceId, pathsKey, podsKey, branchesKey, prStatuses, sessionsByPty, health, tick, notes]);
 }

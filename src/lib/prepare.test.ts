@@ -180,9 +180,9 @@ describe("branch names", () => {
   });
 
   it("builds unique task and placeholder names", () => {
-    expect(taskBranchName("danny/", "Fix the export bug\nmore", [])).toBe("danny/fix-the-export-bug");
-    expect(taskBranchName("danny/", "Fix the export bug", ["danny/fix-the-export-bug"])).toBe("danny/fix-the-export-bug-2");
     const d = new Date(2026, 8, 10);
+    expect(taskBranchName("danny/", [], d)).toBe("danny/task-0910");
+    expect(taskBranchName("danny/", ["danny/task-0910"], d)).toBe("danny/task-0910-2");
     expect(placeholderBranchName("danny/", "flow3", d, [])).toBe("danny/flow3-0910");
     expect(placeholderBranchName("danny/", "flow3", d, ["danny/flow3-0910"])).toBe("danny/flow3-0910-2");
   });
@@ -272,3 +272,9 @@ describe("shortDescription", () => {
     expect(shortDescription("x".repeat(100), 10)).toBe("xxxxxxxxx…");
   });
 });
+
+ it("never assigns a manually busy checkout, even without a Rally agent", () => {
+   const reserved = { cwd: "/repo1", busy: false, manualBusy: true, dirty: false, pr: null, hasPod: true };
+   expect(pickFreeCheckout([reserved])).toEqual({ cwd: null, reasons: [{ cwd: "/repo1", reason: "marked busy outside Rally" }] });
+   expect(pickFreeCheckout([reserved, { ...reserved, cwd: "/repo2", manualBusy: false }]).cwd).toBe("/repo2");
+ });

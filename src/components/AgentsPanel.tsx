@@ -1,4 +1,7 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
+import { useCheckoutStore } from "../stores/checkoutStore";
+import { folderName } from "../lib/prepare";
 import { create } from "zustand";
 import { useWorkspaceStore, getPodMainPtyIds } from "../stores/workspaceStore";
 import { showContextMenu, type MenuAction, type SubMenuAction } from "../lib/contextMenu";
@@ -12,7 +15,7 @@ import { addToast } from "./ToastContainer";
 /**
  * Agent sidebar. One row per project with a count of free checkouts and a
  * chevron. Collapsed, the project shows only rows that matter now: agents
- * working (amber) or needing you (blue), failed preparation, open PRs.
+ * working (amber) or needing input (plain status), failed preparation, open PRs.
  * Expanded, every checkout is a row, so nothing open is unreachable.
  * Clicking a project starts a task there (⌘K with the project chosen);
  * clicking a row reveals its panel, or starts a task when it has none.
@@ -21,18 +24,34 @@ import { addToast } from "./ToastContainer";
 export function AgentsPanel() {
   const workspaceId = useWorkspaceStore((s) => s.activeWorkspaceId);
   const projects = useSidebarModel(workspaceId);
-  const active = projects.reduce((n, p) => n + p.rows.filter((a) => a.dot !== null).length, 0);
+  const [focusedPod, setFocusedPod] = useState<string | null>(null);
+  useEffect(() => {
+    setFocusedPod(null);
+    const onFocus = (event: Event) => {
+      const detail = (event as CustomEvent<{ workspaceId: string; podId: string }>).detail;
+      if (detail.workspaceId === workspaceId) setFocusedPod(detail.podId);
+    };
+    const onPointer = (event: Event) => {
+      const element = (event.target as Element)?.closest?.("[data-flight-pod]");
+      if (element) setFocusedPod(element.getAttribute("data-flight-pod"));
+    };
+    window.addEventListener("flight-focus-pod", onFocus);
+    document.addEventListener("pointerdown", onPointer, true);
+    document.addEventListener("focusin", onPointer, true);
+    return () => {
+      window.removeEventListener("flight-focus-pod", onFocus);
+      document.removeEventListener("pointerdown", onPointer, true);
+      document.removeEventListener("focusin", onPointer, true);
+    };
+  }, [workspaceId]);
 
   return (
     <div className="no-select" style={styles.panel}>
-      <div style={styles.header}>
-        <span style={styles.title}>Agents</span>
-        <span style={styles.count}>{workspaceId && active > 0 ? active : ""}</span>
-      </div>
+      <CheckoutLabelEditor />
       <div style={styles.body}>
         {!workspaceId && <div style={styles.emptyText}>No workspace selected.</div>}
         {workspaceId && projects.length === 0 && <div style={styles.emptyText}>Add a project to this workspace.</div>}
-        {workspaceId && projects.map((p) => <ProjectGroup key={p.project} workspaceId={workspaceId} project={p} />)}
+        {workspaceId && projects.map((p) => <ProjectGroup key={p.project} workspaceId={workspaceId} project={p} focusedPod={focusedPod} />)}
       </div>
     </div>
   );
@@ -96,9 +115,47 @@ function revealInFinderItem(cwds: { name: string; cwd: string }[]): MenuAction |
   };
 }
 
+function checkoutMenu(cwd: string): MenuAction[] {
+  const note = useCheckoutStore.getState().notes[cwd];
+  return [
+    { label: note?.busy ? "Clear busy mark" : "Mark as busy outside Rally", action: () => useCheckoutStore.getState().setBusy(cwd, !note?.busy) },
+    { label: note?.label ? "Edit work label…" : "Add work label…", action: () => document.dispatchEvent(new CustomEvent("rally:edit-checkout-label", { detail: cwd })) },
+    ...(note?.label ? [{ label: "Remove work label", action: () => useCheckoutStore.getState().setLabel(cwd, "") }] : []),
+  ];
+}
+
+function CheckoutLabelEditor() {
+  const [cwd, setCwd] = useState<string | null>(null);
+  const [label, setLabel] = useState("");
+  useEffect(() => {
+    const edit = (event: Event) => {
+      const path = (event as CustomEvent<string>).detail;
+      setLabel(useCheckoutStore.getState().notes[path]?.label ?? "");
+      setCwd(path);
+    };
+    document.addEventListener("rally:edit-checkout-label", edit);
+    return () => document.removeEventListener("rally:edit-checkout-label", edit);
+  }, []);
+  if (!cwd) return null;
+  return createPortal(
+    <form role="dialog" aria-modal="false" aria-label={`Work label for ${folderName(cwd)}`} style={styles.labelEditor}
+      onSubmit={(e) => { e.preventDefault(); useCheckoutStore.getState().setLabel(cwd, label); setCwd(null); }}
+      onKeyDown={(e) => { e.stopPropagation(); if (e.key === "Escape") { e.preventDefault(); setCwd(null); } }}>
+      <label htmlFor="checkout-work-label" style={{ fontSize: 13, fontWeight: 500 }}>Work label for {folderName(cwd)}</label>
+      <input id="checkout-work-label" key={cwd} autoFocus maxLength={100} value={label} onChange={(e) => setLabel(e.target.value)} placeholder="What are you working on?" style={styles.labelInput} />
+      <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+        <button type="button" style={styles.labelButton} onClick={() => setCwd(null)}>Cancel</button>
+        <button type="submit" style={styles.labelButton}>Save</button>
+      </div>
+    </form>, document.body,
+  );
+}
+
 function projectMenu(project: ProjectEntry) {
   showContextMenu([
     { label: `New task in ${project.project}…`, action: () => openLauncher({ project: project.project }) },
+    "separator",
+    ...project.checkouts.map((c) => ({ label: c.name, children: checkoutMenu(c.cwd) })),
     "separator",
     revealInFinderItem(project.checkouts),
   ]);
@@ -106,12 +163,12 @@ function projectMenu(project: ProjectEntry) {
 
 // --- Project group -------------------------------------------------------------
 
-function ProjectGroup({ workspaceId, project }: { workspaceId: string; project: ProjectEntry }) {
+function ProjectGroup({ workspaceId, project, focusedPod }: { workspaceId: string; project: ProjectEntry; focusedPod: string | null }) {
   const open = useDrawers((s) => !!s.open[project.project]);
   if (project.merged) {
     return (
       <div style={styles.group}>
-        <AgentRow workspaceId={workspaceId} entry={project.rows[0]} project={project} indent={false} />
+        <AgentRow workspaceId={workspaceId} entry={project.rows[0]} project={project} selected={focusedPod === project.rows[0].podId && focusedPod !== null} indent={false} />
       </div>
     );
   }
@@ -119,7 +176,7 @@ function ProjectGroup({ workspaceId, project }: { workspaceId: string; project: 
     <div style={styles.group}>
       <ProjectRow project={project} open={open} />
       {(open ? project.rows : project.active).map((a) => (
-        <AgentRow key={a.podId ?? `cwd:${a.cwd}`} workspaceId={workspaceId} entry={a} project={project} indent />
+        <AgentRow key={a.podId ?? `cwd:${a.cwd}`} workspaceId={workspaceId} entry={a} project={project} selected={focusedPod === a.podId && focusedPod !== null} indent />
       ))}
     </div>
   );
@@ -141,6 +198,7 @@ function ProjectRow({ project, open }: { project: ProjectEntry; open: boolean })
         projectMenu(project);
       }}
     >
+      <FolderIcon />
       <span style={styles.projectName}>{project.project}</span>
       <span style={{ ...styles.available, color: project.available > 0 ? "var(--text-secondary)" : "transparent" }}>{project.available}</span>
       <button
@@ -160,7 +218,7 @@ function ProjectRow({ project, open }: { project: ProjectEntry; open: boolean })
 
 // --- Agent row -------------------------------------------------------------------
 
-function AgentRow({ workspaceId, entry, project, indent }: { workspaceId: string; entry: AgentEntry; project: ProjectEntry; indent: boolean }) {
+function AgentRow({ workspaceId, entry, project, indent, selected }: { workspaceId: string; entry: AgentEntry; project: ProjectEntry; indent: boolean; selected: boolean }) {
   const stashPod = useWorkspaceStore((s) => s.stashPod);
   const removeFlightPod = useWorkspaceStore((s) => s.removeFlightPod);
   const setPodTask = useWorkspaceStore((s) => s.setPodTask);
@@ -179,7 +237,7 @@ function AgentRow({ workspaceId, entry, project, indent }: { workspaceId: string
   };
 
   const menu = () => {
-    const items: (MenuAction | SubMenuAction | "separator")[] = [];
+    const items: (MenuAction | SubMenuAction | "separator")[] = [...checkoutMenu(entry.cwd), "separator"];
     if (podId) {
       const pod = useWorkspaceStore.getState().flightLayouts[workspaceId]?.pods.find((p) => p.id === podId);
       const prep = pod?.task?.prep;
@@ -205,7 +263,7 @@ function AgentRow({ workspaceId, entry, project, indent }: { workspaceId: string
             addToast({ type: "warning", title: `${entry.name}: reset refused`, message: String(e), duration: 8000 });
           });
         },
-        disabled: entry.dot !== null || entry.preparing,
+        disabled: entry.dot !== null || entry.preparing || entry.manualBusy,
       });
       items.push({ label: "Stop Claude session", action: () => void stopPodSession(workspaceId, podId), disabled: entry.dot === null && !entry.preparing });
       items.push({ label: "Clear task", action: () => setPodTask(workspaceId, podId, undefined), disabled: !pod?.task });
@@ -233,13 +291,23 @@ function AgentRow({ workspaceId, entry, project, indent }: { workspaceId: string
       className="sidebar-item"
       style={{
         ...styles.row,
-        paddingLeft: indent ? 12 : 4,
-        background: hovered ? "var(--bg-hover)" : "transparent",
-        opacity: entry.hidden ? 0.5 : 1,
+        height: 28,
+        minHeight: 28,
+        paddingLeft: indent ? 20 : 12,
+        background: selected && !entry.hidden ? "color-mix(in srgb, var(--text-primary) 9%, transparent)" : hovered ? "var(--bg-hover)" : "transparent",
+        boxShadow: selected && !entry.hidden ? "inset 0 0 0 1px color-mix(in srgb, var(--text-primary) 4%, transparent)" : "none",
+        opacity: entry.hidden && !entry.dot && !entry.manualBusy && !entry.label ? 0.65 : 1,
       }}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
-      onClick={open}
+      title={[entry.cwd, entry.label, entry.manualBusy ? "Marked busy outside Rally" : "", entry.secondary, entry.topic, podId ? "Click to show · Shift-click to hide" : ""].filter(Boolean).join("\n")}
+      onClick={(e) => {
+        if (e.shiftKey) {
+          if (podId && !entry.hidden) stashPod(workspaceId, podId);
+          return;
+        }
+        open();
+      }}
       onContextMenu={(e) => {
         e.preventDefault();
         e.stopPropagation();
@@ -248,32 +316,22 @@ function AgentRow({ workspaceId, entry, project, indent }: { workspaceId: string
     >
       <div style={styles.rowMain}>
         <div style={styles.nameLine}>
-          <span style={styles.name}>{entry.name}</span>
+          {!indent && <FolderIcon />}
+          <span style={styles.identity}>
+            <span style={styles.name}>{entry.name}</span>
+            {entry.label && <span style={styles.workLabel}>· {entry.label}</span>}
+          </span>
           <span style={styles.right}>
-            {podId && (
-              <button
-                className="sidebar-btn"
-                style={{ ...styles.iconBtn, opacity: hovered ? 1 : 0, pointerEvents: hovered ? "auto" : "none" }}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  if (entry.hidden) revealPod(workspaceId, podId);
-                  else stashPod(workspaceId, podId);
-                }}
-                title={entry.hidden ? "Reveal panel" : "Hide panel (session keeps running)"}
-              >
-                {entry.hidden ? <EyeIcon /> : <EyeOffIcon />}
-              </button>
-            )}
             {entry.problem && (
               <span style={styles.problem} title={entry.problem.detail}>
                 !
               </span>
             )}
-            {entry.dot && <span style={{ ...styles.dot, background: entry.dot === "waiting" ? "var(--status-blue)" : "var(--status-amber)" }} />}
+            {entry.manualBusy && <span style={styles.busyLabel}>Busy</span>}
             {entry.pr && <PrPill pr={entry.pr} />}
+            {entry.dot === "working" && <span style={styles.dot} title={entry.secondary || "Working"} />}
           </span>
         </div>
-        <div style={styles.secondary}>{entry.secondary}</div>
       </div>
     </div>
   );
@@ -289,11 +347,20 @@ function PrPill({ pr }: { pr: PrStatus }) {
         e.stopPropagation();
         openUrl(pr.url);
       }}
+      title={`PR #${pr.number}: ${pr.title}`}
       style={styles.prPill}
     >
       #{pr.number}
       {checks && <span style={{ color: checksColor, marginLeft: 3 }}>{checks}</span>}
     </button>
+  );
+}
+
+function FolderIcon() {
+  return (
+    <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true" style={{ display: "block", flexShrink: 0, color: "var(--text-secondary)" }}>
+      <path d="M1.25 3.25c0-.55.45-1 1-1h2.2l1.1 1.2h4.2c.55 0 1 .45 1 1v4.3c0 .55-.45 1-1 1h-7.5c-.55 0-1-.45-1-1v-5.5Z" stroke="currentColor" strokeWidth="1" strokeLinejoin="round" />
+    </svg>
   );
 }
 
@@ -312,51 +379,24 @@ function Chevron({ open }: { open: boolean }) {
   );
 }
 
-function EyeIcon() {
-  return (
-    <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true" style={{ display: "block" }}>
-      <path d="M1 6s2-3.5 5-3.5S11 6 11 6s-2 3.5-5 3.5S1 6 1 6z" stroke="currentColor" strokeWidth="1.1" strokeLinejoin="round" />
-      <circle cx="6" cy="6" r="1.5" stroke="currentColor" strokeWidth="1.1" />
-    </svg>
-  );
-}
-
-function EyeOffIcon() {
-  return (
-    <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true" style={{ display: "block" }}>
-      <path d="M1 6s2-3.5 5-3.5S11 6 11 6s-2 3.5-5 3.5S1 6 1 6z" stroke="currentColor" strokeWidth="1.1" strokeLinejoin="round" />
-      <path d="M2 10L10 2" stroke="currentColor" strokeWidth="1.1" strokeLinecap="round" />
-    </svg>
-  );
-}
-
 const PROJECT_ROW_H = 28;
-const ROW_H = 44;
 
 const styles: Record<string, React.CSSProperties> = {
-  panel: { display: "flex", flexDirection: "column", height: "100%", background: "var(--bg-surface)", overflow: "hidden" },
-  header: {
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "space-between",
-    padding: "0 12px",
-    minHeight: 29,
-    maxHeight: 29,
-    borderBottom: "1px solid var(--border)",
-    flexShrink: 0,
-  },
-  title: { fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em", color: "var(--text-primary)" },
-  count: { fontSize: 11, color: "var(--text-secondary)", fontVariantNumeric: "tabular-nums" },
-  body: { flex: 1, minHeight: 0, overflow: "auto", padding: "6px 4px 12px", display: "flex", flexDirection: "column" },
-  group: { display: "flex", flexDirection: "column", marginBottom: 6 },
+  busyLabel: { fontSize: 11, fontWeight: 500, color: "var(--text-secondary)", flexShrink: 0 },
+  labelEditor: { position: "fixed", top: "25%", left: "50%", transform: "translateX(-50%)", width: 320, maxWidth: "calc(100vw - 32px)", zIndex: 10000, display: "flex", flexDirection: "column", gap: 12, padding: 16, borderRadius: 10, background: "rgba(36, 36, 36, 0.78)", backdropFilter: "blur(20px) saturate(180%)", border: "1px solid rgba(255, 255, 255, 0.12)", color: "#ddd", boxShadow: "0 8px 30px rgba(0,0,0,0.25)" },
+  labelInput: { width: "100%", boxSizing: "border-box", fontFamily: "inherit", fontSize: 13, fontWeight: 500, padding: "7px 8px", borderRadius: 6, border: "1px solid rgba(255,255,255,0.12)", background: "rgba(255,255,255,0.06)", color: "#ddd", outline: "none" },
+  labelButton: { fontFamily: "inherit", fontSize: 12, fontWeight: 500, padding: "5px 10px", borderRadius: 6, border: "1px solid rgba(255,255,255,0.12)", background: "rgba(255,255,255,0.06)", color: "#ddd", cursor: "pointer" },
+  panel: { display: "flex", flexDirection: "column", height: "100%", background: "transparent", overflow: "hidden" },
+  body: { flex: 1, minHeight: 0, overflow: "auto", padding: "6px 10px 16px", display: "flex", flexDirection: "column" },
+  group: { display: "flex", flexDirection: "column", marginBottom: 3 },
   projectRow: {
     height: PROJECT_ROW_H,
     minHeight: PROJECT_ROW_H,
     display: "flex",
     alignItems: "center",
-    gap: 4,
-    padding: "0 4px",
-    borderRadius: 6,
+    gap: 8,
+    padding: "0 12px",
+    borderRadius: 9,
     cursor: "pointer",
     transition: "background 100ms ease",
   },
@@ -364,7 +404,7 @@ const styles: Record<string, React.CSSProperties> = {
     flex: 1,
     minWidth: 0,
     fontSize: 13,
-    fontWeight: 600,
+    fontWeight: 500,
     color: "var(--text-primary)",
     lineHeight: 1.1,
     whiteSpace: "nowrap",
@@ -387,21 +427,21 @@ const styles: Record<string, React.CSSProperties> = {
     cursor: "pointer",
   },
   row: {
-    height: ROW_H,
-    minHeight: ROW_H,
     display: "flex",
     alignItems: "center",
-    padding: "0 4px",
-    borderRadius: 6,
+    padding: "0 6px 0 12px",
+    borderRadius: 9,
     cursor: "pointer",
     transition: "background 100ms ease, opacity 150ms ease",
   },
-  rowMain: { flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 3 },
+  rowMain: { flex: 1, minWidth: 0 },
+  identity: { flex: 1, minWidth: 0, display: "flex", alignItems: "center", gap: 5 },
   nameLine: { height: 16, display: "flex", alignItems: "center", gap: 6, minWidth: 0 },
   name: {
-    flex: 1,
+    flex: "0 0 auto",
+    maxWidth: "100%",
     fontSize: 13,
-    fontWeight: 600,
+    fontWeight: 500,
     color: "var(--text-primary)",
     lineHeight: 1.1,
     whiteSpace: "nowrap",
@@ -409,24 +449,23 @@ const styles: Record<string, React.CSSProperties> = {
     textOverflow: "ellipsis",
     minWidth: 0,
   },
-  secondary: {
-    height: 14,
-    fontSize: 12,
+  workLabel: {
+    minWidth: 0,
+    fontSize: 13,
     fontWeight: 500,
     color: "var(--text-dim)",
-    lineHeight: 1.15,
     whiteSpace: "nowrap",
     overflow: "hidden",
     textOverflow: "ellipsis",
   },
-  right: { display: "flex", alignItems: "center", gap: 6, flexShrink: 0 },
-  dot: { width: 6, height: 6, borderRadius: "50%", flexShrink: 0 },
+  right: { display: "flex", alignItems: "center", gap: 4, flexShrink: 0 },
+  dot: { width: 6, height: 6, borderRadius: "50%", flexShrink: 0, background: "var(--status-amber)" },
   prPill: {
     flexShrink: 0,
-    height: 16,
-    padding: "0 5px",
-    border: "1px solid rgba(255, 255, 255, 0.25)",
-    borderRadius: 3,
+    height: 19,
+    padding: "0 6px",
+    border: "1px solid var(--border)",
+    borderRadius: 5,
     background: "none",
     color: "var(--text-secondary)",
     fontSize: 11,
@@ -448,20 +487,6 @@ const styles: Record<string, React.CSSProperties> = {
     textAlign: "center",
     flexShrink: 0,
     cursor: "default",
-  },
-  iconBtn: {
-    flexShrink: 0,
-    width: 18,
-    height: 18,
-    borderRadius: 4,
-    border: "1px solid transparent",
-    background: "transparent",
-    color: "var(--text-secondary)",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    cursor: "pointer",
-    transition: "opacity 120ms ease",
   },
   emptyText: { padding: "12px", fontSize: 11, color: "var(--text-secondary)" },
 };

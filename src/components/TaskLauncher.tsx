@@ -1,3 +1,4 @@
+import { useCheckoutStore } from "../stores/checkoutStore";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import ReactDOM from "react-dom";
 import { useWorkspaceStore } from "../stores/workspaceStore";
@@ -50,6 +51,7 @@ export function TaskLauncher() {
   const [open, setOpen] = useState(false);
   const [visible, setVisible] = useState(false);
   const [targetPodId, setTargetPodId] = useState<string | null>(null);
+  const checkoutNotes = useCheckoutStore((s) => s.notes);
   const [fixedCwd, setFixedCwd] = useState<string | null>(null);
   const [text, setText] = useState("");
   const [project, setProject] = useState<string | null>(null);
@@ -181,7 +183,7 @@ export function TaskLauncher() {
   useEffect(() => {
     if (!open || targetPodId || !workspaceId || !project) return;
     if (fixedCwd) {
-      setPick({ cwd: fixedCwd, reasons: [] });
+      setPick(checkoutNotes[fixedCwd]?.busy ? { cwd: null, reasons: [{ cwd: fixedCwd, reason: "marked busy outside Rally" }] } : { cwd: fixedCwd, reasons: [] });
       return;
     }
     let cancelled = false;
@@ -192,7 +194,7 @@ export function TaskLauncher() {
     return () => {
       cancelled = true;
     };
-  }, [open, targetPodId, workspaceId, project, fixedCwd]);
+  }, [open, targetPodId, workspaceId, project, fixedCwd, checkoutNotes]);
 
   // Pasted images are saved to disk and listed in the prompt by path;
   // Claude opens them with its Read tool. Text pastes stay native.

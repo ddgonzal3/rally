@@ -10,7 +10,7 @@
 
 import type { PodTask, PrStatus } from "./types";
 import type { AgentActivity, CheckoutMismatch } from "./prepare";
-import { folderName, projectFromOrigin, shortDescription } from "./prepare";
+import { folderName, projectFromOrigin } from "./prepare";
 
 // --- Inputs ------------------------------------------------------------------
 
@@ -34,6 +34,8 @@ export interface SidebarCheckoutInput {
   origin: string;
   branch: string | null;
   dirty: boolean;
+  manualBusy?: boolean;
+  label?: string;
   pr: PrStatus | null;
 }
 
@@ -68,9 +70,13 @@ export interface AgentEntry {
   cwd: string;
   name: string;
   hidden: boolean;
+  manualBusy?: boolean;
+  label?: string;
   dot: AgentDot;
-  /** Second line: the task while its session is the live one, else Claude's live topic, else the branch. */
+  /** Live activity only; never a saved prompt or branch name. */
   secondary: string;
+  /** Latest terminal topic, available on hover rather than in the row. */
+  topic?: string;
   /** Shown once, as the pill. Only on the first row of a checkout. */
   pr: PrStatus | null;
   /** One quiet mark; the tooltip carries the details. */
@@ -121,7 +127,7 @@ function buildProject(project: string, cwds: string[], input: SidebarModelInput)
     const checkout = input.checkouts[cwd];
     const branch = checkout?.branch ?? null;
     const claudePods = input.pods.filter((p) => p.cwd === cwd && p.type === "claude");
-    const here = claudePods.map((p) => agentRow(p, branch));
+    const here = claudePods.map((p) => agentRow(p));
     if (here.length === 0) {
       here.push({
         podId: null,
@@ -130,7 +136,7 @@ function buildProject(project: string, cwds: string[], input: SidebarModelInput)
         name: folderName(cwd),
         hidden: false,
         dot: null,
-        secondary: branch ?? "",
+        secondary: "",
         pr: null,
         problem: null,
         preparing: false,
@@ -141,7 +147,13 @@ function buildProject(project: string, cwds: string[], input: SidebarModelInput)
     if (prOpen) here[0].pr = prOpen;
 
     const state = checkoutState(here, checkout);
-    for (const r of here) r.available = state === "available";
+    for (const r of here) {
+      r.available = state === "available";
+      r.manualBusy = checkout?.manualBusy ?? false;
+      r.label = checkout?.label || undefined;
+      // A custom panel title must never obscure which checkout this is.
+      r.name = folderName(cwd);
+    }
     rows.push(...here);
     checkouts.push({ cwd, name: folderName(cwd), state, branch, pr: prOpen });
   }
@@ -149,26 +161,31 @@ function buildProject(project: string, cwds: string[], input: SidebarModelInput)
   const available = checkouts.filter((c) => c.state === "available").length;
   // A panel you can see on the canvas is never missing from the sidebar;
   // hidden idle panels and bare checkouts wait in the expanded list.
-  const active = rows.filter((r) => (r.podId !== null && !r.hidden) || r.dot !== null || r.problem !== null || r.pr !== null);
+  const active = rows.filter((r) => (r.podId !== null && !r.hidden) || r.dot !== null || r.problem !== null || r.pr !== null || r.manualBusy || r.label);
   const merged = checkouts.length === 1 && rows.length === 1;
-  if (merged) rows[0].name = project;
+  if (merged && folderName(cwds[0]) === project) rows[0].name = project;
   return { project, checkouts, available, rows, active, merged };
 }
 
 /**
  * One row per open Claude panel. Dot amber while working or preparing,
- * blue when it needs you (waiting for input, or a finished turn you have
- * not looked at yet), none when idle.
+ * waiting is retained as a model state for checkout availability, but the UI
+ * uses plain status text rather than a blue dot.
  */
-function agentRow(pod: SidebarPodInput, branch: string | null): AgentEntry {
+function agentRow(pod: SidebarPodInput): AgentEntry {
   const prep = pod.task?.prep;
   const preparing = prep?.status === "running";
   const working = pod.activity.state === "working" || preparing;
   const needsYou = pod.activity.state === "waiting" || (pod.activity.state === "idle" && pod.activity.attention);
   const dot: AgentDot = needsYou ? "waiting" : working ? "working" : null;
 
-  const description = pod.task && pod.task.kind !== "reset" && taskIsCurrent(pod) ? shortDescription(pod.task.description) : "";
-  const liveTopic = pod.topic && pod.topic !== "Claude Code" ? pod.topic : "";
+  const problem = firstProblem(pod);
+  const secondary = problem?.short ?? (preparing
+    ? (prep?.steps.find((s) => s.status === "running")?.label ?? "Preparing") + "…"
+    : pod.activity.state === "waiting" ? "Needs your input"
+    : working ? "Working"
+    : needsYou ? "Ready for review"
+    : pod.activity.state === "idle" ? "Idle" : "");
 
   return {
     podId: pod.id,
@@ -177,34 +194,12 @@ function agentRow(pod: SidebarPodInput, branch: string | null): AgentEntry {
     name: pod.name,
     hidden: pod.hidden,
     dot,
-    secondary: description || liveTopic || branch || "",
+    secondary,
+    topic: pod.activity.state !== "no-session" && pod.topic && pod.topic !== "Claude Code" ? pod.topic : undefined,
     pr: null,
-    problem: firstProblem(pod),
+    problem,
     preparing,
   };
-}
-
-/** Grace between hand-over and the launched session registering itself. */
-const SESSION_START_SLACK_MS = 60_000;
-
-/**
- * The task record describes the conversation Rally delivered. It stops
- * being true once that session is gone (Claude exited) or a newer session
- * runs in the panel (you started `claude` again by hand). A session that
- * predates the hand-over is the reused REPL that received it.
- */
-function taskIsCurrent(pod: SidebarPodInput): boolean {
-  const task = pod.task!;
-  if (task.prep.status === "running" || task.prep.status === "failed" || task.prep.status === "interrupted") return true;
-  switch (pod.activity.source) {
-    case "none":
-      return false;
-    case "terminal":
-      return true;
-    case "session":
-      if (pod.sessionStartedAt === null) return true;
-      return pod.sessionStartedAt <= (task.deliveredAt ?? task.createdAt) + SESSION_START_SLACK_MS;
-  }
 }
 
 function firstProblem(pod: SidebarPodInput): AgentEntry["problem"] {
@@ -221,6 +216,7 @@ function firstProblem(pod: SidebarPodInput): AgentEntry["problem"] {
 
 function checkoutState(rows: AgentEntry[], checkout: SidebarCheckoutInput | undefined): CheckoutState {
   if (rows.some((r) => r.dot === "waiting")) return "waiting";
+  if (checkout?.manualBusy) return "working";
   if (rows.some((r) => r.dot === "working")) return "working";
   if (checkout?.pr?.state === "OPEN") return "review";
   if (checkout?.dirty) return "dirty";

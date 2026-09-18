@@ -2631,6 +2631,7 @@ const styles: Record<string, React.CSSProperties> = {
     borderRadius: 4,
   },
   main: {
+    background: "var(--bg-app)",
     flex: 1,
     display: "flex",
     flexDirection: "row",

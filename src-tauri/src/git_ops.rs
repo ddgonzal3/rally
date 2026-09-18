@@ -439,7 +439,17 @@ pub async fn pr_status(cwd: &str) -> Result<PrStatus, String> {
             "pr", "view", "--json",
             "number,title,url,state,isDraft,mergeable,reviewDecision",
         ],
-    ).await?;
+    ).await;
+    let json_str = match json_str {
+        Ok(json) => json,
+        Err(error) if error.to_lowercase().contains("rate limit") => {
+            return tokio::time::timeout(Duration::from_secs(60), pr_status_rest(cwd))
+                .await
+                .map_err(|_| "REST PR fallback timed out after 60s".to_string())?
+                .map_err(|fallback| format!("{}; REST fallback: {}", error, fallback));
+        }
+        Err(error) => return Err(error),
+    };
 
     let v: serde_json::Value =
         serde_json::from_str(&json_str).map_err(|e| format!("Failed to parse PR JSON: {}", e))?;
@@ -455,6 +465,46 @@ pub async fn pr_status(cwd: &str) -> Result<PrStatus, String> {
         mergeable: v["mergeable"].as_str().unwrap_or("UNKNOWN").to_string(),
         review_decision: v["reviewDecision"].as_str().map(|s| s.to_string()),
         checks_status,
+    })
+}
+
+/// GraphQL and REST have separate quotas. Keep basic PR badges working when
+/// GraphQL is exhausted; unavailable review/check facts stay unknown.
+async fn pr_status_rest(cwd: &str) -> Result<PrStatus, String> {
+    let branch = git_cmd(cwd, &["branch", "--show-current"]).await?;
+    if branch.is_empty() { return Err("No PR for a detached HEAD".to_string()); }
+    let remote = git_cmd(cwd, &["remote", "get-url", "origin"]).await?;
+    let owner = remote.trim_end_matches('/').trim_end_matches(".git")
+        .rsplit('/').nth(1).unwrap_or("").rsplit(':').next().unwrap_or("");
+    if owner.is_empty() { return Err("Cannot determine branch owner from origin".to_string()); }
+    let head = format!("head={}:{}", owner, branch);
+    // Let gh resolve the repository and GitHub host exactly as it does for
+    // `pr view`. -f query arguments handle slashes and other branch characters.
+    let json = gh(cwd, &[
+        "api", "repos/{owner}/{repo}/pulls", "--method", "GET",
+        "-f", "state=all", "-f", &head, "-f", "per_page=100",
+        "-f", "sort=created", "-f", "direction=desc", "--cache", "60s",
+    ]).await?;
+    let value: serde_json::Value = serde_json::from_str(&json)
+        .map_err(|e| format!("Failed to parse REST PR JSON: {}", e))?;
+    parse_rest_pr_status(&value)
+}
+
+fn parse_rest_pr_status(value: &serde_json::Value) -> Result<PrStatus, String> {
+    let pulls = value.as_array().ok_or("Invalid REST PR response")?;
+    let pr = pulls.iter().find(|p| p["state"] == "open").or_else(|| pulls.first())
+        .ok_or("No pull requests found for the current branch")?;
+    let number = pr["number"].as_u64().ok_or("PR number missing")? as u32;
+    let url = pr["html_url"].as_str().ok_or("PR URL missing")?.to_string();
+    Ok(PrStatus {
+        number,
+        url,
+        title: pr["title"].as_str().unwrap_or("").to_string(),
+        state: if pr["state"] == "open" { "OPEN" } else if !pr["merged_at"].is_null() { "MERGED" } else { "CLOSED" }.to_string(),
+        is_draft: pr["draft"].as_bool().unwrap_or(false),
+        mergeable: "UNKNOWN".to_string(),
+        review_decision: None,
+        checks_status: None,
     })
 }
 
@@ -1349,5 +1399,34 @@ mod checkout_health_tests {
         assert_eq!(list[1].3.as_deref(), Some("claude agent agent-1 (pid 5)"));
         assert_eq!(list[2].1, None);
         assert_eq!(list[2].2, "ccc");
+    }
+}
+
+#[cfg(test)]
+mod pr_rest_tests {
+    use super::parse_rest_pr_status;
+    use serde_json::json;
+
+    #[test]
+    fn open_pr_wins_over_old_closed_pr_and_unknown_checks_stay_unknown() {
+        let result = parse_rest_pr_status(&json!([
+            {"number": 1, "html_url": "https://github.com/o/r/pull/1", "state": "closed", "merged_at": "2026-01-01"},
+            {"number": 2, "html_url": "https://github.com/o/r/pull/2", "title": "Work", "state": "open", "draft": true}
+        ])).unwrap();
+        assert_eq!(result.number, 2);
+        assert_eq!(result.state, "OPEN");
+        assert!(result.is_draft);
+        assert!(result.checks_status.is_none());
+        assert!(result.review_decision.is_none());
+    }
+
+    #[test]
+    fn merged_and_closed_prs_do_not_become_open_badges() {
+        for (merged, expected) in [(json!("2026-01-01"), "MERGED"), (json!(null), "CLOSED")] {
+            let result = parse_rest_pr_status(&json!([{"number": 1, "html_url": "https://github.com/o/r/pull/1", "state": "closed", "merged_at": merged}])).unwrap();
+            assert_eq!(result.state, expected);
+        }
+        assert!(parse_rest_pr_status(&json!([])).is_err());
+        assert!(parse_rest_pr_status(&json!({"message": "rate limit"})).is_err());
     }
 }

@@ -69,14 +69,29 @@ const checkouts = {
 };
 
 describe("buildSidebarModel", () => {
+  it("keeps an externally busy checkout visible and unavailable without inventing a Claude session", () => {
+    const notes = { ...checkouts, "/w/flow2": { ...checkouts["/w/flow2"], manualBusy: true, label: "MIDI editor" } };
+    const flow = buildSidebarModel({ paths, checkouts: notes, pods: [] })[1];
+    expect(flow.available).toBe(2);
+    expect(flow.active).toHaveLength(1);
+    expect(flow.active[0]).toMatchObject({ name: "flow2", label: "MIDI editor", manualBusy: true, available: false, dot: null });
+  });
+
+  it("preserves checkout identity and labels across panel renames and keeps labelled hidden rows visible", () => {
+    const notes = { ...checkouts, "/w/flow1": { ...checkouts["/w/flow1"], label: "Export fix" } };
+    const flow = buildSidebarModel({ paths, checkouts: notes, pods: [pod("/w/flow1", { name: "Unrelated panel name", hidden: true })] })[1];
+    expect(flow.active[0]).toMatchObject({ name: "flow1", label: "Export fix", hidden: true });
+    expect(flow.rows[1].label).toBeUndefined();
+  });
+
   it("groups checkouts by origin repo, alphabetical; podless checkouts are bare rows, hidden while collapsed", () => {
     const model = buildSidebarModel({ paths, checkouts, pods: [] });
     expect(model.map((p) => p.project)).toEqual(["atlantis", "flow"]);
     const flow = model[1];
     expect(flow.rows.map((r) => [r.name, r.podId, r.secondary, r.available])).toEqual([
-      ["flow1", null, "staging", true],
-      ["flow2", null, "staging", true],
-      ["flow3", null, "staging", true],
+      ["flow1", null, "", true],
+      ["flow2", null, "", true],
+      ["flow3", null, "", true],
     ]);
     expect(flow.active).toEqual([]);
     expect(flow.available).toBe(3);
@@ -89,42 +104,42 @@ describe("buildSidebarModel", () => {
     ];
     const flow = buildSidebarModel({ paths, checkouts, pods })[1];
     expect(flow.rows.map((a) => [a.name, a.dot, a.secondary])).toEqual([
-      ["flow1", null, "Old finished task"],
-      ["flow2", null, "staging"],
-      ["flow3", null, "staging"],
+      ["flow1", null, "Idle"],
+      ["flow2", null, ""],
+      ["flow3", null, ""],
     ]);
     expect(flow.active.map((a) => a.name)).toEqual(["flow1"]);
     expect(flow.available).toBe(3);
   });
 
-  it("working and waiting agents are active rows with the right dot and the task as second line", () => {
+  it("working and waiting agents are active rows with live status instead of saved task descriptions", () => {
     const pods = [
       pod("/w/flow1", { activity: activity("working"), task: task("Fix the export bug") }),
       pod("/w/flow2", { activity: activity("waiting", { detail: "permission" }), task: task("Add tests") }),
     ];
     const flow = buildSidebarModel({ paths, checkouts, pods })[1];
     expect(flow.active.map((a) => [a.name, a.dot, a.secondary])).toEqual([
-      ["flow1", "working", "Fix the export bug"],
-      ["flow2", "waiting", "Add tests"],
+      ["flow1", "working", "Working"],
+      ["flow2", "waiting", "Needs your input"],
     ]);
     expect(flow.rows).toHaveLength(3);
     expect(flow.available).toBe(1);
     expect(flow.checkouts.map((c) => c.state)).toEqual(["working", "waiting", "available"]);
   });
 
-  it("the task description is dropped once its session is gone or a newer session runs in the panel", () => {
+  it("saved descriptions never override live activity, even in the same session", () => {
     const t = { ...task("Make the splice icon yellow"), createdAt: 1_000_000, deliveredAt: 1_000_500 };
     const gone = pod("/w/flow1", { activity: activity("no-session"), task: t, sessionStartedAt: null });
     const later = pod("/w/flow2", { activity: activity("idle"), task: t, sessionStartedAt: 1_000_500 + 10 * 60_000, topic: "Greeting" });
     const launched = pod("/w/flow3", { activity: activity("working"), task: t, sessionStartedAt: 1_000_500 + 3_000 });
     const flow = buildSidebarModel({ paths, checkouts, pods: [gone, later, launched] })[1];
-    expect(flow.rows.map((r) => r.secondary)).toEqual(["staging", "Greeting", "Make the splice icon yellow"]);
+    expect(flow.rows.map((r) => r.secondary)).toEqual(["", "Idle", "Working"]);
   });
 
-  it("a failed or running preparation keeps its description even without a session", () => {
+  it("failed preparation describes the failure, not the original task", () => {
     const pods = [pod("/w/flow1", { activity: activity("no-session"), task: task("Add tests", "failed"), sessionStartedAt: null })];
     const flow = buildSidebarModel({ paths, checkouts, pods })[1];
-    expect(flow.rows[0].secondary).toBe("Add tests");
+    expect(flow.rows[0].secondary).toBe("Sync failed");
   });
 
   it("a finished turn with an unanswered bell counts as needing you", () => {
@@ -133,11 +148,11 @@ describe("buildSidebarModel", () => {
     expect(flow.active[0].dot).toBe("waiting");
   });
 
-  it("shows Claude's live topic when there is no task; a panel without a topic falls back to its branch", () => {
+  it("shows live activity without leaking topic or branch into the row", () => {
     const working = pod("/w/flow1", { activity: activity("working"), topic: "lets make the splice" });
     const idle = pod("/w/flow2", { activity: activity("idle"), topic: null, hidden: true });
     const flow = buildSidebarModel({ paths, checkouts, pods: [working, idle] })[1];
-    expect(flow.rows.slice(0, 2).map((a) => a.secondary)).toEqual(["lets make the splice", "staging"]);
+    expect(flow.rows.slice(0, 2).map((a) => a.secondary)).toEqual(["Working", "Idle"]);
   });
 
   it("shows an open PR once, as the pill on the first row of that checkout", () => {
@@ -157,16 +172,16 @@ describe("buildSidebarModel", () => {
     const pods = [pod("/w/flow2", { activity: activity("idle"), task: task("Fix export") })];
     const flow = buildSidebarModel({ paths, checkouts: withPr, pods })[1];
     expect(flow.active).toHaveLength(1);
-    expect(flow.active[0]).toMatchObject({ podId: "pod-flow2-1", dot: null, pr, secondary: "Fix export", available: false });
+    expect(flow.active[0]).toMatchObject({ podId: "pod-flow2-1", dot: null, pr, secondary: "Idle", available: false });
     expect(flow.checkouts[1].state).toBe("review");
     expect(flow.available).toBe(2);
   });
 
-  it("a PR on a checkout with no panel is an active bare row showing the branch", () => {
+  it("a PR on a checkout with no panel is an active bare row without the branch", () => {
     const withPr = { ...checkouts, "/w/flow3": checkout("/w/flow3", FLOW, { pr, branch: "danny/fix-export" }) };
     const flow = buildSidebarModel({ paths, checkouts: withPr, pods: [] })[1];
     expect(flow.active).toHaveLength(1);
-    expect(flow.active[0]).toMatchObject({ podId: null, name: "flow3", secondary: "danny/fix-export", pr, available: false });
+    expect(flow.active[0]).toMatchObject({ podId: null, name: "flow3", secondary: "", pr, available: false });
   });
 
   it("dirty idle checkouts are not available and not active", () => {
@@ -189,7 +204,7 @@ describe("buildSidebarModel", () => {
   it("a single-checkout project with no panel is still one merged row", () => {
     const atlantis = buildSidebarModel({ paths, checkouts, pods: [] })[0];
     expect(atlantis.merged).toBe(true);
-    expect(atlantis.rows[0]).toMatchObject({ name: "atlantis", podId: null, secondary: "main", available: true });
+    expect(atlantis.rows[0]).toMatchObject({ name: "atlantis", podId: null, secondary: "", available: true });
   });
 
   it("does not merge when the single checkout has two panels", () => {
@@ -219,7 +234,7 @@ describe("buildSidebarModel", () => {
   it("a reset task never shows its description", () => {
     const pods = [pod("/w/flow1", { task: task("Reset checkout", "running", "reset") })];
     const flow = buildSidebarModel({ paths, checkouts, pods })[1];
-    expect(flow.rows[0].secondary).toBe("staging");
+    expect(flow.rows[0].secondary).toBe("Sync…");
   });
 
   it("hidden panels keep their row, flagged hidden; terminal pods never get one", () => {
