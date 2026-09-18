@@ -173,7 +173,7 @@ fn apply_vibrancy(win: &tauri::WebviewWindow) {
                     colorWithSRGBRed: 0.1_f64,
                     green: 0.1_f64,
                     blue: 0.1_f64,
-                    alpha: 1.0_f64
+                    alpha: 0.0_f64
                 ];
                 let _: () = msg_send![
                     view,
@@ -233,7 +233,9 @@ fn apply_vibrancy(win: &tauri::WebviewWindow) {
             }
 
             let effect_view = NSVisualEffectView::new(mtm);
-            effect_view.setMaterial(NSVisualEffectMaterial::UnderWindowBackground);
+            // Match Coffee-time's native frosted material. Opaque app surfaces
+            // cover it; the sidebar exposes it through a neutral translucent tint.
+            effect_view.setMaterial(NSVisualEffectMaterial::HUDWindow);
             effect_view.setBlendingMode(NSVisualEffectBlendingMode::BehindWindow);
             effect_view.setState(NSVisualEffectState::Active);
             effect_view.setAutoresizingMask(
@@ -338,6 +340,7 @@ fn main() {
         commands::check_workspace_ready,
         commands::file_exists,
         commands::read_clipboard_text,
+        commands::write_clipboard_text,
         commands::save_clipboard_image,
         pty_manager::spawn_pty,
         pty_manager::write_pty,

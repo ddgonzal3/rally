@@ -188,6 +188,9 @@ export const api = {
   readClipboardText: () =>
     invoke<string>("read_clipboard_text"),
 
+  writeClipboardText: (text: string) =>
+    invoke<void>("write_clipboard_text", { text }),
+
   saveClipboardImage: (data: string, mimeType: string) =>
     invoke<string>("save_clipboard_image", { data, mimeType }),
 

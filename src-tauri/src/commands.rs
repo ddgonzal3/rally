@@ -912,6 +912,32 @@ pub fn read_clipboard_text() -> Result<String, String> {
         .map_err(|e| format!("Clipboard content is not valid UTF-8: {}", e))
 }
 
+/// Write text to the system clipboard using macOS pbcopy.
+/// navigator.clipboard.writeText() silently fails in WKWebView outside a
+/// direct user-gesture handler (e.g. a debounced selection-change callback),
+/// so copy-on-select goes through the shell instead.
+#[tauri::command]
+pub fn write_clipboard_text(text: String) -> Result<(), String> {
+    use std::io::Write;
+    let mut child = Command::new("pbcopy")
+        .stdin(std::process::Stdio::piped())
+        .spawn()
+        .map_err(|e| format!("Failed to run pbcopy: {}", e))?;
+    child
+        .stdin
+        .take()
+        .ok_or_else(|| "pbcopy stdin unavailable".to_string())?
+        .write_all(text.as_bytes())
+        .map_err(|e| format!("Failed to write to pbcopy: {}", e))?;
+    let status = child
+        .wait()
+        .map_err(|e| format!("Failed to wait for pbcopy: {}", e))?;
+    if !status.success() {
+        return Err("pbcopy failed".to_string());
+    }
+    Ok(())
+}
+
 /// Save base64-encoded image data to a temp file.
 /// Returns the absolute path to the saved file.
 #[tauri::command]
