@@ -248,20 +248,11 @@ export function PaneGroupView({
     executeAction(actionType, activePane?.cwd || workspacePath);
   }
 
-  const handleLaunchClaude = useCallback((paneId: string, cwd?: string) => {
+  const handleLaunchClaude = useCallback((paneId: string, continueLast = false) => {
     transformPane(workspaceId, groupId, paneId, {
       type: "claude",
       title: "Claude Code",
-      command: "claude --dangerously-skip-permissions",
-      ...(cwd ? { cwd } : {}),
-    });
-  }, [groupId, transformPane, workspaceId]);
-
-  const handleLaunchTerminal = useCallback((paneId: string, cwd?: string) => {
-    transformPane(workspaceId, groupId, paneId, {
-      type: "terminal",
-      title: "Terminal",
-      ...(cwd ? { cwd } : {}),
+      command: `claude --dangerously-skip-permissions${continueLast ? " --continue" : ""}`,
     });
   }, [groupId, transformPane, workspaceId]);
 
@@ -878,7 +869,6 @@ export function PaneGroupView({
         groupId={groupId}
         transformPane={transformPane}
         handleLaunchClaude={handleLaunchClaude}
-        handleLaunchTerminal={handleLaunchTerminal}
         onLaunchTerminalAt={launchTerminalAt}
         onLaunchClaudeAt={launchClaudeAt}
         handleFileOpen={handlePaneFileOpen}
@@ -1026,7 +1016,6 @@ function PaneContent({
   groupId,
   transformPane,
   handleLaunchClaude,
-  handleLaunchTerminal,
   onLaunchTerminalAt,
   onLaunchClaudeAt,
   handleFileOpen,
@@ -1043,8 +1032,7 @@ function PaneContent({
     pId: string,
     updates: Partial<Pane>,
   ) => void;
-  handleLaunchClaude: (paneId: string, cwd?: string) => void;
-  handleLaunchTerminal: (paneId: string, cwd?: string) => void;
+  handleLaunchClaude: (paneId: string, continueLast?: boolean) => void;
   onLaunchTerminalAt: (cwd?: string) => void;
   onLaunchClaudeAt: (cwd?: string) => void;
   handleFileOpen: OnFileOpen;
@@ -1166,9 +1154,8 @@ function PaneContent({
               ) : pane.type === "claude-launcher" ? (
                 <ClaudeLauncher
                   workspacePath={paneCwd}
-                  workspacePaths={paths}
-                  onLaunch={(cwd) => handleLaunchClaude(pane.id, cwd)}
-                  onLaunchTerminal={(cwd) => handleLaunchTerminal(pane.id, cwd)}
+                  onLaunch={() => handleLaunchClaude(pane.id)}
+                  onContinue={() => handleLaunchClaude(pane.id, true)}
                 />
               ) : pane.type === "claude" ? (
                 <ClaudeTerminalWrapper
