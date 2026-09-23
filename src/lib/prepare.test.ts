@@ -8,6 +8,7 @@ import {
   isPlaceholderBranch,
   pickFreeCheckout,
   placeholderBranchName,
+  resolveCheckout,
   projectFromOrigin,
   resolvePrepareConfig,
   shortDescription,
@@ -153,7 +154,6 @@ describe("projects", () => {
       { cwd: "/flow4", busy: false, dirty: false, pr: pr("MERGED"), hasPod: true },
     ]);
     expect(pick.cwd).toBe("/flow4");
-    expect(pick.reasons).toEqual([]);
   });
 
   it("explains every rejection when nothing is free", () => {
@@ -163,7 +163,19 @@ describe("projects", () => {
       { cwd: "/flow3", busy: false, dirty: false, pr: pr("OPEN", 9), hasPod: false },
     ]);
     expect(pick.cwd).toBeNull();
-    expect(pick.reasons.map((r) => r.reason)).toEqual(["agent running", "uncommitted changes", "PR #9 open"]);
+    expect(pick.checkouts.map((r) => r.reason)).toEqual(["agent running", "uncommitted changes", "PR #9 open"]);
+  });
+
+  it("honors a chosen checkout only while it is free", () => {
+    const pick = pickFreeCheckout([
+      { cwd: "/flow", busy: false, dirty: false, pr: null, hasPod: true },
+      { cwd: "/flow2", busy: false, dirty: false, pr: null, hasPod: false },
+      { cwd: "/flow3", busy: true, dirty: false, pr: null, hasPod: true },
+    ]);
+    expect(resolveCheckout(pick, null)).toEqual({ cwd: "/flow", blocked: null });
+    expect(resolveCheckout(pick, "/flow2")).toEqual({ cwd: "/flow2", blocked: null });
+    expect(resolveCheckout(pick, "/flow3")).toEqual({ cwd: null, blocked: { cwd: "/flow3", reason: "agent running" } });
+    expect(resolveCheckout(pick, "/elsewhere").cwd).toBeNull();
   });
 });
 
@@ -275,6 +287,6 @@ describe("shortDescription", () => {
 
  it("never assigns a manually busy checkout, even without a Rally agent", () => {
    const reserved = { cwd: "/repo1", busy: false, manualBusy: true, dirty: false, pr: null, hasPod: true };
-   expect(pickFreeCheckout([reserved])).toEqual({ cwd: null, reasons: [{ cwd: "/repo1", reason: "marked busy outside Rally" }] });
+   expect(pickFreeCheckout([reserved])).toEqual({ cwd: null, checkouts: [{ cwd: "/repo1", reason: "marked busy outside Rally" }] });
    expect(pickFreeCheckout([reserved, { ...reserved, cwd: "/repo2", manualBusy: false }]).cwd).toBe("/repo2");
  });

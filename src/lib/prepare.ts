@@ -169,10 +169,24 @@ export interface CheckoutCandidate {
   hasPod: boolean;
 }
 
+/** One checkout of a project and why it can't take a task (null = free). */
+export interface CheckoutStatus {
+  cwd: string;
+  reason: string | null;
+}
+
 export interface CheckoutPick {
   cwd: string | null;
-  /** Why each candidate was rejected, in order. Empty when one was picked. */
-  reasons: { cwd: string; reason: string }[];
+  /** Every candidate in workspace order, with why it isn't free. */
+  checkouts: CheckoutStatus[];
+}
+
+function checkoutBlocker(c: CheckoutCandidate): string | null {
+  if (c.manualBusy) return "marked busy outside Rally";
+  if (c.busy) return "agent running";
+  if (c.pr?.state === "OPEN") return `PR #${c.pr.number} open`;
+  if (c.dirty) return "uncommitted changes";
+  return null;
 }
 
 /**
@@ -181,17 +195,20 @@ export interface CheckoutPick {
  * first free one in workspace order.
  */
 export function pickFreeCheckout(candidates: CheckoutCandidate[]): CheckoutPick {
-  const reasons: { cwd: string; reason: string }[] = [];
-  const free: CheckoutCandidate[] = [];
-  for (const c of candidates) {
-    if (c.manualBusy) reasons.push({ cwd: c.cwd, reason: "marked busy outside Rally" });
-    else if (c.busy) reasons.push({ cwd: c.cwd, reason: "agent running" });
-    else if (c.pr?.state === "OPEN") reasons.push({ cwd: c.cwd, reason: `PR #${c.pr.number} open` });
-    else if (c.dirty) reasons.push({ cwd: c.cwd, reason: "uncommitted changes" });
-    else free.push(c);
-  }
+  const checkouts = candidates.map((c) => ({ cwd: c.cwd, reason: checkoutBlocker(c) }));
+  const free = candidates.filter((_, i) => checkouts[i].reason === null);
   const pick = free.find((c) => c.hasPod) ?? free[0] ?? null;
-  return { cwd: pick?.cwd ?? null, reasons: pick ? [] : reasons };
+  return { cwd: pick?.cwd ?? null, checkouts };
+}
+
+/**
+ * The checkout a task goes to: the one the user chose, if it is still free,
+ * else Rally's pick. `blocked` explains a chosen checkout that is no longer free.
+ */
+export function resolveCheckout(pick: CheckoutPick, chosen: string | null): { cwd: string | null; blocked: CheckoutStatus | null } {
+  if (!chosen) return { cwd: pick.cwd, blocked: null };
+  const status = pick.checkouts.find((c) => c.cwd === chosen) ?? { cwd: chosen, reason: "not a checkout of this project" };
+  return status.reason === null ? { cwd: chosen, blocked: null } : { cwd: null, blocked: status };
 }
 
 // --- Branch names --------------------------------------------------------------

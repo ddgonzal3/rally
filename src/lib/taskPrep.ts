@@ -212,7 +212,7 @@ export async function checkoutCandidates(workspaceId: string, cwds: string[]): P
 /** Pick a free checkout for a project, or explain why none is. */
 export async function findFreeCheckout(workspaceId: string, project: string): Promise<ReturnType<typeof pickFreeCheckout>> {
   const info = listProjects(workspaceId).find((p) => p.project === project);
-  if (!info) return { cwd: null, reasons: [] };
+  if (!info) return { cwd: null, checkouts: [] };
   return pickFreeCheckout(await checkoutCandidates(workspaceId, info.cwds));
 }
 

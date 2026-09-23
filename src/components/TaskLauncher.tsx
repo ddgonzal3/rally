@@ -4,7 +4,7 @@ import ReactDOM from "react-dom";
 import { useWorkspaceStore } from "../stores/workspaceStore";
 import { useAgentStore } from "../stores/agentStore";
 import { findFreeCheckout, listProjects } from "../lib/taskPrep";
-import { folderName, shortDescription } from "../lib/prepare";
+import { folderName, resolveCheckout, shortDescription } from "../lib/prepare";
 import { api } from "../lib/tauri";
 import { showContextMenu } from "../lib/contextMenu";
 import type { CheckoutPick } from "../lib/prepare";
@@ -12,9 +12,10 @@ import type { ClaudeModel } from "../lib/types";
 
 /**
  * ⌘K launcher. Prompt first, then the project. Rally picks a free checkout
- * of that project (no live Claude, clean, no open PR) and starts the agent
- * there. Also used to message an existing agent (`rally:open-task-launcher`
- * with a podId) — that path never syncs or touches watchers.
+ * of that project (no live Claude, clean, no open PR) and shows it; you can
+ * switch to any other free checkout before starting. Also used to message
+ * an existing agent (`rally:open-task-launcher` with a podId) — that path
+ * never syncs or touches watchers.
  */
 
 const LAST_PROJECT_KEY = "rally:lastProject";
@@ -38,7 +39,7 @@ interface OpenDetail {
   podId?: string;
   /** Preselect a project; Rally still picks the free checkout. */
   project?: string;
-  /** Start in exactly this checkout. */
+  /** Preselect this checkout. */
   cwd?: string;
 }
 
@@ -52,7 +53,8 @@ export function TaskLauncher() {
   const [visible, setVisible] = useState(false);
   const [targetPodId, setTargetPodId] = useState<string | null>(null);
   const checkoutNotes = useCheckoutStore((s) => s.notes);
-  const [fixedCwd, setFixedCwd] = useState<string | null>(null);
+  /** Checkout the user chose; null lets Rally pick. */
+  const [chosenCwd, setChosenCwd] = useState<string | null>(null);
   const [text, setText] = useState("");
   const [project, setProject] = useState<string | null>(null);
   const [question, setQuestion] = useState(false);
@@ -75,6 +77,7 @@ export function TaskLauncher() {
   );
   const projectBtnRef = useRef<HTMLButtonElement>(null);
   const modelBtnRef = useRef<HTMLButtonElement>(null);
+  const checkoutBtnRef = useRef<HTMLButtonElement>(null);
 
   const pickModel = useCallback(() => {
     const rect = modelBtnRef.current?.getBoundingClientRect();
@@ -99,17 +102,38 @@ export function TaskLauncher() {
     showContextMenu(
       projects.map((p) => ({
         label: p.cwds.length > 1 ? `${p.project}    ${p.cwds.length} checkouts` : p.project,
-        action: () => setProject(p.project),
+        action: () => {
+          if (p.project !== project) setChosenCwd(null);
+          setProject(p.project);
+        },
       })),
       rect ? { x: rect.left, y: rect.bottom + 2 } : undefined,
     );
-  }, [projects]);
+  }, [projects, project]);
+
+  // Every checkout of the project, with why it can't take a task. Only free
+  // ones are selectable, same rule as Rally's own pick.
+  const pickCheckout = useCallback(() => {
+    if (!pick || pick.checkouts.length === 0) return;
+    const rect = checkoutBtnRef.current?.getBoundingClientRect();
+    showContextMenu(
+      pick.checkouts.map((c) => {
+        const detail = c.reason ?? checkoutNotes[c.cwd]?.label;
+        return {
+          label: detail ? `${folderName(c.cwd)}    ${detail}` : folderName(c.cwd),
+          action: () => setChosenCwd(c.cwd),
+          disabled: c.reason !== null,
+        };
+      }),
+      rect ? { x: rect.left, y: rect.bottom + 2 } : undefined,
+    );
+  }, [pick, checkoutNotes]);
 
   const openLauncher = useCallback(
     (detail?: OpenDetail) => {
       if (!workspaceId) return;
       setTargetPodId(detail?.podId ?? null);
-      setFixedCwd(detail?.cwd ?? null);
+      setChosenCwd(detail?.cwd ?? null);
       setError(null);
       setBusy(false);
       setQuestion(false);
@@ -133,7 +157,7 @@ export function TaskLauncher() {
       setOpen(false);
       setText("");
       setTargetPodId(null);
-      setFixedCwd(null);
+      setChosenCwd(null);
       setPick(null);
       setAttachments([]);
     }, 140);
@@ -179,13 +203,9 @@ export function TaskLauncher() {
     };
   }, [open, close]);
 
-  // Preview which checkout would be used.
+  // Load the project's checkouts and Rally's pick.
   useEffect(() => {
     if (!open || targetPodId || !workspaceId || !project) return;
-    if (fixedCwd) {
-      setPick(checkoutNotes[fixedCwd]?.busy ? { cwd: null, reasons: [{ cwd: fixedCwd, reason: "marked busy outside Rally" }] } : { cwd: fixedCwd, reasons: [] });
-      return;
-    }
     let cancelled = false;
     setPick(null);
     findFreeCheckout(workspaceId, project).then((p) => {
@@ -194,7 +214,7 @@ export function TaskLauncher() {
     return () => {
       cancelled = true;
     };
-  }, [open, targetPodId, workspaceId, project, fixedCwd, checkoutNotes]);
+  }, [open, targetPodId, workspaceId, project, checkoutNotes]);
 
   // Pasted images are saved to disk and listed in the prompt by path;
   // Claude opens them with its Read tool. Text pastes stay native.
@@ -233,14 +253,14 @@ export function TaskLauncher() {
         await sendToPod(workspaceId, targetPodId, description, paths);
       } else {
         if (!project) throw new Error("Pick a project");
-        const fresh = fixedCwd ? { cwd: fixedCwd, reasons: [] } : await findFreeCheckout(workspaceId, project);
-        if (!fresh.cwd) {
-          setPick(fresh);
-          throw new Error(`No free ${project} checkout`);
-        }
+        // Re-check: a checkout can get busy while the card is open.
+        const fresh = await findFreeCheckout(workspaceId, project);
+        setPick(fresh);
+        const { cwd } = resolveCheckout(fresh, chosenCwd);
+        if (!cwd) throw new Error(checkoutProblem(project, chosenCwd, fresh));
         localStorage.setItem(LAST_PROJECT_KEY, project);
         localStorage.setItem(LAST_MODEL_KEY, model);
-        await startTask({ workspaceId, cwd: fresh.cwd, description, kind: question ? "question" : "work", model, attachments: paths });
+        await startTask({ workspaceId, cwd, description, kind: question ? "question" : "work", model, attachments: paths });
       }
       close();
     } catch (e) {
@@ -248,18 +268,16 @@ export function TaskLauncher() {
     } finally {
       setBusy(false);
     }
-  }, [text, busy, workspaceId, targetPodId, fixedCwd, sendToPod, project, startTask, question, model, attachments, close]);
+  }, [text, busy, workspaceId, targetPodId, chosenCwd, sendToPod, project, startTask, question, model, attachments, close]);
 
   if (!open) return null;
 
-  const canSubmit = (text.trim().length > 0 || attachments.length > 0) && !busy && (targetPodId ? true : !!pick?.cwd);
-  const previewText = targetPodId
-    ? null
-    : pick === null
-      ? "Finding a free checkout…"
-      : pick.cwd
-        ? `→ ${folderName(pick.cwd)}`
-        : `No free ${project} checkout`;
+  const target = pick ? resolveCheckout(pick, chosenCwd) : null;
+  const canSubmit = (text.trim().length > 0 || attachments.length > 0) && !busy && (targetPodId ? true : !!target?.cwd);
+  const problem = !targetPodId && pick && project && !target?.cwd ? checkoutProblem(project, chosenCwd, pick) : null;
+  // With nothing free, list why each checkout is taken.
+  const blockedList = problem && !target?.blocked ? pick!.checkouts.filter((c) => c.reason !== null) : [];
+  const checkoutLabel = pick === null ? "Finding checkout…" : target?.cwd ? folderName(target.cwd) : chosenCwd ? folderName(chosenCwd) : "No free checkout";
 
   return ReactDOM.createPortal(
     <div
@@ -315,18 +333,20 @@ export function TaskLauncher() {
             {targetPod.task?.description && <span style={styles.targetTask}>{shortDescription(targetPod.task.description, 48)}</span>}
           </span>
         ) : (
-          <button
-            ref={projectBtnRef}
-            className="sidebar-btn"
-            onClick={fixedCwd ? undefined : pickProject}
-            style={{ ...styles.projectBtn, cursor: fixedCwd ? "default" : "pointer" }}
-            title={fixedCwd ? `Starting in ${folderName(fixedCwd)}` : "Project"}
-          >
+          <button ref={projectBtnRef} className="sidebar-btn" onClick={pickProject} style={styles.projectBtn} title="Project">
             <span>{project ?? "Project"}</span>
             {project && (projects.find((p) => p.project === project)?.cwds.length ?? 0) > 1 && (
               <span style={styles.pillCount}>{projects.find((p) => p.project === project)?.cwds.length}</span>
             )}
-            <svg width="8" height="8" viewBox="0 0 8 8" fill="none" aria-hidden="true" style={{ display: "block", visibility: fixedCwd ? "hidden" : "visible" }}>
+            <svg width="8" height="8" viewBox="0 0 8 8" fill="none" aria-hidden="true" style={{ display: "block" }}>
+              <path d="M1.5 3l2.5 2.5L6.5 3" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          </button>
+        )}
+        {!targetPod && (
+          <button ref={checkoutBtnRef} className="sidebar-btn" onClick={pickCheckout} style={styles.projectBtn} title="Checkout">
+            <span>{checkoutLabel}</span>
+            <svg width="8" height="8" viewBox="0 0 8 8" fill="none" aria-hidden="true" style={{ display: "block" }}>
               <path d="M1.5 3l2.5 2.5L6.5 3" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" />
             </svg>
           </button>
@@ -358,11 +378,11 @@ export function TaskLauncher() {
       </div>
 
       <div style={styles.footer}>
-        <span style={{ ...styles.preview, color: error ? "var(--status-amber)" : pick && !pick.cwd && !targetPodId ? "var(--status-amber)" : "var(--text-secondary)" }}>
-          {error ?? previewText}
-          {pick && !pick.cwd && !targetPodId && pick.reasons.length > 0 && (
+        <span style={{ ...styles.preview, color: "var(--status-amber)" }}>
+          {error ?? problem}
+          {!error && blockedList.length > 0 && (
             <span style={styles.reasons}>
-              {pick.reasons.map((r) => (
+              {blockedList.map((r) => (
                 <span key={r.cwd} style={styles.reason}>
                   {folderName(r.cwd)}: {r.reason}
                 </span>
@@ -385,6 +405,12 @@ export function TaskLauncher() {
     </div>,
     document.body,
   );
+}
+
+/** Why a task can't start: the chosen checkout is taken, or none is free. */
+function checkoutProblem(project: string, chosenCwd: string | null, pick: CheckoutPick): string {
+  const { blocked } = resolveCheckout(pick, chosenCwd);
+  return blocked ? `${folderName(blocked.cwd)}: ${blocked.reason}` : `No free ${project} checkout`;
 }
 
 const styles: Record<string, React.CSSProperties> = {
