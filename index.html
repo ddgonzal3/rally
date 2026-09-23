@@ -111,6 +111,11 @@
 
       * { margin: 0; padding: 0; box-sizing: border-box; }
       ::placeholder { color: var(--text-dim); opacity: 1; }
+      /* Agent sidebar: a translucent tint over the native frost when macOS
+         renders it (data-frost="on", set from syncWindowBackdrop), else the
+         app background (Reduce transparency, or before the check runs). */
+      :root { --sidebar-bg: var(--bg-app); }
+      :root[data-frost="on"] { --sidebar-bg: color-mix(in srgb, var(--bg-surface) 60%, transparent); }
       html, body, #root { height: 100%; width: 100%; overflow: hidden; }
       html {
         /* Force dark rendering in WKWebView regardless of system appearance */

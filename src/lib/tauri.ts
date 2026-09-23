@@ -128,6 +128,10 @@ export const api = {
   gitDiffStat: (workspacePath: string) =>
     invoke<[number, number]>("git_diff_stat", { workspacePath }),
 
+  /** Match the window's frost to the theme; false when it can't render. */
+  syncWindowBackdrop: (dark: boolean) =>
+    invoke<boolean>("sync_window_backdrop", { dark }),
+
   gitFetch: (workspacePath: string) =>
     invoke<void>("git_fetch", { workspacePath }),
 

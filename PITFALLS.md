@@ -158,6 +158,8 @@ Launching Rally from an automation environment can inherit `NO_COLOR=1`, `TERM=d
 
 An `NSVisualEffectView` behind the webview cannot show through opaque `html`, `body`, or WKWebView under-page backgrounds. Keep those clear, paint the main workspace explicitly with `--bg-app`, and tint the sidebar with a translucent flat color. CSS `backdrop-filter` alone cannot blur the desktop behind a native window.
 
+The frost is not guaranteed. `NSVisualEffectView` follows the window's appearance, which tracks the **system** light/dark setting, so a Mac in Light mode drew a light grey frost under Rally's dark theme. With **Reduce transparency** on, macOS replaces it with flat grey. `sync_window_backdrop` pins the window appearance to Rally's theme and reports whether the frost renders; the page sets `data-frost="on"` only then, and `--sidebar-bg` falls back to `--bg-app` otherwise. It re-runs on theme change and window focus. Never give a surface a translucent background directly; use a variable with an opaque fallback.
+
 ## GitHub GraphQL Limits Can Hide PR Badges After Relaunch
 
 `gh pr view --json` uses GraphQL. If that quota is exhausted, a newly launched Rally has no cached PR and previously showed no pill despite an open PR. The basic status lookup now falls back to the REST pulls endpoint on rate-limit errors, which has a separate quota. Keep unavailable review/check facts unknown and preserve open/closed/merged distinctions.

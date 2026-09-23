@@ -49,6 +49,7 @@ import { useAgentStore } from "./stores/agentStore";
 import { BuildStatusBar } from "./components/BuildStatusBar";
 import { BuildStatusDrawer } from "./components/BuildStatusDrawer";
 import QuickOpen from "./components/QuickOpen";
+import { syncWindowBackdrop } from "./lib/windowBackdrop";
 
 const WS_DRAG_THRESHOLD = 4;
 const WS_DRAG_SCROLL_EDGE = 28;
@@ -555,6 +556,14 @@ export function App() {
   useEffect(() => {
     localStorage.setItem("rally:activityBarVisible", String(activityBarVisible));
   }, [activityBarVisible]);
+  // Re-check the native frost on launch and on every refocus: Reduce
+  // transparency is toggled in System Settings, outside Rally.
+  useEffect(() => {
+    const sync = () => void syncWindowBackdrop(useWorkspaceStore.getState().theme);
+    sync();
+    window.addEventListener("focus", sync);
+    return () => window.removeEventListener("focus", sync);
+  }, []);
   // The explorer panel belongs to the rail: hiding the rail hides the open
   // panel too, and showing it brings that panel back.
   const explorerOpenBeforeRailHideRef = useRef(false);

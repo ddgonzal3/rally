@@ -145,8 +145,8 @@ export function AgentSidebar() {
         minWidth: 0,
         flexShrink: 0,
         overflow: "visible",
-        // macOS supplies the behind-window blur; this is only its neutral tint.
-        background: "color-mix(in srgb, var(--bg-surface) 60%, transparent)",
+        // Tint over the macOS behind-window blur, or solid when there is none.
+        background: "var(--sidebar-bg)",
         borderRight: collapsed ? "1px solid transparent" : "1px solid var(--border)",
         transition: dragging ? "none" : `width ${DURATION_MS}ms ${EASING}, border-color ${DURATION_MS}ms ${EASING}`,
         willChange: "width",

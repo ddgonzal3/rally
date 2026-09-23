@@ -139,6 +139,55 @@ fn emit_to_focused_window(app: &tauri::AppHandle, event: &str) {
     }
 }
 
+/// True when the content view already hosts the frosted NSVisualEffectView.
+unsafe fn has_effect_view(content_view: &objc2_app_kit::NSView) -> bool {
+    use objc2::msg_send;
+    use objc2::runtime::AnyClass;
+    let Some(cls) = AnyClass::get(c"NSVisualEffectView") else { return false };
+    let subviews = content_view.subviews();
+    (0..subviews.len()).any(|i| {
+        let subview = &*subviews.objectAtIndex(i);
+        let is_effect: bool = msg_send![subview, isKindOfClass: cls];
+        is_effect
+    })
+}
+
+/// Pin the window's appearance to Rally's theme and report whether the
+/// frosted backdrop actually renders. The material follows the window's
+/// appearance, which otherwise tracks the system: a Mac in Light mode drew a
+/// light grey frost under Rally's dark theme. With "Reduce transparency" on,
+/// macOS swaps the frost for a flat grey, so the page paints its own
+/// background instead.
+#[tauri::command]
+fn sync_window_backdrop(window: tauri::WebviewWindow, dark: bool) -> bool {
+    use objc2::msg_send;
+    use objc2::runtime::{AnyClass, AnyObject};
+    use objc2::MainThreadMarker;
+    use objc2_app_kit::NSWindow;
+
+    if let Err(e) = window.set_theme(Some(if dark { tauri::Theme::Dark } else { tauri::Theme::Light })) {
+        eprintln!("[rally] sync_window_backdrop: set_theme failed: {e}");
+    }
+    // AppKit views are main-thread only; sync commands run there.
+    if MainThreadMarker::new().is_none() {
+        eprintln!("[rally] sync_window_backdrop: not on main thread");
+        return false;
+    }
+    // Idempotent; covers a page that mounts before the page-load hook ran.
+    apply_vibrancy(&window);
+    let Ok(ns_win_ptr) = window.ns_window() else { return false };
+    unsafe {
+        let Some(ws_cls) = AnyClass::get(c"NSWorkspace") else { return false };
+        let workspace: *mut AnyObject = msg_send![ws_cls, sharedWorkspace];
+        let reduce: bool = msg_send![workspace, accessibilityDisplayShouldReduceTransparency];
+        if reduce {
+            return false;
+        }
+        let ns_window: &NSWindow = &*(ns_win_ptr as *const NSWindow);
+        ns_window.contentView().is_some_and(|cv| has_effect_view(&cv))
+    }
+}
+
 /// Apply native macOS frosted glass vibrancy to a Tauri webview window.
 /// Idempotent — safe to call multiple times (checks for existing effect view).
 /// Must be called on the main thread.
@@ -221,15 +270,8 @@ fn apply_vibrancy(win: &tauri::WebviewWindow) {
             }
 
             // Idempotency: skip adding NSVisualEffectView if one already exists
-            if let Some(cls) = AnyClass::get(c"NSVisualEffectView") {
-                let subviews = content_view.subviews();
-                for i in 0..subviews.len() {
-                    let subview = &*subviews.objectAtIndex(i);
-                    let is_effect: bool = msg_send![subview, isKindOfClass: cls];
-                    if is_effect {
-                        return;
-                    }
-                }
+            if has_effect_view(&content_view) {
+                return;
             }
 
             let effect_view = NSVisualEffectView::new(mtm);
@@ -283,6 +325,7 @@ fn main() {
         std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new()));
 
     builder = builder.invoke_handler(tauri::generate_handler![
+        sync_window_backdrop,
         commands::list_workspaces,
         commands::update_git_watch_roots,
         commands::create_workspace,

@@ -60,6 +60,7 @@ import {
   findFirstGroupInSubtree,
 } from "../lib/types";
 import { api } from "../lib/tauri";
+import { syncWindowBackdrop } from "../lib/windowBackdrop";
 import { getExpandedPaths, setExpandedPaths } from "../components/FileExplorer";
 import {
   clearWatcherStatusCache,
@@ -1041,6 +1042,7 @@ export const useWorkspaceStore = create<WorkspaceState>()(
   setTheme: (theme) => {
     localStorage.setItem('rally:theme', theme);
     document.documentElement.setAttribute('data-theme', theme);
+    void syncWindowBackdrop(theme);
     // Force WebKit to repaint backdrop-filter composited layers —
     // toggling display forces full layout invalidation
     document.body.style.display = 'none';
