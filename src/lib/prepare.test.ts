@@ -9,6 +9,7 @@ import {
   pickFreeCheckout,
   placeholderBranchName,
   resolveCheckout,
+  taskSetupStatus,
   projectFromOrigin,
   resolvePrepareConfig,
   shortDescription,
@@ -16,7 +17,7 @@ import {
   taskBranchName,
   withAttachments,
 } from "./prepare";
-import type { CheckoutHealth, ClaudeSessionInfo, PrStatus, RallyConfig } from "./types";
+import type { CheckoutHealth, ClaudeSessionInfo, PodTask, PrepStep, PrStatus, RallyConfig } from "./types";
 
 const flowConfig: RallyConfig = {
   excludeBuiltins: [],
@@ -290,3 +291,36 @@ describe("shortDescription", () => {
    expect(pickFreeCheckout([reserved])).toEqual({ cwd: null, checkouts: [{ cwd: "/repo1", reason: "marked busy outside Rally" }] });
    expect(pickFreeCheckout([reserved, { ...reserved, cwd: "/repo2", manualBusy: false }]).cwd).toBe("/repo2");
  });
+
+describe("task setup status", () => {
+  const step = (kind: PrepStep["kind"], status: PrepStep["status"], extra: Partial<PrepStep> = {}): PrepStep => ({
+    id: kind,
+    kind,
+    label: kind === "branch" ? "Branch" : kind === "deliver" ? "Deliver" : "watch-fe",
+    status,
+    ...extra,
+  });
+  const task = (prep: PodTask["prep"], over: Partial<PodTask> = {}): PodTask => ({
+    id: "t",
+    description: "d",
+    prompt: "",
+    kind: "work",
+    createdAt: 0,
+    delivered: false,
+    prep,
+    ...over,
+  });
+
+  it("names the step in progress until the prompt is delivered", () => {
+    expect(taskSetupStatus(task({ status: "idle", steps: [step("branch", "pending"), step("deliver", "pending")] }))?.text).toMatch(/fresh branch/);
+    expect(taskSetupStatus(task({ status: "running", steps: [step("branch", "done"), step("deliver", "running")] }))).toEqual({ text: "Starting Claude…", busy: true });
+    expect(taskSetupStatus(task({ status: "running", steps: [step("branch", "done")] }, { delivered: true }))).toBeNull();
+  });
+
+  it("explains a stopped setup and ignores resets", () => {
+    const failed = task({ status: "failed", steps: [step("branch", "failed", { detail: "Couldn't fetch origin" })] });
+    expect(taskSetupStatus(failed)).toEqual({ text: "Setup stopped: Couldn't fetch origin", busy: false });
+    expect(taskSetupStatus({ ...failed, kind: "reset" })).toBeNull();
+    expect(taskSetupStatus(undefined)).toBeNull();
+  });
+});

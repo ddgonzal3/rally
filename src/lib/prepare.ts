@@ -13,6 +13,7 @@
 import type {
   CheckoutHealth,
   ClaudeSessionInfo,
+  PodTask,
   PrStatus,
   PrepareEntry,
   RallyConfig,
@@ -438,4 +439,29 @@ export function formatAge(unixSecs: number | null | undefined, nowMs: number = D
   if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
   if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
   return `${Math.floor(diff / 86400)}d ago`;
+}
+
+/**
+ * What an undelivered task's panel shows while Claude isn't running yet:
+ * the step in progress, or why setup stopped. Null once the prompt is out,
+ * and for resets, which never start Claude.
+ */
+export function taskSetupStatus(task: PodTask | undefined): { text: string; busy: boolean } | null {
+  if (!task || task.delivered || task.kind === "reset") return null;
+  const { status, steps } = task.prep;
+  if (status === "failed" || status === "interrupted") {
+    const failed = steps.find((s) => s.status === "failed");
+    return { text: failed?.detail ? `Setup stopped: ${failed.detail}` : "Setup stopped", busy: false };
+  }
+  if (status === "done") return null;
+  const step = steps.find((s) => s.status === "running") ?? steps.find((s) => s.status === "pending");
+  if (!step) return { text: "Preparing…", busy: true };
+  switch (step.kind) {
+    case "branch":
+      return { text: step.label === "Update" ? "Updating to the latest default branch…" : "Creating a fresh branch from the latest default branch…", busy: true };
+    case "deliver":
+      return { text: "Starting Claude…", busy: true };
+    case "script":
+      return { text: `Running ${step.label}…`, busy: true };
+  }
 }

@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef } from "react";
 import { Terminal } from "./Terminal";
 import { ClaudeLauncher } from "./ClaudeLauncher";
+import { taskSetupStatus } from "../lib/prepare";
 import { ClaudeTerminalWrapper } from "./ClaudeTerminalWrapper";
 const EditorPane = React.lazy(() => import("./EditorPane").then(m => ({ default: m.EditorPane })));
 import { WebViewPane } from "./WebViewPane";
@@ -1037,6 +1038,17 @@ function PaneContent({
   onLaunchClaudeAt: (cwd?: string) => void;
   handleFileOpen: OnFileOpen;
 }) {
+  // In a flight pod, the ⌘K task being set up there (if any).
+  const podTask = useWorkspaceStore((s) => {
+    if (!workspaceId.startsWith("flight:")) return undefined;
+    const podId = workspaceId.slice("flight:".length);
+    for (const layout of Object.values(s.flightLayouts)) {
+      const pod = layout.pods.find((p) => p.id === podId);
+      if (pod) return pod.task;
+    }
+    return undefined;
+  });
+  const setup = taskSetupStatus(podTask);
   const recentPaneIds = useRef<string[]>([]);
   const contentRef = useRef<HTMLDivElement>(null);
   const prevPaneCountRef = useRef(panes.length);
@@ -1156,6 +1168,7 @@ function PaneContent({
                   workspacePath={paneCwd}
                   onLaunch={() => handleLaunchClaude(pane.id)}
                   onContinue={() => handleLaunchClaude(pane.id, true)}
+                  setup={setup}
                 />
               ) : pane.type === "claude" ? (
                 <ClaudeTerminalWrapper

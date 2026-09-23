@@ -6,6 +6,9 @@ interface ClaudeLauncherProps {
   /** Start Claude with `--continue`: resumes the most recent conversation in
    *  this folder, or starts a new one when there is none. */
   onContinue: () => void;
+  /** A ⌘K task is being set up here: show its progress instead of the
+   *  launch actions, which would race the task's own Claude launch. */
+  setup?: { text: string; busy: boolean } | null;
 }
 
 function folderName(p: string): string {
@@ -16,11 +19,16 @@ export const ClaudeLauncher = React.memo(function ClaudeLauncher({
   workspacePath,
   onLaunch,
   onContinue,
+  setup,
 }: ClaudeLauncherProps) {
   return (
     <div style={styles.container}>
       {/* Main launch area — clicking here starts Claude */}
-      <div className="launch-btn" style={styles.mainArea} onClick={() => onLaunch()}>
+      <div
+        className={setup ? undefined : "launch-btn"}
+        style={{ ...styles.mainArea, cursor: setup ? "default" : "pointer" }}
+        onClick={setup ? undefined : () => onLaunch()}
+      >
         <svg
           width="32"
           height="32"
@@ -36,13 +44,25 @@ export const ClaudeLauncher = React.memo(function ClaudeLauncher({
       </div>
 
       <div style={styles.secondary}>
-        <span
-          style={styles.trigger}
-          title="Resume the most recent Claude conversation in this folder"
-          onClick={onContinue}
-        >
-          or continue last session
-        </span>
+        {setup ? (
+          <span style={styles.setup}>
+            {setup.busy && (
+              <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true" style={{ display: "block", flexShrink: 0, animation: "spin 1s linear infinite" }}>
+                <circle cx="6" cy="6" r="4.5" stroke="currentColor" strokeWidth="1.3" opacity="0.3" />
+                <path d="M6 1.5a4.5 4.5 0 0 1 4.5 4.5" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
+              </svg>
+            )}
+            {setup.text}
+          </span>
+        ) : (
+          <span
+            style={styles.trigger}
+            title="Resume the most recent Claude conversation in this folder"
+            onClick={onContinue}
+          >
+            or continue last session
+          </span>
+        )}
       </div>
     </div>
   );
@@ -87,6 +107,16 @@ const styles: Record<string, React.CSSProperties> = {
   secondary: {
     marginTop: 2,
     textAlign: "center",
+  },
+  setup: {
+    display: "inline-flex",
+    alignItems: "center",
+    gap: 6,
+    maxWidth: 360,
+    fontSize: 13,
+    fontWeight: 600,
+    color: "var(--text-dim)",
+    letterSpacing: "0.02em",
   },
   trigger: {
     fontSize: 13,
