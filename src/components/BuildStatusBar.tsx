@@ -403,10 +403,16 @@ function ScriptDot({
               display: "flex",
               alignItems: "center",
               gap: 2,
+              height: 16,
               opacity: show ? 1 : 0,
               width: show ? (showRunning ? 36 : 18) : 0,
               overflow: "hidden",
               transition: "opacity 0.15s ease, width 0.15s ease",
+              // Keep this on its own layer permanently. Otherwise WebKit
+              // promotes it only while the transition runs and repaints it
+              // at a different sub-pixel offset under CSS zoom once it settles.
+              transform: "translateZ(0)",
+              willChange: "opacity, width",
               pointerEvents: show ? "auto" : "none",
               flexShrink: 0,
               margin: 0,
