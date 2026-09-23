@@ -77,10 +77,12 @@ async function loadResolved(cwd: string): Promise<ResolvedPrepare> {
 export async function buildTaskSteps(cwd: string, kind: PodTask["kind"]): Promise<PrepStep[]> {
   if (kind === "question") return [{ id: "deliver", kind: "deliver", label: "Deliver", status: "pending" }];
   const resolved = await loadResolved(cwd);
-  // Deliver FIRST: the agent starts reading code while sync and watchers
-  // run. A sync reset moves the tree under it, which is acceptable — waiting
-  // a minute for a fetch before typing was not.
-  const steps: PrepStep[] = [];
+  // Branch first: the agent must start on a fresh branch cut from the
+  // just-fetched default branch (a few seconds). Deliver next, so the slow
+  // part (scripts, watchers) runs while the agent is already reading code.
+  const steps: PrepStep[] = [
+    { id: "branch", kind: "branch", label: resolved.stayOnDefault ? "Update" : "Branch", status: "pending" },
+  ];
   if (kind === "work") steps.push({ id: "deliver", kind: "deliver", label: "Deliver", status: "pending" });
   for (const s of resolved.steps) {
     steps.push({
@@ -92,7 +94,6 @@ export async function buildTaskSteps(cwd: string, kind: PodTask["kind"]): Promis
       scriptName: s.script,
     });
   }
-  if (!resolved.stayOnDefault) steps.push({ id: "branch", kind: "branch", label: "Branch", status: "pending" });
   return steps;
 }
 
@@ -391,7 +392,7 @@ async function runStep(workspaceId: string, podId: string, step: PrepStep): Prom
       return runScriptStep(cwd, mainBranch, step.scriptName ?? step.id, cfg?.background ?? !!step.background, cfg?.guard ?? "none");
     }
     case "branch":
-      return runBranchStep(cwd, mainBranch, resolved, pod);
+      return runBranchStep(workspaceId, cwd, mainBranch, resolved, pod);
     case "deliver": {
       const branch = useWorkspaceStore.getState().gitStatuses[cwd]?.branch ?? pod.task.branch ?? null;
       const prompt =
@@ -412,8 +413,18 @@ async function runStep(workspaceId: string, podId: string, step: PrepStep): Prom
   }
 }
 
-async function refreshFacts(cwd: string, mainBranch: string): Promise<{ health: ReturnType<typeof useAgentStore.getState>["health"][string] | null; pr: PrStatus | null }> {
-  await api.gitFetch(cwd).catch(() => {});
+async function refreshFacts(
+  cwd: string,
+  mainBranch: string,
+  { requireFetch = false } = {},
+): Promise<{ health: ReturnType<typeof useAgentStore.getState>["health"][string] | null; pr: PrStatus | null }> {
+  if (requireFetch) {
+    await api.gitFetch(cwd).catch((e) => {
+      throw new Error(`Couldn't fetch origin: ${String(e)}`);
+    });
+  } else {
+    await api.gitFetch(cwd).catch(() => {});
+  }
   await useAgentStore.getState().refreshHealth(cwd, mainBranch);
   await useWorkspaceStore.getState().refreshPrStatusForPath(cwd).catch(() => {});
   return {
@@ -481,40 +492,65 @@ async function runScriptStep(
   return { status: "failed", detail: `${label} failed — open its output from the footer`, scriptName: script };
 }
 
+/** Names handed out this session, so two tasks started at once can't collide. */
+const claimedBranches = new Set<string>();
+
 /**
- * Put the checkout on a task branch. Never touches a branch that carries
- * work: with local commits or an open PR the current branch is kept.
+ * Branch names in use anywhere for this checkout's project: local branches
+ * of every checkout (unpushed work lives only there) plus origin's.
  */
-async function runBranchStep(cwd: string, mainBranch: string, resolved: ResolvedPrepare, pod: FlightPod): Promise<StepOutcome> {
-  const { health, pr } = await refreshFacts(cwd, mainBranch);
+async function takenBranchNames(workspaceId: string, cwd: string): Promise<string[]> {
+  const cwds = listProjects(workspaceId).find((p) => p.cwds.includes(cwd))?.cwds ?? [cwd];
+  const lists = await Promise.all(cwds.map((c) => api.gitBranchNames(c).catch(() => [] as string[])));
+  return [...new Set([...lists.flat(), ...claimedBranches])];
+}
+
+/**
+ * Put the checkout on a new task branch cut from the freshly fetched
+ * default branch (origin/staging for Flow), so every task starts current.
+ * The previous branch is left alone unless it is an empty placeholder.
+ * `stayOnDefault` repos fast-forward the default branch instead.
+ */
+async function runBranchStep(workspaceId: string, cwd: string, mainBranch: string, resolved: ResolvedPrepare, pod: FlightPod): Promise<StepOutcome> {
+  const { health, pr } = await refreshFacts(cwd, mainBranch, { requireFetch: true });
   if (!health) return { status: "failed", detail: "Checkout state unknown" };
-  const prefix = resolved.branchPrefix ?? defaultBranchPrefix(health.user_name);
-  const taken = (await api.gitListBranches(cwd).catch(() => [])).map((b) => b.name);
-  const task = pod.task!;
-  const agentName = pod.label ?? folderName(cwd);
-  const wanted =
-    task.kind === "reset" ? placeholderBranchName(prefix, agentName, new Date(), taken) : taskBranchName(prefix, taken);
+  if (health.dirty) return { status: "failed", detail: `Uncommitted changes in ${folderName(cwd)}; not switching branches.` };
+  if (health.ignorable_paths.length > 0) await api.gitRestorePaths(cwd, health.ignorable_paths).catch(() => {});
 
   const finish = async (detail: string) => {
     await useWorkspaceStore.getState().refreshGitStatusForPath(cwd, mainBranch).catch(() => {});
     return { status: "done" as const, detail };
   };
+  const base = `origin/${health.default_branch}`;
 
-  if (health.dirty) return { status: "failed", detail: `Uncommitted changes in ${folderName(cwd)}; not switching branches.` };
-  if (health.ignorable_paths.length > 0) await api.gitRestorePaths(cwd, health.ignorable_paths).catch(() => {});
-  if (health.branch === health.default_branch) {
-    await api.gitCreateBranch(cwd, wanted);
-    return finish(`created ${wanted}`);
+  if (resolved.stayOnDefault) {
+    if (health.branch !== health.default_branch) {
+      return { status: "failed", detail: `On ${health.branch}, not ${health.default_branch}; not switching branches.` };
+    }
+    try {
+      await api.gitPull(cwd);
+    } catch (e) {
+      return { status: "failed", detail: String(e).replace(/^DIVERGED:/, "Diverged from remote: ") };
+    }
+    return finish(`updated ${health.default_branch} to ${base}`);
   }
+
+  const prefix = resolved.branchPrefix ?? defaultBranchPrefix(health.user_name);
+  const taken = await takenBranchNames(workspaceId, cwd);
+  const task = pod.task!;
+  const agentName = pod.label ?? folderName(cwd);
+  const wanted =
+    task.kind === "reset" ? placeholderBranchName(prefix, agentName, new Date(), taken) : taskBranchName(prefix, taken);
+  claimedBranches.add(wanted);
+
+  const left = health.branch;
+  await api.gitCreateBranch(cwd, wanted, base);
+  // A placeholder with nothing on it only parked the checkout; drop it.
   const carriesWork = health.ahead_of_default > 0 || pr?.state === "OPEN";
-  if (carriesWork) return finish(`kept ${health.branch}`);
-  if (task.kind !== "reset" && isPlaceholderBranch(health.branch, prefix)) {
-    await api.gitRenameBranch(cwd, wanted);
-    return finish(`renamed ${health.branch} → ${wanted}`);
+  if (left === health.default_branch) return finish(`created ${wanted} from ${base}`);
+  if (isPlaceholderBranch(left, prefix) && !carriesWork) {
+    await api.gitDeleteBranch(cwd, left, true).catch(() => {});
+    return finish(`created ${wanted} from ${base}`);
   }
-  if (task.kind === "reset" && isPlaceholderBranch(health.branch, prefix)) {
-    return finish(`kept ${health.branch}`);
-  }
-  await api.gitCreateBranch(cwd, wanted);
-  return finish(`created ${wanted} (left ${health.branch} behind)`);
+  return finish(`created ${wanted} from ${base} (left ${left} behind)`);
 }

@@ -1097,7 +1097,11 @@ pub async fn checkout_branch(cwd: &str, branch: &str) -> Result<String, String> 
 }
 
 /// Create and checkout a new branch.
-pub async fn create_branch(cwd: &str, branch: &str) -> Result<String, String> {
+///
+/// With `start_point` (e.g. `origin/staging`) the branch starts there instead
+/// of at HEAD, and does not track it, so a plain `git push` never targets
+/// the default branch.
+pub async fn create_branch(cwd: &str, branch: &str, start_point: Option<&str>) -> Result<String, String> {
     // Validate branch name
     if branch.is_empty() {
         return Err("Branch name cannot be empty".to_string());
@@ -1105,7 +1109,27 @@ pub async fn create_branch(cwd: &str, branch: &str) -> Result<String, String> {
     if branch.contains(' ') || branch.contains("..") || branch.starts_with('-') || branch.contains('~') || branch.contains('^') || branch.contains(':') || branch.contains('\\') || branch.contains('\x7f') || branch.chars().any(|c| c.is_control()) {
         return Err("Invalid branch name".to_string());
     }
-    git_cmd(cwd, &["checkout", "-b", branch]).await
+    match start_point {
+        Some(start) if start.starts_with('-') => Err("Invalid start point".to_string()),
+        Some(start) => git_cmd(cwd, &["checkout", "--no-track", "-b", branch, start]).await,
+        None => git_cmd(cwd, &["checkout", "-b", branch]).await,
+    }
+}
+
+/// Every branch name in use: local branches plus origin's (without the
+/// `origin/` prefix). New branch names must avoid all of them, since a name
+/// that exists only on the remote still collides on push.
+pub async fn branch_names(cwd: &str) -> Result<Vec<String>, String> {
+    let output = git_cmd(cwd, &["for-each-ref", "--format=%(refname)", "refs/heads", "refs/remotes/origin"]).await?;
+    let mut names: Vec<String> = output
+        .lines()
+        .filter_map(|r| r.strip_prefix("refs/heads/").or_else(|| r.strip_prefix("refs/remotes/origin/")))
+        .filter(|n| !n.is_empty() && *n != "HEAD")
+        .map(str::to_string)
+        .collect();
+    names.sort();
+    names.dedup();
+    Ok(names)
 }
 
 /// Delete a local branch. Refuses to delete the currently checked-out branch.

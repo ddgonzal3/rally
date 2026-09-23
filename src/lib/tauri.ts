@@ -158,8 +158,13 @@ export const api = {
   gitCheckoutBranch: (workspacePath: string, branch: string) =>
     invoke<string>("git_checkout_branch", { workspacePath, branch }),
 
-  gitCreateBranch: (workspacePath: string, branch: string) =>
-    invoke<string>("git_create_branch", { workspacePath, branch }),
+  /** `startPoint` (e.g. `origin/staging`) branches from there, untracked. */
+  gitCreateBranch: (workspacePath: string, branch: string, startPoint?: string) =>
+    invoke<string>("git_create_branch", { workspacePath, branch, startPoint: startPoint ?? null }),
+
+  /** Local and origin branch names, for picking a name nobody uses. */
+  gitBranchNames: (workspacePath: string) =>
+    invoke<string[]>("git_branch_names", { workspacePath }),
 
   gitRestorePaths: (workspacePath: string, paths: string[]) =>
     invoke<void>("git_restore_paths", { workspacePath, paths }),

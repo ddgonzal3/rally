@@ -326,6 +326,7 @@ fn main() {
         commands::git_list_branches,
         commands::git_checkout_branch,
         commands::git_create_branch,
+        commands::git_branch_names,
         commands::git_delete_branch,
         commands::list_directory,
         commands::list_gitignored,

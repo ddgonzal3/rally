@@ -533,8 +533,13 @@ pub async fn git_checkout_branch(workspace_path: String, branch: String) -> Resu
 }
 
 #[tauri::command]
-pub async fn git_create_branch(workspace_path: String, branch: String) -> Result<String, String> {
-    git_ops::create_branch(&workspace_path, &branch).await
+pub async fn git_create_branch(workspace_path: String, branch: String, start_point: Option<String>) -> Result<String, String> {
+    git_ops::create_branch(&workspace_path, &branch, start_point.as_deref()).await
+}
+
+#[tauri::command]
+pub async fn git_branch_names(workspace_path: String) -> Result<Vec<String>, String> {
+    git_ops::branch_names(&workspace_path).await
 }
 
 #[tauri::command]
