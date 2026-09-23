@@ -40,11 +40,6 @@ import { ptyTerminalTitles } from "./ptyActivity";
 
 const SCRIPT_SETTLE_TIMEOUT_MS = 10 * 60 * 1000;
 
-/** Model ids Claude Code accepts for `--model` and `/model`. */
-export const CLAUDE_MODEL_IDS: Record<ClaudeModel, string> = {
-  fable: "claude-fable-5-1",
-  opus: "claude-opus-5",
-};
 const running = new Set<string>();
 
 // --- Pod / task accessors ----------------------------------------------------
@@ -270,7 +265,7 @@ export async function deliverPromptToPod(
   const layout = store.getOrCreatePodLayout(layoutId, pod.cwd, "claude");
   const groupId = Object.keys(layout.groups)[0];
   const group = layout.groups[groupId];
-  const modelFlag = options.model ? ` --model ${CLAUDE_MODEL_IDS[options.model]}` : "";
+  const modelFlag = options.model ? ` --model ${options.model}` : "";
   const command = `claude --dangerously-skip-permissions${modelFlag} ${shellQuote(prompt)}`;
 
   // Start here, not as a side effect of mounting a visible Terminal component.

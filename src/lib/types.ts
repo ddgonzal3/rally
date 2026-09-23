@@ -223,10 +223,14 @@ export interface PrepState {
   finishedAt?: number;
 }
 
-/** Task attached to a Claude pod. `question` delivers only; `reset` runs the
- *  blocking prepare steps and parks the checkout on a placeholder branch. */
+/**
+ * Claude Code's model aliases, passed to `--model` as-is. An alias always
+ * resolves to the newest model of that family, so never pin a versioned id.
+ */
 export type ClaudeModel = "fable" | "opus";
 
+/** Task attached to a Claude pod. `question` delivers only; `reset` runs the
+ *  blocking prepare steps and parks the checkout on a placeholder branch. */
 export interface PodTask {
   id: string;
   description: string;
