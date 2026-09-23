@@ -1,4 +1,5 @@
 import React from "react";
+import { LoadingDots } from "./LoadingDots";
 
 interface ClaudeLauncherProps {
   workspacePath: string;
@@ -45,15 +46,10 @@ export const ClaudeLauncher = React.memo(function ClaudeLauncher({
 
       <div style={styles.secondary}>
         {setup ? (
-          <span style={styles.setup}>
-            {setup.busy && (
-              <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true" style={{ display: "block", flexShrink: 0, animation: "spin 1s linear infinite" }}>
-                <circle cx="6" cy="6" r="4.5" stroke="currentColor" strokeWidth="1.3" opacity="0.3" />
-                <path d="M6 1.5a4.5 4.5 0 0 1 4.5 4.5" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
-              </svg>
-            )}
-            {setup.text}
-          </span>
+          <div style={styles.setup}>
+            {setup.busy && <LoadingDots />}
+            <span style={styles.setupText}>{setup.text}</span>
+          </div>
         ) : (
           <span
             style={styles.trigger}
@@ -109,10 +105,15 @@ const styles: Record<string, React.CSSProperties> = {
     textAlign: "center",
   },
   setup: {
-    display: "inline-flex",
+    display: "flex",
+    flexDirection: "column",
     alignItems: "center",
-    gap: 6,
+    gap: 12,
+    marginTop: 12,
+  },
+  setupText: {
     maxWidth: 360,
+    textAlign: "center",
     fontSize: 13,
     fontWeight: 600,
     color: "var(--text-dim)",

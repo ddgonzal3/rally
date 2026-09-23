@@ -4,6 +4,7 @@ import { DiffFileSection } from "./DiffFileSection";
 import { CommitModal } from "./CommitModal";
 import { useGitDiffActions } from "../hooks/useGitDiffActions";
 import { relativeTime } from "../lib/time";
+import { LoadingDots } from "./LoadingDots";
 
 // ---------------------------------------------------------------------------
 // GitDiffContent — reusable inner content (used by both overlay and unified panel)
@@ -173,11 +174,7 @@ export function GitDiffContent({ rootPath }: GitDiffContentProps) {
       <div ref={fileListRef} style={cs.fileList}>
         {loading && (
           <div style={cs.loadingContainer}>
-            <div style={cs.loadingDots}>
-              <span style={{ ...cs.loadingDot, animationDelay: "0s" }} />
-              <span style={{ ...cs.loadingDot, animationDelay: "0.15s" }} />
-              <span style={{ ...cs.loadingDot, animationDelay: "0.3s" }} />
-            </div>
+            <LoadingDots size={6} gap={6} stagger={0.15} />
           </div>
         )}
 
@@ -409,16 +406,5 @@ const cs: Record<string, React.CSSProperties> = {
     alignItems: "center",
     justifyContent: "center",
     padding: "48px 0",
-  },
-  loadingDots: {
-    display: "flex",
-    gap: 6,
-  },
-  loadingDot: {
-    width: 6,
-    height: 6,
-    borderRadius: "50%",
-    background: "var(--text-dim)",
-    animation: "claude-dot 1.4s ease-in-out infinite",
   },
 };

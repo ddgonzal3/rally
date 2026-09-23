@@ -10,6 +10,7 @@ import { BranchSwitcher } from "./BranchSwitcher";
 import { relativeTime } from "../lib/time";
 import { showContextMenu } from "../lib/contextMenu";
 import { useGitDiffActions } from "../hooks/useGitDiffActions";
+import { LoadingDots } from "./LoadingDots";
 
 const SIDEBAR_MIN = 200;
 const SIDEBAR_MAX = 320;
@@ -762,20 +763,7 @@ export function UnifiedGitPanel() {
                   <div style={ms.fileList}>
                     {diffLoading && (
                       <div style={ms.loadingContainer}>
-                        <div style={ms.loadingDots}>
-                          <span
-                            style={{ ...ms.loadingDot, animationDelay: "0s" }}
-                          />
-                          <span
-                            style={{
-                              ...ms.loadingDot,
-                              animationDelay: "0.15s",
-                            }}
-                          />
-                          <span
-                            style={{ ...ms.loadingDot, animationDelay: "0.3s" }}
-                          />
-                        </div>
+                        <LoadingDots size={5} gap={6} stagger={0.15} />
                       </div>
                     )}
                     {!diffLoading && activeFiles.length === 0 && (
@@ -1449,16 +1437,5 @@ const ms: Record<string, React.CSSProperties> = {
     alignItems: "center",
     justifyContent: "center",
     padding: "32px 0",
-  },
-  loadingDots: {
-    display: "flex",
-    gap: 6,
-  },
-  loadingDot: {
-    width: 5,
-    height: 5,
-    borderRadius: "50%",
-    background: "var(--text-dim)",
-    animation: "claude-dot 1.4s ease-in-out infinite",
   },
 };

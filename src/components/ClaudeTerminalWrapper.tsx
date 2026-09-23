@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import { Terminal } from "./Terminal";
 import type { OnFileOpen } from "../lib/terminalLinkProvider";
+import { LoadingDots } from "./LoadingDots";
 
 interface ClaudeTerminalWrapperProps {
   cwd: string;
@@ -67,11 +68,7 @@ export function ClaudeTerminalWrapper({ cwd, command, initialInput, ptyId, works
       {!ready && (
         <div style={styles.overlay}>
           <div style={styles.content}>
-            <div style={styles.dots}>
-              <span style={{ ...styles.dot, animationDelay: "0s" }} />
-              <span style={{ ...styles.dot, animationDelay: "0.2s" }} />
-              <span style={{ ...styles.dot, animationDelay: "0.4s" }} />
-            </div>
+            <LoadingDots />
             <div style={styles.text}>Starting Claude Code</div>
           </div>
         </div>
@@ -105,17 +102,6 @@ const styles: Record<string, React.CSSProperties> = {
     flexDirection: "column",
     alignItems: "center",
     gap: 16,
-  },
-  dots: {
-    display: "flex",
-    gap: 8,
-  },
-  dot: {
-    width: 8,
-    height: 8,
-    borderRadius: "50%",
-    background: "var(--text-dim)",
-    animation: "claude-dot 1.4s ease-in-out infinite",
   },
   text: {
     fontSize: 13,
