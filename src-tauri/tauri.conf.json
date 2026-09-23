@@ -41,8 +41,7 @@
       "icons/icon.ico"
     ],
     "macOS": {
-      "minimumSystemVersion": "10.15",
-      "signingIdentity": "Apple Development: dann_gonzalez@icloud.com (KP37MK45U2)"
+      "minimumSystemVersion": "10.15"
     }
   },
   "plugins": {

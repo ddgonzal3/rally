@@ -14,7 +14,7 @@ Rally is a **Tauri v2 macOS app** (Rust backend + React frontend) for orchestrat
 ./scripts/build-release.sh # Build + .app + .dmg
 ```
 
-**Never run `cargo tauri build` without `--bundles app`** unless you want a DMG (slow, opens Finder windows).
+**Never run `cargo tauri build` directly.** Use the scripts above; they go through `scripts/tauri-build.sh`, which picks this machine's signing identity. Pass `--bundles app` unless you want a DMG (slow, opens Finder windows).
 
 ## IMPORTANT: After Making Changes
 

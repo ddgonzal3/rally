@@ -26,7 +26,7 @@ export RALLY_TEST_MODE=1
 # --- Build ---
 if [ "$SKIP_BUILD" = false ]; then
   echo "Building Rally with test-bridge feature (debug mode)..."
-  cargo tauri build --debug --features test-bridge --bundles app
+  ./scripts/tauri-build.sh --debug --features test-bridge --bundles app
   echo "Build complete."
 fi
 

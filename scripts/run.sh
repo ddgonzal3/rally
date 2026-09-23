@@ -22,7 +22,7 @@ if [ -d "$APP_BINARY_DIR" ]; then
 fi
 
 echo "Building..."
-cargo tauri build --bundles app
+./scripts/tauri-build.sh --bundles app
 
 # WKWebView caches index.html (unhashed) from the previous bundle, so a
 # frontend-only rebuild can launch with the OLD UI. Drop the cache so the

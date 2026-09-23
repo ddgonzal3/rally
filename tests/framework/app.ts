@@ -38,7 +38,7 @@ export class AppManager {
     });
 
     // Build Rust with test-bridge feature
-    execSync("cargo tauri build --bundles app --features test-bridge", {
+    execSync("./scripts/tauri-build.sh --bundles app --features test-bridge", {
       cwd: PROJECT_ROOT,
       stdio: "inherit",
     });
