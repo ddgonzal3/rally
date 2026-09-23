@@ -555,16 +555,35 @@ export function App() {
   useEffect(() => {
     localStorage.setItem("rally:activityBarVisible", String(activityBarVisible));
   }, [activityBarVisible]);
+  // The explorer panel belongs to the rail: hiding the rail hides the open
+  // panel too, and showing it brings that panel back.
+  const explorerOpenBeforeRailHideRef = useRef(false);
+  const toggleToolRail = useCallback(() => {
+    if (activityBarVisible) {
+      explorerOpenBeforeRailHideRef.current = !fileExplorerCollapsed;
+      // A hand-hidden panel must not come back on the next half-screen snap.
+      autoCollapsedRef.current = false;
+      setFileExplorerCollapsed(true);
+      setActivityBarVisible(false);
+    } else {
+      setActivityBarVisible(true);
+      if (explorerOpenBeforeRailHideRef.current) setFileExplorerCollapsed(false);
+    }
+  }, [activityBarVisible, fileExplorerCollapsed]);
+  // Anything that opens the panel (⌘E, ⌘⇧F, menus) shows its rail with it.
+  useEffect(() => {
+    if (!fileExplorerCollapsed) setActivityBarVisible(true);
+  }, [fileExplorerCollapsed]);
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.shiftKey && !e.altKey && e.key.toLowerCase() === "b") {
         e.preventDefault();
-        setActivityBarVisible((v) => !v);
+        toggleToolRail();
       }
     };
     document.addEventListener("keydown", onKey, true);
     return () => document.removeEventListener("keydown", onKey, true);
-  }, []);
+  }, [toggleToolRail]);
   const [zoomLevel, setZoomLevel] = useState(() => {
     const saved = localStorage.getItem("rally:zoomLevel");
     return saved ? Number(saved) : 1.0;
@@ -2010,7 +2029,7 @@ export function App() {
             className="activity-btn"
             onClick={(e) => {
               e.stopPropagation();
-              setActivityBarVisible((v) => !v);
+              toggleToolRail();
             }}
             title={activityBarVisible ? "Hide tool rail (⌘⇧B)" : "Show tool rail (⌘⇧B)"}
             style={{
