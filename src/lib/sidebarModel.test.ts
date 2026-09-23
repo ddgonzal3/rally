@@ -77,6 +77,13 @@ describe("buildSidebarModel", () => {
     expect(flow.active[0]).toMatchObject({ name: "flow2", label: "MIDI editor", manualBusy: true, available: false, dot: null });
   });
 
+  it("does not count a checkout whose Claude holds a conversation as free", () => {
+    const inUse = { ...checkouts, "/w/flow3": { ...checkouts["/w/flow3"], inConversation: true } };
+    const flow = buildSidebarModel({ paths, checkouts: inUse, pods: [pod("/w/flow3", { activity: activity("idle") })] })[1];
+    expect(flow.available).toBe(2);
+    expect(flow.checkouts.find((c) => c.cwd === "/w/flow3")?.state).toBe("in-use");
+  });
+
   it("preserves checkout identity and labels across panel renames and keeps labelled hidden rows visible", () => {
     const notes = { ...checkouts, "/w/flow1": { ...checkouts["/w/flow1"], label: "Export fix" } };
     const flow = buildSidebarModel({ paths, checkouts: notes, pods: [pod("/w/flow1", { name: "Unrelated panel name", hidden: true })] })[1];

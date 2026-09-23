@@ -8,9 +8,11 @@
 //! to the Rally PTY whose shell spawned it by walking the parent-PID chain.
 
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fs;
-use std::path::PathBuf;
+use std::io::{BufRead, BufReader};
+use std::path::{Path, PathBuf};
+use std::sync::Mutex;
 
 use crate::pty_manager::{read_ppid_map, PtyState};
 
@@ -49,6 +51,9 @@ pub struct ClaudeSessionInfo {
     pub started_at: u64,
     /// Rally PTY that owns this session, if the process tree leads to one.
     pub pty_id: Option<String>,
+    /// Claude has replied at least once in this session. A fresh or
+    /// `/clear`ed Claude has no conversation; one waiting on you does.
+    pub has_conversation: bool,
 }
 
 fn sessions_dir() -> Option<PathBuf> {
@@ -59,6 +64,50 @@ fn sessions_dir() -> Option<PathBuf> {
     }
     let home = std::env::var("HOME").ok()?;
     Some(PathBuf::from(home).join(".claude").join("sessions"))
+}
+
+/// Claude Code's transcript folder name for a cwd: every character that is
+/// not ASCII alphanumeric becomes `-` (`/Users/me/flow` -> `-Users-me-flow`).
+fn project_slug(cwd: &str) -> String {
+    cwd.chars().map(|c| if c.is_ascii_alphanumeric() { c } else { '-' }).collect()
+}
+
+/// A transcript line written by Claude itself. Local commands (`/clear`,
+/// `/model`) log user and system lines but never an assistant one.
+fn transcript_has_reply(path: &Path) -> bool {
+    let Ok(file) = fs::File::open(path) else {
+        return false;
+    };
+    BufReader::new(file).lines().map_while(Result::ok).any(|line| {
+        line.contains("\"type\":\"assistant\"")
+            && serde_json::from_str::<serde_json::Value>(&line)
+                .ok()
+                .and_then(|v| v.get("type").and_then(|t| t.as_str()).map(|t| t == "assistant"))
+                .unwrap_or(false)
+    })
+}
+
+/// Session ids already known to have a conversation. A conversation never
+/// goes away within a session (`/clear` starts a new id), so a hit is final
+/// and the transcript is never re-read.
+static CONVERSATIONS: Mutex<Option<HashSet<String>>> = Mutex::new(None);
+
+fn has_conversation(projects: Option<&Path>, cwd: &str, session_id: Option<&str>) -> bool {
+    let (Some(projects), Some(id)) = (projects, session_id) else {
+        return false;
+    };
+    if let Ok(guard) = CONVERSATIONS.lock() {
+        if guard.as_ref().is_some_and(|set| set.contains(id)) {
+            return true;
+        }
+    }
+    let found = transcript_has_reply(&projects.join(project_slug(cwd)).join(format!("{id}.jsonl")));
+    if found {
+        if let Ok(mut guard) = CONVERSATIONS.lock() {
+            guard.get_or_insert_with(HashSet::new).insert(id.to_string());
+        }
+    }
+    found
 }
 
 /// Walk up the parent chain from `pid` until a PID in `shells` is found.
@@ -93,6 +142,7 @@ pub fn list_sessions(shells: &HashMap<u32, String>) -> Vec<ClaudeSessionInfo> {
     };
     // One `ps` pass for liveness + parent chain.
     let ppid_map = read_ppid_map();
+    let projects = dir.parent().map(|p| p.join("projects"));
 
     let mut out = Vec::new();
     for entry in entries.flatten() {
@@ -111,10 +161,12 @@ pub fn list_sessions(shells: &HashMap<u32, String>) -> Vec<ClaudeSessionInfo> {
             continue; // stale file from a crashed session
         }
         let pty_id = owning_pty(file.pid, &ppid_map, shells);
+        let cwd = file.cwd.unwrap_or_default();
+        let has_conversation = has_conversation(projects.as_deref(), &cwd, file.session_id.as_deref());
         out.push(ClaudeSessionInfo {
             pid: file.pid,
             session_id: file.session_id,
-            cwd: file.cwd.unwrap_or_default(),
+            cwd,
             status: file.status.unwrap_or_else(|| "unknown".to_string()),
             waiting_for: file.waiting_for,
             name: file.name,
@@ -122,6 +174,7 @@ pub fn list_sessions(shells: &HashMap<u32, String>) -> Vec<ClaudeSessionInfo> {
             updated_at: file.updated_at.unwrap_or(0),
             started_at: file.started_at.unwrap_or(0),
             pty_id,
+            has_conversation,
         });
     }
     out
@@ -145,6 +198,32 @@ pub async fn list_claude_sessions(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn project_slug_matches_claude_code() {
+        assert_eq!(project_slug("/Users/splice/splice/flow4"), "-Users-splice-splice-flow4");
+        assert_eq!(project_slug("/a/my.repo_x"), "-a-my-repo-x");
+    }
+
+    #[test]
+    fn only_a_reply_counts_as_a_conversation() {
+        let dir = std::env::temp_dir().join(format!("rally-transcript-{}", std::process::id()));
+        fs::create_dir_all(&dir).unwrap();
+        let cleared = dir.join("cleared.jsonl");
+        fs::write(
+            &cleared,
+            "{\"type\":\"user\",\"isMeta\":true,\"message\":{\"content\":\"caveat\"}}\n\
+             {\"type\":\"user\",\"message\":{\"content\":\"<command-name>/clear</command-name> says \\\"type\\\":\\\"assistant\\\"\"}}\n\
+             {\"type\":\"system\"}\n",
+        )
+        .unwrap();
+        let talked = dir.join("talked.jsonl");
+        fs::write(&talked, "{\"type\":\"user\",\"message\":{}}\n{\"type\":\"assistant\",\"message\":{}}\n").unwrap();
+        assert!(!transcript_has_reply(&cleared));
+        assert!(transcript_has_reply(&talked));
+        assert!(!transcript_has_reply(&dir.join("missing.jsonl")));
+        fs::remove_dir_all(&dir).unwrap();
+    }
 
     #[test]
     fn owning_pty_walks_parent_chain() {

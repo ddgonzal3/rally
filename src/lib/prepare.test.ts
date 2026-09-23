@@ -10,6 +10,7 @@ import {
   placeholderBranchName,
   resolveCheckout,
   taskSetupStatus,
+  checkoutInUse,
   projectFromOrigin,
   resolvePrepareConfig,
   shortDescription,
@@ -68,6 +69,7 @@ function session(over: Partial<ClaudeSessionInfo> = {}): ClaudeSessionInfo {
     updated_at: 0,
     started_at: 0,
     pty_id: "pty",
+    has_conversation: false,
     ...over,
   };
 }
@@ -322,5 +324,28 @@ describe("task setup status", () => {
     expect(taskSetupStatus(failed)).toEqual({ text: "Setup stopped: Couldn't fetch origin", busy: false });
     expect(taskSetupStatus({ ...failed, kind: "reset" })).toBeNull();
     expect(taskSetupStatus(undefined)).toBeNull();
+  });
+});
+
+describe("checkout in use", () => {
+  it("counts an idle Claude that holds a conversation, anywhere in the checkout", () => {
+    const idle = session({ cwd: "/r/flow4", status: "idle", has_conversation: true, pty_id: null });
+    expect(checkoutInUse("/r/flow4", [idle])).toBe(true);
+    expect(checkoutInUse("/r/flow4", [{ ...idle, cwd: "/r/flow4/.claude/worktrees/agent-1" }])).toBe(true);
+    expect(checkoutInUse("/r/flow40", [idle])).toBe(false);
+  });
+
+  it("leaves a fresh or cleared Claude free", () => {
+    expect(checkoutInUse("/r/flow4", [session({ cwd: "/r/flow4", status: "idle" })])).toBe(false);
+    expect(checkoutInUse("/r/flow4", [session({ cwd: "/r/flow4", status: "waiting" })])).toBe(true);
+  });
+
+  it("rejects a checkout with a conversation when picking", () => {
+    const pick = pickFreeCheckout([
+      { cwd: "/flow", busy: false, inConversation: true, dirty: false, pr: null, hasPod: true },
+      { cwd: "/flow2", busy: false, dirty: false, pr: null, hasPod: false },
+    ]);
+    expect(pick.cwd).toBe("/flow2");
+    expect(pick.checkouts[0].reason).toBe("conversation open");
   });
 });

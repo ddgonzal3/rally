@@ -21,6 +21,7 @@ import type { ClaudeModel, FlightPod, PodTask, PrepStep, PrepStepStatus, PrStatu
 import {
   assessSyncSafety,
   buildTaskPrompt,
+  checkoutInUse,
   commandForScript,
   defaultBranchPrefix,
   folderName,
@@ -200,7 +201,15 @@ export async function checkoutCandidates(workspaceId: string, cwds: string[]): P
     }
     const health = agent.health[cwd];
     const dirty = health?.dirty ?? store.gitStatuses[cwd]?.dirty ?? false;
-    out.push({ cwd, busy, manualBusy: !!useCheckoutStore.getState().notes[cwd]?.busy, dirty, pr: store.prStatuses[cwd] ?? null, hasPod: podsHere.length > 0 });
+    out.push({
+      cwd,
+      busy,
+      manualBusy: !!useCheckoutStore.getState().notes[cwd]?.busy,
+      inConversation: checkoutInUse(cwd, agent.sessions),
+      dirty,
+      pr: store.prStatuses[cwd] ?? null,
+      hasPod: podsHere.length > 0,
+    });
   }
   return out;
 }

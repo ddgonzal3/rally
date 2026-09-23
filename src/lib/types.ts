@@ -163,6 +163,8 @@ export interface ClaudeSessionInfo {
   updated_at: number;
   started_at: number;
   pty_id: string | null;
+  /** Claude has replied at least once; a fresh or `/clear`ed Claude has not. */
+  has_conversation: boolean;
 }
 
 export interface WorktreeInfo {

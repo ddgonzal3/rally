@@ -12,9 +12,11 @@ import { singleFlight } from "../lib/singleFlight";
 import type { AppBundleStatus, CheckoutHealth, ClaudeSessionInfo } from "../lib/types";
 
 interface AgentState {
-  /** Sessions keyed by owning Rally PTY id. Sessions without a PTY are
-   *  ignored here — they belong to some other terminal. */
+  /** Sessions keyed by owning Rally PTY id. */
   sessionsByPty: Record<string, ClaudeSessionInfo>;
+  /** Every live session on the machine, including ones in other terminals
+   *  or another Rally: a checkout is in use whoever opened Claude there. */
+  sessions: ClaudeSessionInfo[];
   sessionsLoadedAt: number | null;
   /** Checkout health keyed by repo root. */
   health: Record<string, CheckoutHealth>;
@@ -29,6 +31,7 @@ interface AgentState {
 
 export const useAgentStore = create<AgentState>((set) => ({
   sessionsByPty: {},
+  sessions: [],
   sessionsLoadedAt: null,
   health: {},
   healthErrors: {},
@@ -43,10 +46,10 @@ export const useAgentStore = create<AgentState>((set) => ({
     set((prev) => {
       // Skip the set() when nothing observable changed — the poll runs
       // every 2s and most ticks are identical.
-      if (sameSessions(prev.sessionsByPty, next)) {
+      if (sameSessions(byPid(prev.sessions), byPid(list))) {
         return { sessionsLoadedAt: Date.now() };
       }
-      return { sessionsByPty: next, sessionsLoadedAt: Date.now() };
+      return { sessionsByPty: next, sessions: list, sessionsLoadedAt: Date.now() };
     });
   }),
 
@@ -72,6 +75,10 @@ export const useAgentStore = create<AgentState>((set) => ({
   },
 }));
 
+function byPid(list: ClaudeSessionInfo[]): Record<string, ClaudeSessionInfo> {
+  return Object.fromEntries(list.map((s) => [String(s.pid), s]));
+}
+
 function sameSessions(
   a: Record<string, ClaudeSessionInfo>,
   b: Record<string, ClaudeSessionInfo>,
@@ -89,7 +96,9 @@ function sameSessions(
       x.waiting_for !== y.waiting_for ||
       x.cwd !== y.cwd ||
       x.name !== y.name ||
-      x.session_id !== y.session_id
+      x.session_id !== y.session_id ||
+      x.pty_id !== y.pty_id ||
+      x.has_conversation !== y.has_conversation
     ) {
       return false;
     }

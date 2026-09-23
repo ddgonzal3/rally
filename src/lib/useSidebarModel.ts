@@ -2,7 +2,7 @@ import { useCheckoutStore } from "../stores/checkoutStore";
 import { useMemo } from "react";
 import { useWorkspaceStore } from "../stores/workspaceStore";
 import { useAgentStore } from "../stores/agentStore";
-import { folderName } from "./prepare";
+import { checkoutInUse, folderName } from "./prepare";
 import { readPodActivity, useActivityTick } from "./usePodActivity";
 import { buildSidebarModel, type ProjectEntry, type SidebarCheckoutInput, type SidebarPodInput } from "./sidebarModel";
 
@@ -32,6 +32,7 @@ export function useSidebarModel(workspaceId: string | null): ProjectEntry[] {
   const notes = useCheckoutStore((s) => s.notes);
   const prStatuses = useWorkspaceStore((s) => s.prStatuses);
   const sessionsByPty = useAgentStore((s) => s.sessionsByPty);
+  const sessions = useAgentStore((s) => s.sessions);
   const health = useAgentStore((s) => s.health);
   const tick = useActivityTick();
 
@@ -48,6 +49,7 @@ export function useSidebarModel(workspaceId: string | null): ProjectEntry[] {
       checkouts[cwd] = {
         cwd,
         manualBusy: notes[cwd]?.busy,
+        inConversation: checkoutInUse(cwd, sessions),
         label: notes[cwd]?.label,
         origin: h?.origin_url ?? "",
         branch: store.gitStatuses[cwd]?.branch ?? h?.branch ?? null,
@@ -76,5 +78,5 @@ export function useSidebarModel(workspaceId: string | null): ProjectEntry[] {
     return buildSidebarModel({ paths, checkouts, pods: podInputs });
     // podsKey/branchesKey/tick are change signals; their content is re-read from the store.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [workspaceId, pathsKey, podsKey, branchesKey, prStatuses, sessionsByPty, health, tick, notes]);
+  }, [workspaceId, pathsKey, podsKey, branchesKey, prStatuses, sessionsByPty, sessions, health, tick, notes]);
 }

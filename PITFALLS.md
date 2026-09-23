@@ -175,3 +175,7 @@ Builds are signed with the machine's own Apple Development certificate. The requ
 ## Task Branch Names Must Be Unique Across Every Checkout
 
 Checkouts of one project share a remote, and unpushed branches live only in the checkout that made them. Picking a name from the current checkout's local branches alone gave two checkouts the same `danny/task-0923`, which collide on push. `takenBranchNames()` unions local branches of every checkout of the project, origin's branches, and names already handed out this session (two tasks started at once). Task branches are cut from the freshly fetched `origin/<default>` with `--no-track`, before the prompt is delivered; if the fetch fails, the step fails instead of branching from a stale ref.
+
+## An Idle Claude Can Still Own a Checkout
+
+`status: idle` only means Claude isn't mid-turn. A Claude waiting on you after a reply is still using the checkout, and ⌘K used to treat it as free (it even preferred checkouts with idle pods). "In use" is now: any live session (in a Rally pod, another terminal, or another Rally) whose cwd is the checkout or inside it, that is busy/waiting or has a conversation. `has_conversation` means the session's transcript (`~/.claude/projects/<cwd with non-alphanumerics as '-'>/<sessionId>.jsonl`) holds an `assistant` line. Don't key on user lines: `/clear` and `/model` log non-meta user entries without any conversation, and `/clear` starts a new session id, so a cleared Claude correctly reads as free.

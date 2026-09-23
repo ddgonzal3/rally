@@ -35,6 +35,8 @@ export interface SidebarCheckoutInput {
   branch: string | null;
   dirty: boolean;
   manualBusy?: boolean;
+  /** A Claude here (any terminal) has a conversation, even if idle. */
+  inConversation?: boolean;
   label?: string;
   pr: PrStatus | null;
 }
@@ -49,8 +51,8 @@ export interface SidebarModelInput {
 
 // --- Outputs -----------------------------------------------------------------
 
-/** Precedence when several pods share a checkout: waiting > working > review > dirty > available. */
-export type CheckoutState = "waiting" | "working" | "review" | "dirty" | "available";
+/** Precedence when several pods share a checkout: waiting > working > in-use > review > dirty > available. */
+export type CheckoutState = "waiting" | "working" | "in-use" | "review" | "dirty" | "available";
 
 export interface CheckoutEntry {
   cwd: string;
@@ -218,6 +220,7 @@ function checkoutState(rows: AgentEntry[], checkout: SidebarCheckoutInput | unde
   if (rows.some((r) => r.dot === "waiting")) return "waiting";
   if (checkout?.manualBusy) return "working";
   if (rows.some((r) => r.dot === "working")) return "working";
+  if (checkout?.inConversation) return "in-use";
   if (checkout?.pr?.state === "OPEN") return "review";
   if (checkout?.dirty) return "dirty";
   return "available";

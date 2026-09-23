@@ -164,6 +164,8 @@ export interface CheckoutCandidate {
   /** A Claude session is running in a pod for this checkout. */
   busy: boolean;
   manualBusy?: boolean;
+  /** A Claude here (any terminal) has a conversation, even if idle. */
+  inConversation?: boolean;
   dirty: boolean;
   pr: PrStatus | null;
   /** An idle pod already exists for this checkout (preferred: no new panel). */
@@ -185,6 +187,7 @@ export interface CheckoutPick {
 function checkoutBlocker(c: CheckoutCandidate): string | null {
   if (c.manualBusy) return "marked busy outside Rally";
   if (c.busy) return "agent running";
+  if (c.inConversation) return "conversation open";
   if (c.pr?.state === "OPEN") return `PR #${c.pr.number} open`;
   if (c.dirty) return "uncommitted changes";
   return null;
@@ -464,4 +467,18 @@ export function taskSetupStatus(task: PodTask | undefined): { text: string; busy
     case "script":
       return { text: `Running ${step.label}…`, busy: true };
   }
+}
+
+/**
+ * A checkout is in use while any live Claude there, in Rally or not, is
+ * replying, blocked on you, or holds a conversation. Sessions in a nested
+ * worktree of the checkout count too.
+ */
+export function checkoutInUse(cwd: string, sessions: ClaudeSessionInfo[]): boolean {
+  const root = cwd.replace(/\/+$/, "");
+  return sessions.some(
+    (s) =>
+      (s.cwd === root || s.cwd.startsWith(root + "/")) &&
+      (s.has_conversation || s.status === "busy" || s.status === "waiting"),
+  );
 }
