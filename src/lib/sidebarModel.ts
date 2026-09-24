@@ -161,9 +161,9 @@ function buildProject(project: string, cwds: string[], input: SidebarModelInput)
   }
 
   const available = checkouts.filter((c) => c.state === "available").length;
-  // A panel you can see on the canvas is never missing from the sidebar;
-  // hidden idle panels and bare checkouts wait in the expanded list.
-  const active = rows.filter((r) => (r.podId !== null && !r.hidden) || r.dot !== null || r.problem !== null || r.pr !== null || r.manualBusy || r.label);
+  // Every panel keeps its row, hidden ones too (shift-click hides a panel;
+  // its row is the way back). Only bare checkouts wait in the expanded list.
+  const active = rows.filter((r) => r.podId !== null || r.dot !== null || r.problem !== null || r.pr !== null || r.manualBusy || r.label);
   const merged = checkouts.length === 1 && rows.length === 1;
   if (merged && folderName(cwds[0]) === project) rows[0].name = project;
   return { project, checkouts, available, rows, active, merged };

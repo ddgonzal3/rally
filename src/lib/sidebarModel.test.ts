@@ -104,7 +104,7 @@ describe("buildSidebarModel", () => {
     expect(flow.available).toBe(3);
   });
 
-  it("every open Claude panel gets a row; visible idle ones stay listed, hidden idle ones wait in the expanded list", () => {
+  it("every open Claude panel gets a row, including hidden idle ones", () => {
     const pods = [
       pod("/w/flow1", { activity: activity("idle"), task: task("Old finished task"), topic: "lets make the spli" }),
       pod("/w/flow2", { activity: activity("no-session"), hidden: true }),
@@ -115,7 +115,10 @@ describe("buildSidebarModel", () => {
       ["flow2", null, ""],
       ["flow3", null, ""],
     ]);
-    expect(flow.active.map((a) => a.name)).toEqual(["flow1"]);
+    expect(flow.active.map((a) => [a.name, a.hidden])).toEqual([
+      ["flow1", false],
+      ["flow2", true],
+    ]);
     expect(flow.available).toBe(3);
   });
 
@@ -170,7 +173,7 @@ describe("buildSidebarModel", () => {
     ];
     const flow = buildSidebarModel({ paths, checkouts: withPr, pods })[1];
     expect(flow.rows.slice(0, 2).map((a) => a.pr?.number ?? null)).toEqual([3621, null]);
-    expect(flow.active).toHaveLength(1);
+    expect(flow.active).toHaveLength(2);
     expect(flow.checkouts[0].state).toBe("working");
   });
 
@@ -191,10 +194,10 @@ describe("buildSidebarModel", () => {
     expect(flow.active[0]).toMatchObject({ podId: null, name: "flow3", secondary: "", pr, available: false });
   });
 
-  it("dirty idle checkouts are not available and not active", () => {
+  it("dirty idle checkouts are not available; their hidden panel keeps its row", () => {
     const dirty = { ...checkouts, "/w/flow1": checkout("/w/flow1", FLOW, { dirty: true }) };
     const flow = buildSidebarModel({ paths, checkouts: dirty, pods: [pod("/w/flow1", { activity: activity("idle"), hidden: true })] })[1];
-    expect(flow.active).toEqual([]);
+    expect(flow.active.map((a) => [a.name, a.hidden])).toEqual([["flow1", true]]);
     expect(flow.available).toBe(2);
     expect(flow.checkouts[0].state).toBe("dirty");
     expect(flow.rows[0].available).toBe(false);
