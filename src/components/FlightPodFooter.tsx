@@ -214,9 +214,9 @@ function PodScriptDot({
     if (isRunning) {
       items.push({ label: "Stop", action: kill });
     }
-    const bar = (e.currentTarget as HTMLElement).closest("[data-pod-footer]");
-    const barTop = bar ? bar.getBoundingClientRect().top : e.clientY;
-    showContextMenu(items, { x: e.clientX, y: barTop });
+    // No position: macOS opens the menu at the cursor. Computed page
+    // coordinates drift from screen points under zoom.
+    showContextMenu(items);
   };
 
   // Only show action icons when the script is actively running
@@ -413,6 +413,9 @@ export function FlightPodFooter({
   return (
     <div
       data-pod-footer
+      // Right-click would otherwise select the word under the cursor;
+      // inline user-select isn't reliable in WebKit (see PITFALLS).
+      className="no-select"
       style={{
         height: 28,
         display: "flex",

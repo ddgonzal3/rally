@@ -301,7 +301,9 @@ function ScriptDot({
         action: kill,
       });
     }
-    showContextMenu(items, { x: e.clientX, y: e.clientY });
+    // No position: macOS opens the menu at the cursor. Computed page
+    // coordinates drift from screen points under zoom.
+    showContextMenu(items);
   };
 
   return (
@@ -547,6 +549,7 @@ export function BuildStatusBar() {
   return (
     <div
       data-statusbar=""
+      className="no-select"
       onContextMenu={(e) => e.preventDefault()}
       style={{
         height: 28,
