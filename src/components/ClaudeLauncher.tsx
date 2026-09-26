@@ -9,7 +9,9 @@ interface ClaudeLauncherProps {
   onContinue: () => void;
   /** A ⌘K task is being set up here: show its progress instead of the
    *  launch actions, which would race the task's own Claude launch. */
-  setup?: { text: string; busy: boolean } | null;
+  setup?: { text: string; busy: boolean; prompt?: string } | null;
+  /** Re-run a stopped setup from the step that failed. */
+  onRetry?: () => void;
 }
 
 function folderName(p: string): string {
@@ -21,6 +23,7 @@ export const ClaudeLauncher = React.memo(function ClaudeLauncher({
   onLaunch,
   onContinue,
   setup,
+  onRetry,
 }: ClaudeLauncherProps) {
   return (
     <div style={styles.container}>
@@ -49,6 +52,12 @@ export const ClaudeLauncher = React.memo(function ClaudeLauncher({
           <div style={styles.setup}>
             {setup.busy && <LoadingDots />}
             <span style={styles.setupText}>{setup.text}</span>
+            {setup.prompt && <span style={styles.setupPrompt}>{setup.prompt}</span>}
+            {!setup.busy && onRetry && (
+              <span style={styles.trigger} onClick={onRetry}>
+                Retry
+              </span>
+            )}
           </div>
         ) : (
           <span
@@ -118,6 +127,21 @@ const styles: Record<string, React.CSSProperties> = {
     fontWeight: 600,
     color: "var(--text-dim)",
     letterSpacing: "0.02em",
+  },
+  setupPrompt: {
+    maxWidth: 420,
+    maxHeight: 160,
+    overflowY: "auto",
+    textAlign: "center",
+    whiteSpace: "pre-wrap",
+    fontSize: 13,
+    fontWeight: 500,
+    color: "var(--text-secondary)",
+    lineHeight: 1.45,
+    // The prompt is the one thing here worth copying.
+    userSelect: "text",
+    WebkitUserSelect: "text",
+    cursor: "text",
   },
   trigger: {
     fontSize: 13,

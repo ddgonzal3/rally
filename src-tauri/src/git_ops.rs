@@ -104,6 +104,51 @@ pub async fn fetch(cwd: &str) -> Result<(), String> {
     }
 }
 
+/// Fetch one branch from origin, updating `origin/<branch>`. Much faster
+/// than a full fetch on a checkout that hasn't fetched in a while (a full
+/// fetch of a weeks-stale Flow checkout took 14s), and a task only needs its
+/// base branch current. The limit is generous: failing here stops the task.
+pub async fn fetch_branch(cwd: &str, branch: &str) -> Result<(), String> {
+    if branch.is_empty() || branch.starts_with('-') {
+        return Err("Invalid branch name".to_string());
+    }
+    match tokio::time::timeout(
+        Duration::from_secs(90),
+        git_cmd(cwd, &["fetch", "--quiet", "origin", branch]),
+    )
+    .await
+    {
+        Ok(Ok(_)) => Ok(()),
+        Ok(Err(e)) => Err(e),
+        Err(_) => Err(format!("git fetch origin {branch} timed out after 90s")),
+    }
+}
+
+/// Branch names on origin starting with `prefix`, asked of the server
+/// directly so the answer doesn't depend on how recently this checkout
+/// fetched.
+pub async fn remote_branch_names(cwd: &str, prefix: &str) -> Result<Vec<String>, String> {
+    if prefix.starts_with('-') {
+        return Err("Invalid prefix".to_string());
+    }
+    let pattern = format!("refs/heads/{prefix}*");
+    let output = match tokio::time::timeout(
+        Duration::from_secs(30),
+        git_cmd(cwd, &["ls-remote", "--heads", "origin", &pattern]),
+    )
+    .await
+    {
+        Ok(r) => r?,
+        Err(_) => return Err("git ls-remote timed out".to_string()),
+    };
+    Ok(output
+        .lines()
+        .filter_map(|l| l.split('\t').nth(1))
+        .filter_map(|r| r.strip_prefix("refs/heads/"))
+        .map(str::to_string)
+        .collect())
+}
+
 /// Fetch then rebase onto origin/<main_branch>.
 /// If the rebase fails (e.g. conflicts), auto-aborts so the repo isn't left
 /// in a broken mid-rebase state.

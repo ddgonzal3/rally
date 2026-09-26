@@ -449,12 +449,13 @@ export function formatAge(unixSecs: number | null | undefined, nowMs: number = D
  * the step in progress, or why setup stopped. Null once the prompt is out,
  * and for resets, which never start Claude.
  */
-export function taskSetupStatus(task: PodTask | undefined): { text: string; busy: boolean } | null {
+export function taskSetupStatus(task: PodTask | undefined): { text: string; busy: boolean; prompt?: string } | null {
   if (!task || task.delivered || task.kind === "reset") return null;
   const { status, steps } = task.prep;
   if (status === "failed" || status === "interrupted") {
     const failed = steps.find((s) => s.status === "failed");
-    return { text: failed?.detail ? `Setup stopped: ${failed.detail}` : "Setup stopped", busy: false };
+    // The prompt was never sent: show it so it can't be lost.
+    return { text: failed?.detail ? `Setup stopped: ${failed.detail}` : "Setup stopped", busy: false, prompt: task.description };
   }
   if (status === "done") return null;
   const step = steps.find((s) => s.status === "running") ?? steps.find((s) => s.status === "pending");

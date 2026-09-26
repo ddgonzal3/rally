@@ -135,6 +135,14 @@ export const api = {
   gitFetch: (workspacePath: string) =>
     invoke<void>("git_fetch", { workspacePath }),
 
+  /** Fetch only `origin/<branch>` (90s limit). */
+  gitFetchBranch: (workspacePath: string, branch: string) =>
+    invoke<void>("git_fetch_branch", { workspacePath, branch }),
+
+  /** Branch names on origin starting with `prefix`, straight from the server. */
+  gitRemoteBranchNames: (workspacePath: string, prefix: string) =>
+    invoke<string[]>("git_remote_branch_names", { workspacePath, prefix }),
+
   gitPull: (workspacePath: string) =>
     invoke<string>("git_pull", { workspacePath }),
 

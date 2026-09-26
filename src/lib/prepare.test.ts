@@ -321,7 +321,7 @@ describe("task setup status", () => {
 
   it("explains a stopped setup and ignores resets", () => {
     const failed = task({ status: "failed", steps: [step("branch", "failed", { detail: "Couldn't fetch origin" })] });
-    expect(taskSetupStatus(failed)).toEqual({ text: "Setup stopped: Couldn't fetch origin", busy: false });
+    expect(taskSetupStatus(failed)).toEqual({ text: "Setup stopped: Couldn't fetch origin", busy: false, prompt: "d" });
     expect(taskSetupStatus({ ...failed, kind: "reset" })).toBeNull();
     expect(taskSetupStatus(undefined)).toBeNull();
   });

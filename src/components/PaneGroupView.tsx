@@ -1049,6 +1049,19 @@ function PaneContent({
     return undefined;
   });
   const setup = taskSetupStatus(podTask);
+  // Workspace that owns this pod, for retrying its setup.
+  const podWorkspaceId = useWorkspaceStore((s) => {
+    if (!workspaceId.startsWith("flight:")) return null;
+    const podId = workspaceId.slice("flight:".length);
+    for (const [wsId, layout] of Object.entries(s.flightLayouts)) {
+      if (layout.pods.some((p) => p.id === podId)) return wsId;
+    }
+    return null;
+  });
+  const retryTaskPrep = useWorkspaceStore((s) => s.retryTaskPrep);
+  const onRetry = podWorkspaceId
+    ? () => void retryTaskPrep(podWorkspaceId, workspaceId.slice("flight:".length))
+    : undefined;
   const recentPaneIds = useRef<string[]>([]);
   const contentRef = useRef<HTMLDivElement>(null);
   const prevPaneCountRef = useRef(panes.length);
@@ -1169,6 +1182,7 @@ function PaneContent({
                   onLaunch={() => handleLaunchClaude(pane.id)}
                   onContinue={() => handleLaunchClaude(pane.id, true)}
                   setup={setup}
+                  onRetry={onRetry}
                 />
               ) : pane.type === "claude" ? (
                 <ClaudeTerminalWrapper

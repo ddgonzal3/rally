@@ -488,6 +488,16 @@ pub async fn git_fetch(workspace_path: String) -> Result<(), String> {
 }
 
 #[tauri::command]
+pub async fn git_fetch_branch(workspace_path: String, branch: String) -> Result<(), String> {
+    git_ops::fetch_branch(&workspace_path, &branch).await
+}
+
+#[tauri::command]
+pub async fn git_remote_branch_names(workspace_path: String, prefix: String) -> Result<Vec<String>, String> {
+    git_ops::remote_branch_names(&workspace_path, &prefix).await
+}
+
+#[tauri::command]
 pub async fn git_pull(workspace_path: String) -> Result<String, String> {
     git_ops::pull(&workspace_path).await
 }

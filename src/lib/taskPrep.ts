@@ -425,15 +425,9 @@ async function runStep(workspaceId: string, podId: string, step: PrepStep): Prom
 async function refreshFacts(
   cwd: string,
   mainBranch: string,
-  { requireFetch = false } = {},
+  { fetch = true } = {},
 ): Promise<{ health: ReturnType<typeof useAgentStore.getState>["health"][string] | null; pr: PrStatus | null }> {
-  if (requireFetch) {
-    await api.gitFetch(cwd).catch((e) => {
-      throw new Error(`Couldn't fetch origin: ${String(e)}`);
-    });
-  } else {
-    await api.gitFetch(cwd).catch(() => {});
-  }
+  if (fetch) await api.gitFetch(cwd).catch(() => {});
   await useAgentStore.getState().refreshHealth(cwd, mainBranch);
   await useWorkspaceStore.getState().refreshPrStatusForPath(cwd).catch(() => {});
   return {
@@ -506,12 +500,20 @@ const claimedBranches = new Set<string>();
 
 /**
  * Branch names in use anywhere for this checkout's project: local branches
- * of every checkout (unpushed work lives only there) plus origin's.
+ * of every checkout (unpushed work lives only there), origin's branches with
+ * our prefix asked of the server (a stale checkout's remote refs miss new
+ * ones), and whatever remote refs the checkouts already know.
  */
-async function takenBranchNames(workspaceId: string, cwd: string): Promise<string[]> {
+async function takenBranchNames(workspaceId: string, cwd: string, prefix: string): Promise<string[]> {
   const cwds = listProjects(workspaceId).find((p) => p.cwds.includes(cwd))?.cwds ?? [cwd];
-  const lists = await Promise.all(cwds.map((c) => api.gitBranchNames(c).catch(() => [] as string[])));
-  return [...new Set([...lists.flat(), ...claimedBranches])];
+  const [remote, ...local] = await Promise.all([
+    api.gitRemoteBranchNames(cwd, prefix).catch((e) => {
+      console.warn("[rally] remote branch names unavailable, using local refs:", e);
+      return [] as string[];
+    }),
+    ...cwds.map((c) => api.gitBranchNames(c).catch(() => [] as string[])),
+  ]);
+  return [...new Set([...remote, ...local.flat(), ...claimedBranches])];
 }
 
 /**
@@ -521,7 +523,17 @@ async function takenBranchNames(workspaceId: string, cwd: string): Promise<strin
  * `stayOnDefault` repos fast-forward the default branch instead.
  */
 async function runBranchStep(workspaceId: string, cwd: string, mainBranch: string, resolved: ResolvedPrepare, pod: FlightPod): Promise<StepOutcome> {
-  const { health, pr } = await refreshFacts(cwd, mainBranch, { requireFetch: true });
+  // Only the base branch must be current; fetching just it keeps a stale
+  // checkout from timing out the whole task.
+  await useAgentStore.getState().refreshHealth(cwd, mainBranch);
+  const defaultBranch = useAgentStore.getState().health[cwd]?.default_branch;
+  if (!defaultBranch) return { status: "failed", detail: "Checkout state unknown" };
+  try {
+    await api.gitFetchBranch(cwd, defaultBranch);
+  } catch (e) {
+    return { status: "failed", detail: `Couldn't update origin/${defaultBranch}: ${String(e)}` };
+  }
+  const { health, pr } = await refreshFacts(cwd, mainBranch, { fetch: false });
   if (!health) return { status: "failed", detail: "Checkout state unknown" };
   if (health.dirty) return { status: "failed", detail: `Uncommitted changes in ${folderName(cwd)}; not switching branches.` };
   if (health.ignorable_paths.length > 0) await api.gitRestorePaths(cwd, health.ignorable_paths).catch(() => {});
@@ -545,7 +557,7 @@ async function runBranchStep(workspaceId: string, cwd: string, mainBranch: strin
   }
 
   const prefix = resolved.branchPrefix ?? defaultBranchPrefix(health.user_name);
-  const taken = await takenBranchNames(workspaceId, cwd);
+  const taken = await takenBranchNames(workspaceId, cwd, prefix);
   const task = pod.task!;
   const agentName = pod.label ?? folderName(cwd);
   const wanted =
