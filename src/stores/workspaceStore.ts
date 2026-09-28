@@ -436,7 +436,7 @@ interface WorkspaceState {
   /** Cached RALLY.json configs per repo path (not persisted) */
   rallyConfigs: Record<string, RallyConfig>;
   /** Which script's drawer is currently open, or null */
-  statusBarDrawer: { repoPath: string; scriptName: string; hoverMode: boolean } | null;
+  statusBarDrawer: { repoPath: string; scriptName: string; hoverMode: boolean; pinned: boolean } | null;
   /** Detected localhost ports keyed by workspace ID */
   detectedPorts: Record<string, DetectedPort[]>;
   addDetectedPort: (workspaceId: string, port: DetectedPort) => void;
@@ -470,6 +470,7 @@ interface WorkspaceState {
   openStatusBarDrawer: (repoPath: string, scriptName: string, hoverMode?: boolean) => void;
   closeStatusBarDrawer: () => void;
   closeDrawerIfHover: () => void;
+  toggleStatusBarDrawerPin: () => void;
   addToStatusBar: (rootPath: string, scriptName: string) => Promise<void>;
   removeFromStatusBar: (rootPath: string, scriptName: string) => Promise<void>;
 
@@ -1203,9 +1204,9 @@ export const useWorkspaceStore = create<WorkspaceState>()(
     const isSame = current?.repoPath === repoPath && current?.scriptName === scriptName;
 
     if (hoverMode) {
-      // Don't override a click-mode drawer for the same script
-      if (isSame && !current!.hoverMode) return;
-      set({ statusBarDrawer: { repoPath, scriptName, hoverMode: true } });
+      // Don't override a pinned drawer, or a click-mode drawer for the same script
+      if (current?.pinned || (isSame && !current!.hoverMode)) return;
+      set({ statusBarDrawer: { repoPath, scriptName, hoverMode: true, pinned: false } });
       return;
     }
 
@@ -1213,7 +1214,7 @@ export const useWorkspaceStore = create<WorkspaceState>()(
     if (isSame && !current!.hoverMode) {
       set({ statusBarDrawer: null });
     } else {
-      set({ statusBarDrawer: { repoPath, scriptName, hoverMode: false } });
+      set({ statusBarDrawer: { repoPath, scriptName, hoverMode: false, pinned: !!current?.pinned } });
     }
   },
 
@@ -1224,9 +1225,16 @@ export const useWorkspaceStore = create<WorkspaceState>()(
 
   closeDrawerIfHover: () => {
     const current = get().statusBarDrawer;
-    if (current?.hoverMode) {
+    if (current?.hoverMode && !current.pinned) {
       set({ statusBarDrawer: null });
     }
+  },
+
+  toggleStatusBarDrawerPin: () => {
+    const current = get().statusBarDrawer;
+    if (!current) return;
+    cancelDrawerHoverClose();
+    set({ statusBarDrawer: { ...current, pinned: !current.pinned } });
   },
 
   addToStatusBar: async (rootPath, scriptName) => {

@@ -45,13 +45,14 @@ export function BuildStatusDrawer() {
   const clearScript = useWorkspaceStore((s) => s.clearScript);
   const scriptRuns = useWorkspaceStore((s) => s.scriptRuns);
   const theme = useWorkspaceStore((s) => s.theme);
+  const toggleStatusBarDrawerPin = useWorkspaceStore((s) => s.toggleStatusBarDrawerPin);
+  const pinned = drawer?.pinned ?? false;
 
   const panelRef = useRef<HTMLDivElement>(null);
   const termRef = useRef<HTMLDivElement>(null);
   const xtermRef = useRef<XTerminal | null>(null);
   const fitAddonRef = useRef<FitAddon | null>(null);
   const [height, setHeight] = useState(233);
-  const [pinned, setPinned] = useState(false);
   const dragging = useRef(false);
 
   // Slide animation state
@@ -378,8 +379,8 @@ export function BuildStatusDrawer() {
         <div style={{ display: "flex", alignItems: "center", gap: 2 }}>
           {/* Pin */}
           <button
-            onClick={(e) => { e.stopPropagation(); setPinned((p) => !p); }}
-            title={pinned ? "Unpin (click outside will close)" : "Pin open"}
+            onClick={(e) => { e.stopPropagation(); toggleStatusBarDrawerPin(); }}
+            title={pinned ? "Unpin" : "Pin open"}
             style={drawerBtnStyle}
           >
             {pinned ? (
