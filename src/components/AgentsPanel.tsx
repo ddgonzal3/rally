@@ -119,8 +119,8 @@ function checkoutMenu(cwd: string): MenuAction[] {
   const note = useCheckoutStore.getState().notes[cwd];
   return [
     { label: note?.busy ? "Clear busy mark" : "Mark as busy outside Rally", action: () => useCheckoutStore.getState().setBusy(cwd, !note?.busy) },
-    { label: note?.label ? "Edit work label…" : "Add work label…", action: () => document.dispatchEvent(new CustomEvent("rally:edit-checkout-label", { detail: cwd })) },
-    ...(note?.label ? [{ label: "Remove work label", action: () => useCheckoutStore.getState().setLabel(cwd, "") }] : []),
+    { label: note?.label ? "Edit label…" : "Add label…", action: () => document.dispatchEvent(new CustomEvent("rally:edit-checkout-label", { detail: cwd })) },
+    ...(note?.label ? [{ label: "Remove label", action: () => useCheckoutStore.getState().setLabel(cwd, "") }] : []),
   ];
 }
 
@@ -138,10 +138,10 @@ function CheckoutLabelEditor() {
   }, []);
   if (!cwd) return null;
   return createPortal(
-    <form role="dialog" aria-modal="false" aria-label={`Work label for ${folderName(cwd)}`} style={styles.labelEditor}
+    <form role="dialog" aria-modal="false" aria-label={`Label for ${folderName(cwd)}`} style={styles.labelEditor}
       onSubmit={(e) => { e.preventDefault(); useCheckoutStore.getState().setLabel(cwd, label); setCwd(null); }}
       onKeyDown={(e) => { e.stopPropagation(); if (e.key === "Escape") { e.preventDefault(); setCwd(null); } }}>
-      <label htmlFor="checkout-work-label" style={{ fontSize: 13, fontWeight: 500 }}>Work label for {folderName(cwd)}</label>
+      <label htmlFor="checkout-work-label" style={{ fontSize: 13, fontWeight: 500 }}>Label for {folderName(cwd)}</label>
       <input id="checkout-work-label" key={cwd} autoFocus maxLength={100} value={label} onChange={(e) => setLabel(e.target.value)} placeholder="What are you working on?" style={styles.labelInput} />
       <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
         <button type="button" style={styles.labelButton} onClick={() => setCwd(null)}>Cancel</button>
