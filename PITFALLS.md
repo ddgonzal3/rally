@@ -179,3 +179,9 @@ Checkouts of one project share a remote, and unpushed branches live only in the 
 ## An Idle Claude Can Still Own a Checkout
 
 `status: idle` only means Claude isn't mid-turn. A Claude waiting on you after a reply is still using the checkout, and ⌘K used to treat it as free (it even preferred checkouts with idle pods). "In use" is now: any live session (in a Rally pod, another terminal, or another Rally) whose cwd is the checkout or inside it, that is busy/waiting or has a conversation. `has_conversation` means the session's transcript (`~/.claude/projects/<cwd with non-alphanumerics as '-'>/<sessionId>.jsonl`) holds an `assistant` line. Don't key on user lines: `/clear` and `/model` log non-meta user entries without any conversation, and `/clear` starts a new session id, so a cleared Claude correctly reads as free.
+
+## Full Freezes: Accessibility ⇄ WebKit Deadlock
+
+Rally froze solid (beachball, force-quit only) with the main thread in `HIToolbox EventObserver → AXUIElementGetFocusedUIElementBounds → mach_msg`, waiting on its own WebKit content process, while that process sat in `WebKit::isAXAuthenticatedCallback → IPC::Connection::sendSyncMessage` waiting on the main thread. Neither side times out. Captured once (2026-09-24); the trigger for HIToolbox's focused-element query is not yet known.
+
+A freeze leaves no trace once force-quit, so `hang_watchdog.rs` pings the main thread every 2s and, after 8s without an answer, samples Rally plus its WebKit helpers into `~/.rally/hangs/` and logs to `~/.rally/hangs/log.txt`. An "unresponsive" line without a "recovered" line is a real freeze. Read those samples before theorizing about any new hang. Test builds can trigger it with the `rally-debug-block-main` event.

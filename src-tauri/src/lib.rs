@@ -4,6 +4,7 @@ pub mod commands;
 pub mod config_ops;
 pub mod git_ops;
 pub mod git_watch;
+pub mod hang_watchdog;
 pub mod parked_threads;
 pub mod pty_manager;
 pub mod search_ops;

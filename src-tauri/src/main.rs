@@ -541,6 +541,9 @@ fn main() {
             // Start the CLI server (localhost HTTP listener for `rally` CLI and rally-park skill)
             rally::cli_server::start(app.handle().clone());
 
+            // Leave a stack sample in ~/.rally/hangs/ whenever the main thread freezes.
+            rally::hang_watchdog::start(app.handle().clone());
+
             // Install Rally-managed Claude slash commands to ~/.claude/commands.
             // Idempotent overwrite — Rally owns these files, version-locked to the app.
             install_rally_commands();
