@@ -2,6 +2,10 @@
 
 Hard-won lessons. Read before starting work. Add new entries when you discover them.
 
+## Sidebar Folder Clicks Must Stay in Rally
+
+A checkout with an open PR can have no panel and be unavailable for a new task. Its sidebar row must still reveal or create a panel for that checkout. Do not use the PR URL as the row's fallback action; opening GitHub belongs to the PR badge and context menu.
+
 ## Tauri Config Changes Require Full Rebuild
 
 Changes to `src-tauri/capabilities/default.json`, `tauri.conf.json`, or **any Rust code** (`.rs` files) are NOT picked up by the Vite watcher / hot-reload. After making such changes, always run `./scripts/run.sh` (kill → rebuild → relaunch). Only pure frontend changes (TSX/CSS/TS) hot-reload via the watcher.
