@@ -65,7 +65,7 @@ export interface CheckoutEntry {
 export type AgentDot = "working" | "waiting" | null;
 
 export interface AgentEntry {
-  /** Null for a checkout with no panel (click starts a task there, or opens its PR). */
+  /** Null for a checkout with no panel (click starts a task if free, or opens a panel). */
   podId: string | null;
   /** Free to take a task (no panel active, clean, no open PR). */
   available: boolean;

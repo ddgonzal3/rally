@@ -8,6 +8,7 @@ import { showContextMenu, type MenuAction, type SubMenuAction } from "../lib/con
 import { useSidebarModel } from "../lib/useSidebarModel";
 import type { AgentEntry, ProjectEntry } from "../lib/sidebarModel";
 import type { PrStatus } from "../lib/types";
+import { FLIGHT_DEFAULT_CLAUDE_WIDTH, FLIGHT_DEFAULT_CLAUDE_HEIGHT } from "../lib/types";
 import { markPtyInput } from "../lib/ptyActivity";
 import { api, openUrl } from "../lib/tauri";
 import { addToast } from "./ToastContainer";
@@ -18,7 +19,8 @@ import { addToast } from "./ToastContainer";
  * working (amber) or needing input (plain status), failed preparation, open PRs.
  * Expanded, every checkout is a row, so nothing open is unreachable.
  * Clicking a project starts a task there (⌘K with the project chosen);
- * clicking a row reveals its panel, or starts a task when it has none.
+ * Clicking a row reveals its panel, or starts a task in a free checkout.
+ * Occupied checkouts can still be opened without starting a new task.
  * Hide, Stop, Clear and Reset live in the row's context menu.
  */
 export function AgentsPanel() {
@@ -233,7 +235,16 @@ function AgentRow({ workspaceId, entry, project, indent, selected }: { workspace
   const open = () => {
     if (podId) revealPod(workspaceId, podId);
     else if (entry.available) openLauncher({ cwd: entry.cwd });
-    else if (entry.pr) openUrl(entry.pr.url);
+    else {
+      const store = useWorkspaceStore.getState();
+      const layout = store.getOrCreateFlightLayout(workspaceId);
+      let checkoutPod = layout.pods.find((p) => p.type === "claude" && p.cwd === entry.cwd);
+      if (!checkoutPod) {
+        store.addFlightPodAt(workspaceId, "claude", 0, 0, FLIGHT_DEFAULT_CLAUDE_WIDTH, FLIGHT_DEFAULT_CLAUDE_HEIGHT, entry.cwd);
+        checkoutPod = useWorkspaceStore.getState().flightLayouts[workspaceId]?.pods.find((p) => p.type === "claude" && p.cwd === entry.cwd);
+      }
+      if (checkoutPod) revealPod(workspaceId, checkoutPod.id);
+    }
   };
 
   const menu = () => {
