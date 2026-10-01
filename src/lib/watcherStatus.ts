@@ -49,6 +49,15 @@ function isIgnorableErrorLine(line: string): boolean {
     /prone to errors that have security implications/i.test(line);
 }
 
+/**
+ * Output from a type checker running beside the build, which never blocks a
+ * sync (Flow's watch-fe.sh tags it "[typecheck]"). Its errors are real but
+ * say nothing about whether the build went live, so they don't set status.
+ */
+function isTypecheckSideChannel(line: string): boolean {
+  return /^\[typecheck\]/i.test(line);
+}
+
 function hasWatcherError(line: string): boolean {
   if (!line || isIgnorableErrorLine(line)) return false;
   return WATCHER_ERROR_PATTERNS.some((pattern) => pattern.test(line));
@@ -86,7 +95,7 @@ function applyWatcherText(
   let completions = 0;
   for (const raw of text.split("\n")) {
     const line = normalizeLine(raw);
-    if (!line) continue;
+    if (!line || isTypecheckSideChannel(line)) continue;
     if (hasBuilding(line)) {
       nextStatus = "building";
     }
