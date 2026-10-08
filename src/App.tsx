@@ -2024,22 +2024,24 @@ export function App() {
   return (
     <div style={styles.app}>
       <ThemeBackground />
+      {/* The sidebar's frosted surface: one piece from the window's top edge
+          to the bottom, behind the traffic lights and the sidebar list. Two
+          pieces would each blur on their own and leave a seam where they met.
+          Tracks the sidebar's width (zoomed) and its collapse motion. */}
+      <div
+        style={{
+          ...styles.sidebarSurface,
+          width: agentSidebarCollapsed ? 0 : agentSidebarWidth * zoomLevel,
+          transition: agentSidebarResizing ? "none" : `width ${SIDEBAR_DURATION_MS}ms ${SIDEBAR_EASING}`,
+        }}
+      />
       <div
         data-tauri-drag-region
         style={styles.titlebar}
         onMouseDown={handleDrag}
       >
-        {/* The strip has no surface of its own: above the sidebar it wears the
-            sidebar tint, above the main area the app background, so both run
-            up to the window's top edge. Both halves track the sidebar's width
-            (zoomed) and its collapse motion. */}
-        <div
-          style={{
-            ...styles.titlebarSidebar,
-            width: agentSidebarCollapsed ? 0 : agentSidebarWidth * zoomLevel,
-            transition: agentSidebarResizing ? "none" : `width ${SIDEBAR_DURATION_MS}ms ${SIDEBAR_EASING}`,
-          }}
-        />
+        {/* Above the sidebar the strip is see-through (the sidebar surface
+            shows); above the main area it wears the app background. */}
         <div
           style={{
             ...styles.titlebarFill,
@@ -2572,14 +2574,16 @@ const styles: Record<string, React.CSSProperties> = {
     position: "relative",
     paddingLeft: 70,
   },
-  titlebarSidebar: {
+  sidebarSurface: {
     position: "absolute",
     top: 0,
     left: 0,
     bottom: 0,
-    background: "var(--sidebar-bg)",
+    // Longhands, not `background`: the shorthand would reset the grain image.
+    backgroundColor: "var(--sidebar-bg)",
     backdropFilter: "var(--surface-frost)",
     WebkitBackdropFilter: "var(--surface-frost)",
+    backgroundImage: "var(--surface-grain)",
     pointerEvents: "none",
   },
   titlebarFill: {

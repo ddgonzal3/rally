@@ -85,6 +85,7 @@ const styles: Record<string, React.CSSProperties> = {
     background: "var(--terminal-bg)",
     backdropFilter: "var(--surface-frost)",
     WebkitBackdropFilter: "var(--surface-frost)",
+    backgroundImage: "var(--surface-grain)",
     minHeight: 0,
     minWidth: 0,
     gap: 0,
