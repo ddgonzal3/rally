@@ -15,6 +15,9 @@ export function applyTheme(values: ThemeValues): void {
   root.style.colorScheme = values.appearance === "light" ? "light" : "dark";
   // macOS frost only blurs the desktop. Over a background image, see-through
   // surfaces (sidebar, terminals) blur the image themselves.
+  const dots = values["canvas-dots"];
+  const showDots = dots === "on" || (dots !== "off" && !values["background-image"]);
+  root.style.setProperty("--canvas-dots-display", showDots ? "block" : "none");
   root.style.setProperty(
     "--surface-frost",
     values["background-image"] ? `blur(${Number(values["frost-blur"])}px) saturate(160%)` : "none",
