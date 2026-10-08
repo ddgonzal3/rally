@@ -189,3 +189,11 @@ Checkouts of one project share a remote, and unpushed branches live only in the 
 Rally froze solid (beachball, force-quit only) with the main thread in `HIToolbox EventObserver → AXUIElementGetFocusedUIElementBounds → mach_msg`, waiting on its own WebKit content process, while that process sat in `WebKit::isAXAuthenticatedCallback → IPC::Connection::sendSyncMessage` waiting on the main thread. Neither side times out. Captured once (2026-09-24); the trigger for HIToolbox's focused-element query is not yet known.
 
 A freeze leaves no trace once force-quit, so `hang_watchdog.rs` pings the main thread every 2s and, after 8s without an answer, samples Rally plus its WebKit helpers into `~/.rally/hangs/` and logs to `~/.rally/hangs/log.txt`. An "unresponsive" line without a "recovered" line is a real freeze. Read those samples before theorizing about any new hang. Test builds can trigger it with the `rally-debug-block-main` event.
+
+## See-Through Terminal Backgrounds Render Black
+
+Three separate things turn a translucent `--terminal-bg` black or too dark: (1) xterm forces every background opaque unless `allowTransparency` is on; (2) `xterm.css` paints `.xterm-viewport` solid `#000`, hidden only while the canvas is opaque; (3) xterm paints its background on several layers, and any extra wrapper painting `--terminal-bg` compounds the alpha (two 50% layers read as 75%). `getXtermTheme()` passes a fully transparent background plus `allowTransparency` when the theme color is translucent, `index.html` overrides the viewport black (`!important`, xterm.css loads later), and only the `Terminal` container div paints the color. Verify with a real screenshot: code inspection missed (2) twice.
+
+## Backdrop Blur Is Only for Theme Background Images
+
+macOS frost (`NSVisualEffectView`) blurs the desktop, never content inside the webview. With a theme background image, see-through surfaces blur it themselves via `backdrop-filter: var(--surface-frost)`, which `applyTheme` sets to `none` when no image is set. New see-through surfaces (anything showing the sidebar tint or terminal color over the window) need that same property.

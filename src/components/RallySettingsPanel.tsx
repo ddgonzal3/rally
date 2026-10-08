@@ -53,11 +53,11 @@ function ToggleRow({
         style={{
           ...styles.toggleSwitch,
           background: enabled
-            ? "rgba(120, 180, 255, 0.35)"
-            : "rgba(255, 255, 255, 0.08)",
+            ? "color-mix(in srgb, var(--toggle-on) 35%, transparent)"
+            : "color-mix(in srgb, var(--tint) 8%, transparent)",
           borderColor: enabled
-            ? "rgba(120, 180, 255, 0.45)"
-            : "rgba(255, 255, 255, 0.15)",
+            ? "color-mix(in srgb, var(--toggle-on) 45%, transparent)"
+            : "color-mix(in srgb, var(--tint) 15%, transparent)",
         }}
         role="switch"
         aria-checked={enabled}
@@ -149,7 +149,7 @@ const styles: Record<string, React.CSSProperties> = {
     width: 32,
     height: 18,
     borderRadius: 9,
-    border: "1px solid rgba(255, 255, 255, 0.15)",
+    border: "1px solid color-mix(in srgb, var(--tint) 15%, transparent)",
     padding: 1,
     position: "relative",
     cursor: "pointer",

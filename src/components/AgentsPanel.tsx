@@ -303,7 +303,7 @@ function AgentRow({ workspaceId, entry, project, indent, selected }: { workspace
         ...styles.row,
         height: 28,
         minHeight: 28,
-        paddingLeft: indent ? 16 : 8,
+        paddingLeft: indent ? 20 : 6,
         background: selected && !entry.hidden ? "color-mix(in srgb, var(--text-primary) 9%, transparent)" : hovered ? "var(--bg-hover)" : "transparent",
         boxShadow: selected && !entry.hidden ? "inset 0 0 0 1px color-mix(in srgb, var(--text-primary) 4%, transparent)" : "none",
         opacity: entry.hidden ? 0.65 : 1,
@@ -393,11 +393,11 @@ const PROJECT_ROW_H = 28;
 
 const styles: Record<string, React.CSSProperties> = {
   busyLabel: { fontSize: 11, fontWeight: 500, color: "var(--text-secondary)", flexShrink: 0 },
-  labelEditor: { position: "fixed", top: "25%", left: "50%", transform: "translateX(-50%)", width: 320, maxWidth: "calc(100vw - 32px)", zIndex: 10000, display: "flex", flexDirection: "column", gap: 12, padding: 16, borderRadius: 10, background: "rgba(36, 36, 36, 0.78)", backdropFilter: "blur(20px) saturate(180%)", border: "1px solid rgba(255, 255, 255, 0.12)", color: "#ddd", boxShadow: "0 8px 30px rgba(0,0,0,0.25)" },
-  labelInput: { width: "100%", boxSizing: "border-box", fontFamily: "inherit", fontSize: 13, fontWeight: 500, padding: "7px 8px", borderRadius: 6, border: "1px solid rgba(255,255,255,0.12)", background: "rgba(255,255,255,0.06)", color: "#ddd", outline: "none" },
-  labelButton: { fontFamily: "inherit", fontSize: 12, fontWeight: 500, padding: "5px 10px", borderRadius: 6, border: "1px solid rgba(255,255,255,0.12)", background: "rgba(255,255,255,0.06)", color: "#ddd", cursor: "pointer" },
+  labelEditor: { position: "fixed", top: "25%", left: "50%", transform: "translateX(-50%)", width: 320, maxWidth: "calc(100vw - 32px)", zIndex: 10000, display: "flex", flexDirection: "column", gap: 12, padding: 16, borderRadius: 10, background: "var(--frosted-bg)", backdropFilter: "blur(20px) saturate(180%)", border: "1px solid var(--border-subtle)", color: "var(--text-primary)", boxShadow: "0 8px 30px rgba(0,0,0,0.25)" },
+  labelInput: { width: "100%", boxSizing: "border-box", fontFamily: "inherit", fontSize: 13, fontWeight: 500, padding: "7px 8px", borderRadius: 6, border: "1px solid var(--border-subtle)", background: "color-mix(in srgb, var(--tint) 6%, transparent)", color: "var(--text-primary)", outline: "none" },
+  labelButton: { fontFamily: "inherit", fontSize: 12, fontWeight: 500, padding: "5px 10px", borderRadius: 6, border: "1px solid var(--border-subtle)", background: "color-mix(in srgb, var(--tint) 6%, transparent)", color: "var(--text-primary)", cursor: "pointer" },
   panel: { display: "flex", flexDirection: "column", height: "100%", background: "transparent", overflow: "hidden" },
-  body: { flex: 1, minHeight: 0, overflow: "auto", padding: "6px 8px 16px", display: "flex", flexDirection: "column" },
+  body: { flex: 1, minHeight: 0, overflow: "auto", padding: "6px 4px 16px", display: "flex", flexDirection: "column" },
   group: { display: "flex", flexDirection: "column", marginBottom: 3 },
   projectRow: {
     height: PROJECT_ROW_H,
@@ -405,7 +405,7 @@ const styles: Record<string, React.CSSProperties> = {
     display: "flex",
     alignItems: "center",
     gap: 8,
-    padding: "0 12px 0 8px",
+    padding: "0 6px",
     borderRadius: 9,
     cursor: "pointer",
     transition: "background 100ms ease",

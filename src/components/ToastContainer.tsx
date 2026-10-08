@@ -40,9 +40,9 @@ export const addToast = useToastStore.getState().addToast;
 // --- Individual Toast ---
 
 const TYPE_COLORS: Record<Toast["type"], string> = {
-  info: "#3b82f6",
-  success: "#22c55e",
-  warning: "#f59e0b",
+  info: "var(--accent)",
+  success: "var(--notice-success)",
+  warning: "var(--notice-warning)",
 };
 
 function ToastCard({ toast, onDismiss }: { toast: Toast; onDismiss: () => void }) {

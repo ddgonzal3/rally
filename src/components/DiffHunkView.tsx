@@ -198,9 +198,9 @@ function DiffLineRow({
 }) {
   const bg =
     line.type === "add"
-      ? "rgba(63, 185, 80, 0.12)"
+      ? "color-mix(in srgb, var(--diff-added) 12%, transparent)"
       : line.type === "delete"
-        ? "rgba(248, 81, 73, 0.12)"
+        ? "color-mix(in srgb, var(--diff-removed) 12%, transparent)"
         : "transparent";
   const lineNum =
     line.type === "add"
@@ -208,9 +208,9 @@ function DiffLineRow({
       : line.oldLineNumber;
   const barColor =
     line.type === "add"
-      ? "rgba(63, 185, 80, 0.55)"
+      ? "color-mix(in srgb, var(--diff-added) 55%, transparent)"
       : line.type === "delete"
-        ? "rgba(248, 81, 73, 0.55)"
+        ? "color-mix(in srgb, var(--diff-removed) 55%, transparent)"
         : "transparent";
 
   return (
@@ -229,7 +229,7 @@ function DiffLineRow({
 
 const styles: Record<string, React.CSSProperties> = {
   container: {
-    fontFamily: "'SF Mono', 'Menlo', 'Monaco', 'Courier New', monospace",
+    fontFamily: "var(--font-mono)",
     fontSize: 12,
     lineHeight: "20px",
   },

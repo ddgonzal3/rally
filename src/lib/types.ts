@@ -261,7 +261,6 @@ export interface WorkspaceReadiness {
 
 export type WorkspaceMode = "flight" | "dev" | "product";
 
-export type ThemeName = 'dark' | 'dimmed' | 'light';
 
 export interface ProductSession {
   state: "idle" | "active";

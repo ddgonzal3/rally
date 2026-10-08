@@ -11,4 +11,5 @@ pub mod search_ops;
 pub mod shell_env;
 #[cfg(feature = "test-bridge")]
 pub mod test_server;
+pub mod theme_ops;
 pub mod workspace;

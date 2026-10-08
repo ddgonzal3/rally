@@ -240,9 +240,9 @@ export function CommitModal({
               {(additions > 0 || deletions > 0) && (
                 <>
                   {"  "}
-                  <span style={{ color: "#3fb950", fontWeight: 500 }}>+{additions}</span>
+                  <span style={{ color: "var(--status-green)", fontWeight: 500 }}>+{additions}</span>
                   {" "}
-                  <span style={{ color: "#f85149", fontWeight: 500 }}>-{deletions}</span>
+                  <span style={{ color: "var(--status-red)", fontWeight: 500 }}>-{deletions}</span>
                 </>
               )}
             </span>
@@ -256,7 +256,7 @@ export function CommitModal({
               onClick={() => setIncludeUnstaged((v) => !v)}
               style={{
                 ...st.toggle,
-                background: includeUnstaged ? "#3b82f6" : "var(--border)",
+                background: includeUnstaged ? "var(--accent)" : "var(--border)",
                 justifyContent: includeUnstaged ? "flex-end" : "flex-start",
               }}
             >

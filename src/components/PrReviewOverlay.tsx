@@ -97,11 +97,11 @@ function buildTimeline(comments: PrComment[], reviews: PrReview[]): TimelineItem
 function reviewStateBadge(state: string): { label: string; color: string; bg: string } | null {
   switch (state) {
     case "APPROVED":
-      return { label: "Approved", color: "#7ddf7d", bg: "rgba(63, 185, 80, 0.12)" };
+      return { label: "Approved", color: "var(--success-text)", bg: "color-mix(in srgb, var(--status-green) 12%, transparent)" };
     case "CHANGES_REQUESTED":
-      return { label: "Changes requested", color: "#f85149", bg: "rgba(248, 81, 73, 0.12)" };
+      return { label: "Changes requested", color: "var(--status-red)", bg: "color-mix(in srgb, var(--status-red) 12%, transparent)" };
     case "DISMISSED":
-      return { label: "Dismissed", color: "#e0e0e0", bg: "rgba(136, 136, 136, 0.12)" };
+      return { label: "Dismissed", color: "var(--text-primary)", bg: "color-mix(in srgb, var(--text-dim) 12%, transparent)" };
     default:
       return null;
   }
@@ -559,16 +559,16 @@ export function PrReviewContent({
         {prNumber != null && (
           <>
             {prMergeable === "MERGEABLE" && (
-              <span style={{ ...st.statusPill, color: "#7ddf7d" }}>No conflicts</span>
+              <span style={{ ...st.statusPill, color: "var(--success-text)" }}>No conflicts</span>
             )}
             {prMergeable === "CONFLICTING" && (
-              <span style={{ ...st.statusPill, color: "#f85149" }}>Conflicts</span>
+              <span style={{ ...st.statusPill, color: "var(--status-red)" }}>Conflicts</span>
             )}
             {prReviewDecision === "APPROVED" && (
-              <span style={{ ...st.statusPill, color: "#7ddf7d" }}>Approved</span>
+              <span style={{ ...st.statusPill, color: "var(--success-text)" }}>Approved</span>
             )}
             {prReviewDecision === "CHANGES_REQUESTED" && (
-              <span style={{ ...st.statusPill, color: "#f85149" }}>Changes requested</span>
+              <span style={{ ...st.statusPill, color: "var(--status-red)" }}>Changes requested</span>
             )}
           </>
         )}
@@ -662,7 +662,7 @@ export function PrReviewContent({
                 <span style={{ fontSize: 13, color: "var(--text-primary)" }}>No open PR for this branch</span>
               ) : (
                 <>
-                  <span style={{ color: "#f85149" }}>Failed to load PR</span>
+                  <span style={{ color: "var(--status-red)" }}>Failed to load PR</span>
                   <br />
                   <span style={{ fontSize: 12, color: "var(--text-primary)", marginTop: 8, display: "block" }}>{error}</span>
                 </>
@@ -732,10 +732,10 @@ const chevronCollapsed: React.CSSProperties = { flexShrink: 0 };
 const folderIconStyle: React.CSSProperties = { flexShrink: 0 };
 
 const statusColors: Record<string, string> = {
-  new: "#7ddf7d",
-  deleted: "#f85149",
-  renamed: "#d2a8ff",
-  modified: "#e3b341",
+  new: "var(--success-text)",
+  deleted: "var(--status-red)",
+  renamed: "var(--diff-renamed)",
+  modified: "var(--change-modified)",
 };
 function getStatusColor(file: DiffFile): string {
   return file.isNew ? statusColors.new
@@ -954,7 +954,7 @@ const st: Record<string, React.CSSProperties> = {
   },
   diffStats: {
     fontSize: 12,
-    fontFamily: "'SF Mono', 'Menlo', monospace",
+    fontFamily: "var(--font-mono)",
     fontWeight: 600,
     flexShrink: 0,
     letterSpacing: "-0.01em",
@@ -976,7 +976,7 @@ const st: Record<string, React.CSSProperties> = {
     fontSize: 13,
     fontWeight: 600,
     color: "var(--text-primary)",
-    fontFamily: "'SF Mono', 'Menlo', monospace",
+    fontFamily: "var(--font-mono)",
     flexShrink: 0,
     lineHeight: "20px",
   },
@@ -1085,8 +1085,8 @@ const st: Record<string, React.CSSProperties> = {
     flexShrink: 0,
   },
   actionBtnDanger: {
-    background: "rgba(248, 81, 73, 0.15)",
-    color: "#f85149",
+    background: "color-mix(in srgb, var(--status-red) 15%, transparent)",
+    color: "var(--status-red)",
   },
   mergeNote: {
     fontSize: 10,
@@ -1135,7 +1135,7 @@ const st: Record<string, React.CSSProperties> = {
     width: 14,
     fontSize: 11,
     fontWeight: 700,
-    fontFamily: "'SF Mono', 'Menlo', monospace",
+    fontFamily: "var(--font-mono)",
     textAlign: "center" as const,
     flexShrink: 0,
   },
@@ -1249,14 +1249,14 @@ const st: Record<string, React.CSSProperties> = {
   },
   commitSha: {
     fontSize: 12,
-    fontFamily: "'SF Mono', 'Menlo', monospace",
+    fontFamily: "var(--font-mono)",
     fontWeight: 600,
-    color: "#58a6ff",
+    color: "var(--status-blue)",
     cursor: "pointer",
     flexShrink: 0,
     padding: "3px 8px",
     borderRadius: 6,
-    background: "#1a2332",
+    background: "color-mix(in srgb, var(--status-blue) 10%, var(--bg-surface))",
     transition: "background 150ms",
   },
   // Conversation tab
@@ -1290,7 +1290,7 @@ const st: Record<string, React.CSSProperties> = {
     fontWeight: 600,
     padding: "2px 7px",
     borderRadius: 10,
-    background: "rgba(136, 136, 136, 0.12)",
+    background: "color-mix(in srgb, var(--text-dim) 12%, transparent)",
     color: "var(--text-primary)",
     textTransform: "uppercase" as const,
     letterSpacing: "0.03em",

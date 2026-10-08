@@ -426,7 +426,7 @@ function InlineInput({
             flex: 1,
             minWidth: 0,
             background: "transparent",
-            border: "1px solid #007acc",
+            border: "1px solid var(--focus-border)",
             borderRadius: 2,
             color: "var(--text-primary)",
             fontSize: 12,
@@ -436,7 +436,7 @@ function InlineInput({
             marginLeft: 2,
             outline: "none",
             lineHeight: "normal",
-            boxShadow: "0 0 0 1px rgba(0,122,204,0.3)",
+            boxShadow: "0 0 0 1px color-mix(in srgb, var(--focus-border) 30%, transparent)",
             WebkitUserSelect: "text",
             userSelect: "text",
           } as React.CSSProperties
@@ -1376,7 +1376,7 @@ function PrBadge({
   onClick?: () => void;
 }) {
   if (!pr || pr.state !== "OPEN") return null;
-  const color = pr.is_draft ? "#e8b930" : "var(--text-secondary)";
+  const color = pr.is_draft ? "var(--pr-draft)" : "var(--text-secondary)";
   return (
     <button
       onClick={(e) => {
@@ -1446,11 +1446,10 @@ function GitStatusIcon({
             right: changeCount < 10 ? -2 : -4,
             fontSize: 10,
             fontWeight: 700,
-            fontFamily:
-              "-apple-system, BlinkMacSystemFont, 'SF Pro Text', system-ui, sans-serif",
+            fontFamily: "var(--font-ui)",
             lineHeight: "14px",
             color: "#fff",
-            background: "#3478e0",
+            background: "var(--accent)",
             borderRadius: 7,
             padding: "0 4px",
             minWidth: 14,
@@ -2066,12 +2065,12 @@ function RootSection({
                   )}
                   {forcePullConfirm && (
                     <div style={{ display: "inline-flex", alignItems: "center", gap: 3 }} onClick={(e) => e.stopPropagation()}>
-                      <span style={{ fontSize: 10, color: "#e8a838", whiteSpace: "nowrap" }}>Reset to remote?</span>
+                      <span style={{ fontSize: 10, color: "var(--warning-text)", whiteSpace: "nowrap" }}>Reset to remote?</span>
                       <button
                         onClick={handleForcePull}
                         disabled={syncing}
                         style={{
-                          background: "#c53030",
+                          background: "var(--button-danger-bg)",
                           border: "none",
                           color: "#fff",
                           fontSize: 10,
@@ -2203,12 +2202,12 @@ function RootSection({
 // --- Changes Panel (replaces file tree when viewing git changes) ---
 
 const STATUS_COLORS: Record<string, string> = {
-  M: "#e8b930",
-  A: "#4caf50",
-  U: "#4caf50",
-  D: "#df7d7d",
-  R: "#5ba0d0",
-  "?": "#888",
+  M: "var(--change-modified)",
+  A: "var(--change-added)",
+  U: "var(--change-added)",
+  D: "var(--change-deleted)",
+  R: "var(--change-renamed)",
+  "?": "var(--text-dim)",
 };
 const GIT_CHANGES_REFRESH_EVENT = "rally:git-changes-refresh";
 const BACKEND_GIT_CHANGES_UPDATED_EVENT = "git-changes-updated";
@@ -2217,7 +2216,7 @@ const BACKEND_GIT_CHANGES_UPDATED_EVENT = "git-changes-updated";
  *  NOTE: Defined earlier in the file — kept here as a comment for discoverability. */
 
 function ChangeStatusGlyph({ status }: { status: string }) {
-  const color = STATUS_COLORS[status] ?? "#888";
+  const color = STATUS_COLORS[status] ?? "var(--text-dim)";
   return (
     <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true">
       <text
@@ -2227,7 +2226,7 @@ function ChangeStatusGlyph({ status }: { status: string }) {
         fill={color}
         fontSize="11.5"
         fontWeight="700"
-        fontFamily="-apple-system, BlinkMacSystemFont, 'SF Pro Text', sans-serif"
+        style={{ fontFamily: "var(--font-ui)" }}
       >
         {status}
       </text>
@@ -2894,7 +2893,7 @@ function LayoutPresetsDropdown({ workspaceId }: { workspaceId: string }) {
             className="layout-preset-row"
             style={{
               display: "flex", alignItems: "center", padding: "0 4px 0 0", height: 28, cursor: isRenaming ? "default" : "pointer", borderRadius: 4, margin: "0 4px",
-              borderLeft: isActive ? "2px solid rgba(255,255,255,0.5)" : "2px solid transparent",
+              borderLeft: isActive ? "2px solid var(--tab-indicator)" : "2px solid transparent",
               opacity: isDragged ? 0.5 : 1,
               transform: translateY ? `translateY(${translateY}px)` : undefined,
               transition: noTransition ? "none" : isDragged ? "opacity 150ms" : "transform 150ms ease, opacity 150ms",
@@ -3464,7 +3463,7 @@ export function FileExplorer({ onCollapse, flushLeft }: FileExplorerProps) {
                 color: "var(--text-dim)",
                 cursor: "pointer",
                 textDecoration: "underline",
-                textDecorationColor: "rgba(136,136,136,0.4)",
+                textDecorationColor: "color-mix(in srgb, var(--text-dim) 40%, transparent)",
                 textUnderlineOffset: 2,
               }}
               onClick={() => void handleAddFolder()}
@@ -3610,7 +3609,7 @@ const styles: Record<string, React.CSSProperties> = {
     border: "none",
     fontSize: 11,
     fontWeight: 700,
-    fontFamily: "'SF Mono', 'Menlo', monospace",
+    fontFamily: "var(--font-mono)",
     lineHeight: "16px",
     flexShrink: 0,
     borderRadius: 4,
@@ -3948,7 +3947,7 @@ const styles: Record<string, React.CSSProperties> = {
   },
   cloneModalError: {
     fontSize: 12,
-    color: "#f85149",
+    color: "var(--status-red)",
     marginTop: -4,
   },
   cloneModalContinueBtn: {

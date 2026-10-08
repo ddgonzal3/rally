@@ -419,10 +419,9 @@ export const FlightPod = React.memo(function FlightPod({
         zIndex: podZIndex,
         display: "flex",
         flexDirection: "column",
-        background: "rgba(20, 20, 20, 0.85)",
-        border: isSelected ? "1px solid rgba(100, 160, 255, 0.5)" : "1px solid rgba(255, 255, 255, 0.08)",
+        border: isSelected ? "1px solid color-mix(in srgb, var(--canvas-selection) 50%, transparent)" : "1px solid color-mix(in srgb, var(--tint) 8%, transparent)",
         borderRadius: 10,
-        boxShadow: isSelected ? "0 0 0 2px rgba(100, 160, 255, 0.3), 0 2px 12px rgba(0, 0, 0, 0.2)" : "0 2px 12px rgba(0, 0, 0, 0.2)",
+        boxShadow: isSelected ? "0 0 0 2px color-mix(in srgb, var(--canvas-selection) 30%, transparent), 0 2px 12px rgba(0, 0, 0, 0.2)" : "0 2px 12px rgba(0, 0, 0, 0.2)",
         overflow: "hidden",
         userSelect: "none",
         cursor: zoom < ZOOM_TO_FIT_THRESHOLD ? "zoom-in" : undefined,
@@ -454,7 +453,7 @@ export const FlightPod = React.memo(function FlightPod({
         <>
           {/* Shell tab bar — matches Claude tab bar style */}
           <div
-            style={{ ...tabBarStyles.bar, borderTop: "1px solid rgba(255, 255, 255, 0.06)", position: "relative" as const }}
+            style={{ ...tabBarStyles.bar, borderTop: "1px solid color-mix(in srgb, var(--tint) 6%, transparent)", position: "relative" as const }}
           >
             {/* Resize handle at top edge (only when expanded) */}
             {shellExpanded && (
@@ -480,8 +479,8 @@ export const FlightPod = React.memo(function FlightPod({
                       style={{ ...tabBarStyles.tab, ...(isActive ? tabBarStyles.tabActive : tabBarStyles.tabInactive) }}
                     >
                       <svg width="12" height="12" viewBox="0 0 12 12" fill="none" style={{ flexShrink: 0 }}>
-                        <polyline points="2,4 5,6 2,8" stroke="#999" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" />
-                        <line x1="6" y1="8" x2="10" y2="8" stroke="#999" strokeWidth="1.2" strokeLinecap="round" />
+                        <polyline points="2,4 5,6 2,8" stroke="var(--text-dim)" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" />
+                        <line x1="6" y1="8" x2="10" y2="8" stroke="var(--text-dim)" strokeWidth="1.2" strokeLinecap="round" />
                       </svg>
                       <span style={tabBarStyles.tabLabel}>{tab.title}</span>
                       <button
@@ -507,8 +506,8 @@ export const FlightPod = React.memo(function FlightPod({
                   style={{ ...tabBarStyles.tab, ...tabBarStyles.tabActive }}
                 >
                   <svg width="12" height="12" viewBox="0 0 12 12" fill="none" style={{ flexShrink: 0 }}>
-                    <polyline points="2,4 5,6 2,8" stroke="#999" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" />
-                    <line x1="6" y1="8" x2="10" y2="8" stroke="#999" strokeWidth="1.2" strokeLinecap="round" />
+                    <polyline points="2,4 5,6 2,8" stroke="var(--text-dim)" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" />
+                    <line x1="6" y1="8" x2="10" y2="8" stroke="var(--text-dim)" strokeWidth="1.2" strokeLinecap="round" />
                   </svg>
                   <span style={tabBarStyles.tabLabel}>{cwdBasename}</span>
                   <button
@@ -553,7 +552,6 @@ export const FlightPod = React.memo(function FlightPod({
               flexDirection: "column",
               height: shellHeight,
               minHeight: 0,
-              background: "var(--terminal-bg)",
               overflow: "hidden",
             }}
           >

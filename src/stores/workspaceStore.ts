@@ -23,7 +23,6 @@ import type {
   WorkspaceMode,
   ProductSession,
   ShellPanel,
-  ThemeName,
   DetectedPort,
   FlightPod,
   FlightTab,
@@ -60,7 +59,6 @@ import {
   findFirstGroupInSubtree,
 } from "../lib/types";
 import { api } from "../lib/tauri";
-import { syncWindowBackdrop } from "../lib/windowBackdrop";
 import { getExpandedPaths, setExpandedPaths } from "../components/FileExplorer";
 import {
   clearWatcherStatusCache,
@@ -442,9 +440,6 @@ interface WorkspaceState {
   addDetectedPort: (workspaceId: string, port: DetectedPort) => void;
   removePortsByPty: (ptyId: string) => void;
   removePortsByScript: (repoPath: string, scriptName: string) => void;
-  /** Current UI theme */
-  theme: ThemeName;
-  setTheme: (theme: ThemeName) => void;
 
   /** Auto-release idle shells every 10 minutes. Persisted to localStorage. */
   autoReleaseIdleShells: boolean;
@@ -1038,19 +1033,6 @@ export const useWorkspaceStore = create<WorkspaceState>()(
       }
       return changed ? { detectedPorts: updated } : s;
     });
-  },
-  theme: (localStorage.getItem('rally:theme') as ThemeName) || 'dark',
-  setTheme: (theme) => {
-    localStorage.setItem('rally:theme', theme);
-    document.documentElement.setAttribute('data-theme', theme);
-    void syncWindowBackdrop(theme);
-    // Force WebKit to repaint backdrop-filter composited layers —
-    // toggling display forces full layout invalidation
-    document.body.style.display = 'none';
-    // Reading offsetHeight forces a synchronous reflow
-    void document.body.offsetHeight;
-    document.body.style.display = '';
-    set({ theme });
   },
 
   autoReleaseIdleShells:

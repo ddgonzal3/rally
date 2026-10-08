@@ -90,7 +90,7 @@ function HighlightedText({
       if (run) {
         spans.push(
           runHighlighted ? (
-            <span key={i} style={{ color: "#2aaaff", fontWeight: 700 }}>
+            <span key={i} style={{ color: "var(--match-highlight)", fontWeight: 700 }}>
               {run}
             </span>
           ) : (
@@ -524,7 +524,7 @@ export default function QuickOpen(props: QuickOpenProps) {
                   onMouseEnter={() => setSelectedIndex(i)}
                   style={{
                     ...styles.resultItem,
-                    background: isFocused ? "#04395e" : "transparent",
+                    background: isFocused ? "var(--list-selection-bg)" : "transparent",
                   }}
                 >
                   {result.icon === "file" ? (
@@ -572,7 +572,7 @@ const styles: Record<string, React.CSSProperties> = {
     boxShadow: "0 5px 18px var(--shadow)",
     display: "flex",
     flexDirection: "column",
-    fontFamily: "-apple-system, BlinkMacSystemFont, sans-serif",
+    fontFamily: "var(--font-ui)",
     fontSize: 13,
   },
   inputRow: {
@@ -581,14 +581,14 @@ const styles: Record<string, React.CSSProperties> = {
   input: {
     width: "100%",
     background: "var(--bg-input)",
-    border: "1px solid #007acc",
+    border: "1px solid var(--focus-border)",
     color: "var(--text-primary)",
     fontSize: 14,
     fontWeight: 550,
     padding: "5px 8px",
     outline: "none",
     boxSizing: "border-box",
-    fontFamily: "-apple-system, BlinkMacSystemFont, sans-serif",
+    fontFamily: "var(--font-ui)",
     borderRadius: 2,
     height: 30,
   },

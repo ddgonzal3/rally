@@ -4,118 +4,15 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Workbench</title>
-    <script>
-      (function() {
-        var theme = localStorage.getItem('rally:theme') || 'dark';
-        document.documentElement.setAttribute('data-theme', theme);
-      })();
-    </script>
     <style>
-      /* === Theme Variables === */
-      :root,
-      [data-theme="dark"] {
-        --bg-app: #1a1a1a;
-        --bg-surface: #161616;
-        --bg-elevated: #252525;
-        --bg-input: #2a2a2a;
-        --bg-hover: rgba(255, 255, 255, 0.08);
-        --bg-active: rgba(255, 255, 255, 0.12);
-        --text-primary: #e0e0e0;
-        --text-secondary: #bbb;
-        --text-dim: #888;
-        --border: #2a2a2a;
-        --border-subtle: rgba(255, 255, 255, 0.12);
-        --resize-hover: #444;
-        --terminal-bg: #1a1a1a;
-        --terminal-popup-bg: #1e1e1e;
-        --terminal-fg: #d4d4d4;
-        --terminal-cursor: #aeafad;
-        --terminal-selection: #5a5a5aaa;
-        --frosted-bg: rgba(36, 36, 36, 0.78);
-        --scrollbar-thumb: rgba(255, 255, 255, 0.08);
-        --scrollbar-thumb-hover: rgba(255, 255, 255, 0.15);
-        --shadow: rgba(0, 0, 0, 0.4);
-        --status-green: #3fb950;
-        --status-red: #f85149;
-        --status-amber: #d29922;
-        --status-blue: #58a6ff;
-        --tab-indicator: rgba(255, 255, 255, 0.5);
-        --pill-bg: #2a2a2a;
-        --drop-preview-bg: rgba(255, 255, 255, 0.04);
-        --drop-preview-border: rgba(255, 255, 255, 0.08);
-      }
-
-      [data-theme="dimmed"] {
-        --bg-app: #212121;
-        --bg-surface: #1c1c1c;
-        --bg-elevated: #282828;
-        --bg-input: #313131;
-        --bg-hover: rgba(255, 255, 255, 0.06);
-        --bg-active: rgba(255, 255, 255, 0.10);
-        --text-primary: #e0e0e0;
-        --text-secondary: #bbb;
-        --text-dim: #888;
-        --border: #313131;
-        --border-subtle: rgba(255, 255, 255, 0.08);
-        --resize-hover: #4a4a4a;
-        --terminal-bg: #212121;
-        --terminal-popup-bg: #252525;
-        --terminal-fg: #d4d4d4;
-        --terminal-cursor: #aeafad;
-        --terminal-selection: #464646aa;
-        --frosted-bg: rgba(38, 38, 38, 0.78);
-        --scrollbar-thumb: rgba(255, 255, 255, 0.06);
-        --scrollbar-thumb-hover: rgba(255, 255, 255, 0.12);
-        --shadow: rgba(0, 0, 0, 0.3);
-        --status-green: #3fb950;
-        --status-red: #f85149;
-        --status-amber: #d29922;
-        --status-blue: #58a6ff;
-        --tab-indicator: rgba(255, 255, 255, 0.5);
-        --pill-bg: #2d2d2d;
-        --drop-preview-bg: rgba(255, 255, 255, 0.04);
-        --drop-preview-border: rgba(255, 255, 255, 0.08);
-      }
-
-      [data-theme="light"] {
-        --bg-app: #c8c8c8;
-        --bg-surface: #bfbfbf;
-        --bg-elevated: #e0e0e0;
-        --bg-input: #bbb;
-        --bg-hover: rgba(0, 0, 0, 0.08);
-        --bg-active: rgba(0, 0, 0, 0.12);
-        --text-primary: #111;
-        --text-secondary: #3a3a3a;
-        --text-dim: #666;
-        --border: #aaa;
-        --border-subtle: rgba(0, 0, 0, 0.12);
-        --resize-hover: #888;
-        --terminal-bg: #c8c8c8;
-        --terminal-popup-bg: #c2c2c2;
-        --terminal-fg: #111;
-        --terminal-cursor: #333;
-        --terminal-selection: #8ab4d8aa;
-        --frosted-bg: rgba(190, 190, 190, 0.82);
-        --scrollbar-thumb: rgba(0, 0, 0, 0.18);
-        --scrollbar-thumb-hover: rgba(0, 0, 0, 0.30);
-        --shadow: rgba(0, 0, 0, 0.22);
-        --status-green: #1a7f37;
-        --status-red: #cf222e;
-        --status-amber: #9a6700;
-        --status-blue: #0969da;
-        --tab-indicator: rgba(0, 0, 0, 0.35);
-        --pill-bg: #b3b3b3;
-        --drop-preview-bg: rgba(0, 0, 0, 0.04);
-        --drop-preview-border: rgba(0, 0, 0, 0.08);
-      }
-
+      /* Theme values are set on :root at startup from src/lib/theme (see initTheme). */
       * { margin: 0; padding: 0; box-sizing: border-box; }
       ::placeholder { color: var(--text-dim); opacity: 1; }
       /* Agent sidebar: a translucent tint over the native frost when macOS
          renders it (data-frost="on", set from syncWindowBackdrop), else the
          app background (Reduce transparency, or before the check runs). */
       :root { --sidebar-bg: var(--bg-app); }
-      :root[data-frost="on"] { --sidebar-bg: color-mix(in srgb, var(--bg-surface) 60%, transparent); }
+      :root[data-frost="on"] { --sidebar-bg: var(--sidebar-frost-bg); }
       html, body, #root { height: 100%; width: 100%; overflow: hidden; }
       html {
         /* Force dark rendering in WKWebView regardless of system appearance */
@@ -124,7 +21,7 @@
         background: transparent;
       }
       body {
-        font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+        font-family: var(--font-ui);
         background: transparent;
         color: var(--text-primary);
         -webkit-font-smoothing: antialiased;
@@ -241,6 +138,10 @@
          Making .xterm fill 100% width ensures the viewport (and its scrollbar)
          extend all the way to the container's right edge. */
       .xterm { width: 100% !important; }
+      /* xterm.css paints the viewport black; it only shows when the terminal
+         color is see-through, and then it must not. !important: xterm.css
+         loads after this stylesheet with the same specificity. */
+      .xterm .xterm-viewport { background-color: transparent !important; }
       .xterm-viewport { right: 0 !important; }
       .xterm-viewport::-webkit-scrollbar { width: 8px; }
       .xterm-viewport::-webkit-scrollbar-thumb {

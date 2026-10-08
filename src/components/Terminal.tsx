@@ -9,9 +9,10 @@ import { useWorkspaceStore, scriptOutputBuffers, appendPtyBuffer, clearPtyBuffer
 import { markPtyInput } from "../lib/ptyActivity";
 import { showContextMenu } from "../lib/contextMenu";
 import { installCopyOnSelect } from "../lib/copyOnSelect";
-import type { ThemeName, DetectedPort } from "../lib/types";
+import type { DetectedPort } from "../lib/types";
+import { useThemeStore } from "../stores/themeStore";
 import { detectPorts } from "../lib/portDetection";
-import { getXtermTheme, getCssVar } from "../lib/xtermTheme";
+import { getXtermTheme, getCssVar, needsTransparency } from "../lib/xtermTheme";
 import "@xterm/xterm/css/xterm.css";
 
 interface TerminalProps {
@@ -68,7 +69,6 @@ function isClaudeCodeTitle(title: string): boolean {
 }
 
 const encoder = new TextEncoder();
-const BASE_FONT_SIZE = 13;
 const BASE_CURSOR_WIDTH = 2;
 
 // Minimum acceptable terminal dimensions.
@@ -169,9 +169,9 @@ function safeFit(term: XTerminal, fitAddon: FitAddon, zoom = 1): boolean {
 }
 
 export function Terminal({ cwd, command, initialInput, exitOnComplete, ptyId: existingPtyId, scriptBufferKey, workspaceId, onPtySpawned, onCwdChanged, onTitleChange, onFileOpen, onKill }: TerminalProps) {
-  const theme = useWorkspaceStore((s) => s.theme);
-  const themeRef = useRef<ThemeName>(theme);
-  themeRef.current = theme;
+  const themeValues = useThemeStore((s) => s.values);
+  const themeValuesRef = useRef(themeValues);
+  themeValuesRef.current = themeValues;
   const containerRef = useRef<HTMLDivElement>(null);
   const termRef = useRef<XTerminal | null>(null);
   const ptyIdRef = useRef<string | null>(null);
@@ -239,18 +239,29 @@ export function Terminal({ cwd, command, initialInput, exitOnComplete, ptyId: ex
     lastCwdRef.current = cwd;
   }, [cwd]);
 
-  // Sync xterm theme when the app theme changes
+  // Follow the theme: colors, and font settings (which change the cell size,
+  // so refit; the resulting onResize forwards the new size to the PTY).
   useEffect(() => {
-    if (termRef.current) {
-      const newTheme = getXtermTheme(theme);
-      // Preserve cursor hiding when Claude Code is active — getXtermTheme
-      // returns the visible cursor color which would overwrite 'transparent'.
-      if (claudeLikelyActiveRef.current) {
-        newTheme.cursor = 'transparent';
-      }
-      termRef.current.options.theme = newTheme;
+    const term = termRef.current;
+    if (!term) return;
+    const newTheme = getXtermTheme();
+    // Preserve cursor hiding when Claude Code is active — getXtermTheme
+    // returns the visible cursor color which would overwrite 'transparent'.
+    if (claudeLikelyActiveRef.current) {
+      newTheme.cursor = 'transparent';
     }
-  }, [theme]);
+    term.options.allowTransparency = needsTransparency();
+    term.options.theme = newTheme;
+    const fontFamily = String(themeValues["terminal-font"]);
+    const fontSize = Math.round(Number(themeValues["terminal-font-size"]) * uiZoomRef.current);
+    const lineHeight = Number(themeValues["terminal-line-height"]);
+    if (term.options.fontFamily !== fontFamily || term.options.fontSize !== fontSize || term.options.lineHeight !== lineHeight) {
+      term.options.fontFamily = fontFamily;
+      term.options.fontSize = fontSize;
+      term.options.lineHeight = lineHeight;
+      if (fitAddonRef.current) safeFit(term, fitAddonRef.current, uiZoomRef.current);
+    }
+  }, [themeValues]);
 
   const handleContextMenu = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
@@ -339,10 +350,12 @@ export function Terminal({ cwd, command, initialInput, exitOnComplete, ptyId: ex
       rows: 24,
       macOptionIsMeta: true,
       cursorInactiveStyle: "none",
-      theme: getXtermTheme(themeRef.current),
-      fontSize: 13,
+      theme: getXtermTheme(),
+      allowTransparency: needsTransparency(),
+      fontSize: Number(themeValuesRef.current["terminal-font-size"]),
+      lineHeight: Number(themeValuesRef.current["terminal-line-height"]),
       fontWeight: "normal",
-      fontFamily: "Menlo, Monaco, 'Courier New', monospace",
+      fontFamily: String(themeValuesRef.current["terminal-font"]),
       letterSpacing: 0,
       cursorBlink: true,
       cursorStyle: "bar",
@@ -393,7 +406,7 @@ export function Terminal({ cwd, command, initialInput, exitOnComplete, ptyId: ex
         xtermEl.style.top = "0";
         xtermEl.style.left = "6px";
       }
-      term.options.fontSize = Math.round(BASE_FONT_SIZE * z);
+      term.options.fontSize = Math.round(Number(themeValuesRef.current["terminal-font-size"]) * z);
       term.options.cursorWidth = Math.max(1, Math.round(BASE_CURSOR_WIDTH * z));
     }
 
@@ -935,7 +948,9 @@ export function Terminal({ cwd, command, initialInput, exitOnComplete, ptyId: ex
 
   return (
     <div
-      style={{ ...styles.container, background: 'var(--terminal-bg)' }}
+      // The only layer painting the terminal color: a second one would
+      // compound a see-through background (two 50% layers read as 75%).
+      style={{ ...styles.container, background: 'var(--terminal-bg)', backdropFilter: 'var(--surface-frost)', WebkitBackdropFilter: 'var(--surface-frost)' }}
       onMouseDown={handleMouseDown}
       onContextMenu={handleContextMenu}
     >
@@ -960,7 +975,6 @@ const styles: Record<string, React.CSSProperties> = {
     flexDirection: "column",
     justifyContent: "flex-end",
     position: "relative",
-    background: "var(--terminal-bg)",
     paddingLeft: 6,
     // No paddingRight — let xterm's scrollbar sit flush against the right edge.
     // The scrollbar was appearing inset from the right, leaving empty padding.

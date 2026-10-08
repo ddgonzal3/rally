@@ -312,6 +312,15 @@ export const api = {
 
   // Parked threads (rally-park skill writes via cli_server, frontend reads here)
   listParkedThreads: () => invoke<ParkedThread[]>("list_parked_threads"),
+
+  // Themes: one JSON file per user theme in ~/.rally/themes. Shape is owned by src/lib/theme.
+  listThemes: () => invoke<unknown[]>("list_themes"),
+  saveTheme: (theme: unknown) => invoke<void>("save_theme", { theme }),
+  deleteTheme: (id: string) => invoke<void>("delete_theme", { id }),
+  themesDirPath: () => invoke<string>("themes_dir_path"),
+  importThemeImage: (path: string) => invoke<string>("import_theme_image", { path }),
+  themeImagesDirPath: () => invoke<string>("theme_images_dir_path"),
+  listFontFamilies: () => invoke<string[]>("list_font_families"),
   removeParkedThread: (id: string) =>
     invoke<void>("remove_parked_thread", { id }),
 
