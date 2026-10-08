@@ -320,9 +320,9 @@ const cs: Record<string, React.CSSProperties> = {
   bulkActionBtnDanger: {
     display: "inline-flex",
     alignItems: "center",
-    background: "rgba(248, 81, 73, 0.15)",
+    background: "color-mix(in srgb, var(--status-red) 15%, transparent)",
     border: "none",
-    color: "#f85149",
+    color: "var(--status-red)",
     fontSize: 11,
     fontWeight: 600,
     cursor: "pointer",
@@ -380,9 +380,9 @@ const cs: Record<string, React.CSSProperties> = {
     borderBottom: "1px solid var(--bg-elevated)",
   },
   commitSha: {
-    fontFamily: "'SF Mono', 'Menlo', monospace",
+    fontFamily: "var(--font-mono)",
     fontSize: 11,
-    color: "#7aa2f7",
+    color: "var(--status-blue)",
     flexShrink: 0,
     fontWeight: 500,
   },

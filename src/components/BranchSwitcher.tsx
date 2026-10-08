@@ -407,7 +407,7 @@ export function BranchSwitcher({
                       fontSize: 12,
                     }}
                   >
-                    <span style={{ color: forceDeleteMode ? "#e8a838" : "var(--text-primary)", flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    <span style={{ color: forceDeleteMode ? "var(--warning-text)" : "var(--text-primary)", flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                       {forceDeleteMode
                         ? <>Unmerged commits will be lost!</>
                         : <>Delete <strong>{b.name}</strong>?</>}

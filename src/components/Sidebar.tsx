@@ -442,7 +442,7 @@ const styles: Record<string, React.CSSProperties> = {
   renameInput: {
     width: "100%",
     background: "var(--bg-elevated)",
-    border: "1px solid #007fd4",
+    border: "1px solid var(--focus-border)",
     borderRadius: 2,
     color: "var(--text-primary)",
     fontSize: 13,

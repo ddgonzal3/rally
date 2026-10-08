@@ -80,3 +80,31 @@ export function openWindow(opts?: {
 
   attachWindowErrorHandler(w, "a new window");
 }
+
+// "rally-view-" windows close without the confirm dialog (main.rs on_window_event).
+const THEME_BUILDER_LABEL = "rally-view-theme-builder";
+
+/** One theme builder window; opening it again brings the existing one forward. */
+export async function openThemeBuilder() {
+  const existing = await WebviewWindow.getByLabel(THEME_BUILDER_LABEL);
+  if (existing) {
+    await existing.unminimize();
+    await existing.setFocus();
+    return;
+  }
+  const w = new WebviewWindow(THEME_BUILDER_LABEL, {
+    url: "/?view=theme-builder",
+    title: "Theme Builder",
+    width: 760,
+    height: 820,
+    minWidth: 560,
+    minHeight: 480,
+    resizable: true,
+    fullscreen: false,
+    decorations: true,
+    titleBarStyle: "overlay",
+    hiddenTitle: true,
+    transparent: true,
+  });
+  attachWindowErrorHandler(w, "the theme builder");
+}

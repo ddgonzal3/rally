@@ -335,8 +335,8 @@ const styles: Record<string, React.CSSProperties> = {
   },
   preview: {
     position: "absolute",
-    background: "var(--drop-preview-bg, rgba(255, 255, 255, 0.04))",
-    border: "1px solid var(--drop-preview-border, rgba(255, 255, 255, 0.08))",
+    background: "var(--drop-preview-bg)",
+    border: "1px solid var(--drop-preview-border)",
     borderRadius: 2,
     transition: "top 0.15s ease, left 0.15s ease, width 0.15s ease, height 0.15s ease",
     pointerEvents: "none",

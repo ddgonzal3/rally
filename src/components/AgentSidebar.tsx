@@ -151,6 +151,9 @@ export function AgentSidebar() {
         minWidth: 0,
         flexShrink: 0,
         overflow: "visible",
+        // Blurs a theme background image behind it; "none" without one.
+        backdropFilter: "var(--surface-frost)",
+        WebkitBackdropFilter: "var(--surface-frost)",
         // Tint over the macOS behind-window blur, or solid when there is none.
         background: "var(--sidebar-bg)",
         borderRight: collapsed ? "1px solid transparent" : "1px solid var(--border)",

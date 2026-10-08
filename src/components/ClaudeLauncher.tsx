@@ -81,7 +81,10 @@ const styles: Record<string, React.CSSProperties> = {
     alignItems: "center",
     justifyContent: "center",
     paddingBottom: "5%",
-    background: "var(--bg-app)",
+    // Stands in for the terminal until Claude starts, so it wears the terminal color.
+    background: "var(--terminal-bg)",
+    backdropFilter: "var(--surface-frost)",
+    WebkitBackdropFilter: "var(--surface-frost)",
     minHeight: 0,
     minWidth: 0,
     gap: 0,

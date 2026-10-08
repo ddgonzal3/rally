@@ -4,7 +4,8 @@ import { FitAddon } from "@xterm/addon-fit";
 import { useWorkspaceStore, scriptOutputBuffers, cancelDrawerHoverClose, startDrawerHoverClose } from "../stores/workspaceStore";
 import { api } from "../lib/tauri";
 import { TerminalPromptIcon } from "./FileIcons";
-import { getXtermTheme } from "../lib/xtermTheme";
+import { getXtermTheme, getCssVar, needsTransparency } from "../lib/xtermTheme";
+import { useThemeStore } from "../stores/themeStore";
 import { showContextMenu } from "../lib/contextMenu";
 import { installCopyOnSelect } from "../lib/copyOnSelect";
 
@@ -44,7 +45,7 @@ export function BuildStatusDrawer() {
   const stopScript = useWorkspaceStore((s) => s.stopScript);
   const clearScript = useWorkspaceStore((s) => s.clearScript);
   const scriptRuns = useWorkspaceStore((s) => s.scriptRuns);
-  const theme = useWorkspaceStore((s) => s.theme);
+  const themeValues = useThemeStore((s) => s.values);
   const toggleStatusBarDrawerPin = useWorkspaceStore((s) => s.toggleStatusBarDrawerPin);
   const pinned = drawer?.pinned ?? false;
 
@@ -154,8 +155,9 @@ export function BuildStatusDrawer() {
       disableStdin: false,
       cursorBlink: true,
       fontSize: Math.round(12 * zoom),
-      fontFamily: "'SF Mono', 'Menlo', 'Monaco', monospace",
-      theme: getXtermTheme(theme, 'popup'),
+      fontFamily: getCssVar("--font-mono"),
+      theme: getXtermTheme('popup'),
+      allowTransparency: needsTransparency('popup'),
     });
     const fitAddon = new FitAddon();
     term.loadAddon(fitAddon);
@@ -228,12 +230,14 @@ export function BuildStatusDrawer() {
     };
   }, [drawer?.repoPath, drawer?.scriptName]);
 
-  // Sync xterm theme when the app theme changes
+  // Follow the theme's colors and code font.
   useEffect(() => {
     if (xtermRef.current) {
-      xtermRef.current.options.theme = getXtermTheme(theme, 'popup');
+      xtermRef.current.options.allowTransparency = needsTransparency('popup');
+      xtermRef.current.options.theme = getXtermTheme('popup');
+      xtermRef.current.options.fontFamily = getCssVar("--font-mono");
     }
-  }, [theme]);
+  }, [themeValues]);
 
   // ResizeObserver for xterm fit — immediate during drag, debounced otherwise
   useEffect(() => {
@@ -349,7 +353,7 @@ export function BuildStatusDrawer() {
       pointerEvents: isSliding ? "none" : "auto",
       display: "flex",
       flexDirection: "column" as const,
-      boxShadow: theme === "light"
+      boxShadow: themeValues.appearance === "light"
         ? "0 -2px 8px rgba(0,0,0,0.05)"
         : "0 -2px 8px rgba(255,255,255,0.02)",
     }}>

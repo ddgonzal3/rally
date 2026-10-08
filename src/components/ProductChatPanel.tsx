@@ -350,7 +350,7 @@ export function ProductChatPanel({ rootPath, workspaceId }: ProductChatPanelProp
               <button
                 style={{
                   ...styles.submitBtn,
-                  background: prompt.trim() ? "rgba(255,255,255,0.15)" : "transparent",
+                  background: prompt.trim() ? "color-mix(in srgb, var(--tint) 15%, transparent)" : "transparent",
                   opacity: prompt.trim() ? 1 : 0.3,
                 }}
                 onClick={handleSubmit}
@@ -407,7 +407,7 @@ export function ProductChatPanel({ rootPath, workspaceId }: ProductChatPanelProp
                   onClick={() => setDangerousMode(!dangerousMode)}
                   style={{
                     ...styles.toggleTrack,
-                    background: dangerousMode ? "rgba(100,130,180,0.55)" : "rgba(255,255,255,0.08)",
+                    background: dangerousMode ? "rgba(100,130,180,0.55)" : "color-mix(in srgb, var(--tint) 8%, transparent)",
                   }}
                 >
                   <div
@@ -541,7 +541,7 @@ const styles: Record<string, React.CSSProperties> = {
     position: "absolute",
     inset: 0,
     background: "var(--bg-app)",
-    backgroundImage: "radial-gradient(circle, rgba(255,255,255,0.04) 1px, transparent 1px)",
+    backgroundImage: "radial-gradient(circle, color-mix(in srgb, var(--tint) 4%, transparent) 1px, transparent 1px)",
     backgroundSize: "16px 16px",
   },
   idleContent: {
@@ -597,7 +597,7 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: 14,
     fontWeight: 600,
     color: "var(--text-primary)",
-    fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
+    fontFamily: "var(--font-ui)",
     outline: "none",
     resize: "none",
     lineHeight: 1.4,
@@ -791,6 +791,6 @@ const styles: Record<string, React.CSSProperties> = {
     width: 32,
     height: 2,
     borderRadius: 1,
-    background: "rgba(255,255,255,0.15)",
+    background: "color-mix(in srgb, var(--tint) 15%, transparent)",
   },
 };

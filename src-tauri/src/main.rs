@@ -418,6 +418,13 @@ fn main() {
         rally::search_ops::list_all_files,
         rally::search_ops::list_directory_entries,
         rally::parked_threads::list_parked_threads,
+        rally::theme_ops::list_themes,
+        rally::theme_ops::save_theme,
+        rally::theme_ops::delete_theme,
+        rally::theme_ops::themes_dir_path,
+        rally::theme_ops::import_theme_image,
+        rally::theme_ops::theme_images_dir_path,
+        rally::theme_ops::list_font_families,
         rally::parked_threads::remove_parked_thread,
     ]);
 
@@ -438,7 +445,7 @@ fn main() {
 
                     let label = window.label().to_string();
 
-                    // Standalone view windows (file/URL viewers) close without confirmation
+                    // Standalone view windows (file/URL viewers, theme builder) close without confirmation
                     if label.starts_with("rally-view-") {
                         return;
                     }

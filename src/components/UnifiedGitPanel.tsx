@@ -436,7 +436,7 @@ export function UnifiedGitPanel() {
             alignItems: "stretch",
             justifyContent: "center",
             flexShrink: 0,
-            borderLeft: "1px solid rgba(255, 255, 255, 0.12)",
+            borderLeft: "1px solid var(--border-subtle)",
           }}
         >
           <div
@@ -564,7 +564,7 @@ export function UnifiedGitPanel() {
                 )}
                 {forcePullConfirm && (
                   <div style={{ display: "inline-flex", alignItems: "center", gap: 4, flexShrink: 0 }}>
-                    <span style={{ fontSize: 11, color: "#e8a838" }}>Discard local &amp; reset to remote?</span>
+                    <span style={{ fontSize: 11, color: "var(--warning-text)" }}>Discard local &amp; reset to remote?</span>
                     <button
                       onClick={async () => {
                         setPulling(true);
@@ -581,7 +581,7 @@ export function UnifiedGitPanel() {
                       }}
                       disabled={pulling}
                       style={{
-                        background: "#c53030",
+                        background: "var(--button-danger-bg)",
                         border: "none",
                         color: "#fff",
                         fontSize: 11,
@@ -801,7 +801,7 @@ export function UnifiedGitPanel() {
                                   : file.isDeleted
                                     ? "var(--status-red)"
                                     : file.isRenamed
-                                      ? "#d2a8ff"
+                                      ? "var(--diff-renamed)"
                                       : "var(--status-amber)",
                               }}
                             >
@@ -1036,7 +1036,7 @@ export function UnifiedGitPanel() {
                                                 : file.isDeleted
                                                   ? "var(--status-red)"
                                                   : file.isRenamed
-                                                    ? "#d2a8ff"
+                                                    ? "var(--diff-renamed)"
                                                     : "var(--status-amber)",
                                             }}
                                           >
@@ -1293,7 +1293,7 @@ const ms: Record<string, React.CSSProperties> = {
   actionBtnDanger: {
     display: "inline-flex",
     alignItems: "center",
-    background: "rgba(248, 81, 73, 0.15)",
+    background: "color-mix(in srgb, var(--status-red) 15%, transparent)",
     border: "none",
     color: "var(--status-red)",
     fontSize: 11,
@@ -1382,7 +1382,7 @@ const ms: Record<string, React.CSSProperties> = {
     width: 14,
     fontSize: 11,
     fontWeight: 700,
-    fontFamily: "'SF Mono', 'Menlo', monospace",
+    fontFamily: "var(--font-mono)",
     textAlign: "center" as const,
     flexShrink: 0,
   },
@@ -1411,7 +1411,7 @@ const ms: Record<string, React.CSSProperties> = {
   },
   fileStats: {
     fontSize: 11,
-    fontFamily: "'SF Mono', 'Menlo', monospace",
+    fontFamily: "var(--font-mono)",
     flexShrink: 0,
     fontWeight: 500,
   },

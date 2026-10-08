@@ -25,7 +25,11 @@
     ],
     "withGlobalTauri": true,
     "security": {
-      "csp": null
+      "csp": null,
+      "assetProtocol": {
+        "enable": true,
+        "scope": ["$HOME/.rally/themes/images/*"]
+      }
     }
   },
   "bundle": {

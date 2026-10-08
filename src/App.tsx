@@ -24,7 +24,6 @@ import {
   type Pane,
   type PaneGroup,
   type PrStatus,
-  type ThemeName,
 } from "./lib/types";
 import {
   startExternalFileDrag,
@@ -49,7 +48,9 @@ import { useAgentStore } from "./stores/agentStore";
 import { BuildStatusBar } from "./components/BuildStatusBar";
 import { BuildStatusDrawer } from "./components/BuildStatusDrawer";
 import QuickOpen from "./components/QuickOpen";
-import { syncWindowBackdrop } from "./lib/windowBackdrop";
+import { useThemeStore } from "./stores/themeStore";
+import { ThemeBackground } from "./components/ThemeBackground";
+import { openThemeBuilder } from "./lib/windowUtils";
 
 const WS_DRAG_THRESHOLD = 4;
 const WS_DRAG_SCROLL_EDGE = 28;
@@ -467,7 +468,7 @@ function WorkspacePicker({ onSelect }: { onSelect: (id: string) => void }) {
                       flex: 1,
                       minWidth: 0,
                       background: "var(--bg-elevated)",
-                      border: "1px solid #007fd4",
+                      border: "1px solid var(--focus-border)",
                       borderRadius: 2,
                       color: "var(--text-primary)",
                       fontSize: 13,
@@ -559,14 +560,6 @@ export function App() {
   useEffect(() => {
     localStorage.setItem("rally:activityBarVisible", String(activityBarVisible));
   }, [activityBarVisible]);
-  // Re-check the native frost on launch and on every refocus: Reduce
-  // transparency is toggled in System Settings, outside Rally.
-  useEffect(() => {
-    const sync = () => void syncWindowBackdrop(useWorkspaceStore.getState().theme);
-    sync();
-    window.addEventListener("focus", sync);
-    return () => window.removeEventListener("focus", sync);
-  }, []);
   // The explorer panel belongs to the rail: hiding the rail hides the open
   // panel too, and showing it brings that panel back.
   const explorerOpenBeforeRailHideRef = useRef(false);
@@ -2030,14 +2023,23 @@ export function App() {
 
   return (
     <div style={styles.app}>
+      <ThemeBackground />
       <div
         data-tauri-drag-region
         style={styles.titlebar}
         onMouseDown={handleDrag}
       >
-        {/* Solid header over the main area only. Left of it the strip stays
-            frosted, so the sidebar's frost runs to the top of the window.
-            Tracks the sidebar's width (zoomed) and its collapse motion. */}
+        {/* The strip has no surface of its own: above the sidebar it wears the
+            sidebar tint, above the main area the app background, so both run
+            up to the window's top edge. Both halves track the sidebar's width
+            (zoomed) and its collapse motion. */}
+        <div
+          style={{
+            ...styles.titlebarSidebar,
+            width: agentSidebarCollapsed ? 0 : agentSidebarWidth * zoomLevel,
+            transition: agentSidebarResizing ? "none" : `width ${SIDEBAR_DURATION_MS}ms ${SIDEBAR_EASING}`,
+          }}
+        />
         <div
           style={{
             ...styles.titlebarFill,
@@ -2354,7 +2356,7 @@ export function App() {
             );
           })}
           <div style={{ flex: 1 }} />
-          <ThemeCycleButton />
+          <ThemeButton />
         </div>
         <div
           style={{
@@ -2460,11 +2462,11 @@ export function App() {
       </div>
       <TaskLauncher />
       <style>{`
-        .syn-comment { color: #8b949e; font-style: italic; }
-        .syn-string { color: #a5d6ff; }
-        .syn-keyword { color: #ff7b72; }
-        .syn-literal { color: #79c0ff; }
-        .syn-number { color: #d2a8ff; }
+        .syn-comment { color: var(--syn-comment); font-style: italic; }
+        .syn-string { color: var(--syn-string); }
+        .syn-keyword { color: var(--syn-keyword); }
+        .syn-literal { color: var(--syn-literal); }
+        .syn-number { color: var(--syn-number); }
         .repo-action-btn:hover { background: var(--bg-active) !important; }
         .hunk-action-btn:hover { background: var(--bg-active) !important; color: var(--text-primary) !important; }
         .file-list-item:hover { background: var(--bg-hover) !important; }
@@ -2498,50 +2500,17 @@ export function App() {
   );
 }
 
-function ThemeIcon({ t, size = 18 }: { t: ThemeName; size?: number }) {
-  if (t === "light")
-    return (
-      <svg width={size} height={size} viewBox="0 0 24 24" fill="none">
-        <circle cx="12" cy="12" r="4" stroke="currentColor" strokeWidth="1.5" />
-        <path
-          d="M12 2v3M12 19v3M4.22 4.22l2.12 2.12M17.66 17.66l2.12 2.12M2 12h3M19 12h3M4.22 19.78l2.12-2.12M17.66 6.34l2.12-2.12"
-          stroke="currentColor"
-          strokeWidth="1.5"
-          strokeLinecap="round"
-        />
-      </svg>
-    );
-  if (t === "dimmed")
-    return (
-      <svg width={size} height={size} viewBox="0 0 24 24" fill="none">
-        <circle cx="12" cy="12" r="4" stroke="currentColor" strokeWidth="1.5" />
-        <path
-          d="M12 2v3M12 19v3M2 12h3M19 12h3"
-          stroke="currentColor"
-          strokeWidth="1.5"
-          strokeLinecap="round"
-        />
-      </svg>
-    );
-  return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none">
-      <path
-        d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"
-        stroke="currentColor"
-        strokeWidth="1.5"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
-  );
-}
-
-function ThemeCycleButton() {
-  const theme = useWorkspaceStore((s) => s.theme);
-  const setTheme = useWorkspaceStore((s) => s.setTheme);
-
-  const toggle = () => {
-    setTheme(theme === "dark" ? "dimmed" : "dark");
+/** Opens the theme builder window. Right-click switches theme without opening it. */
+function ThemeButton() {
+  const openMenu = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const { themes, activeId, setActive } = useThemeStore.getState();
+    showContextMenu([
+      ...themes.map((t) => ({ label: t.id === activeId ? `✓ ${t.name}` : t.name, action: () => setActive(t.id) })),
+      "separator",
+      { label: "Theme Builder…", action: openThemeBuilder },
+    ]);
   };
 
   return (
@@ -2561,10 +2530,21 @@ function ThemeCycleButton() {
           color: "var(--text-secondary)",
           padding: 0,
         }}
-        onClick={toggle}
-        title={theme === "dark" ? "Switch to Dimmed" : "Switch to Dark"}
+        onClick={openThemeBuilder}
+        onContextMenu={openMenu}
+        title="Theme Builder (right-click to switch theme)"
       >
-        <ThemeIcon t={theme} />
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+          <path
+            d="M12 3a9 9 0 1 0 0 18c1.1 0 1.8-.9 1.8-1.9 0-.5-.2-.9-.5-1.3-.3-.4-.5-.8-.5-1.3 0-1 .8-1.8 1.8-1.8H17a4 4 0 0 0 4-4C21 6.6 17 3 12 3Z"
+            stroke="currentColor"
+            strokeWidth="1.5"
+            strokeLinejoin="round"
+          />
+          <circle cx="7.5" cy="11.5" r="1.2" fill="currentColor" />
+          <circle cx="10.5" cy="7.5" r="1.2" fill="currentColor" />
+          <circle cx="15" cy="7.8" r="1.2" fill="currentColor" />
+        </svg>
       </button>
     </div>
   );
@@ -2578,16 +2558,29 @@ const styles: Record<string, React.CSSProperties> = {
     width: "100vw",
     overflow: "hidden",
     background: "transparent",
+    // Own stacking context, so the background image's negative z-index stays inside.
+    position: "relative",
+    isolation: "isolate",
   },
   titlebar: {
-    height: 34,
-    minHeight: 34,
+    // Just tall enough to center on the native traffic lights.
+    height: 28,
+    minHeight: 28,
     display: "flex",
     alignItems: "center",
     userSelect: "none",
     position: "relative",
     paddingLeft: 70,
+  },
+  titlebarSidebar: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    bottom: 0,
     background: "var(--sidebar-bg)",
+    backdropFilter: "var(--surface-frost)",
+    WebkitBackdropFilter: "var(--surface-frost)",
+    pointerEvents: "none",
   },
   titlebarFill: {
     position: "absolute",
@@ -2599,7 +2592,6 @@ const styles: Record<string, React.CSSProperties> = {
     justifyContent: "center",
     padding: "0 12px",
     background: "var(--bg-app)",
-    borderBottom: "1px solid var(--border)",
     borderLeft: "1px solid transparent",
     pointerEvents: "none",
   },

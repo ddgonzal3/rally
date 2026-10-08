@@ -427,7 +427,7 @@ const styles: Record<string, React.CSSProperties> = {
     lineHeight: 1.45,
   },
   code: {
-    fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
+    fontFamily: "var(--font-mono)",
     fontSize: 10.5,
     padding: "1px 4px",
     background: "var(--bg-input)",

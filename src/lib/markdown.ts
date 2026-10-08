@@ -51,15 +51,15 @@ export function renderMarkdown(text: string): string {
 /** Inline styles for rendered markdown content — based on VS Code markdown preview */
 export const markdownStyles = `
 .md-body {
-  --markdown-font-family: -apple-system, BlinkMacSystemFont, "Segoe WPC", "Segoe UI", system-ui, "Ubuntu", "Droid Sans", sans-serif;
+  --markdown-font-family: var(--font-ui);
   --markdown-font-size: 14px;
   --markdown-line-height: 22px;
-  --vscode-editor-font-family: "SF Mono", Monaco, Menlo, Consolas, "Ubuntu Mono", "Liberation Mono", "DejaVu Sans Mono", "Courier New", monospace;
+  --vscode-editor-font-family: var(--font-mono);
   --vscode-editor-foreground: var(--terminal-fg);
   --vscode-textLink-foreground: #3794FF;
   --vscode-textLink-activeForeground: #3794FF;
   --vscode-textPreformat-foreground: #D7BA7D;
-  --vscode-textPreformat-background: #FFFFFF1A;
+  --vscode-textPreformat-background: color-mix(in srgb, var(--tint) 10%, transparent);
   --vscode-textBlockQuote-background: var(--bg-elevated);
   --vscode-textBlockQuote-border: #007acc80;
   --vscode-textCodeBlock-background: var(--bg-elevated);
@@ -186,7 +186,7 @@ export const markdownStyles = `
 }
 .md-body th {
   text-align: left;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.69);
+  border-bottom: 1px solid color-mix(in srgb, var(--tint) 69%, transparent);
   font-weight: 600;
 }
 .md-body th, .md-body td { padding: 5px 10px; }

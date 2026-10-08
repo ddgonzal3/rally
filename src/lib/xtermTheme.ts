@@ -1,55 +1,40 @@
-import type { ThemeName } from "./types";
+import { parseColor } from "./theme/color";
 
 function getCssVar(name: string): string {
   return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
 }
 
-// ANSI colors per theme — these have no CSS variable equivalents.
-// Background/foreground/cursor/selection are read from CSS variables
-// so theme tweaks in index.html automatically apply everywhere.
-const xtermAnsiColors: Record<ThemeName, Record<string, string>> = {
-  dark: {
-    black: '#1e1e1e',
-    red: '#df7d7d',
-    green: '#7ddf7d',
-    yellow: '#dfdf7d',
-    blue: '#7d7ddf',
-    magenta: '#df7ddf',
-    cyan: '#7ddfdf',
-    white: '#e0e0e0',
-  },
-  dimmed: {
-    black: '#252525',
-    red: '#c87070',
-    green: '#70c870',
-    yellow: '#c8c870',
-    blue: '#7070c8',
-    magenta: '#c870c8',
-    cyan: '#70c8c8',
-    white: '#d2d2d2',
-  },
-  light: {
-    black: '#111',
-    red: '#a83224',
-    green: '#1f8c4e',
-    yellow: '#c47e0e',
-    blue: '#20659a',
-    magenta: '#73388e',
-    cyan: '#128268',
-    white: '#555',
-    brightBlack: '#666',
-    brightWhite: '#333',
-  },
-};
+const ANSI = ["black", "red", "green", "yellow", "blue", "magenta", "cyan", "white"] as const;
 
-export function getXtermTheme(theme: ThemeName, variant?: 'popup'): Record<string, string> {
-  return {
-    background: getCssVar(variant === 'popup' ? '--terminal-popup-bg' : '--terminal-bg'),
+/**
+ * xterm.js theme from the active Rally theme's CSS variables (see
+ * src/lib/theme/schema.ts). Read at call time, so callers re-run it when the
+ * theme store changes.
+ */
+export function getXtermTheme(variant?: 'popup'): Record<string, string> {
+  const theme: Record<string, string> = {
+    // A see-through color is painted once by the terminal's container div.
+    // xterm paints its background on several layers, which would compound it.
+    background: needsTransparency(variant) ? 'rgba(0, 0, 0, 0)' : getCssVar(variant === 'popup' ? '--terminal-popup-bg' : '--terminal-bg'),
     foreground: getCssVar('--terminal-fg'),
     cursor: getCssVar('--terminal-cursor'),
     selectionBackground: getCssVar('--terminal-selection'),
-    ...xtermAnsiColors[theme],
   };
+  for (const name of ANSI) {
+    theme[name] = getCssVar(`--ansi-${name}`);
+    theme[`bright${name[0].toUpperCase()}${name.slice(1)}`] = getCssVar(`--ansi-bright-${name}`);
+  }
+  return theme;
+}
+
+/**
+ * xterm forces every background opaque unless `allowTransparency` is on, so a
+ * see-through terminal color renders black. Turn it on only when needed: with
+ * it on, glyphs are drawn without the background behind them.
+ */
+export function needsTransparency(variant?: 'popup'): boolean {
+  const bg = parseColor(getCssVar(variant === 'popup' ? '--terminal-popup-bg' : '--terminal-bg'));
+  return !!bg && bg.a < 1;
 }
 
 export { getCssVar };

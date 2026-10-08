@@ -1,5 +1,7 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import Editor, { type OnMount, type BeforeMount } from "@monaco-editor/react";
+import { MONACO_THEME } from "../lib/theme/monaco";
+import { useThemeStore } from "../stores/themeStore";
 import { invoke } from "@tauri-apps/api/core";
 import { showContextMenu } from "../lib/contextMenu";
 import { useWorkspaceStore } from "../stores/workspaceStore";
@@ -151,7 +153,7 @@ function ImageViewer({ filePath }: { filePath: string }) {
   if (error) {
     return (
       <div style={styles.center}>
-        <span style={{ color: "#df7d7d", fontSize: 13 }}>
+        <span style={{ color: "var(--status-red)", fontSize: 13 }}>
           Failed to load image: {error}
         </span>
       </div>
@@ -191,7 +193,6 @@ function TextEditor({ filePath, paneId, workspaceId, groupId }: { filePath: stri
   const language = getLanguageFromPath(filePath);
   const markDirty = useWorkspaceStore((s) => s.markPaneDirty);
   const markClean = useWorkspaceStore((s) => s.markPaneClean);
-  const appTheme = useWorkspaceStore((s) => s.theme);
 
   // Neutralize body CSS zoom so Monaco's coordinate math works correctly.
   // Apply zoom:1/Z on the container div and scale the editor dimensions by Z
@@ -321,81 +322,6 @@ function TextEditor({ filePath, paneId, workspaceId, groupId }: { filePath: stri
       monaco.languages.register({ id: "shell" });
     }
     monaco.languages.setMonarchTokensProvider("shell", shellLanguageDef);
-
-    monaco.editor.defineTheme("rally-dark", {
-      base: "vs-dark",
-      inherit: true,
-      rules: [
-        { token: "comment.shell", foreground: "6a9955", fontStyle: "italic" },
-        { token: "keyword.shell", foreground: "c586c0" },
-        { token: "string.shell", foreground: "ce9178" },
-        { token: "string.escape.shell", foreground: "d7ba7d" },
-        { token: "variable.shell", foreground: "9cdcfe" },
-        { token: "variable.special.shell", foreground: "4fc1ff" },
-        { token: "number.shell", foreground: "b5cea8" },
-        { token: "operator.shell", foreground: "d4d4d4" },
-        { token: "delimiter.shell", foreground: "d4d4d4" },
-        { token: "builtin.shell", foreground: "dcdcaa" },
-        { token: "command.shell", foreground: "4ec9b0" },
-        { token: "flag.shell", foreground: "9cdcfe" },
-        { token: "shebang.shell", foreground: "6a9955", fontStyle: "italic" },
-      ],
-      colors: {
-        "editor.background": "#1b1b1b",
-      },
-    });
-
-    monaco.editor.defineTheme("rally-dimmed", {
-      base: "vs-dark",
-      inherit: true,
-      rules: [
-        { token: "comment.shell", foreground: "6a9955", fontStyle: "italic" },
-        { token: "keyword.shell", foreground: "c586c0" },
-        { token: "string.shell", foreground: "ce9178" },
-        { token: "string.escape.shell", foreground: "d7ba7d" },
-        { token: "variable.shell", foreground: "9cdcfe" },
-        { token: "variable.special.shell", foreground: "4fc1ff" },
-        { token: "number.shell", foreground: "b5cea8" },
-        { token: "operator.shell", foreground: "d4d4d4" },
-        { token: "delimiter.shell", foreground: "d4d4d4" },
-        { token: "builtin.shell", foreground: "dcdcaa" },
-        { token: "command.shell", foreground: "4ec9b0" },
-        { token: "flag.shell", foreground: "9cdcfe" },
-        { token: "shebang.shell", foreground: "6a9955", fontStyle: "italic" },
-      ],
-      colors: {
-        "editor.background": "#202020",
-      },
-    });
-
-    monaco.editor.defineTheme("rally-light", {
-      base: "vs",
-      inherit: true,
-      rules: [
-        { token: "comment.shell", foreground: "4e7a3e", fontStyle: "italic" },
-        { token: "keyword.shell", foreground: "8b2e8b" },
-        { token: "string.shell", foreground: "a44a1f" },
-        { token: "string.escape.shell", foreground: "8a6914" },
-        { token: "variable.shell", foreground: "1a6090" },
-        { token: "variable.special.shell", foreground: "0070a0" },
-        { token: "number.shell", foreground: "4a7030" },
-        { token: "operator.shell", foreground: "333333" },
-        { token: "delimiter.shell", foreground: "333333" },
-        { token: "builtin.shell", foreground: "795e26" },
-        { token: "command.shell", foreground: "267f6e" },
-        { token: "flag.shell", foreground: "1a6090" },
-        { token: "shebang.shell", foreground: "4e7a3e", fontStyle: "italic" },
-      ],
-      colors: {
-        "editor.background": "#c4c4c4",
-        "editor.foreground": "#111111",
-        "editorLineNumber.foreground": "#666666",
-        "editorCursor.foreground": "#333333",
-        "editor.selectionBackground": "#8ab4d866",
-        "editor.lineHighlightBackground": "#00000008",
-        "editorWidget.background": "#bfbfbf",
-      },
-    });
   }, []);
 
   const handleMount: OnMount = useCallback(
@@ -480,12 +406,14 @@ function TextEditor({ filePath, paneId, workspaceId, groupId }: { filePath: stri
     );
   }, []);
 
+  const codeFont = useThemeStore((s) => String(s.values["font-mono"]));
   const editorOptions = useMemo(() => ({
     automaticLayout: true,
     contextmenu: false,
     minimap: { enabled: false },
     fontSize: Math.round(BASE_FONT_SIZE * getStoredZoomLevel()),
-    fontFamily: "'SF Mono', 'Fira Code', 'Cascadia Code', monospace",
+    // Monaco measures glyphs from this string, so pass the resolved font, not a CSS var.
+    fontFamily: codeFont,
     lineNumbers: "on" as const,
     wordWrap: "off" as const,
     scrollBeyondLastLine: false,
@@ -522,12 +450,12 @@ function TextEditor({ filePath, paneId, workspaceId, groupId }: { filePath: stri
       useShadows: false,
       alwaysConsumeMouseWheel: false,
     },
-  }), []);
+  }), [codeFont]);
 
   if (error) {
     return (
       <div style={styles.center}>
-        <span style={{ color: "#df7d7d", fontSize: 13 }}>
+        <span style={{ color: "var(--status-red)", fontSize: 13 }}>
           Failed to load file: {error}
         </span>
       </div>
@@ -558,7 +486,7 @@ function TextEditor({ filePath, paneId, workspaceId, groupId }: { filePath: stri
       height="100%"
       path={filePath}
       language={language}
-      theme={`rally-${appTheme}`}
+      theme={MONACO_THEME}
       defaultValue={content}
       saveViewState
       keepCurrentModel

@@ -424,11 +424,11 @@ export function FlightPodFooter({
         paddingLeft: 8,
         paddingRight: 10,
         paddingBottom: 2,
-        borderTop: "1px solid rgba(255, 255, 255, 0.06)",
+        borderTop: "1px solid color-mix(in srgb, var(--tint) 6%, transparent)",
         flexShrink: 0,
         overflow: "hidden",
         userSelect: "none",
-        background: "rgb(30, 30, 30)",
+        background: "var(--canvas-pod-footer)",
       }}
     >
       <span

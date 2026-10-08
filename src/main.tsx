@@ -9,6 +9,8 @@ import htmlWorker from "monaco-editor/esm/vs/language/html/html.worker?worker";
 import tsWorker from "monaco-editor/esm/vs/language/typescript/ts.worker?worker";
 import "monaco-editor/esm/vs/base/browser/ui/codicons/codicon/codicon.css";
 import { App } from "./App";
+import { ThemeBuilder } from "./components/theme-builder/ThemeBuilder";
+import { initTheme } from "./stores/themeStore";
 import { injectSetiFont } from "./lib/fileIcons";
 
 (
@@ -38,8 +40,13 @@ if (import.meta.env.PROD) {
   document.addEventListener("contextmenu", (e) => e.preventDefault());
 }
 
+// Theme first, so the first frame already has the right colors and fonts.
+initTheme();
+
+const view = new URLSearchParams(window.location.search).get("view");
+
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
-    <App />
+    {view === "theme-builder" ? <ThemeBuilder /> : <App />}
   </React.StrictMode>
 );

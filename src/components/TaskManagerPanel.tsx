@@ -512,7 +512,7 @@ const styles: Record<string, React.CSSProperties> = {
   },
   rowOrphan: {
     background: "var(--bg-input)",
-    outline: "1px solid rgba(255, 255, 255, 0.06)",
+    outline: "1px solid color-mix(in srgb, var(--tint) 6%, transparent)",
   },
   rowPrimary: {
     flex: 1,
@@ -572,10 +572,10 @@ const styles: Record<string, React.CSSProperties> = {
     zIndex: 10,
   },
   popover: {
-    background: "rgba(36, 36, 36, 0.78)",
+    background: "var(--frosted-bg)",
     backdropFilter: "blur(20px) saturate(180%)",
     WebkitBackdropFilter: "blur(20px) saturate(180%)",
-    border: "1px solid rgba(255, 255, 255, 0.12)",
+    border: "1px solid var(--border-subtle)",
     borderRadius: 10,
     padding: 14,
     maxWidth: 260,
@@ -601,7 +601,7 @@ const styles: Record<string, React.CSSProperties> = {
   popoverCancel: {
     padding: "5px 12px",
     background: "transparent",
-    border: "1px solid rgba(255, 255, 255, 0.18)",
+    border: "1px solid color-mix(in srgb, var(--tint) 18%, transparent)",
     borderRadius: 4,
     color: "var(--text-primary)",
     fontSize: 12,
@@ -609,8 +609,8 @@ const styles: Record<string, React.CSSProperties> = {
   },
   popoverConfirm: {
     padding: "5px 12px",
-    background: "rgba(255, 255, 255, 0.12)",
-    border: "1px solid rgba(255, 255, 255, 0.18)",
+    background: "var(--bg-active)",
+    border: "1px solid color-mix(in srgb, var(--tint) 18%, transparent)",
     borderRadius: 4,
     color: "var(--text-primary)",
     fontSize: 12,

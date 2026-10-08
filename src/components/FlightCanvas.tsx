@@ -520,6 +520,8 @@ const WorkspaceFlightView = React.memo(function WorkspaceFlightView({
         // Within a column, multiple pods for the same repo stack vertically
         const GAP = 8;
         const PAD = 12;
+        // The header has no divider, so panels can start close beneath it.
+        const PAD_TOP = 2;
 
         const allPods = (store.flightLayouts[workspaceId]?.pods ?? []).filter((p) => !p.stashed);
         const ws = store.workspaces.find((w) => w.id === workspaceId);
@@ -551,7 +553,7 @@ const WorkspaceFlightView = React.memo(function WorkspaceFlightView({
           : totalColumns;
 
         const availW = containerW - PAD * 2;
-        const availH = containerH - PAD * 2;
+        const availH = containerH - PAD_TOP - PAD;
 
         // Grid wrapping: arrange visible columns in a balanced grid
         let gridCols: number;
@@ -597,7 +599,7 @@ const WorkspaceFlightView = React.memo(function WorkspaceFlightView({
           const podH = Math.floor((colH - GAP * (podCount - 1)) / Math.max(podCount, 1));
 
           for (let rowIdx = 0; rowIdx < column.pods.length; rowIdx++) {
-            const y = PAD + colY + rowIdx * (podH + GAP);
+            const y = PAD_TOP + colY + rowIdx * (podH + GAP);
             store.updateFlightPod(workspaceId, column.pods[rowIdx].id, {
               x: colX, y, width: colW, height: podH,
             } as any);
@@ -1052,7 +1054,7 @@ const WorkspaceFlightView = React.memo(function WorkspaceFlightView({
           inset: 0;
           z-index: 0;
           background-image:
-            radial-gradient(circle, rgba(255,255,255,0.07) 0.8px, transparent 0.8px);
+            radial-gradient(circle, color-mix(in srgb, var(--tint) 7%, transparent) 0.8px, transparent 0.8px);
           background-size: 24px 24px;
           background-position: 0 0;
           pointer-events: none;
@@ -1087,8 +1089,8 @@ const WorkspaceFlightView = React.memo(function WorkspaceFlightView({
           top: marquee.sy1,
           width: marquee.sx2 - marquee.sx1,
           height: marquee.sy2 - marquee.sy1,
-          border: "1px solid rgba(100, 160, 255, 0.6)",
-          background: "rgba(100, 160, 255, 0.1)",
+          border: "1px solid color-mix(in srgb, var(--canvas-selection) 60%, transparent)",
+          background: "color-mix(in srgb, var(--canvas-selection) 10%, transparent)",
           borderRadius: 2,
           pointerEvents: "none",
           zIndex: 99998,
@@ -1104,15 +1106,15 @@ const WorkspaceFlightView = React.memo(function WorkspaceFlightView({
             position: "fixed",
             left: contextMenu.screenX,
             top: contextMenu.screenY,
-            background: "rgba(36, 36, 36, 0.78)",
+            background: "var(--frosted-bg)",
             backdropFilter: "blur(20px) saturate(180%)",
             WebkitBackdropFilter: "blur(20px) saturate(180%)",
-            border: "1px solid rgba(255, 255, 255, 0.12)",
+            border: "1px solid var(--border-subtle)",
             borderRadius: 6,
             padding: "4px 0",
             minWidth: 180,
             zIndex: 99999,
-            boxShadow: "0 4px 16px rgba(0, 0, 0, 0.4)",
+            boxShadow: "0 4px 16px var(--shadow)",
             userSelect: "none",
           }}
         >
@@ -1262,7 +1264,7 @@ const menuStyles: Record<string, React.CSSProperties> = {
   },
   divider: {
     height: 1,
-    background: "rgba(255, 255, 255, 0.08)",
+    background: "color-mix(in srgb, var(--tint) 8%, transparent)",
     margin: "4px 0",
   },
   item: {
