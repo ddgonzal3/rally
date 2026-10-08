@@ -79,6 +79,18 @@ export const SETTINGS: SettingDef[] = [
   },
   { key: "background-dim", label: "Dim", group: "Background", kind: "number", min: 0, max: 90, step: 1, unit: "%" },
   { key: "background-blur", label: "Image blur", group: "Background", kind: "number", min: 0, max: 40, step: 1, unit: "px" },
+  {
+    key: "canvas-dots",
+    label: "Dot grid",
+    group: "Background",
+    kind: "choice",
+    hint: "The dots behind the panels.",
+    options: [
+      { value: "auto", label: "Hide over image" },
+      { value: "on", label: "Always" },
+      { value: "off", label: "Never" },
+    ],
+  },
   { key: "frost-blur", label: "Frost strength", group: "Background", kind: "number", min: 0, max: 60, step: 1, unit: "px", hint: "How much the sidebar and see-through terminals blur the image behind them." },
 
   // Backgrounds

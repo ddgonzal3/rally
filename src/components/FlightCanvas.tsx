@@ -1050,6 +1050,8 @@ const WorkspaceFlightView = React.memo(function WorkspaceFlightView({
       <style>{`
         [data-flight-canvas]::after {
           content: "";
+          /* Theme "Dot grid" setting; hidden over a background image by default. */
+          display: var(--canvas-dots-display);
           position: absolute;
           inset: 0;
           z-index: 0;
