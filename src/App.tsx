@@ -43,7 +43,7 @@ import { ProductChatPanel } from "./components/ProductChatPanel";
 import { TaskManagerPanel } from "./components/TaskManagerPanel";
 import { RallySettingsPanel } from "./components/RallySettingsPanel";
 import { ParkedThreadsPanel } from "./components/ParkedThreadsPanel";
-import { AgentSidebar, AgentSidebarToggle } from "./components/AgentSidebar";
+import { AgentSidebar, AgentSidebarToggle, SIDEBAR_DURATION_MS, SIDEBAR_EASING, useAgentSidebarStore } from "./components/AgentSidebar";
 import { TaskLauncher } from "./components/TaskLauncher";
 import { useAgentStore } from "./stores/agentStore";
 import { BuildStatusBar } from "./components/BuildStatusBar";
@@ -527,6 +527,9 @@ export function App() {
     const ws = s.workspaces.find((w) => w.id === s.activeWorkspaceId);
     return ws?.name ?? "Rally";
   });
+  const agentSidebarCollapsed = useAgentSidebarStore((s) => s.collapsed);
+  const agentSidebarWidth = useAgentSidebarStore((s) => s.width);
+  const agentSidebarResizing = useAgentSidebarStore((s) => s.resizing);
   const activeWorkspaceId = useWorkspaceStore((s) => s.activeWorkspaceId);
   const workspaceMode = useWorkspaceStore((s) => {
     if (!s.activeWorkspaceId) return "flight";
@@ -2032,6 +2035,21 @@ export function App() {
         style={styles.titlebar}
         onMouseDown={handleDrag}
       >
+        {/* Solid header over the main area only. Left of it the strip stays
+            frosted, so the sidebar's frost runs to the top of the window.
+            Tracks the sidebar's width (zoomed) and its collapse motion. */}
+        <div
+          style={{
+            ...styles.titlebarFill,
+            left: agentSidebarCollapsed ? 0 : agentSidebarWidth * zoomLevel - 1,
+            borderLeftColor: agentSidebarCollapsed ? "transparent" : "var(--border)",
+            transition: agentSidebarResizing
+              ? "none"
+              : `left ${SIDEBAR_DURATION_MS}ms ${SIDEBAR_EASING}, border-color ${SIDEBAR_DURATION_MS}ms ${SIDEBAR_EASING}`,
+          }}
+        >
+          <span style={styles.titleText}>{activeWorkspaceName}</span>
+        </div>
         <div style={styles.titlebarLeft}>
           <AgentSidebarToggle />
           <button
@@ -2063,9 +2081,6 @@ export function App() {
               <circle cx="3" cy="10" r="0.6" fill="currentColor" />
             </svg>
           </button>
-        </div>
-        <div style={{ flex: 1, minWidth: 0, display: "flex", justifyContent: "center" }}>
-          <span style={styles.titleText}>{activeWorkspaceName}</span>
         </div>
         <div style={styles.titlebarRight}>
         </div>
@@ -2569,11 +2584,24 @@ const styles: Record<string, React.CSSProperties> = {
     minHeight: 34,
     display: "flex",
     alignItems: "center",
-    borderBottom: "1px solid var(--border)",
     userSelect: "none",
     position: "relative",
     paddingLeft: 70,
+    background: "var(--sidebar-bg)",
+  },
+  titlebarFill: {
+    position: "absolute",
+    top: 0,
+    right: 0,
+    bottom: 0,
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: "0 12px",
     background: "var(--bg-app)",
+    borderBottom: "1px solid var(--border)",
+    borderLeft: "1px solid transparent",
+    pointerEvents: "none",
   },
   titlebarLeft: {
     position: "absolute",

@@ -202,7 +202,6 @@ function ProjectRow({ project, open }: { project: ProjectEntry; open: boolean })
     >
       <FolderIcon />
       <span style={styles.projectName}>{project.project}</span>
-      <span style={{ ...styles.available, color: project.available > 0 ? "var(--text-secondary)" : "transparent" }}>{project.available}</span>
       <button
         className="sidebar-btn"
         style={styles.chevronBtn}
@@ -304,10 +303,10 @@ function AgentRow({ workspaceId, entry, project, indent, selected }: { workspace
         ...styles.row,
         height: 28,
         minHeight: 28,
-        paddingLeft: indent ? 20 : 12,
+        paddingLeft: indent ? 16 : 8,
         background: selected && !entry.hidden ? "color-mix(in srgb, var(--text-primary) 9%, transparent)" : hovered ? "var(--bg-hover)" : "transparent",
         boxShadow: selected && !entry.hidden ? "inset 0 0 0 1px color-mix(in srgb, var(--text-primary) 4%, transparent)" : "none",
-        opacity: entry.hidden && !entry.dot && !entry.manualBusy && !entry.label ? 0.65 : 1,
+        opacity: entry.hidden ? 0.65 : 1,
       }}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
@@ -398,7 +397,7 @@ const styles: Record<string, React.CSSProperties> = {
   labelInput: { width: "100%", boxSizing: "border-box", fontFamily: "inherit", fontSize: 13, fontWeight: 500, padding: "7px 8px", borderRadius: 6, border: "1px solid rgba(255,255,255,0.12)", background: "rgba(255,255,255,0.06)", color: "#ddd", outline: "none" },
   labelButton: { fontFamily: "inherit", fontSize: 12, fontWeight: 500, padding: "5px 10px", borderRadius: 6, border: "1px solid rgba(255,255,255,0.12)", background: "rgba(255,255,255,0.06)", color: "#ddd", cursor: "pointer" },
   panel: { display: "flex", flexDirection: "column", height: "100%", background: "transparent", overflow: "hidden" },
-  body: { flex: 1, minHeight: 0, overflow: "auto", padding: "6px 10px 16px", display: "flex", flexDirection: "column" },
+  body: { flex: 1, minHeight: 0, overflow: "auto", padding: "6px 8px 16px", display: "flex", flexDirection: "column" },
   group: { display: "flex", flexDirection: "column", marginBottom: 3 },
   projectRow: {
     height: PROJECT_ROW_H,
@@ -406,7 +405,7 @@ const styles: Record<string, React.CSSProperties> = {
     display: "flex",
     alignItems: "center",
     gap: 8,
-    padding: "0 12px",
+    padding: "0 12px 0 8px",
     borderRadius: 9,
     cursor: "pointer",
     transition: "background 100ms ease",
@@ -422,7 +421,6 @@ const styles: Record<string, React.CSSProperties> = {
     overflow: "hidden",
     textOverflow: "ellipsis",
   },
-  available: { flexShrink: 0, fontSize: 11, fontWeight: 600, fontVariantNumeric: "tabular-nums", lineHeight: 1 },
   chevronBtn: {
     flexShrink: 0,
     width: 18,
@@ -440,7 +438,7 @@ const styles: Record<string, React.CSSProperties> = {
   row: {
     display: "flex",
     alignItems: "center",
-    padding: "0 6px 0 12px",
+    padding: "0 6px 0 8px",
     borderRadius: 9,
     cursor: "pointer",
     transition: "background 100ms ease, opacity 150ms ease",

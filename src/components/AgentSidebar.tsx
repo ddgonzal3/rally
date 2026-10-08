@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useRef } from "react";
 import { create } from "zustand";
 import { AgentsPanel } from "./AgentsPanel";
 
@@ -18,14 +18,18 @@ const MAX_WIDTH = 440;
 const STORAGE_KEY = "rally:agentSidebarCollapsed";
 const WIDTH_KEY = "rally:agentSidebarWidth";
 const SNAP_THRESHOLD = 150;
-const EASING = "cubic-bezier(0.2, 0, 0, 1)";
-const DURATION_MS = 220;
+export const SIDEBAR_EASING = "cubic-bezier(0.2, 0, 0, 1)";
+export const SIDEBAR_DURATION_MS = 220;
+const EASING = SIDEBAR_EASING;
+const DURATION_MS = SIDEBAR_DURATION_MS;
 
 interface AgentSidebarState {
   collapsed: boolean;
   /** True when the last collapse was automatic (half-screen snap). */
   auto: boolean;
   width: number;
+  /** True while the edge is being dragged; motion that follows the width skips easing. */
+  resizing: boolean;
   setCollapsed: (collapsed: boolean, auto?: boolean) => void;
   setWidth: (width: number) => void;
   toggle: () => void;
@@ -40,6 +44,7 @@ export const useAgentSidebarStore = create<AgentSidebarState>((set) => ({
     }
   })(),
   auto: false,
+  resizing: false,
   width: (() => {
     try {
       const n = Number(localStorage.getItem(WIDTH_KEY));
@@ -77,7 +82,8 @@ export function AgentSidebar() {
   const setCollapsed = useAgentSidebarStore((s) => s.setCollapsed);
   const setWidth = useAgentSidebarStore((s) => s.setWidth);
   const prevWidthRef = useRef(window.innerWidth);
-  const [dragging, setDragging] = useState(false);
+  const dragging = useAgentSidebarStore((s) => s.resizing);
+  const setDragging = (resizing: boolean) => useAgentSidebarStore.setState({ resizing });
 
   // Edge drag to resize. No transition while dragging so it tracks the pointer.
   const startResize = (e: React.MouseEvent) => {
