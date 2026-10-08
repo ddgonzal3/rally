@@ -950,7 +950,7 @@ export function Terminal({ cwd, command, initialInput, exitOnComplete, ptyId: ex
     <div
       // The only layer painting the terminal color: a second one would
       // compound a see-through background (two 50% layers read as 75%).
-      style={{ ...styles.container, background: 'var(--terminal-bg)', backdropFilter: 'var(--surface-frost)', WebkitBackdropFilter: 'var(--surface-frost)' }}
+      style={{ ...styles.container, background: 'var(--terminal-bg)', backdropFilter: 'var(--surface-frost)', WebkitBackdropFilter: 'var(--surface-frost)', backgroundImage: 'var(--surface-grain)' }}
       onMouseDown={handleMouseDown}
       onContextMenu={handleContextMenu}
     >
