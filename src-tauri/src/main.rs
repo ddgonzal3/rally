@@ -551,6 +551,10 @@ fn main() {
             // Leave a stack sample in ~/.rally/hangs/ whenever the main thread freezes.
             rally::hang_watchdog::start(app.handle().clone());
 
+            // Keep macOS Zoom's focus query out of the web views on activation;
+            // it deadlocks the main thread against WebKit.
+            rally::zoom_focus_guard::install(app.handle());
+
             // Install Rally-managed Claude slash commands to ~/.claude/commands.
             // Idempotent overwrite — Rally owns these files, version-locked to the app.
             install_rally_commands();

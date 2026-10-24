@@ -13,3 +13,4 @@ pub mod shell_env;
 pub mod test_server;
 pub mod theme_ops;
 pub mod workspace;
+pub mod zoom_focus_guard;

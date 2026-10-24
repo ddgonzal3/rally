@@ -82,6 +82,7 @@ Rust Backend (src-tauri/src/)
 | `src-tauri/src/config_ops.rs` | Read/write CLAUDE.md files, list configs + skills |
 | `src-tauri/src/workspace.rs` | Workspace/ProcessConfig/GitStatus structs + JSON persistence |
 | `src-tauri/src/claude_sessions.rs` | Reads `~/.claude/sessions/*.json`, maps each Claude PID to its Rally PTY |
+| `src-tauri/src/zoom_focus_guard.rs` | Parks web view focus during app activation so macOS Zoom's focus query can't deadlock against WebKit |
 | `src-tauri/tauri.conf.json` | Window config, bundle targets, plugin permissions |
 | `src-tauri/capabilities/default.json` | Tauri v2 permission grants |
 
