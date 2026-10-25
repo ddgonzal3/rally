@@ -15,81 +15,8 @@ import {
 } from "../lib/watcherStatus";
 import { useDetectedPorts } from "../lib/useDetectedPorts";
 import { PortPill } from "./PortPill";
+import { ScriptActions } from "./ScriptActions";
 import { showContextMenu, type MenuAction } from "../lib/contextMenu";
-
-const watcherActionButtonStyle: React.CSSProperties = {
-  display: "flex",
-  alignItems: "center",
-  justifyContent: "center",
-  width: 16,
-  height: 16,
-  padding: 0,
-  margin: 0,
-  background: "none",
-  border: "none",
-  color: "var(--text-secondary)",
-  cursor: "pointer",
-  borderRadius: 3,
-  flexShrink: 0,
-  lineHeight: 0,
-  appearance: "none",
-  WebkitAppearance: "none",
-};
-
-function StopActionIcon() {
-  return (
-    <svg
-      width="13"
-      height="13"
-      viewBox="0 0 13 13"
-      fill="none"
-      aria-hidden="true"
-      style={{ display: "block" }}
-    >
-      <rect x="2" y="2" width="9" height="9" rx="1.5" fill="currentColor" />
-    </svg>
-  );
-}
-
-function RestartActionIcon() {
-  return (
-    <svg
-      width="11"
-      height="11"
-      viewBox="0 0 12 12"
-      fill="none"
-      aria-hidden="true"
-      style={{ display: "block" }}
-    >
-      <path
-        d="M1.5 6a4.5 4.5 0 0 1 8.18-2.6"
-        stroke="currentColor"
-        strokeWidth="1.2"
-        strokeLinecap="round"
-      />
-      <path
-        d="M10.5 6a4.5 4.5 0 0 1-8.18 2.6"
-        stroke="currentColor"
-        strokeWidth="1.2"
-        strokeLinecap="round"
-      />
-      <path
-        d="M9 1.5L9.7 3.4L7.8 3.4"
-        stroke="currentColor"
-        strokeWidth="1.1"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-      <path
-        d="M3 10.5L2.3 8.6L4.2 8.6"
-        stroke="currentColor"
-        strokeWidth="1.1"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
-  );
-}
 
 // --- ScriptDot sub-component ---
 
@@ -395,61 +322,15 @@ function ScriptDot({
       </span>
 
       {/* Action icons — fade in on hover */}
-      {(() => {
-        const showRunning = isRunning && hovered && hasLeftSinceStart;
-        const showFailed = !isRunning && buildStatus === "error" && hovered;
-        const show = showRunning || showFailed;
-        return (
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 2,
-              height: 16,
-              opacity: show ? 1 : 0,
-              width: show ? (showRunning ? 36 : 18) : 0,
-              overflow: "hidden",
-              transition: "opacity 0.15s ease, width 0.15s ease",
-              // Keep this on its own layer permanently. Otherwise WebKit
-              // promotes it only while the transition runs and repaints it
-              // at a different sub-pixel offset under CSS zoom once it settles.
-              transform: "translateZ(0)",
-              willChange: "opacity, width",
-              pointerEvents: show ? "auto" : "none",
-              flexShrink: 0,
-              margin: 0,
-              padding: 0,
-            }}
-          >
-            {showRunning && (
-              <button
-                className="tab-action"
-                onMouseDown={(e) => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  kill();
-                }}
-                title="Stop"
-                style={{ ...watcherActionButtonStyle, opacity: 0.88 }}
-              >
-                <StopActionIcon />
-              </button>
-            )}
-            <button
-              className="tab-action"
-              onMouseDown={(e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                restart();
-              }}
-              title="Restart"
-              style={watcherActionButtonStyle}
-            >
-              <RestartActionIcon />
-            </button>
-          </div>
-        );
-      })()}
+      <ScriptActions
+        show={
+          (isRunning && hovered && hasLeftSinceStart) ||
+          (!isRunning && buildStatus === "error" && hovered)
+        }
+        canStop={isRunning}
+        onStop={kill}
+        onRestart={restart}
+      />
 
       {/* "built at" timestamp — persists during rebuilds, clears on error */}
       {builtAt && (

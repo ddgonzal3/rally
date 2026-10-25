@@ -6,6 +6,7 @@ import {
 } from "../stores/workspaceStore";
 import { api } from "../lib/tauri";
 import type { ScriptEntry } from "../lib/types";
+import { ScriptActions } from "./ScriptActions";
 import {
   isWatcherScript,
   getWatcherDisplayStatus,
@@ -19,44 +20,6 @@ import { useAgentStore, bundleKey } from "../stores/agentStore";
 import { usePodMismatches } from "../lib/usePodActivity";
 import { resolvePrepareConfig, formatAge } from "../lib/prepare";
 import { addToast } from "./ToastContainer";
-
-const podActionButtonStyle: React.CSSProperties = {
-  display: "flex",
-  alignItems: "center",
-  justifyContent: "center",
-  width: 16,
-  height: 16,
-  padding: 0,
-  margin: 0,
-  background: "none",
-  border: "none",
-  color: "var(--text-secondary)",
-  cursor: "pointer",
-  borderRadius: 3,
-  flexShrink: 0,
-  lineHeight: 0,
-  appearance: "none",
-  WebkitAppearance: "none",
-};
-
-function StopIcon() {
-  return (
-    <svg width="13" height="13" viewBox="0 0 13 13" fill="none" aria-hidden="true" style={{ display: "block" }}>
-      <rect x="2" y="2" width="9" height="9" rx="1.5" fill="currentColor" />
-    </svg>
-  );
-}
-
-function RestartIcon() {
-  return (
-    <svg width="11" height="11" viewBox="0 0 12 12" fill="none" aria-hidden="true" style={{ display: "block" }}>
-      <path d="M1.5 6a4.5 4.5 0 0 1 8.18-2.6" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
-      <path d="M10.5 6a4.5 4.5 0 0 1-8.18 2.6" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
-      <path d="M10.2 1v2.4H7.8" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" />
-      <path d="M1.8 11v-2.4h2.4" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-  );
-}
 
 /** Compact script dot for the flight pod footer. */
 function PodScriptDot({
@@ -219,9 +182,6 @@ function PodScriptDot({
     showContextMenu(items);
   };
 
-  // Only show action icons when the script is actively running
-  const showActions = isRunning && hovered;
-
   return (
     <div
       onMouseEnter={() => {
@@ -313,41 +273,8 @@ function PodScriptDot({
           failed
         </span>
       )}
-      {/* Action icons — fade in on hover (matches dev mode BuildStatusBar) */}
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          gap: 2,
-          opacity: showActions ? 1 : 0,
-          width: showActions ? (isRunning ? 36 : 18) : 0,
-          overflow: "hidden",
-          transition: "opacity 0.15s ease, width 0.15s ease",
-          pointerEvents: showActions ? "auto" : "none",
-          flexShrink: 0,
-          margin: 0,
-          padding: 0,
-        }}
-      >
-        {isRunning && (
-          <button
-            className="tab-action"
-            onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); kill(); }}
-            title="Stop"
-            style={{ ...podActionButtonStyle, opacity: 0.88 }}
-          >
-            <StopIcon />
-          </button>
-        )}
-        <button
-          className="tab-action"
-          onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); restart(); }}
-          title="Restart"
-          style={podActionButtonStyle}
-        >
-          <RestartIcon />
-        </button>
-      </div>
+      {/* Action icons — only while the script runs */}
+      <ScriptActions show={isRunning && hovered} canStop={isRunning} onStop={kill} onRestart={restart} />
     </div>
   );
 }
