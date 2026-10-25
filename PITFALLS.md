@@ -81,15 +81,13 @@ During split-panel drag, the ResizeObserver fires on every pixel. Two expensive 
 
 Also: PTY writes go through a per-session `mpsc::channel` with a dedicated writer thread, so `write_pty` never holds the global `PtyState` mutex during blocking I/O. This prevents write operations from contending with resize or other PTY operations.
 
-## SVG Button Jitter on Hover-Reveal Under CSS Zoom
+## Hover-Revealed Icons Hop After the Fade (Opacity Transitions at Fractional Positions)
 
-When revealing hidden SVG buttons (e.g. fade-in on hover) inside a container with CSS `zoom`, the icons micro-shift 1-2px after appearing. Root causes:
+Footer stop/restart icons hopped a pixel right **after** their hover fade-in finished. Cause: WebKit runs an `opacity` transition on a temporary compositing layer, then paints the element back into its parent when the transition ends. At fractional positions (UI `zoom: 0.9`, Flight canvas pan/zoom), the layer and normal painting round to different device pixels. Measured in a standalone WKWebView (real screen captures, Flight canvas zoom 1.1): 1px hop with an opacity fade, none with a color fade.
 
-1. **Inline SVGs have baseline gaps** — `<svg>` is an inline-replaced element, so the browser reserves space for text baseline alignment. During opacity transitions this alignment can settle differently. **Fix:** Add `display: "block"` on the SVG element.
-2. **Browser default button chrome** — Buttons have user-agent padding, margin, and `appearance` that add invisible offsets. **Fix:** Explicitly set `lineHeight: 0`, `appearance: "none"`, `margin: 0` on the button.
-3. **Mid-transition layer promotion** — Without compositor hints, the browser lazily promotes elements to GPU layers during transitions, causing a repaint that shifts sub-pixel positions. **Fix:** Add `transform: "translateZ(0)"` and `willChange: "opacity, max-width"` on the animated container.
+**Fix:** fade with `color` (icons use `currentColor`), not `opacity`. Color transitions never leave normal painting. Don't reach for `translateZ(0)` / `will-change` instead: a permanent layer stops the hop but leaves the icons off the pixel grid of the text beside them, and costs a layer per item. The shared `ScriptActions` component does this for both the bottom bar and Flight pod footers. Also key a conditionally rendered button on real state (`isRunning`), not on the reveal flag, or its neighbor jumps while the group fades out.
 
-All three must be addressed together — any one alone is insufficient under CSS zoom.
+Still true for any SVG button: `display: "block"` on the `<svg>` (inline SVGs get a baseline gap), plus `lineHeight: 0`, `appearance: "none"`, `margin: 0` on the `<button>`.
 
 ## Multi-Window: Never Kill All PTYs from Secondary Windows
 
