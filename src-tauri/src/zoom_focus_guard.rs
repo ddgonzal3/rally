@@ -7,11 +7,13 @@
 //! authenticate the caller (an IPC with no timeout). The main thread is the
 //! caller, so both sides wait forever. See PITFALLS.md.
 //!
-//! The query runs in the same event-loop pass that posts
-//! `NSApplicationWillBecomeActiveNotification`, after it. So: take first
-//! responder off every web view when that notification fires (the query then
-//! sees the native window), and give it back on the next pass after
-//! `NSApplicationDidBecomeActiveNotification`.
+//! The query runs when HIToolbox pulls the activation event off the queue,
+//! before AppKit posts any activation notification, so nothing can step in
+//! right before it. Instead no web view holds first responder while Rally is
+//! inactive: park focus on resign, park again before the main thread sleeps
+//! (catches a web view focused in the background, like `set_focus` from the
+//! CLI server or a window opened at launch), and give it back on
+//! `NSApplicationDidBecomeActiveNotification`, when the query is done.
 
 use std::cell::RefCell;
 use std::ptr::{self, NonNull};
@@ -21,8 +23,11 @@ use objc2::rc::Retained;
 use objc2::runtime::{AnyClass, AnyObject};
 use objc2::{msg_send, MainThreadMarker};
 use objc2_app_kit::{
-    NSApp, NSApplicationDidBecomeActiveNotification, NSApplicationWillBecomeActiveNotification,
+    NSApp, NSApplicationDidBecomeActiveNotification, NSApplicationDidResignActiveNotification,
     NSResponder, NSWindow,
+};
+use objc2_core_foundation::{
+    kCFRunLoopCommonModes, CFRunLoop, CFRunLoopActivity, CFRunLoopObserver,
 };
 use objc2_foundation::{NSNotification, NSNotificationCenter};
 
@@ -33,24 +38,19 @@ thread_local! {
 }
 
 /// Must run on the main thread (Tauri's `setup` does).
-pub fn install(app: &tauri::AppHandle) {
+pub fn install() {
     let Some(mtm) = MainThreadMarker::new() else {
         eprintln!("[rally] zoom_focus_guard: not on main thread, not installed");
         return;
     };
     let park = RcBlock::new(move |_: NonNull<NSNotification>| park_web_focus(mtm));
-    let handle = app.clone();
-    let restore = RcBlock::new(move |_: NonNull<NSNotification>| {
-        // Not inline: HIToolbox's query is still ahead in this pass.
-        let _ = handle.run_on_main_thread(restore_web_focus);
-    });
+    let restore = RcBlock::new(|_: NonNull<NSNotification>| restore_web_focus());
     let center = NSNotificationCenter::defaultCenter();
-    // A nil queue runs the block synchronously on the posting (main) thread,
-    // which is what puts parking ahead of the query. The center keeps the
-    // observers alive for the life of the app.
+    // A nil queue runs the blocks synchronously on the posting (main) thread.
+    // The center keeps the observers alive for the life of the app.
     unsafe {
         center.addObserverForName_object_queue_usingBlock(
-            Some(NSApplicationWillBecomeActiveNotification),
+            Some(NSApplicationDidResignActiveNotification),
             None,
             None,
             &park,
@@ -62,6 +62,19 @@ pub fn install(app: &tauri::AppHandle) {
             &restore,
         );
     }
+
+    let idle = RcBlock::new(move |_: *mut CFRunLoopObserver, _: CFRunLoopActivity| {
+        if !NSApp(mtm).isActive() {
+            park_web_focus(mtm);
+        }
+    });
+    let observer = unsafe {
+        CFRunLoopObserver::with_handler(None, CFRunLoopActivity::BeforeWaiting.0, true, 0, Some(&idle))
+    };
+    if let (Some(run_loop), Some(observer)) = (CFRunLoop::main(), observer) {
+        // The run loop retains the observer for the life of the app.
+        run_loop.add_observer(Some(&observer), unsafe { kCFRunLoopCommonModes });
+    }
 }
 
 fn park_web_focus(mtm: MainThreadMarker) {
@@ -70,9 +83,13 @@ fn park_web_focus(mtm: MainThreadMarker) {
         for i in 0..windows.len() {
             let window = windows.objectAtIndex(i);
             let Some(responder) = window.firstResponder() else { continue };
-            if unsafe { is_in_web_view(&responder) } && window.makeFirstResponder(None) {
-                parked.push((window, responder));
+            if !unsafe { is_in_web_view(&responder) } || !window.makeFirstResponder(None) {
+                continue;
             }
+            // A web view can take focus back while Rally is inactive (page
+            // load, set_focus); keep only the latest responder per window.
+            parked.retain(|(w, _)| !ptr::eq(Retained::as_ptr(w), Retained::as_ptr(&window)));
+            parked.push((window, responder));
         }
     });
 }

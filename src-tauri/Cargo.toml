@@ -25,6 +25,7 @@ objc2 = "0.6"
 block2 = "0.6"
 objc2-foundation = { version = "0.3", features = ["NSString", "NSValue", "NSNotification", "NSOperation", "block2"] }
 objc2-app-kit = { version = "0.3", features = ["NSApplication", "NSColor", "NSWindow", "NSView", "NSVisualEffectView", "NSResponder", "NSFontManager"] }
+objc2-core-foundation = { version = "0.3", default-features = false, features = ["std", "CFRunLoop", "block2"] }
 objc2-web-kit = { version = "0.3", features = ["WKWebView"] }
 notify = "6"
 libc = "0.2"
