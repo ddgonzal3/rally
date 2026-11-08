@@ -3,7 +3,7 @@ import { useThemeImageUrl } from "../lib/theme/images";
 
 /**
  * Rally's own background, behind everything in the window: an optional
- * gradient, an optional image on top of it, then dim and grain. Renders
+ * gradient, an optional image on top of it, then tint, dim and grain. Renders
  * nothing when neither is set, so the native frost shows the desktop.
  */
 export function ThemeBackground() {
@@ -14,6 +14,7 @@ export function ThemeBackground() {
 
   const fit = String(v["background-fit"]);
   const tile = fit === "tile";
+  const tint = Number(v["tint-strength"]);
   const dim = Number(v["background-dim"]);
   const blur = Number(v["background-blur"]);
   const rotated = String(v["image-rotation"]) === "180";
@@ -47,7 +48,18 @@ export function ThemeBackground() {
           }}
         />
       )}
-      {dim > 0 && <div style={{ position: "absolute", inset: 0, background: `rgba(0, 0, 0, ${dim / 100})` }} />}
+      {tint > 0 && (
+        <div
+          style={{
+            position: "absolute",
+            inset: 0,
+            background: String(v["background-tint"]),
+            opacity: tint / 100,
+            mixBlendMode: String(v["tint-blend"]) as React.CSSProperties["mixBlendMode"],
+          }}
+        />
+      )}
+      {dim > 0 &&<div style={{ position: "absolute", inset: 0, background: `rgba(0, 0, 0, ${dim / 100})` }} />}
       {/* "none" when grain is 0; see grainImage in lib/theme/apply.ts. */}
       <div style={{ position: "absolute", inset: 0, backgroundImage: "var(--surface-grain)" }} />
     </div>
